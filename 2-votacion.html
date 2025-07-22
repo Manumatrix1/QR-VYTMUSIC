@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Votaciones - VYTMUSIC</title>
+    
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        /* Estilos generales del cuerpo y fuente */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #111827; /* Fondo oscuro */
+            color: #f9fafb; /* Color de texto claro */
+        }
+        /* Estilos para el fondo del modal */
+        .modal-backdrop {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(0, 0, 0, 0.6); z-index: 900;
+            display: flex; justify-content: center; align-items: center;
+        }
+        /* Estilos para el contenido del modal */
+        .modal-content {
+            background-color: #1f2937; padding: 1.5rem; border-radius: 0.5rem;
+            max-width: 90%; width: 500px; box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+        }
+        /* Estilos para el overlay de carga */
+        .loading-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(0, 0, 0, 0.8);
+            display: flex; justify-content: center; align-items: center;
+            z-index: 1000; transition: opacity 0.3s ease;
+        }
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-top: 4px solid #38bdf8; /* Color del spinner */
+            border-radius: 50%; width: 40px; height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .hidden { display: none; }
+
+        /* Estilos para las tarjetas de votación de artistas */
+        .bg-gray-800 { background-color: #1f2937; } /* Fondo de las tarjetas */
+        .text-white { color: #f9fafb; } /* Color de texto general */
+        .text-gray-300 { color: #d1d5db; } /* Texto secundario */
+        .text-sky-400 { color: #38bdf8; } /* Color de acento */
+        .text-green-400 { color: #4ade80; } /* Color para puntajes */
+        .text-black { color: #000; } /* Color para texto en botones amarillos */
+
+        .bg-yellow-500 { background-color: #fcd34d; }
+        .hover\:bg-yellow-600:hover { background-color: #fbbf24; }
+        .bg-gray-600 { background-color: #4b5563; }
+        .cursor-not-allowed { cursor: not-allowed; }
+
+        /* Estilos para las imágenes de artistas en las tarjetas de votación */
+        .w-full { width: 100%; }
+        .h-60 { height: 15rem; /* 240px */ }
+        .object-cover { object-fit: cover; }
+        .rounded-md { border-radius: 0.375rem; }
+        .mb-2 { margin-bottom: 0.5rem; }
+
+        /* Estilos para los sliders de votación (ahora reemplazados por estrellas) */
+        .w-full { width: 100%; }
+        .h-2 { height: 0.5rem; }
+        .bg-gray-700 { background-color: #374151; }
+        .rounded-lg { border-radius: 0.5rem; }
+        .appearance-none { -webkit-appearance: none; appearance: none; }
+        .cursor-pointer { cursor: pointer; }
+
+        .transition-transform { transition-property: transform; transition-duration: 0.15s; transition-timing-function: ease-in-out; }
+        .transform { transform: var(--tw-transform); }
+        .hover\:scale-105:hover { --tw-scale-x: 1.05; --tw-scale-y: 1.05; }
+
+        /* Estilos del sistema de estrellas */
+        .star-rating {
+            display: flex;
+            justify-content: center; /* Centra las estrellas */
+            direction: rtl; /* Para que las estrellas se llenen de derecha a izquierda */
+            font-size: 2rem; /* Tamaño de las estrellas */
+            gap: 0.1rem; /* Espacio entre estrellas */
+        }
+        .star-rating input[type="radio"] {
+            display: none; /* Oculta los radio buttons */
+        }
+        .star-rating label {
+            color: #4b5563; /* Color de estrella vacía (gris) */
+            cursor: pointer;
+            transition: color 0.2s ease-in-out;
+            padding: 0 2px; /* Espaciado interno para hacerlas más clicables */
+        }
+        .star-rating label:hover,
+        .star-rating label:hover ~ label,
+        .star-rating input[type="radio"]:checked ~ label {
+            color: #fcd34d; /* Color de estrella llena (amarillo dorado) */
+        }
+        /* Asegura que el hover funcione correctamente de derecha a izquierda */
+        .star-rating label:hover {
+            color: #fcd34d;
+        }
+        .star-rating label:hover ~ label {
+            color: #fcd34d;
+        }
+        .star-rating input[type="radio"]:checked + label {
+            color: #fcd34d;
+        }
+        /* Para que las estrellas se llenen correctamente al seleccionar */
+        .star-rating.selected label {
+            color: #4b5563; /* Resetear a vacío */
+        }
+        .star-rating.selected input[type="radio"]:checked ~ label {
+            color: #fcd34d; /* Llenar desde la seleccionada hacia la derecha (visual) */
+        }
+        .star-rating.selected input[type="radio"]:checked + label {
+            color: #fcd34d; /* Llenar la seleccionada */
+        }
+        /* Asegura que el hover siga funcionando después de la selección */
+        .star-rating.selected label:hover,
+        .star-rating.selected label:hover ~ label {
+            color: #fbbf24; /* Amarillo más oscuro para hover */
+        }
+    </style>
+</head>
+<body class="antialiased">
+
+    <!-- Overlays y Modales -->
+    <div id="loading-overlay" class="loading-overlay hidden"><div class="spinner"></div></div>
+    <div id="confirmation-modal" class="modal-backdrop hidden">
+        <div class="modal-content">
+            <h3 id="modal-title" class="text-xl font-bold mb-4">Confirmar Acción</h3>
+            <p id="modal-body" class="mb-6">¿Estás seguro de que deseas continuar?</p>
+            <div class="flex justify-end space-x-4">
+                <button id="modal-cancel-btn" class="px-4 py-2 bg-gray-600 text-white font-semibold rounded-lg hover:bg-gray-700">Cancelar</button>
+                <button id="modal-confirm-btn" class="px-4 py-2 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700">Confirmar</button>
+            </div>
+        </div>
+    </div>
+    
+    <div class="container mx-auto max-w-6xl p-4 sm:p-6">
+        <header class="text-center mb-8">
+            <img src="https://i.imgur.com/rqkZi9P.png" alt="Logo de VYTMUSIC" class="mx-auto mb-4 bg-white rounded-full" style="max-width: 120px;" 
+                 onerror="this.onerror=null;this.src='https://placehold.co/120x120/ffffff/000000?text=Logo';">
+            <h1 class="text-4xl sm:text-5xl font-bold text-sky-400">Votaciones VYTMUSIC</h1>
+            <p class="text-lg text-gray-300 mt-2">Elige a tu artista favorito y califica su presentación.</p>
+        </header>
+
+        <div id="message-container" class="mb-4"></div>
+
+        <main>
+            <!-- Sección de votación -->
+            <div class="mb-8">
+                <h3 class="text-2xl font-semibold mb-6 text-center text-sky-400">Vota por tu Artista</h3>
+                <div id="vote-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <!-- Las tarjetas de votación se insertarán aquí dinámicamente -->
+                </div>
+            </div>
+    
+            <!-- Panel de resultados -->
+            <div>
+                <h3 class="text-2xl font-semibold mb-6 text-center text-sky-400">Resultados en Vivo</h3>
+                <div id="votes-stats" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <!-- Las estadísticas de votos se insertarán aquí dinámicamente -->
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, onSnapshot, query, addDoc, doc, getDoc, setDoc, where, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- Elementos de la UI y Estado ---
+        const ui = {
+            loadingOverlay: document.getElementById('loading-overlay'),
+            confirmationModal: document.getElementById('confirmation-modal'),
+            modalTitle: document.getElementById('modal-title'),
+            modalBody: document.getElementById('modal-body'),
+            modalConfirmBtn: document.getElementById('modal-confirm-btn'),
+            modalCancelBtn: document.getElementById('modal-cancel-btn'),
+            messageContainer: document.getElementById('message-container'),
+            voteList: document.getElementById('vote-list'),
+            votesStats: document.getElementById('votes-stats')
+        };
+
+        const state = {
+            db: null,
+            auth: null,
+            userId: null,
+            // Almacena los IDs de los artistas por los que este usuario anónimo ya ha votado
+            // Se cargará desde Firestore al inicio de la sesión.
+            votedArtistsByUser: new Set() 
+        };
+
+        // --- Funciones de la UI ---
+        function setLoading(isLoading) {
+            ui.loadingOverlay.classList.toggle('hidden', !isLoading);
+        }
+
+        function displayMessage(message, type = 'success', duration = 5000) {
+            const colors = {
+                success: 'bg-green-500 text-white', error: 'bg-red-500 text-white',
+                warning: 'bg-yellow-500 text-black', info: 'bg-sky-500 text-white'
+            };
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `p-4 rounded-md mb-4 text-sm font-semibold ${colors[type]} transition-opacity duration-300`;
+            messageDiv.textContent = message;
+            ui.messageContainer.prepend(messageDiv);
+            setTimeout(() => { 
+                messageDiv.style.opacity = '0';
+                setTimeout(() => messageDiv.remove(), 300);
+            }, duration);
+        }
+
+        function showConfirmation(title, body, onConfirm) {
+            ui.modalTitle.textContent = title;
+            ui.modalBody.textContent = body;
+            ui.confirmationModal.classList.remove('hidden');
+            
+            const confirmHandler = () => { hideConfirmation(); onConfirm(); };
+            const cancelHandler = () => hideConfirmation();
+
+            function hideConfirmation() {
+                ui.modalConfirmBtn.removeEventListener('click', confirmHandler);
+                ui.modalCancelBtn.removeEventListener('click', cancelHandler);
+                ui.confirmationModal.classList.add('hidden');
+            }
+
+            ui.modalConfirmBtn.addEventListener('click', confirmHandler, { once: true });
+            ui.modalCancelBtn.addEventListener('click', cancelHandler, { once: true });
+        }
+
+        // --- Lógica de la Aplicación ---
+        function renderArtistsForVoting(artists) {
+            ui.voteList.innerHTML = '';
+            if (artists.length === 0) {
+                ui.voteList.innerHTML = '<p class="text-center text-gray-400 col-span-full">Aún no se han agregado artistas para votar.</p>';
+                return;
+            }
+
+            artists.forEach(artist => {
+                const hasVoted = state.votedArtistsByUser.has(artist.id);
+                const buttonText = hasVoted ? 'VOTO REGISTRADO' : 'VOTAR';
+                const buttonClasses = hasVoted 
+                    ? 'bg-gray-600 cursor-not-allowed' 
+                    : 'bg-yellow-500 hover:bg-yellow-600 text-black';
+
+                const card = document.createElement('div');
+                card.className = 'bg-gray-800 p-4 rounded-lg shadow-lg space-y-3 flex flex-col';
+                card.innerHTML = `
+                    <img src="${artist.photoURL}" alt="Foto de ${artist.name}" class="w-full h-60 object-cover rounded-md mb-2" onerror="this.onerror=null;this.src='https://placehold.co/400x300/1f2937/ffffff?text=${artist.name}';">
+                    <h3 class="text-xl font-bold text-center text-white flex-grow">${artist.name}</h3>
+                    
+                    <div class="space-y-4">
+                        ${createStarRatingHtml('Conexión con el público', 'conexion', artist.id, hasVoted)}
+                        ${createStarRatingHtml('Presencia en el escenario', 'presencia', artist.id, hasVoted)}
+                        ${createStarRatingHtml('Vestimenta y presentación', 'vestimenta', artist.id, hasVoted)}
+                        ${createStarRatingHtml('Creatividad/Escenografía', 'creatividad', artist.id, hasVoted)}
+                    </div>
+
+                    <button class="w-full mt-4 px-4 py-3 font-bold rounded-lg vote-btn transition-transform transform hover:scale-105 ${buttonClasses}" data-artist-id="${artist.id}" data-artist-name="${artist.name}" ${hasVoted ? 'disabled' : ''}>${buttonText}</button>
+                `;
+                ui.voteList.appendChild(card);
+            });
+
+            // Listeners para el sistema de estrellas
+            document.querySelectorAll('.star-rating').forEach(ratingContainer => {
+                const artistId = ratingContainer.dataset.artistId;
+                const category = ratingContainer.dataset.category;
+                const scoreDisplay = document.getElementById(`${category}-val-${artistId}`);
+
+                // Solo añadir listeners si no ha votado
+                if (!state.votedArtistsByUser.has(artistId)) {
+                    ratingContainer.addEventListener('mouseover', (e) => {
+                        const hoveredStar = e.target.closest('label');
+                        if (hoveredStar) {
+                            const value = parseInt(hoveredStar.dataset.value);
+                            highlightStars(ratingContainer, value);
+                            scoreDisplay.textContent = value; // Mostrar el valor al pasar el ratón
+                        }
+                    });
+
+                    ratingContainer.addEventListener('mouseout', () => {
+                        const checkedRadio = ratingContainer.querySelector('input[type="radio"]:checked');
+                        const value = checkedRadio ? parseInt(checkedRadio.value) : 0;
+                        highlightStars(ratingContainer, value);
+                        scoreDisplay.textContent = value; // Volver al valor seleccionado o 0
+                    });
+
+                    ratingContainer.addEventListener('click', (e) => {
+                        const clickedStar = e.target.closest('label');
+                        if (clickedStar) {
+                            const value = parseInt(clickedStar.dataset.value);
+                            ratingContainer.classList.add('selected'); // Añadir clase para mantener la selección visual
+                            scoreDisplay.textContent = value; // Asegurarse de que el valor numérico se actualice al hacer clic
+                        }
+                    });
+                } else {
+                    // Si ya votó, deshabilitar interacción y mostrar el score guardado si es posible
+                    const score = parseInt(ratingContainer.dataset.initialScore || 0);
+                    highlightStars(ratingContainer, score);
+                    scoreDisplay.textContent = score;
+                    // Deshabilitar todos los inputs de radio
+                    ratingContainer.querySelectorAll('input[type="radio"]').forEach(radio => radio.disabled = true);
+                }
+            });
+
+            // Listeners para los botones de votar
+            document.querySelectorAll('#vote-list .vote-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const artistId = e.currentTarget.dataset.artistId;
+                    const artistName = e.currentTarget.dataset.artistName;
+
+                    if (state.votedArtistsByUser.has(artistId)) {
+                        displayMessage(`Ya has votado por ${artistName}.`, 'warning');
+                        return;
+                    }
+
+                    const card = e.currentTarget.closest('.bg-gray-800');
+                    const scores = {};
+                    let allCriteriaScored = true;
+
+                    // Recopilar puntuaciones de las estrellas
+                    card.querySelectorAll('.star-rating').forEach(ratingContainer => {
+                        const category = ratingContainer.dataset.category;
+                        const checkedRadio = ratingContainer.querySelector('input[type="radio"]:checked');
+                        if (checkedRadio) {
+                            scores[category] = parseInt(checkedRadio.value, 10);
+                        } else {
+                            allCriteriaScored = false; // No todas las categorías han sido puntuadas
+                        }
+                    });
+
+                    if (!allCriteriaScored) {
+                        displayMessage('Por favor, califica todos los criterios antes de votar.', 'warning');
+                        return;
+                    }
+                    
+                    showConfirmation('Confirmar Voto', `¿Seguro que quieres registrar este voto para ${artistName}? Esta acción es final.`, () => {
+                        castVote(artistId, artistName, scores, e.currentTarget);
+                    });
+                });
+            });
+        }
+
+        // Función auxiliar para generar el HTML de un grupo de estrellas
+        function createStarRatingHtml(label, category, artistId, isDisabled = false, initialScore = 0) {
+            let starsHtml = '';
+            // Generar estrellas del 10 al 1 (para que el CSS RTL funcione bien)
+            for (let i = 10; i >= 1; i--) {
+                const checked = (i === initialScore) ? 'checked' : '';
+                const disabledAttr = isDisabled ? 'disabled' : '';
+                starsHtml += `
+                    <input type="radio" id="star-${artistId}-${category}-${i}" name="rating-${artistId}-${category}" value="${i}" ${checked} ${disabledAttr}>
+                    <label for="star-${artistId}-${category}-${i}" data-value="${i}">
+                        <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.683-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.565-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.462a1 1 0 00.95-.69l1.07-3.292z"></path></svg>
+                    </label>
+                `;
+            }
+            return `
+                <div>
+                    <label class="flex justify-between text-gray-300"><span>${label}</span><span id="${category}-val-${artistId}">${initialScore}</span></label>
+                    <div class="star-rating" data-artist-id="${artistId}" data-category="${category}" data-initial-score="${initialScore}">
+                        ${starsHtml}
+                    </div>
+                </div>
+            `;
+        }
+
+        // Función para resaltar estrellas (usada en hover y al cargar)
+        function highlightStars(ratingContainer, value) {
+            ratingContainer.querySelectorAll('label').forEach(label => {
+                const starValue = parseInt(label.dataset.value);
+                if (starValue <= value) {
+                    label.style.color = '#fcd34d'; // Amarillo dorado
+                } else {
+                    label.style.color = '#4b5563'; // Gris (vacío)
+                }
+            });
+        }
+
+
+        function renderVoteStats(votesByArtist) {
+            ui.votesStats.innerHTML = '';
+            const artistIds = Object.keys(votesByArtist);
+
+            if (artistIds.length === 0) {
+                ui.votesStats.innerHTML = '<p class="text-center text-gray-400 col-span-full">Aún no hay votos registrados.</p>';
+                return;
+            }
+            
+            const sortedArtists = artistIds.map(artistId => {
+                const votes = votesByArtist[artistId];
+                const totalVotes = votes.length;
+                const artistName = votes[0].artistName;
+
+                // Sumar puntuaciones para cada nuevo criterio
+                const totalScores = { 
+                    conexion: 0, 
+                    presencia: 0, 
+                    vestimenta: 0, 
+                    creatividad: 0 
+                };
+                votes.forEach(v => {
+                    totalScores.conexion += v.conexion || 0;
+                    totalScores.presencia += v.presencia || 0;
+                    totalScores.vestimenta += v.vestimenta || 0;
+                    totalScores.creatividad += v.creatividad || 0;
+                });
+                
+                // Calcular el promedio final (suma de promedios de todos los criterios)
+                const finalScore = (
+                    (totalScores.conexion / totalVotes) +
+                    (totalScores.presencia / totalVotes) +
+                    (totalScores.vestimenta / totalVotes) +
+                    (totalScores.creatividad / totalVotes)
+                ) / 4; // Dividir por el número de criterios
+
+                return {
+                    artistId,
+                    artistName,
+                    totalVotes,
+                    conexion: (totalScores.conexion / totalVotes).toFixed(2),
+                    presencia: (totalScores.presencia / totalVotes).toFixed(2),
+                    vestimenta: (totalScores.vestimenta / totalVotes).toFixed(2),
+                    creatividad: (totalScores.creatividad / totalVotes).toFixed(2),
+                    finalScore: finalScore.toFixed(2)
+                };
+            }).sort((a, b) => b.finalScore - a.finalScore); // Ordenar de mayor a menor puntaje
+
+            sortedArtists.forEach((artist, index) => {
+                const card = document.createElement('div');
+                // Clases de borde para los 3 primeros puestos
+                const rankClass = index === 0 ? 'border-yellow-400' : (index === 1 ? 'border-gray-400' : (index === 2 ? 'border-yellow-600' : 'border-gray-700'));
+                card.className = `bg-gray-800 p-4 rounded-lg shadow-lg border-2 ${rankClass}`;
+                card.innerHTML = `
+                    <h3 class="text-xl font-bold mb-2">${index + 1}. ${artist.artistName}</h3>
+                    <p class="text-sm text-gray-400 mb-2">Total de Votos: <span class="font-bold text-white">${artist.totalVotes}</span></p>
+                    <div class="space-y-1 text-sm">
+                        <p>Conexión: <span class="font-bold text-sky-400">${artist.conexion}</span></p>
+                        <p>Presencia: <span class="font-bold text-sky-400">${artist.presencia}</span></p>
+                        <p>Vestimenta: <span class="font-bold text-sky-400">${artist.vestimenta}</span></p>
+                        <p>Creatividad: <span class="font-bold text-sky-400">${artist.creatividad}</span></p>
+                    </div>
+                    <p class="text-2xl font-bold mt-3 pt-2 border-t border-gray-700">Puntaje Final: <span class="text-green-400">${artist.finalScore}</span></p>
+                `;
+                ui.votesStats.appendChild(card);
+            });
+        }
+
+        async function castVote(artistId, artistName, scores, buttonElement) {
+            setLoading(true);
+            try {
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                const votesCol = collection(state.db, `artifacts/${appId}/public/data/votes`);
+                const userVotesCol = collection(state.db, `artifacts/${appId}/public/data/user_artist_votes`);
+
+                // Verificar si el usuario ya votó por este artista
+                const userVoteDocRef = doc(userVotesCol, `${state.userId}_${artistId}`);
+                const userVoteDoc = await getDoc(userVoteDocRef);
+
+                if (userVoteDoc.exists()) {
+                    displayMessage(`Ya has votado por ${artistName}. Solo se permite un voto por artista por persona.`, 'warning');
+                    setLoading(false);
+                    return;
+                }
+
+                // Registrar el voto en la colección 'votes'
+                await addDoc(votesCol, {
+                    artistId,
+                    artistName,
+                    ...scores, // Guarda las puntuaciones de los nuevos criterios
+                    voterId: state.userId, // ID de usuario anónimo
+                    votedAt: new Date().toISOString()
+                });
+
+                // Registrar que este usuario ya votó por este artista
+                await setDoc(userVoteDocRef, {
+                    userId: state.userId,
+                    artistId: artistId,
+                    votedAt: new Date().toISOString()
+                });
+
+                displayMessage(`Voto para ${artistName} registrado con éxito. ¡Gracias!`, 'success');
+                state.votedArtistsByUser.add(artistId); // Marcar como votado en esta sesión
+                buttonElement.disabled = true;
+                buttonElement.textContent = 'VOTO REGISTRADO';
+                buttonElement.classList.remove('bg-yellow-500', 'hover:bg-yellow-600');
+                buttonElement.classList.add('bg-gray-600', 'cursor-not-allowed');
+
+                // Deshabilitar los sliders de estrellas también
+                const card = buttonElement.closest('.bg-gray-800');
+                card.querySelectorAll('.star-rating input[type="radio"]').forEach(radio => radio.disabled = true);
+
+            } catch (error) {
+                console.error("Error al registrar voto:", error);
+                displayMessage('Hubo un error al registrar tu voto. Inténtalo de nuevo.', 'error');
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        // --- Inicialización ---
+        async function main() {
+            setLoading(true);
+            try {
+                // Usa la misma configuración de Firebase que tu app principal
+                const firebaseConfig = {
+                    apiKey: "AIzaSyC_2Ukoxf_ry7QfKtou1Cz6nY-qTVw4qTU", // REEMPLAZA CON TU API KEY
+                    authDomain: "vyt-music.firebaseapp.com", // REEMPLAZA CON TU AUTH DOMAIN
+                    projectId: "vyt-music", // REEMPLAZA CON TU PROJECT ID
+                    storageBucket: "vyt-music.appspot.com", // REEMPLAZA CON TU STORAGE BUCKET
+                    messagingSenderId: "574981837817", // REEMPLAZA CON TU MESSAGING SENDER ID
+                    appId: "1:574981837817:web:a29933a22bbfd51a086328" // REEMPLAZA CON TU APP ID
+                };
+
+                const app = initializeApp(firebaseConfig);
+                state.db = getFirestore(app);
+                state.auth = getAuth(app);
+
+                // Iniciar sesión anónimamente para asignar un ID único a cada votante
+                onAuthStateChanged(state.auth, async user => {
+                    if (user) {
+                        state.userId = user.uid;
+                        // Cargar votos previos del usuario
+                        await loadUserVotedArtists();
+                        // Una vez que tenemos un usuario y sus votos previos, empezamos a escuchar los datos
+                        setupFirestoreListeners();
+                    } else {
+                        // Si no hay usuario, intentar iniciar sesión anónimamente
+                        await signInAnonymously(state.auth);
+                    }
+                });
+
+            } catch (error) {
+                console.error("Error al inicializar la aplicación:", error);
+                displayMessage("No se pudo conectar al sistema de votación. Por favor, recarga la página.", "error");
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        // Carga los artistas por los que el usuario ya votó
+        async function loadUserVotedArtists() {
+            if (!state.userId) return;
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+            const userVotesCol = collection(state.db, `artifacts/${appId}/public/data/user_artist_votes`);
+            
+            try {
+                // Obtener solo los documentos donde el userId coincide
+                const q = query(userVotesCol, where("userId", "==", state.userId));
+                const snapshot = await getDocs(q);
+                state.votedArtistsByUser.clear(); // Limpiar antes de cargar
+                snapshot.forEach(doc => {
+                    state.votedArtistsByUser.add(doc.data().artistId);
+                });
+            } catch (error) {
+                console.error("Error al cargar votos de usuario:", error);
+                displayMessage("No se pudieron cargar tus votos anteriores.", "warning");
+            }
+        }
+
+
+        function setupFirestoreListeners() {
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+            
+            // Escuchar cambios en los artistas
+            const artistsRef = collection(state.db, `artifacts/${appId}/public/data/artists`);
+            onSnapshot(query(artistsRef), snapshot => {
+                const artists = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                renderArtistsForVoting(artists);
+            });
+
+            // Escuchar cambios en los votos para actualizar los resultados
+            const votesRef = collection(state.db, `artifacts/${appId}/public/data/votes`);
+            onSnapshot(query(votesRef), snapshot => {
+                const votesByArtist = {};
+                snapshot.forEach(doc => {
+                    const vote = doc.data();
+                    if (!votesByArtist[vote.artistId]) {
+                        votesByArtist[vote.artistId] = [];
+                    }
+                    votesByArtist[vote.artistId].push(vote);
+                });
+                renderVoteStats(votesByArtist);
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', main);
+    </script>
+</body>
+</html>
