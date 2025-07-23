@@ -121,7 +121,7 @@
     <!-- Firebase SDKs -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         const state = { 
@@ -214,11 +214,31 @@
             } catch (e) { console.error("Error al generar el código de barras:", e); }
 
             cardWrapper.querySelector('.download-btn').addEventListener('click', () => {
-                html2canvas(document.getElementById(`card-${ticket.id}`), { backgroundColor: '#1f2937', useCORS: true }).then(canvas => {
+                const elementToPrint = document.getElementById(`card-${ticket.id}`);
+                const downloadButton = elementToPrint.querySelector('.download-btn');
+                const whatsappLink = elementToPrint.querySelector('.whatsapp-link');
+                
+                // Ocultar el botón y cambiar el link de WhatsApp a texto
+                downloadButton.style.display = 'none';
+                if (whatsappLink) {
+                    whatsappLink.outerHTML = `<p class="text-green-400 mt-2 font-semibold">Inscripciones: +${config.whatsappNumber}</p>`;
+                }
+
+                html2canvas(elementToPrint, {
+                    backgroundColor: '#1f2937',
+                    useCORS: true
+                }).then(canvas => {
                     const link = document.createElement('a');
                     link.href = canvas.toDataURL('image/png');
                     link.download = `Entrada_VYTMUSIC_${ticket.name.replace(/\s/g, '_')}.png`;
                     link.click();
+
+                    // Restaurar la apariencia original de la tarjeta después de la descarga
+                    downloadButton.style.display = 'block';
+                    const contactInfo = elementToPrint.querySelector('.contact-info');
+                    if(contactInfo) {
+                        contactInfo.innerHTML = contactHTML; // Reinsertar el HTML original del contacto
+                    }
                 });
             });
         }
@@ -251,7 +271,7 @@
             ui.artistNameDisplay.textContent = `Entradas para: ${decodeURIComponent(artistPrefix)}`;
 
             try {
-                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                const appId = 'default-app-id'; // Usar un ID por defecto para el visor público
                 const ticketsCollectionRef = collection(state.db, `artifacts/${appId}/public/data/tickets`);
                 const q = query(ticketsCollectionRef, where("prefix", "==", artistPrefix));
 
