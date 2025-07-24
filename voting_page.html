@@ -131,18 +131,24 @@
         }
         .star-number { /* Estilo para el número debajo de la estrella */
             font-size: 0.7rem; /* Tamaño de fuente para los números */
-            color: #9ca3af; /* gray-400 */
+            color: #9ca3af; /* Default to gray */
             line-height: 1; /* Altura de línea compacta */
             margin-top: 2px; /* Espacio entre la estrella y el número */
             pointer-events: none; /* Permite que el clic pase a la estrella */
+            transition: color 0.2s; /* Smooth transition for number color */
+        }
+        .star-number.filled-number { /* Clase para números cuando la estrella está llena */
+            color: #fbbf24; /* Amarillo/dorado */
         }
         /* Estilos para estrellas deshabilitadas */
-        .rating-container[data-disabled="true"] .stars-wrapper .star-icon {
+        .rating-container[data-disabled="true"] .stars-wrapper .star-icon,
+        .rating-container[data-disabled="true"] .stars-wrapper .star-icon.filled {
             color: #4a5568 !important; /* Fuerza el color gris para todas las estrellas */
             cursor: not-allowed;
         }
-        .rating-container[data-disabled="true"] .stars-wrapper .star-icon.filled {
-            color: #4a5568 !important; /* Asegura que las estrellas "rellenas" también sean grises si está deshabilitado */
+        .rating-container[data-disabled="true"] .star-number,
+        .rating-container[data-disabled="true"] .star-number.filled-number { /* Aplica también a filled-number */
+            color: #9ca3af !important; /* Fuerza el color gris para los números cuando está deshabilitado */
         }
 
         .rating-value {
@@ -204,7 +210,7 @@
             db: null, auth: null, userId: null,
             appId: '', // Se obtendrá de la URL
             artistsData: [],
-            hasVoted: false,
+            votedArtistsByUser: new Set(), // Cambiado a un Set para rastrear artistas votados por el usuario
             synth: null,
             unsubscribeArtists: null, // Para limpiar el listener de artistas
             unsubscribeUserVote: null // Para limpiar el listener de voto de usuario
@@ -261,12 +267,16 @@
 
         // Función para actualizar la visualización de las estrellas
         function updateStarVisuals(starContainer, value) {
-            const stars = starContainer.querySelectorAll('.star-icon');
-            stars.forEach((star, index) => {
+            const starPairs = starContainer.querySelectorAll('.star-number-pair');
+            starPairs.forEach((pair, index) => {
+                const star = pair.querySelector('.star-icon');
+                const number = pair.querySelector('.star-number');
                 if (index < value) {
                     star.classList.add('filled');
+                    number.classList.add('filled-number');
                 } else {
                     star.classList.remove('filled');
+                    number.classList.remove('filled-number');
                 }
             });
             starContainer.closest('.rating-container').querySelector('.rating-value').textContent = value;
@@ -288,12 +298,12 @@
             });
 
             sortedArtists.forEach(artist => {
-                // Los promedios actuales se eliminan de la visualización inicial
-                // const avgSinging = artist.totalRatingsCount > 0 ? (artist.totalSingingScore / artist.totalRatingsCount).toFixed(1) : 'N/A';
-                // const avgTransmission = artist.totalRatingsCount > 0 ? (artist.totalTransmissionScore / artist.totalRatingsCount).toFixed(1) : 'N/A';
-                // const avgAttitude = artist.totalRatingsCount > 0 ? (artist.totalAttitudeScore / artist.totalRatingsCount).toFixed(1) : 'N/A';
-                // const avgOriginality = artist.totalRatingsCount > 0 ? (artist.totalOriginalityScore / artist.totalRatingsCount).toFixed(1) : 'N/A';
-                // const totalVotesDisplay = artist.totalRatingsCount > 0 ? `${artist.totalRatingsCount} voto(s)` : 'Sin votos'; // Eliminado 'Sin votos'
+                const hasVotedForThisArtist = state.votedArtistsByUser.has(artist.id);
+                const buttonText = hasVotedForThisArtist ? 'VOTO REGISTRADO' : 'VOTAR';
+                const buttonDisabled = hasVotedForThisArtist ? 'disabled' : '';
+                const buttonClasses = hasVotedForThisArtist 
+                    ? 'bg-gray-600 cursor-not-allowed text-gray-300' 
+                    : 'bg-yellow-400 hover:bg-yellow-300 text-black'; // Estilo de botón amarillo/negro
 
                 const artistCard = document.createElement('div');
                 artistCard.className = 'artist-card';
@@ -306,7 +316,7 @@
                     <div class="w-full text-left mt-2">
                         <h4 class="text-md font-semibold text-gray-300 mb-2 text-center">🌟 VOTACIÓN DEL PÚBLICO:</h4>
                         
-                        <div class="rating-container" data-rating-type="singing" data-current-value="5">
+                        <div class="rating-container" data-rating-type="singing" data-current-value="5" data-disabled="${hasVotedForThisArtist}">
                             <label class="text-center w-full">🎤 ¿Te gustó cómo cantó? <span class="rating-value">5</span></label>
                             <div class="stars-and-guidance-group">
                                 <div class="stars-wrapper" id="singing-stars-${artist.id}">
@@ -316,17 +326,17 @@
                             </div>
                         </div>
                         
-                        <div class="rating-container" data-rating-type="transmission" data-current-value="5">
+                        <div class="rating-container" data-rating-type="transmission" data-current-value="5" data-disabled="${hasVotedForThisArtist}">
                             <label class="text-center w-full">💓 ¿Te llegó lo que transmitió? <span class="rating-value">5</span></label>
                             <div class="stars-and-guidance-group">
                                 <div class="stars-wrapper" id="transmission-stars-${artist.id}">
                                     <!-- Stars will be generated here by JS -->
                                 </div>
-                                <p class="guidance-text w-full text-center">1️⃣ No sentí nada | 5️⃣ Normal | � ¡Me hizo vibrar!</p>
+                                <p class="guidance-text w-full text-center">1️⃣ No sentí nada | 5️⃣ Normal | 🔟 ¡Me hizo vibrar!</p>
                             </div>
                         </div>
 
-                        <div class="rating-container" data-rating-type="attitude" data-current-value="5">
+                        <div class="rating-container" data-rating-type="attitude" data-current-value="5" data-disabled="${hasVotedForThisArtist}">
                             <label class="text-center w-full">🔥 ¿Tuvo actitud y presencia? <span class="rating-value">5</span></label>
                             <div class="stars-and-guidance-group">
                                 <div class="stars-wrapper" id="attitude-stars-${artist.id}">
@@ -336,7 +346,7 @@
                             </div>
                         </div>
 
-                        <div class="rating-container" data-rating-type="originality" data-current-value="5">
+                        <div class="rating-container" data-rating-type="originality" data-current-value="5" data-disabled="${hasVotedForThisArtist}">
                             <label class="text-center w-full">🌈 ¿Te pareció diferente y original? <span class="rating-value">5</span></label>
                             <div class="stars-and-guidance-group">
                                 <div class="stars-wrapper" id="originality-stars-${artist.id}">
@@ -349,7 +359,7 @@
                         <!-- PROMEDIOS ACTUALES ELIMINADOS DE AQUÍ -->
                     </div>
                     
-                    <button data-artist-id="${artist.id}" class="send-vote-button vote-button mt-4">VOTAR</button>
+                    <button data-artist-id="${artist.id}" class="send-vote-button vote-button mt-4 ${buttonClasses}" ${buttonDisabled}>${buttonText}</button>
                 `;
                 ui.artistsListContainer.appendChild(artistCard);
 
@@ -358,6 +368,7 @@
                     const starsWrapper = artistCard.querySelector(`#${criterion}-stars-${artist.id}`);
                     const ratingContainer = starsWrapper.closest('.rating-container');
                     const ratingValueSpan = ratingContainer.querySelector('.rating-value');
+                    const isDisabled = ratingContainer.dataset.disabled === 'true';
 
                     for (let i = 1; i <= 10; i++) {
                         const starNumberPair = document.createElement('div');
@@ -382,41 +393,30 @@
                         starNumberPair.appendChild(starNumber);
                         starsWrapper.appendChild(starNumberPair);
 
-                        starNumberPair.addEventListener('click', () => {
-                            ratingContainer.dataset.currentValue = i;
-                            updateStarVisuals(starsWrapper, i);
-                        });
-
-                        starNumberPair.addEventListener('mouseover', () => {
-                            if (!ratingContainer.dataset.disabled) {
+                        if (!isDisabled) { // Solo añadir listeners si no está deshabilitado
+                            starNumberPair.addEventListener('click', () => {
+                                ratingContainer.dataset.currentValue = i;
                                 updateStarVisuals(starsWrapper, i);
-                            }
-                        });
+                            });
+
+                            starNumberPair.addEventListener('mouseover', () => {
+                                updateStarVisuals(starsWrapper, i);
+                            });
+                        }
                     }
-                    starsWrapper.addEventListener('mouseout', () => {
-                        if (!ratingContainer.dataset.disabled) {
+                    if (!isDisabled) { // Solo añadir listener si no está deshabilitado
+                        starsWrapper.addEventListener('mouseout', () => {
                             const currentValue = parseInt(ratingContainer.dataset.currentValue || 0);
                             updateStarVisuals(starsWrapper, currentValue);
-                        }
-                    });
+                        });
+                    }
 
+                    // Set initial visual state
                     updateStarVisuals(starsWrapper, parseInt(ratingContainer.dataset.currentValue));
                 });
             });
-
-            document.querySelectorAll('.send-vote-button').forEach(button => {
-                button.addEventListener('click', handleVote);
-                if (state.hasVoted) {
-                    button.disabled = true;
-                    button.textContent = 'VOTO REGISTRADO';
-                    button.closest('.artist-card').querySelectorAll('.rating-container').forEach(container => {
-                        container.dataset.disabled = 'true';
-                        updateStarVisuals(container.querySelector('.stars-wrapper'), parseInt(container.dataset.currentValue));
-                    });
-                }
-            });
             
-            if (state.hasVoted) {
+            if (state.votedArtistsByUser.size > 0) { // Si el usuario ha votado por al menos un artista
                 ui.votedStatusMessage.classList.remove('hidden');
             } else {
                 ui.votedStatusMessage.classList.add('hidden');
@@ -424,13 +424,13 @@
         }
 
         async function handleVote(event) {
-            if (state.hasVoted) {
-                displayMessage('Ya has votado. Solo se permite un voto por persona.', 'warning');
-                return;
-            }
-
             const artistId = event.target.dataset.artistId;
             if (!artistId) return;
+
+            if (state.votedArtistsByUser.has(artistId)) {
+                displayMessage('Ya has votado por este artista. Solo se permite un voto por artista.', 'warning');
+                return;
+            }
 
             setLoading(true);
             try {
@@ -445,24 +445,28 @@
                     totalTransmissionScore: increment(transmissionRating),
                     totalAttitudeScore: increment(attitudeRating),
                     totalOriginalityScore: increment(originalityRating),
-                    totalRatingsCount: increment(1)
+                    totalRatingsCount: increment(1) // Incrementar el contador de votos totales
                 });
 
                 await FirebaseOps.recordUserVote(artistId);
 
-                state.hasVoted = true;
+                state.votedArtistsByUser.add(artistId); // Añadir el artista a la lista de votados
                 displayMessage('¡Voto registrado con éxito! ¡Gracias!', 'success');
-                ui.votedStatusMessage.classList.remove('hidden');
+                ui.votedStatusMessage.classList.remove('hidden'); // Mostrar mensaje global de "Gracias por tu voto"
 
-                document.querySelectorAll('.send-vote-button').forEach(button => {
-                    button.disabled = true;
-                    button.textContent = 'VOTO REGISTRADO';
-                });
-                document.querySelectorAll('.rating-container').forEach(container => {
-                    container.dataset.disabled = 'true';
-                    updateStarVisuals(container.querySelector('.stars-wrapper'), parseInt(container.dataset.currentValue));
+                // Deshabilitar solo los elementos de votación para este artista
+                const button = event.target;
+                button.disabled = true;
+                button.textContent = 'VOTO REGISTRADO';
+                button.classList.remove('bg-yellow-400', 'hover:bg-yellow-300', 'text-black');
+                button.classList.add('bg-gray-600', 'cursor-not-allowed', 'text-gray-300'); // Ajustar clases para deshabilitado
+
+                artistCard.querySelectorAll('.rating-container').forEach(container => {
+                    container.dataset.disabled = 'true'; // Marcar como deshabilitado
+                    updateStarVisuals(container.querySelector('.stars-wrapper'), parseInt(container.dataset.currentValue)); // Asegurar que las estrellas se muestren según el valor final
                 });
 
+                // Reproducir un sonido de confirmación
                 if (state.synth) {
                     Tone.start().then(() => state.synth.triggerAttackRelease("C5", "8n"));
                 }
@@ -479,24 +483,25 @@
             if (!state.userId) return;
 
             try {
-                const q = FirebaseOps.paths.userVotes(state.userId);
-                const querySnapshot = await getDocs(q); 
+                // Obtener todos los votos de este usuario anónimo
+                const userVotesCollectionRef = collection(state.db, `artifacts/${state.appId}/public/data/user_artist_votes/${state.userId}/votes`);
+                const querySnapshot = await getDocs(userVotesCollectionRef); 
 
-                if (!querySnapshot.empty) {
-                    state.hasVoted = true;
+                state.votedArtistsByUser.clear(); // Limpiar antes de rellenar
+                querySnapshot.forEach(doc => {
+                    state.votedArtistsByUser.add(doc.id); // doc.id es el artistId en este caso
+                });
+
+                // Volver a renderizar los artistas para aplicar los estados deshabilitados
+                // Esto se hará automáticamente con el listener de artistas, pero lo dejamos aquí como fallback
+                // renderArtists(state.artistsData); 
+                
+                if (state.votedArtistsByUser.size > 0) {
                     ui.votedStatusMessage.classList.remove('hidden');
-                    document.querySelectorAll('.send-vote-button').forEach(button => {
-                        button.disabled = true;
-                        button.textContent = 'VOTO REGISTRADO';
-                    });
-                    document.querySelectorAll('.rating-container').forEach(container => {
-                        container.dataset.disabled = 'true';
-                        updateStarVisuals(container.querySelector('.stars-wrapper'), parseInt(container.dataset.currentValue));
-                    });
                 } else {
-                    state.hasVoted = false;
                     ui.votedStatusMessage.classList.add('hidden');
                 }
+
             } catch (error) {
                 console.error("Error al verificar si el usuario ya votó:", error);
             }
@@ -512,7 +517,8 @@
         function attachDataListeners() {
             state.unsubscribeArtists = onSnapshot(FirebaseOps.paths.artists(), (snapshot) => {
                 state.artistsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                renderArtists(state.artistsData);
+                // Asegurarse de que el estado de votación del usuario se ha cargado antes de renderizar
+                renderArtists(state.artistsData); 
                 setLoading(false);
             }, err => {
                 console.error("Error en listener de artistas:", err);
@@ -554,8 +560,9 @@
                 if (user) {
                     state.userId = user.uid;
                     console.log("Usuario autenticado anónimamente:", state.userId);
+                    // Cargar votos del usuario ANTES de adjuntar el listener de artistas
+                    await checkIfUserVoted(); 
                     attachDataListeners();
-                    await checkIfUserVoted();
                 } else {
                     console.log("Intentando iniciar sesión anónimamente...");
                     try {
