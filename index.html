@@ -483,6 +483,7 @@
             currentScannedTicketId: null, currentBatchGeneratedTickets: [], currentQrIndex: 0,
             allTicketsData: [], scanHistory: [], synth: null, pendingArtists: [],
             allArtistsData: [], // New: Store all artists for voting panel
+            firebaseConfig: {}, // Añadir firebaseConfig al estado
             appId: typeof __app_id !== 'undefined' ? __app_id : 'vytmusic-prod',
             unsubscribeListeners: [] // Para limpiar listeners al cerrar sesión
         };
@@ -903,9 +904,9 @@
             }
             historyItems.sort((a, b) => new Date(b.scannedAt) - new Date(a.scannedAt)).forEach(item => {
                 const li = document.createElement('li');
+                li.className = 'bg-gray-900 p-4 rounded-md flex justify-between items-center';
                 let statusText = item.status.toUpperCase().replace('_', ' ');
                 let statusClass = item.status.includes('valid') || item.status.includes('checkin') ? 'bg-green-600' : item.status.includes('used') ? 'bg-yellow-600' : item.status.includes('invalid') ? 'bg-red-600' : 'bg-gray-500';
-                li.className = 'bg-gray-900 p-4 rounded-md flex justify-between items-center';
                 li.innerHTML = `
                     <div>
                         <p class="font-semibold">${item.name || 'N/A'} <span class="text-gray-400 text-sm">(${item.prefix || 'N/A'})</span></p>
@@ -1623,20 +1624,17 @@
                     } else {
                         updateUIAfterLogin(user, 'admin');
                     }
-                    await checkIfUserVoted(); 
+                    // La llamada a checkIfUserVoted() en el panel de control no es necesaria
+                    // porque no hay votación directa en esta página.
+                    // Se ha eliminado la línea: await checkIfUserVoted();
                 } else {
-                    console.log("No se encontró usuario autenticado. Intentando inicio de sesión anónimo."); 
-                    setLoading(true); 
-                    try {
-                        await signInAnonymously(state.auth);
-                    } catch (error) {
-                        console.error("Error en el inicio de sesión anónimo:", error);
-                        displayMessage(`Error de autenticación: ${error.message}`, 'error');
-                        setLoading(false);
-                    }
+                    console.log("No se encontró usuario autenticado. Mostrando pantalla de autenticación."); 
+                    setLoading(false); // Asegurarse de que el spinner se oculte si no hay token
+                    if(ui.authScreen) ui.authScreen.classList.remove('hidden');
                 }
             });
 
+            // Intento de inicio de sesión con token personalizado si está disponible
             setLoading(true); 
             try {
                 if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
@@ -1644,9 +1642,13 @@
                     await signInWithCustomToken(state.auth, __initial_auth_token);
                 } else {
                     console.log("No se encontró token personalizado. Mostrando pantalla de autenticación."); 
+                    // Si no hay token, onAuthStateChanged ya manejará la visualización del authScreen
+                    // setLoading(false); // Ya se maneja arriba
+                    // if(ui.authScreen) ui.authScreen.classList.remove('hidden'); // Ya se maneja arriba
                 }
             } catch (error) {
                 console.error("Error en el inicio de sesión automático:", error); 
+                displayMessage(`Error en inicio de sesión automático: ${error.message}`, 'error'); // Mostrar mensaje al usuario
                 setLoading(false);
                 if(ui.authScreen) ui.authScreen.classList.remove('hidden');
             }
