@@ -294,7 +294,7 @@
             // Ordenar artistas por un promedio de votos si es posible, o por nombre
             const sortedArtists = [...artists].sort((a, b) => {
                 const avgA = a.totalRatingsCount > 0 ? (a.totalSingingScore + a.totalTransmissionScore + a.totalAttitudeScore + a.totalOriginalityScore) / (a.totalRatingsCount * 4) : 0;
-                const avgB = b.totalRatingsCount > 0 ? (b.totalSingingScore + b.totalTransmissionScore + b.totalAttitudeScore + b.totalOriginalityScore) / (b.totalRatingsCount * 4) : 0;
+                const avgB = b.totalSingingScore > 0 ? (b.totalSingingScore + b.totalTransmissionScore + b.totalAttitudeScore + b.totalOriginalityScore) / (b.totalRatingsCount * 4) : 0;
                 return avgB - avgA || a.name.localeCompare(b.name);
             });
 
@@ -552,57 +552,40 @@
             };
 
             // Mover firebaseConfig al estado global para que sea accesible en shareVotingLinkBtn
-            state.firebaseConfig = firebaseConfig; // <--- CAMBIO CLAVE AQUI
+            state.firebaseConfig = firebaseConfig; 
+            // Asegurar que state.appId siempre use el projectId de la configuración hardcodeada
+            state.appId = firebaseConfig.projectId; 
             
             const app = initializeApp(firebaseConfig);
             state.db = getFirestore(app);
             state.auth = getAuth(app);
             state.storage = getStorage(app);
 
-            onAuthStateChanged(state.auth, async (user) => { // Added async here
+            onAuthStateChanged(state.auth, async (user) => { 
                 if (user) {
-                    // Check if the user is an anonymous assistant user
                     if (user.isAnonymous) {
-                        // For anonymous users, we assume they are assistants.
-                        // In a real app, you might want to store more info about the assistant
-                        // or check if their anonymous ID is linked to an active event code.
-                        // For simplicity here, any anonymous user is an assistant.
                         updateUIAfterLogin(user, 'assistant');
                     } else {
-                        // Regular authenticated user (email/password) is an admin
                         updateUIAfterLogin(user, 'admin');
                     }
-                    // Cargar votos del usuario ANTES de adjuntar el listener de artistas
-                    // Esto asegura que state.votedArtistsByUser esté actualizado antes de renderizar
-                    await checkIfUserVoted(); // <--- Mover esta llamada aquí
                 } else {
-                    console.log("No se encontró usuario autenticado. Intentando inicio de sesión anónimo."); // Log
-                    setLoading(true); // Mostrar spinner mientras se intenta la autenticación anónima
-                    try {
-                        await signInAnonymously(state.auth);
-                    } catch (error) {
-                        console.error("Error en el inicio de sesión anónimo:", error);
-                        displayMessage(`Error de autenticación: ${error.message}`, 'error');
-                        setLoading(false);
-                    }
+                    console.log("No se encontró usuario autenticado. Mostrando pantalla de autenticación."); 
+                    setLoading(false); 
+                    if(ui.authScreen) ui.authScreen.classList.remove('hidden');
                 }
-                // setLoading(false); // Se quita de aquí, se maneja dentro de onAuthStateChanged branches
             });
 
-            // Intento de inicio de sesión con token personalizado si está disponible
-            setLoading(true); // Se mantiene el spinner mientras se intenta el token
+            setLoading(true); 
             try {
                 if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                    console.log("Intentando inicio de sesión con token personalizado."); // Log
+                    console.log("Intentando inicio de sesión con token personalizado."); 
                     await signInWithCustomToken(state.auth, __initial_auth_token);
                 } else {
-                    console.log("No se encontró token personalizado. Mostrando pantalla de autenticación."); // Log
-                    // Si no hay token, onAuthStateChanged ya manejará la visualización del authScreen
-                    // setLoading(false); // Se quita de aquí, onAuthStateChanged lo maneja
-                    // if(ui.authScreen) ui.authScreen.classList.remove('hidden'); // onAuthStateChanged lo maneja
+                    console.log("No se encontró token personalizado. Mostrando pantalla de autenticación."); 
                 }
             } catch (error) {
-                console.error("Error en el inicio de sesión automático:", error); // Log del error completo
+                console.error("Error en el inicio de sesión automático:", error); 
+                displayMessage(`Error en inicio de sesión automático: ${error.message}`, 'error'); 
                 setLoading(false);
                 if(ui.authScreen) ui.authScreen.classList.remove('hidden');
             }
