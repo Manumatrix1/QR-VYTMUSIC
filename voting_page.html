@@ -160,6 +160,7 @@
             font-size: 1.1rem;
             font-weight: bold;
             color: #60a5fa; /* blue-400 */
+            margin-top: 0.5rem; /* Espacio para los promedios */
         }
         .guidance-text {
             font-size: 0.75rem; /* text-xs */
@@ -312,6 +313,7 @@
                         <img src="${artist.photoURL || 'https://placehold.co/120x120/1f2937/f9fafb?text=ART'}" alt="${artist.name}" class="artist-image">
                     </div>
                     <h3 class="text-xl font-semibold text-sky-300">${artist.name}</h3>
+                    <p class="text-md text-gray-400 mt-1">${artist.totalRatingsCount > 0 ? `${artist.totalRatingsCount} voto(s)` : 'Sin votos'}</p>
                     
                     <div class="w-full text-left mt-2">
                         <h4 class="text-md font-semibold text-gray-300 mb-2 text-center">🌟 VOTACIÓN DEL PÚBLICO:</h4>
@@ -356,7 +358,11 @@
                             </div>
                         </div>
 
-                        <!-- PROMEDIOS ACTUALES ELIMINADOS DE AQUÍ -->
+                        <div class="mt-4 text-center">
+                            <p class="text-sm text-gray-400">Promedios actuales:</p>
+                            <p class="average-score-display">Canto: ${artist.totalRatingsCount > 0 ? (artist.totalSingingScore / artist.totalRatingsCount).toFixed(1) : 'N/A'} | Transmisión: ${artist.totalRatingsCount > 0 ? (artist.totalTransmissionScore / artist.totalRatingsCount).toFixed(1) : 'N/A'}</p>
+                            <p class="average-score-display">Actitud: ${artist.totalRatingsCount > 0 ? (artist.totalAttitudeScore / artist.totalRatingsCount).toFixed(1) : 'N/A'} | Originalidad: ${artist.totalRatingsCount > 0 ? (artist.totalOriginalityScore / artist.totalRatingsCount).toFixed(1) : 'N/A'}</p>
+                        </div>
                     </div>
                     
                     <button data-artist-id="${artist.id}" class="send-vote-button vote-button mt-4 ${buttonClasses}" ${buttonDisabled}>${buttonText}</button>
@@ -516,9 +522,9 @@
 
         function attachDataListeners() {
             state.unsubscribeArtists = onSnapshot(FirebaseOps.paths.artists(), (snapshot) => {
-                state.artistsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                const artists = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                 // Asegurarse de que el estado de votación del usuario se ha cargado antes de renderizar
-                renderArtists(state.artistsData); 
+                renderArtists(artists); 
                 setLoading(false);
             }, err => {
                 console.error("Error en listener de artistas:", err);
@@ -529,15 +535,12 @@
 
         async function initApp() {
             cacheUIElements();
-            setLoading(true);
+            setupEventListeners();
+            try {
+                state.synth = new Tone.Synth().toDestination();
+            } catch(e) { console.warn("No se pudo inicializar el sintetizador de audio."); }
 
-            state.appId = getAppIdFromUrl();
-            if (!state.appId) {
-                displayMessage('Error: ID de aplicación no encontrado en la URL.', 'error');
-                setLoading(false);
-                return;
-            }
-
+            // Configuración de Firebase para el proyecto VYTMUSIC (hardcodeada para Canvas)
             const firebaseConfig = {
                 apiKey: "AIzaSyC_2Ukoxf_ry7QfKtou1Cz6nY-qTVw4qTU",
                 authDomain: "vyt-music.firebaseapp.com",
@@ -547,24 +550,34 @@
                 appId: "1:574981837817:web:a29933a22bbfd51a086328",
                 measurementId: "G-8QCQF3HWEJ"
             };
+
+            // Mover firebaseConfig al estado global para que sea accesible en shareVotingLinkBtn
+            state.firebaseConfig = firebaseConfig; // <--- CAMBIO CLAVE AQUI
             
             const app = initializeApp(firebaseConfig);
             state.db = getFirestore(app);
             state.auth = getAuth(app);
-            
-            try {
-                state.synth = new Tone.Synth().toDestination();
-            } catch(e) { console.warn("No se pudo inicializar el sintetizador de audio."); }
+            state.storage = getStorage(app);
 
-            onAuthStateChanged(state.auth, async (user) => {
+            onAuthStateChanged(state.auth, async (user) => { // Added async here
                 if (user) {
-                    state.userId = user.uid;
-                    console.log("Usuario autenticado anónimamente:", state.userId);
+                    // Check if the user is an anonymous assistant user
+                    if (user.isAnonymous) {
+                        // For anonymous users, we assume they are assistants.
+                        // In a real app, you might want to store more info about the assistant
+                        // or check if their anonymous ID is linked to an active event code.
+                        // For simplicity here, any anonymous user is an assistant.
+                        updateUIAfterLogin(user, 'assistant');
+                    } else {
+                        // Regular authenticated user (email/password) is an admin
+                        updateUIAfterLogin(user, 'admin');
+                    }
                     // Cargar votos del usuario ANTES de adjuntar el listener de artistas
-                    await checkIfUserVoted(); 
-                    attachDataListeners();
+                    // Esto asegura que state.votedArtistsByUser esté actualizado antes de renderizar
+                    await checkIfUserVoted(); // <--- Mover esta llamada aquí
                 } else {
-                    console.log("Intentando iniciar sesión anónimamente...");
+                    console.log("No se encontró usuario autenticado. Intentando inicio de sesión anónimo."); // Log
+                    setLoading(true); // Mostrar spinner mientras se intenta la autenticación anónima
                     try {
                         await signInAnonymously(state.auth);
                     } catch (error) {
@@ -573,15 +586,30 @@
                         setLoading(false);
                     }
                 }
+                // setLoading(false); // Se quita de aquí, se maneja dentro de onAuthStateChanged branches
             });
+
+            // Intento de inicio de sesión con token personalizado si está disponible
+            setLoading(true); // Se mantiene el spinner mientras se intenta el token
+            try {
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    console.log("Intentando inicio de sesión con token personalizado."); // Log
+                    await signInWithCustomToken(state.auth, __initial_auth_token);
+                } else {
+                    console.log("No se encontró token personalizado. Mostrando pantalla de autenticación."); // Log
+                    // Si no hay token, onAuthStateChanged ya manejará la visualización del authScreen
+                    // setLoading(false); // Se quita de aquí, onAuthStateChanged lo maneja
+                    // if(ui.authScreen) ui.authScreen.classList.remove('hidden'); // onAuthStateChanged lo maneja
+                }
+            } catch (error) {
+                console.error("Error en el inicio de sesión automático:", error); // Log del error completo
+                setLoading(false);
+                if(ui.authScreen) ui.authScreen.classList.remove('hidden');
+            }
         }
 
+        // Iniciar la aplicación cuando la ventana se cargue
         window.onload = initApp;
-
-        window.addEventListener('beforeunload', () => {
-            if (state.unsubscribeArtists) state.unsubscribeArtists();
-            if (state.unsubscribeUserVote) state.unsubscribeUserVote();
-        });
 
     </script>
 </body>
