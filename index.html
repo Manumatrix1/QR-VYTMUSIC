@@ -1591,7 +1591,8 @@
 
         async function initApp() {
             cacheUIElements();
-            setupEventListeners();
+            // setupEventListeners() ya no se llama aquí directamente.
+            // Se moverá su llamada a después de que el estado de autenticación se resuelva.
             try {
                 state.synth = new Tone.Synth().toDestination();
             } catch(e) { console.warn("No se pudo inicializar el sintetizador de audio."); }
@@ -1617,6 +1618,9 @@
             state.auth = getAuth(app);
             state.storage = getStorage(app);
 
+            // Variable para asegurar que setupEventListeners se llame solo una vez
+            let initialAuthCheckCompleted = false;
+
             onAuthStateChanged(state.auth, async (user) => { 
                 if (user) {
                     if (user.isAnonymous) {
@@ -1629,6 +1633,13 @@
                     setLoading(false); 
                     if(ui.authScreen) ui.authScreen.classList.remove('hidden');
                 }
+
+                // Llamar a setupEventListeners y ocultar el spinner solo después de la primera resolución de autenticación
+                if (!initialAuthCheckCompleted) {
+                    setupEventListeners(); // <--- LLAMADA MOVIDA AQUÍ
+                    setLoading(false); // Ocultar spinner
+                    initialAuthCheckCompleted = true;
+                }
             });
 
             setLoading(true); 
@@ -1637,7 +1648,7 @@
                     console.log("Intentando inicio de sesión con token personalizado."); 
                     await signInWithCustomToken(state.auth, __initial_auth_token);
                 } else {
-                    console.log("No se encontró token personalizado. Mostrando pantalla de autenticación."); 
+                    console.log("No se encontró token personalizado. onAuthStateChanged manejará la pantalla de autenticación."); 
                 }
             } catch (error) {
                 console.error("Error en el inicio de sesión automático:", error); 
