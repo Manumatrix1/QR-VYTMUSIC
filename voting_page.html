@@ -319,44 +319,33 @@
                 const querySnapshot = await getDocs(FirebaseOps.paths.tickets());
                 
                 let availableTicket = null;
+                let foundButAlreadyVoted = false; // Flag para saber si se encontró pero ya votó
 
                 querySnapshot.forEach(doc => {
                     const ticketData = doc.data();
                     const normalizedName = (ticketData.name || '').toLowerCase().trim();
-                    const ticketId = (ticketData.id || '').trim(); // Obtener el ID del ticket
+                    const ticketId = (ticketData.id || '').trim(); 
 
-                    // Comprobar si el nombre coincide (insensible a mayúsculas/minúsculas)
-                    // O si el ID del ticket coincide
-                    if ((normalizedName === normalizedInput || ticketId === input.trim()) && !ticketData.voted) { 
-                        availableTicket = { id: doc.id, ...ticketData };
-                        return; // Salir del forEach si se encuentra una
+                    // Comprobar si el nombre o ID coincide
+                    if (normalizedName === normalizedInput || ticketId === input.trim()) {
+                        if (!ticketData.voted) { 
+                            availableTicket = { id: doc.id, ...ticketData };
+                            return; // Salir del forEach si se encuentra una no votada
+                        } else {
+                            foundButAlreadyVoted = true; // Se encontró pero ya votó
+                        }
                     }
                 });
 
                 if (availableTicket) {
-                    // Marcar la entrada como votada
-                    await updateDoc(FirebaseOps.paths.ticket(availableTicket.id), {
-                        voted: true,
-                        votedByUserId: state.userId, 
-                        votedAt: new Date().toISOString()
-                    });
+                    // No marcamos la entrada como 'voted: true' aquí para permitir reingreso.
+                    // El campo 'voted' en el ticket se mantiene en 'false' si queremos reingreso.
+                    // Si 'voted' en el ticket significa 'ya usada para entrar a votar', entonces la lógica de reingreso cambia.
+                    // Para permitir reingreso, el campo 'voted' en el ticket NO DEBE CAMBIARSE A TRUE AQUÍ.
                     state.currentValidatedTicket = availableTicket;
                     return { success: true, message: "Entrada validada. ¡Puedes votar!", ticket: availableTicket };
                 } else {
-                    // Si no se encontró o ya votó, proporcionar un mensaje más específico
-                    // Primero, verificar si el nombre/ID existe pero ya votó
-                    let alreadyVotedTicket = null;
-                    querySnapshot.forEach(doc => {
-                        const ticketData = doc.data();
-                        const normalizedName = (ticketData.name || '').toLowerCase().trim();
-                        const ticketId = (ticketData.id || '').trim();
-                        if ((normalizedName === normalizedInput || ticketId === input.trim()) && ticketData.voted) {
-                            alreadyVotedTicket = true;
-                            return;
-                        }
-                    });
-
-                    if (alreadyVotedTicket) {
+                    if (foundButAlreadyVoted) {
                         return { success: false, message: "La entrada con ese nombre/ID ya ha sido utilizada para votar." };
                     } else {
                         return { success: false, message: "Nombre o ID de entrada no encontrado. Por favor, verifica la ortografía o el ID." };
@@ -566,21 +555,11 @@
                 await FirebaseOps.recordUserVote(artistId);
                 state.votedArtistsByUser.add(artistId); // Añadir el artista al Set local
 
-                // 3. Marcar la entrada como votada en la base de datos de tickets (solo si no es un ticket de desarrollador)
-                // Esta actualización solo indica que la entrada ha sido usada para *algún* voto, no que ya no puede votar más.
-                if (state.currentValidatedTicket.id !== 'DEV_TICKET_12345' && !state.currentValidatedTicket.voted) {
-                    await updateDoc(FirebaseOps.paths.ticket(state.currentValidatedTicket.id), {
-                        voted: true, // Marca que esta entrada ya ha sido usada para votar al menos una vez
-                        votedByUserId: state.userId,
-                        votedAt: new Date().toISOString()
-                    });
-                    state.currentValidatedTicket.voted = true; // Actualizar el estado local
-                } else if (state.currentValidatedTicket.id === 'DEV_TICKET_12345') {
-                    console.log("Modo Desarrollador: No se actualiza el ticket en la base de datos.");
-                    // En modo desarrollador, si ya votó una vez, la marcamos localmente como votada para simular el comportamiento
-                    // pero sin escribir en Firestore. Esto es para que el botón "VOTO REGISTRADO" aparezca.
-                    state.currentValidatedTicket.voted = true; 
-                }
+                // 3. Ya NO marcamos la entrada como 'voted: true' en el documento del ticket.
+                // La entrada siempre permitirá el reingreso para votar por otros artistas.
+                // El campo 'voted' en el ticket solo se usaría si quisiéramos que la entrada
+                // solo pudiera entrar al sistema de votación una vez en toda su vida útil.
+                // Como queremos reingreso, no modificamos 'voted' en el ticket aquí.
                 
                 displayMessage('¡Voto registrado con éxito! ¡Gracias!', 'success');
                 ui.votedStatusMessage.classList.remove('hidden'); 
@@ -660,7 +639,7 @@
             });
 
             // Nuevo: Listener para el botón de modo desarrollador
-            ui.devModeBtn.addEventListener('click', async () => { // Hacemos la función async
+            ui.devModeBtn.addEventListener('click', async () => { 
                 // Simula una entrada validada para pruebas
                 state.currentValidatedTicket = {
                     id: 'DEV_TICKET_12345',
@@ -671,16 +650,10 @@
                 ui.validationScreen.classList.add('hidden');
                 ui.votingContent.classList.remove('hidden');
                 
-                // En modo desarrollador, también necesitamos simular los votos previos del usuario
-                // para que los botones de artistas ya votados aparezcan deshabilitados.
-                // Podríamos simular algunos votos aquí o simplemente llamar a checkIfUserVoted
-                // si queremos que el modo dev se comporte como un usuario real que ya votó.
-                // Para simplificar, asumiremos que en modo dev el usuario no ha votado por nadie aún
-                // a menos que se carguen datos reales o se simulen.
                 state.votedArtistsByUser.clear(); // Asegurarse de que no haya votos previos simulados
 
-                await checkIfUserVoted(); // Cargar votos previos si los hay (en caso de que el userId anónimo persista)
-                attachDataListeners(); // Carga los artistas
+                await checkIfUserVoted(); 
+                attachDataListeners(); 
             });
 
             ui.artistsListContainer.addEventListener('click', (e) => {
