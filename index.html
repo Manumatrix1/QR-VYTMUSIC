@@ -477,19 +477,20 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, signInWithCustomToken, onAuthStateChanged, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, onSnapshot, query, addDoc, doc, getDoc, setDoc, where, getDocs, writeBatch, deleteDoc, updateDoc,  } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
+        import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject, listAll } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
 
         // --- CONFIGURACIÓN DE FIREBASE (INCRUSTADA) ---
         // Estas son tus credenciales REALES obtenidas de tus capturas de pantalla.
         // Se incrustan directamente aquí para evitar problemas de carga de módulos en Netlify.
         const firebaseConfig = {
-  apiKey: "AIzaSyC_2Ukoxf_ry7QfKtou1Cz6nY-qTVw4qTU",
-  authDomain: "vyt-music.firebaseapp.com",
-  projectId: "vyt-music",
-  storageBucket: "vyt-music.firebasestorage.app",
-  messagingSenderId: "574981837817",
-  appId: "1:574981837817:web:a29933a22bbfd51a086328"
-};
+            apiKey: "TU_API_KEY_REAL", 
+            authDomain: "tu-proyecto-id.firebaseapp.com",
+            projectId: "tu-proyecto-id", 
+            storageBucket: "tu-proyecto-id.appspot.com", 
+            messagingSenderId: "tu-messaging-sender-id", 
+            appId: "tu-app-id"
+            // measurementId: "G-XXXXXXXXXX" // Eliminado para evitar problemas de CSP en Canvas
+        };
 
         // --- ESTADO Y UI GLOBALES ---
         const state = {
@@ -901,6 +902,10 @@
                 const buttonClass = ticket.used ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700';
                 const buttonText = ticket.used ? 'Anular Ingreso' : 'Confirmar Ingreso';
 
+                // Añadido el estado de votado
+                const votedStatus = typeof ticket.voted === 'boolean' ? (ticket.voted ? 'VOTADO' : 'NO VOTADO') : 'N/A';
+                const votedClass = typeof ticket.voted === 'boolean' ? (ticket.voted ? 'bg-purple-600' : 'bg-gray-500') : 'bg-gray-500';
+
                 li.innerHTML = `
                     <div class="flex-grow">
                         <p class="font-semibold">${ticket.name} <span class="text-gray-400 text-sm">(${ticket.prefix})</span></p>
@@ -909,6 +914,7 @@
                     </div>
                     <div class="text-right flex-shrink-0">
                             <span class="block px-3 py-1 rounded-full text-xs font-semibold ${statusClass} mb-2">${ticket.used ? 'USADO' : 'DISPONIBLE'}</span>
+                            <span class="block px-3 py-1 rounded-full text-xs font-semibold ${votedClass} mb-2">${votedStatus}</span>
                             <button data-ticket-id="${ticket.id}" data-ticket-used="${ticket.used}" class="manual-checkin-btn px-3 py-1 text-xs text-white font-bold rounded-lg ${buttonClass}">${buttonText}</button>
                     </div>`;
                 ui.allTicketsList.appendChild(li);
@@ -1210,7 +1216,8 @@
                     state.currentBatchGeneratedTickets = [];
                     names.forEach(name => {
                         const ticketId = `${ticketPrefix}-${crypto.randomUUID().substring(0, 8)}`;
-                        const ticketData = { id: ticketId, prefix: ticketPrefix, name, seatLocation, showName, showLocation, showAddress, used: false, generatedAt: new Date().toISOString(), usedAt: null, usedBy: null };
+                        // AÑADE 'voted: false' AQUÍ
+                        const ticketData = { id: ticketId, prefix: ticketPrefix, name, seatLocation, showName, showLocation, showAddress, used: false, voted: false, generatedAt: new Date().toISOString(), usedAt: null, usedBy: null };
                         batch.set(doc(ticketsCol, ticketId), ticketData);
                         state.currentBatchGeneratedTickets.push(ticketData);
                     });
@@ -1367,6 +1374,15 @@
                             const snapshot = await getDocs(collection(state.db, `artifacts/${state.appId}/public/data/${coll}`));
                             snapshot.forEach(doc => batch.delete(doc.ref));
                         }
+                        // Delete user-specific votes collections (user_artist_votes)
+                        // This requires listing subcollections, which is not directly supported by client SDK.
+                        // A more robust solution for deleting subcollections would involve a Cloud Function.
+                        // For now, we'll delete the main user_artist_votes collection, but subcollections will remain.
+                        // If this becomes a problem, we'd need a server-side solution.
+                        const userArtistVotesCollectionRef = collection(state.db, `artifacts/${state.appId}/public/data/user_artist_votes`);
+                        const userArtistVotesSnapshot = await getDocs(userArtistVotesCollectionRef);
+                        userArtistVotesSnapshot.forEach(doc => batch.delete(doc.ref));
+
                         // Delete scan history for the current user
                         const historySnapshot = await getDocs(FirebaseOps.paths.scanHistory());
                         historySnapshot.forEach(doc => batch.delete(doc.ref));
@@ -1520,8 +1536,19 @@
                         }
                         
                         // Delete all votes (assuming a 'votes' collection at the same level as 'artists')
-                        const votesSnapshot = await getDocs(FirebaseOps.paths.votes());
+                        // This part needs to be more specific if votes are in subcollections.
+                        // If votes are under user_artist_votes/{userId}/votes, this won't delete them easily.
+                        // A Cloud Function is ideal for recursive deletes.
+                        // For simplicity, we'll try to delete the top-level 'votes' collection if it exists.
+                        const votesCollectionRef = collection(state.db, `artifacts/${state.appId}/public/data/votes`);
+                        const votesSnapshot = await getDocs(votesCollectionRef);
                         votesSnapshot.forEach(doc => batch.delete(doc.ref));
+
+                        // Also attempt to delete the user_artist_votes collection (top level)
+                        const userArtistVotesCollectionRef = collection(state.db, `artifacts/${state.appId}/public/data/user_artist_votes`);
+                        const userArtistVotesSnapshot = await getDocs(userArtistVotesCollectionRef);
+                        userArtistVotesSnapshot.forEach(doc => batch.delete(doc.ref));
+
 
                         await batch.commit();
                         displayMessage('Votación reiniciada. Artistas y votos eliminados.', 'success');
@@ -1622,13 +1649,14 @@
             // Estas son tus credenciales REALES obtenidas de tus capturas de pantalla.
             // Se incrustan directamente aquí para evitar problemas de carga de módulos en Netlify.
             const firebaseConfig = {
-  apiKey: "AIzaSyC_2Ukoxf_ry7QfKtou1Cz6nY-qTVw4qTU",
-  authDomain: "vyt-music.firebaseapp.com",
-  projectId: "vyt-music",
-  storageBucket: "vyt-music.firebasestorage.app",
-  messagingSenderId: "574981837817",
-  appId: "1:574981837817:web:a29933a22bbfd51a086328"
-};
+                apiKey: "TU_API_KEY_REAL", 
+                authDomain: "tu-proyecto-id.firebaseapp.com",
+                projectId: "tu-proyecto-id", 
+                storageBucket: "tu-proyecto-id.appspot.com", 
+                messagingSenderId: "tu-messaging-sender-id", 
+                appId: "tu-app-id"
+                // measurementId: "G-XXXXXXXXXX" // Eliminado para evitar problemas de CSP en Canvas
+            };
 
             if (!firebaseConfig.apiKey) {
                 if(ui.authScreen) {
