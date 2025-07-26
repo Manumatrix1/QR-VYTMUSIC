@@ -5,10 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Votación VYTMUSIC</title>
     
-    <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
@@ -171,16 +169,13 @@
             text-align: center; /* Centra el texto guía */
             width: 100%; /* Ocupa todo el ancho disponible */
         }
-        /* Eliminado el estilo .gpt-recommendation ya que se elimina el div completo */
     </style>
 </head>
 <body class="antialiased">
 
-    <!-- Overlays y Modales -->
     <div id="loading-overlay" class="loading-overlay hidden"><div class="spinner"></div></div>
     <div id="message-container" class="fixed top-4 left-1/2 -translate-x-1/2 z-[1001] w-11/12 max-w-md"></div>
 
-    <!-- Contenedor Principal -->
     <div class="container mx-auto max-w-4xl p-4 sm:p-6">
         <header class="text-center mb-8">
             <img src="https://i.imgur.com/rqkZi9P.png" alt="VYTMUSIC Logo" class="mx-auto mb-4 bg-white rounded-full" style="max-width: 120px;" onerror="this.onerror=null;this.src='https://placehold.co/120x120/ffffff/000000?text=Logo';">
@@ -194,24 +189,25 @@
                 <p class="text-center text-gray-400 col-span-full">Cargando artistas...</p>
             </div>
         </main>
-        
-        <!-- SECCIÓN DE RECOMENDACIÓN DE GTP ELIMINADA -->
     </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
 
     <script type="module">
         // Importaciones de Firebase
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        // Se añadió 'getDocs' a la importación de firestore
         import { getFirestore, collection, onSnapshot, doc, updateDoc, increment, getDoc, setDoc, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        // Tone.js se cargará como una variable global desde el CDN.
+        
+        // Importa la configuración de Firebase desde el archivo externo
+        import { firebaseConfig } from './firebase_config.js'; 
 
         // --- ESTADO Y UI GLOBALES ---
         const state = {
             db: null, auth: null, userId: null,
-            appId: '', // Se obtendrá de la URL
+            appId: '', // Se inicializará con firebaseConfig.projectId
             artistsData: [],
-            votedArtistsByUser: new Set(), // Cambiado a un Set para rastrear artistas votados por el usuario
+            votedArtistsByUser: new Set(), // Set para rastrear artistas votados por el usuario
             synth: null,
             unsubscribeArtists: null, // Para limpiar el listener de artistas
             unsubscribeUserVote: null // Para limpiar el listener de voto de usuario
@@ -285,17 +281,17 @@
 
         // --- RENDERIZADO Y VISUALIZACIÓN ---
         function renderArtists(artists) {
-            console.log("Renderizando artistas. Artistas recibidos:", artists); // Log de depuración
+            console.log("Renderizando artistas. Artistas recibidos:", artists); 
+            state.artistsData = artists; // Almacenar los datos en el estado global
             ui.artistsListContainer.innerHTML = '';
             if (!artists || artists.length === 0) {
                 ui.artistsListContainer.innerHTML = '<p class="text-center text-gray-400 col-span-full">No hay artistas disponibles para votación.</p>';
                 return;
             }
 
-            // Ordenar artistas por un promedio de votos si es posible, o por nombre
             const sortedArtists = [...artists].sort((a, b) => {
                 const avgA = a.totalRatingsCount > 0 ? (a.totalSingingScore + a.totalTransmissionScore + a.totalAttitudeScore + a.totalOriginalityScore) / (a.totalRatingsCount * 4) : 0;
-                const avgB = b.totalSingingScore > 0 ? (b.totalSingingScore + b.totalTransmissionScore + b.totalAttitudeScore + b.totalOriginalityScore) / (b.totalRatingsCount * 4) : 0;
+                const avgB = b.totalRatingsCount > 0 ? (b.totalSingingScore + b.totalTransmissionScore + b.totalAttitudeScore + b.totalOriginalityScore) / (b.totalRatingsCount * 4) : 0;
                 return avgB - avgA || a.name.localeCompare(b.name);
             });
 
@@ -305,7 +301,7 @@
                 const buttonDisabled = hasVotedForThisArtist ? 'disabled' : '';
                 const buttonClasses = hasVotedForThisArtist 
                     ? 'bg-gray-600 cursor-not-allowed text-gray-300' 
-                    : 'bg-yellow-400 hover:bg-yellow-300 text-black'; // Estilo de botón amarillo/negro
+                    : 'bg-yellow-400 hover:bg-yellow-300 text-black';
 
                 const artistCard = document.createElement('div');
                 artistCard.className = 'artist-card';
@@ -323,8 +319,7 @@
                             <label class="text-center w-full">🎤 ¿Te gustó cómo cantó? <span class="rating-value">5</span></label>
                             <div class="stars-and-guidance-group">
                                 <div class="stars-wrapper" id="singing-stars-${artist.id}">
-                                    <!-- Stars will be generated here by JS -->
-                                </div>
+                                    </div>
                                 <p class="guidance-text w-full text-center">1️⃣ No me gustó | 5️⃣ Estuvo bien | 🔟 ¡Me encantó!</p>
                             </div>
                         </div>
@@ -333,8 +328,7 @@
                             <label class="text-center w-full">💓 ¿Te llegó lo que transmitió? <span class="rating-value">5</span></label>
                             <div class="stars-and-guidance-group">
                                 <div class="stars-wrapper" id="transmission-stars-${artist.id}">
-                                    <!-- Stars will be generated here by JS -->
-                                </div>
+                                    </div>
                                 <p class="guidance-text w-full text-center">1️⃣ No sentí nada | 5️⃣ Normal | 🔟 ¡Me hizo vibrar!</p>
                             </div>
                         </div>
@@ -343,8 +337,7 @@
                             <label class="text-center w-full">🔥 ¿Tuvo actitud y presencia? <span class="rating-value">5</span></label>
                             <div class="stars-and-guidance-group">
                                 <div class="stars-wrapper" id="attitude-stars-${artist.id}">
-                                    <!-- Stars will be generated here by JS -->
-                                </div>
+                                    </div>
                                 <p class="guidance-text w-full text-center">1️⃣ Muy apagado | 5️⃣ Bien | 🔟 ¡Un/a artista con todo!</p>
                             </div>
                         </div>
@@ -353,8 +346,7 @@
                             <label class="text-center w-full">🌈 ¿Te pareció diferente y original? <span class="rating-value">5</span></label>
                             <div class="stars-and-guidance-group">
                                 <div class="stars-wrapper" id="originality-stars-${artist.id}">
-                                    <!-- Stars will be generated here by JS -->
-                                </div>
+                                    </div>
                                 <p class="guidance-text w-full text-center">1️⃣ Fue más de lo mismo | 5️⃣ Algo distinto | 🔟 ¡Tiene su estilo propio!</p>
                             </div>
                         </div>
@@ -374,7 +366,7 @@
                 ['singing', 'transmission', 'attitude', 'originality'].forEach(criterion => {
                     const starsWrapper = artistCard.querySelector(`#${criterion}-stars-${artist.id}`);
                     const ratingContainer = starsWrapper.closest('.rating-container');
-                    const ratingValueSpan = ratingContainer.querySelector('.rating-value');
+                    // const ratingValueSpan = ratingContainer.querySelector('.rating-value'); // No necesario aquí, ya se usa en updateStarVisuals
                     const isDisabled = ratingContainer.dataset.disabled === 'true';
 
                     for (let i = 1; i <= 10; i++) {
@@ -423,11 +415,13 @@
                 });
             });
             
-            if (state.votedArtistsByUser.size > 0) { // Si el usuario ha votado por al menos un artista
+            // Actualizar el mensaje global de votación si el usuario ya votó por algún artista
+            if (state.votedArtistsByUser.size > 0) { 
                 ui.votedStatusMessage.classList.remove('hidden');
             } else {
                 ui.votedStatusMessage.classList.add('hidden');
             }
+            setLoading(false); // Ocultar spinner después de renderizar los artistas
         }
 
         async function handleVote(event) {
@@ -491,7 +485,7 @@
 
             try {
                 // Obtener todos los votos de este usuario anónimo
-                const userVotesCollectionRef = collection(state.db, `artifacts/${state.appId}/public/data/user_artist_votes/${state.userId}/votes`);
+                const userVotesCollectionRef = FirebaseOps.paths.userVotes(state.userId);
                 const querySnapshot = await getDocs(userVotesCollectionRef); 
 
                 state.votedArtistsByUser.clear(); // Limpiar antes de rellenar
@@ -499,112 +493,81 @@
                     state.votedArtistsByUser.add(doc.id); // doc.id es el artistId en este caso
                 });
 
-                // Volver a renderizar los artistas para aplicar los estados deshabilitados
-                // Esto se hará automáticamente con el listener de artistas, pero lo dejamos aquí como fallback
-                // renderArtists(state.artistsData); 
-                
-                if (state.votedArtistsByUser.size > 0) {
-                    ui.votedStatusMessage.classList.remove('hidden');
-                } else {
-                    ui.votedStatusMessage.classList.add('hidden');
-                }
-
+                // La función renderArtists (llamada por onSnapshot) se encargará de actualizar la UI
+                // basándose en `state.votedArtistsByUser`.
             } catch (error) {
                 console.error("Error al verificar si el usuario ya votó:", error);
             }
         }
 
-
-        // --- INICIALIZACIÓN DE LA APLICACIÓN ---
-        function getAppIdFromUrl() {
-            const params = new URLSearchParams(window.location.search);
-            return params.get('appId');
-        }
-
-        function attachDataListeners() {
-            state.unsubscribeArtists = onSnapshot(FirebaseOps.paths.artists(), (snapshot) => {
-                const artists = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                // Asegurarse de que el estado de votación del usuario se ha cargado antes de renderizar
-                renderArtists(artists); 
-                setLoading(false);
-            }, err => {
-                console.error("Error en listener de artistas:", err);
-                displayMessage('Error al cargar artistas.', 'error');
-                setLoading(false);
+        // --- MANEJO DE EVENTOS ---
+        function setupEventListeners() {
+            // Listener para los botones de voto de cada artista
+            ui.artistsListContainer.addEventListener('click', (e) => {
+                if (e.target.classList.contains('send-vote-button')) {
+                    handleVote(e);
+                }
             });
         }
 
+
+        // --- INICIALIZACIÓN DE LA APLICACIÓN ---
         async function initApp() {
             cacheUIElements();
-            // setupEventListeners(); // Eliminado de aquí
+            
             try {
                 state.synth = new Tone.Synth().toDestination();
             } catch(e) { console.warn("No se pudo inicializar el sintetizador de audio."); }
 
-            // Configuración de Firebase para el proyecto VYTMUSIC (hardcodeada para Canvas)
-            const firebaseConfig = {
-                apiKey: "AIzaSyC_2Ukoxf_ry7QfKtou1Cz6nY-qTVw4qTU",
-                authDomain: "vyt-music.firebaseapp.com",
-                projectId: "vyt-music",
-                storageBucket: "vyt-music.firebasestorage.app",
-                messagingSenderId: "574981837817",
-                appId: "1:574981837817:web:a29933a22bbfd51a086328",
-                measurementId: "G-8QCQF3HWEJ"
-            };
-
-            // Mover firebaseConfig al estado global para que sea accesible en shareVotingLinkBtn
+            // Configuración de Firebase para el proyecto VYTMUSIC
+            // Usar la configuración importada del archivo externo para consistencia y seguridad
             state.firebaseConfig = firebaseConfig; 
-            // Asegurar que state.appId siempre use el projectId de la configuración hardcodeada
+            // Asegurar que state.appId siempre use el projectId de la configuración
             state.appId = firebaseConfig.projectId; 
             
-            const app = initializeApp(firebaseConfig);
+            const app = initializeApp(state.firebaseConfig); // Usa state.firebaseConfig
             state.db = getFirestore(app);
             state.auth = getAuth(app);
-            state.storage = getStorage(app);
+            // No se necesita `storage` en este archivo, pero no daña si se mantiene.
 
-            // Variable para asegurar que setupEventListeners se llame solo una vez
-            let initialAuthCheckCompleted = false;
+            setLoading(true); // Mostrar spinner mientras se autentica y carga
 
+            // Autenticar anónimamente al inicio para permitir votar y rastrear votos
             onAuthStateChanged(state.auth, async (user) => { 
                 if (user) {
-                    if (user.isAnonymous) {
-                        updateUIAfterLogin(user, 'assistant');
-                    } else {
-                        updateUIAfterLogin(user, 'admin');
-                    }
-                } else {
-                    console.log("No se encontró usuario autenticado. Mostrando pantalla de autenticación."); 
-                    setLoading(false); 
-                    if(ui.authScreen) ui.authScreen.classList.remove('hidden');
-                }
+                    state.userId = user.uid; // Establecer userId una vez autenticado
+                    console.log("Autenticado anónimamente con UID:", state.userId);
 
-                // Llamar a setupEventListeners y ocultar el spinner solo después de la primera resolución de autenticación
-                if (!initialAuthCheckCompleted) {
-                    setupEventListeners(); // <--- LLAMADA MOVIDA AQUÍ
-                    setLoading(false); // Ocultar spinner
-                    initialAuthCheckCompleted = true;
+                    // 1. Verificar si el usuario ya votó antes de cargar artistas
+                    await checkIfUserVoted(); 
+
+                    // 2. Adjuntar listeners de datos (para artistas)
+                    attachDataListeners(); 
+
+                    // 3. Adjuntar listeners de la UI (botones de voto)
+                    setupEventListeners(); 
+                    
+                } else {
+                    console.log("No se pudo autenticar anónimamente. No se podrá votar."); 
+                    displayMessage("No se pudo conectar al servicio de votación. Por favor, recarga la página.", 'error');
+                    setLoading(false); // Ocultar spinner si falla la autenticación
                 }
             });
 
-            setLoading(true); 
-            try {
-                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                    console.log("Intentando inicio de sesión con token personalizado."); 
-                    await signInWithCustomToken(state.auth, __initial_auth_token);
-                } else {
-                    console.log("No se encontró token personalizado. onAuthStateChanged manejará la pantalla de autenticación."); 
-                }
-            } catch (error) {
-                console.error("Error en el inicio de sesión automático:", error); 
-                displayMessage(`Error en inicio de sesión automático: ${error.message}`, 'error'); 
-                setLoading(false);
-                if(ui.authScreen) ui.authScreen.classList.remove('hidden');
+            // Forzar inicio de sesión anónima si no hay usuario (esto dispara onAuthStateChanged)
+            // Se puede hacer directamente aquí o dejar que onAuthStateChanged maneje el caso inicial
+            // y luego llamar a signInAnonymously si user es null.
+            if (!state.auth.currentUser) {
+                 signInAnonymously(state.auth).catch(error => {
+                    console.error("Error al intentar signInAnonymously:", error);
+                    displayMessage(`Error de conexión: ${error.message}`, 'error');
+                    setLoading(false);
+                 });
             }
         }
 
         // Iniciar la aplicación cuando la ventana se cargue
         window.onload = initApp;
-
     </script>
 </body>
 </html>
