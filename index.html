@@ -101,7 +101,7 @@
         .scanner-button {
             position: absolute; z-index: 60; background-color: rgba(0,0,0,0.5);
             border-radius: 50%; width: 40px; height: 40px;
-            display: flex; align-items: center; justify-content: center;
+            display: flex; justify-content: center; align-items: center;
             color: white; border: 1px solid rgba(255,255,255,0.3);
         }
         #close-scanner-btn { top: 1.5rem; right: 1.5rem; }
@@ -137,7 +137,7 @@
         .tab-content.hidden { display: none; }
     </style>
 </head>
-<body class="antialiased">
+<body>
 
     <!-- Overlays y Modales -->
     <div id="loading-overlay" class="loading-overlay hidden"><div class="spinner"></div></div>
@@ -476,11 +476,21 @@
         // Importaciones de Firebase
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, signInWithCustomToken, onAuthStateChanged, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, onSnapshot, query, addDoc, doc, getDoc, setDoc, where, getDocs, writeBatch, deleteDoc, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject, listAll } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
+        import { getFirestore, collection, onSnapshot, query, addDoc, doc, getDoc, setDoc, where, getDocs, writeBatch, deleteDoc, updateDoc, listAll } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
 
-        // Importa la configuración de Firebase desde el archivo externo
-        import { firebaseConfig } from './firebase_config.js'; 
+        // --- CONFIGURACIÓN DE FIREBASE (INCRUSTADA) ---
+        // Estas son tus credenciales REALES obtenidas de tus capturas de pantalla.
+        // Se incrustan directamente aquí para evitar problemas de carga de módulos en Netlify.
+        const firebaseConfig = {
+            apiKey: "TU_API_KEY_REAL", 
+            authDomain: "tu-proyecto-id.firebaseapp.com",
+            projectId: "tu-proyecto-id", 
+            storageBucket: "tu-proyecto-id.appspot.com", 
+            messagingSenderId: "tu-messaging-sender-id", 
+            appId: "tu-app-id"
+            // measurementId: "G-XXXXXXXXXX" // Eliminado para evitar problemas de CSP en Canvas
+        };
 
         // --- ESTADO Y UI GLOBALES ---
         const state = {
@@ -490,8 +500,7 @@
             currentScannedTicketId: null, currentBatchGeneratedTickets: [], currentQrIndex: 0,
             allTicketsData: [], scanHistory: [], synth: null, pendingArtists: [],
             allArtistsData: [], // Store all artists for voting panel
-            firebaseConfig: {}, // Will be populated from imported firebaseConfig
-            appId: '', // Will be populated from firebaseConfig.projectId
+            appId: firebaseConfig.projectId, // Se inicializa directamente con el projectId
             unsubscribeListeners: [] // Para limpiar listeners al cerrar sesión
         };
         const ui = {};
@@ -863,7 +872,7 @@
                         displayMessage('Descarga iniciada. Revisa tu carpeta de descargas.', 'success');
                     }).catch(error => {
                         console.error('Error al generar la imagen:', error);
-                        displayMessage('Error al generar la imagen de la entrada. Asegúrate de que el logo sea accesible y no tenga problemas de CORS.', 'error');
+                        displayMessage('Error al generar la imagen de la entrada. Asegúrate de que el logo sea accesible.', 'error');
                     });
                 }, 500);
             });
@@ -1489,7 +1498,6 @@
                 let path = loc.pathname;
                 path = path.substring(0, path.lastIndexOf('/'));
                 const baseUrl = `${loc.origin}${path}`;
-                // Usar state.appId (que se inicializa con projectId)
                 const shareableLink = `${baseUrl}/voting_page.html?appId=${state.appId}`; 
                 console.log("Enlace de votación generado:", shareableLink); // Log para depuración
                 showShareLinkModal(shareableLink, 'voting');
@@ -1507,12 +1515,8 @@
                             // Delete associated photos from storage
                             const photoURL = artistDoc.data().photoURL;
                             if (photoURL) {
-                                // Extract the path relative to the bucket
-                                const photoPath = photoURL.split('?')[0].split('/o/')[1];
-                                if (photoPath) {
-                                    const photoStorageRef = ref(state.storage, decodeURIComponent(photoPath));
-                                    deleteObject(photoStorageRef).catch(e => console.error("Error deleting photo:", e));
-                                }
+                                const photoStorageRef = ref(state.storage, photoURL);
+                                deleteObject(photoStorageRef).catch(e => console.error("Error deleting photo:", e));
                             }
                         }
                         
@@ -1561,6 +1565,7 @@
 
         // --- INICIALIZACIÓN DE LA APLICACIÓN ---
         function attachDataListeners() {
+            // Limpiar listeners anteriores para evitar duplicados
             state.unsubscribeListeners.forEach(unsub => unsub());
             state.unsubscribeListeners = [];
             
@@ -1576,7 +1581,6 @@
             state.unsubscribeListeners.push(unsubTickets);
 
             // Listeners para historial de escaneos (solo si el usuario es admin o asistente)
-            // Se moverá el listener de scanHistory aquí para asegurar que solo se active post-autenticación
             if (state.userId) { // Only attach if userId is available (after login)
                 const qHistory = query(FirebaseOps.paths.scanHistory());
                 const unsubHistory = onSnapshot(qHistory, (snapshot) => {
@@ -1610,49 +1614,70 @@
 
         async function initApp() {
             cacheUIElements();
-            setupEventListeners(); 
-
+            setupEventListeners();
             try {
                 state.synth = new Tone.Synth().toDestination();
             } catch(e) { console.warn("No se pudo inicializar el sintetizador de audio."); }
 
-            // Mover firebaseConfig al estado global
-            state.firebaseConfig = firebaseConfig; 
-            // Asegurar que state.appId siempre use el projectId de la configuración
-            state.appId = firebaseConfig.projectId; 
+            // --- CONFIGURACIÓN DE FIREBASE (INCRUSTADA) ---
+            // Estas son tus credenciales REALES obtenidas de tus capturas de pantalla.
+            // Se incrustan directamente aquí para evitar problemas de carga de módulos en Netlify.
+            const firebaseConfig = {
+                apiKey: "TU_API_KEY_REAL", 
+                authDomain: "tu-proyecto-id.firebaseapp.com",
+                projectId: "tu-proyecto-id", 
+                storageBucket: "tu-proyecto-id.appspot.com", 
+                messagingSenderId: "tu-messaging-sender-id", 
+                appId: "tu-app-id"
+                // measurementId: "G-XXXXXXXXXX" // Eliminado para evitar problemas de CSP en Canvas
+            };
+
+            if (!firebaseConfig.apiKey) {
+                if(ui.authScreen) {
+                    ui.authScreen.innerHTML = `<div class="text-center text-red-400">Error de configuración de Firebase. La aplicación no puede iniciarse.</div>`;
+                    ui.authScreen.classList.remove('hidden');
+                }
+                return;
+            }
             
             const app = initializeApp(firebaseConfig);
             state.db = getFirestore(app);
             state.auth = getAuth(app);
             state.storage = getStorage(app);
 
-            // Manejar el estado de autenticación
-            onAuthStateChanged(state.auth, async (user) => { 
-                setLoading(false); // Siempre ocultar loading al resolver auth state
+            onAuthStateChanged(state.auth, (user) => {
                 if (user) {
+                    // Check if the user is an anonymous assistant user
                     if (user.isAnonymous) {
+                        // For anonymous users, we assume they are assistants.
+                        // In a real app, you might want to store more info about the assistant
+                        // or check if their anonymous ID is linked to an active event code.
+                        // For simplicity here, any anonymous user is an assistant.
                         updateUIAfterLogin(user, 'assistant');
                     } else {
+                        // Regular authenticated user (email/password) is an admin
                         updateUIAfterLogin(user, 'admin');
                     }
                 } else {
-                    console.log("No se encontró usuario autenticado. Mostrando pantalla de autenticación."); 
-                    if(ui.authScreen) ui.authScreen.classList.remove('hidden');
+                    // El usuario ha cerrado sesión o no está autenticado
+                    updateUIAfterLogout();
                 }
+                setLoading(false);
             });
 
-            setLoading(true); // Mostrar loading al inicio hasta que auth state se resuelva
+            // Intento de inicio de sesión con token personalizado si está disponible
+            setLoading(true);
             try {
-                // Si tienes un token personalizado para iniciar sesión automáticamente, puedes manejarlo aquí.
-                // En un entorno real, __initial_auth_token vendría de una inyección segura del servidor.
                 if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                    console.log("Intentando inicio de sesión con token personalizado."); 
+                    console.log("Intentando inicio de sesión con token personalizado."); // Log
                     await signInWithCustomToken(state.auth, __initial_auth_token);
                 } else {
-                    console.log("No se encontró token personalizado. onAuthStateChanged manejará la pantalla de autenticación."); 
+                    console.log("No se encontró token personalizado. Mostrando pantalla de autenticación."); // Log
+                    setLoading(false);
+                    if(ui.authScreen) ui.authScreen.classList.remove('hidden');
                 }
             } catch (error) {
-                console.error("Error en el inicio de sesión automático:", error); 
+                console.error("Error en el inicio de sesión automático:", error); // Log del error completo
                 displayMessage(`Error en inicio de sesión automático: ${error.message}`, 'error'); 
                 setLoading(false);
                 if(ui.authScreen) ui.authScreen.classList.remove('hidden');
