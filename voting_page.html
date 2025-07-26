@@ -214,8 +214,8 @@
         <div id="validation-screen" class="validation-screen">
             <div class="validation-card">
                 <h2 class="text-2xl font-bold text-sky-400 mb-4">Verifica tu Entrada para Votar</h2>
-                <p class="text-gray-300 mb-6">Por favor, ingresa el nombre completo con el que se registró tu entrada.</p>
-                <input type="text" id="ticket-name-input" placeholder="Tu Nombre Completo" class="w-full p-3 rounded-md border border-gray-600 bg-gray-900 text-white focus:outline-none focus:ring-2 focus:ring-sky-500 mb-4" required>
+                <p class="text-gray-300 mb-6">Por favor, ingresa tu nombre completo o el ID de tu entrada.</p>
+                <input type="text" id="ticket-name-input" placeholder="Tu Nombre o ID de Entrada" class="w-full p-3 rounded-md border border-gray-600 bg-gray-900 text-white focus:outline-none focus:ring-2 focus:ring-sky-500 mb-4" required>
                 <button id="validate-ticket-btn" class="w-full px-4 py-3 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700">Validar Entrada</button>
                 
                 <!-- Botón de Modo Desarrollador -->
@@ -312,26 +312,29 @@
                 });
             },
 
-            async validateTicketByName(name) {
-                const normalizedName = name.toLowerCase().trim();
-                const q = query(FirebaseOps.paths.tickets(), where("name", "==", name)); 
-
-                const querySnapshot = await getDocs(q);
-
-                if (querySnapshot.empty) {
-                    return { success: false, message: "Nombre no encontrado. Por favor, verifica la ortografía." };
-                }
-
+            async validateTicketByName(input) {
+                const normalizedInput = input.toLowerCase().trim();
+                
+                // Obtener todas las entradas para filtrar en el cliente
+                const querySnapshot = await getDocs(FirebaseOps.paths.tickets());
+                
                 let availableTicket = null;
+
                 querySnapshot.forEach(doc => {
                     const ticketData = doc.data();
-                    if (!ticketData.voted) { 
+                    const normalizedName = (ticketData.name || '').toLowerCase().trim();
+                    const ticketId = (ticketData.id || '').trim(); // Obtener el ID del ticket
+
+                    // Comprobar si el nombre coincide (insensible a mayúsculas/minúsculas)
+                    // O si el ID del ticket coincide
+                    if ((normalizedName === normalizedInput || ticketId === input.trim()) && !ticketData.voted) { 
                         availableTicket = { id: doc.id, ...ticketData };
-                        return; 
+                        return; // Salir del forEach si se encuentra una
                     }
                 });
 
                 if (availableTicket) {
+                    // Marcar la entrada como votada
                     await updateDoc(FirebaseOps.paths.ticket(availableTicket.id), {
                         voted: true,
                         votedByUserId: state.userId, 
@@ -340,7 +343,24 @@
                     state.currentValidatedTicket = availableTicket;
                     return { success: true, message: "Entrada validada. ¡Puedes votar!", ticket: availableTicket };
                 } else {
-                    return { success: false, message: "La entrada con ese nombre ya ha sido utilizada para votar o no está disponible." };
+                    // Si no se encontró o ya votó, proporcionar un mensaje más específico
+                    // Primero, verificar si el nombre/ID existe pero ya votó
+                    let alreadyVotedTicket = null;
+                    querySnapshot.forEach(doc => {
+                        const ticketData = doc.data();
+                        const normalizedName = (ticketData.name || '').toLowerCase().trim();
+                        const ticketId = (ticketData.id || '').trim();
+                        if ((normalizedName === normalizedInput || ticketId === input.trim()) && ticketData.voted) {
+                            alreadyVotedTicket = true;
+                            return;
+                        }
+                    });
+
+                    if (alreadyVotedTicket) {
+                        return { success: false, message: "La entrada con ese nombre/ID ya ha sido utilizada para votar." };
+                    } else {
+                        return { success: false, message: "Nombre o ID de entrada no encontrado. Por favor, verifica la ortografía o el ID." };
+                    }
                 }
             }
         };
@@ -356,7 +376,7 @@
                     number.classList.add('filled-number');
                 } else {
                     star.classList.remove('filled');
-                    number.classList.remove('filled-number'); /* Asegurar que se remueva la clase 'filled' del número */
+                    number.classList.remove('filled-number'); 
                 }
             });
             starContainer.closest('.rating-container').querySelector('.rating-value').textContent = value;
@@ -380,12 +400,14 @@
             });
 
             sortedArtists.forEach(artist => {
-                const buttonText = state.currentValidatedTicket && state.currentValidatedTicket.voted ? 'VOTO REGISTRADO' : 'VOTAR';
-                const buttonDisabled = (state.currentValidatedTicket && state.currentValidatedTicket.voted) ? 'disabled' : '';
+                // Determinar si el usuario ya votó por este artista específico (usando el Set de votedArtistsByUser)
+                const hasVotedForThisArtist = state.votedArtistsByUser.has(artist.id);
+                const buttonText = hasVotedForThisArtist ? 'VOTO REGISTRADO' : 'VOTAR';
+                const buttonDisabled = hasVotedForThisArtist ? 'disabled' : '';
 
-                const buttonClasses = (state.currentValidatedTicket && state.currentValidatedTicket.voted) 
+                const buttonClasses = hasVotedForThisArtist 
                     ? 'bg-gray-600 cursor-not-allowed text-gray-300' 
-                    : 'bg-purple-600 hover:bg-purple-700 text-white'; /* Cambiado a purple-600 */
+                    : 'bg-purple-600 hover:bg-purple-700 text-white'; 
 
                 const artistCard = document.createElement('div');
                 artistCard.className = 'artist-card';
@@ -497,7 +519,10 @@
                 });
             });
             
-            if (state.currentValidatedTicket && state.currentValidatedTicket.voted) { 
+            // Este mensaje se muestra si la entrada fue validada y ya votó por AL MENOS UN artista.
+            // Si la lógica es "votar por todos los artistas", este mensaje puede ser confuso.
+            // Lo dejaremos por ahora, pero su visibilidad se basa en si 'votedArtistsByUser' tiene elementos.
+            if (state.votedArtistsByUser.size > 0) { 
                 ui.votedStatusMessage.classList.remove('hidden');
             } else {
                 ui.votedStatusMessage.classList.add('hidden');
@@ -509,10 +534,16 @@
             const artistId = event.target.dataset.artistId;
             if (!artistId) return;
 
-            if (!state.currentValidatedTicket || state.currentValidatedTicket.voted) {
-                 displayMessage('Ya has votado con esta entrada o no has validado una entrada.', 'warning');
+            // La validación principal es que la entrada esté validada y que el usuario no haya votado por ESTE artista
+            if (!state.currentValidatedTicket) {
+                 displayMessage('No has validado una entrada para votar.', 'warning');
                  return;
             }
+            if (state.votedArtistsByUser.has(artistId)) {
+                displayMessage('Ya has votado por este artista con tu entrada actual. Solo se permite un voto por artista.', 'warning');
+                return;
+            }
+
 
             setLoading(true);
             try {
@@ -522,6 +553,7 @@
                 const attitudeRating = parseInt(artistCard.querySelector('[data-rating-type="attitude"]').dataset.currentValue);
                 const originalityRating = parseInt(artistCard.querySelector('[data-rating-type="originality"]').dataset.currentValue);
 
+                // 1. Actualizar los puntajes del artista en Firebase
                 await updateDoc(FirebaseOps.paths.artist(artistId), {
                     totalSingingScore: increment(singingRating),
                     totalTransmissionScore: increment(transmissionRating),
@@ -530,27 +562,42 @@
                     totalRatingsCount: increment(1) 
                 });
 
-                await updateDoc(FirebaseOps.paths.ticket(state.currentValidatedTicket.id), {
-                    voted: true,
-                    votedByUserId: state.userId,
-                    votedAt: new Date().toISOString()
-                });
-                state.currentValidatedTicket.voted = true; 
+                // 2. Registrar el voto del usuario para ESTE artista en la colección user_artist_votes
+                await FirebaseOps.recordUserVote(artistId);
+                state.votedArtistsByUser.add(artistId); // Añadir el artista al Set local
 
+                // 3. Marcar la entrada como votada en la base de datos de tickets (solo si no es un ticket de desarrollador)
+                // Esta actualización solo indica que la entrada ha sido usada para *algún* voto, no que ya no puede votar más.
+                if (state.currentValidatedTicket.id !== 'DEV_TICKET_12345' && !state.currentValidatedTicket.voted) {
+                    await updateDoc(FirebaseOps.paths.ticket(state.currentValidatedTicket.id), {
+                        voted: true, // Marca que esta entrada ya ha sido usada para votar al menos una vez
+                        votedByUserId: state.userId,
+                        votedAt: new Date().toISOString()
+                    });
+                    state.currentValidatedTicket.voted = true; // Actualizar el estado local
+                } else if (state.currentValidatedTicket.id === 'DEV_TICKET_12345') {
+                    console.log("Modo Desarrollador: No se actualiza el ticket en la base de datos.");
+                    // En modo desarrollador, si ya votó una vez, la marcamos localmente como votada para simular el comportamiento
+                    // pero sin escribir en Firestore. Esto es para que el botón "VOTO REGISTRADO" aparezca.
+                    state.currentValidatedTicket.voted = true; 
+                }
+                
                 displayMessage('¡Voto registrado con éxito! ¡Gracias!', 'success');
                 ui.votedStatusMessage.classList.remove('hidden'); 
 
-                document.querySelectorAll('.send-vote-button').forEach(button => {
-                    button.disabled = true;
-                    button.textContent = 'VOTO REGISTRADO';
-                    button.classList.remove('bg-purple-600', 'hover:bg-purple-700', 'text-white'); /* Cambiado a purple-600 */
-                    button.classList.add('bg-gray-600', 'cursor-not-allowed', 'text-gray-300');
-                });
-                document.querySelectorAll('.rating-container').forEach(container => {
-                    container.dataset.disabled = 'true';
-                    updateStarVisuals(container.querySelector('.stars-wrapper'), parseInt(container.dataset.currentValue));
-                });
+                // Deshabilitar el botón y las estrellas *solo para el artista que acaba de ser votado*
+                const button = event.target;
+                button.disabled = true;
+                button.textContent = 'VOTO REGISTRADO';
+                button.classList.remove('bg-purple-600', 'hover:bg-purple-700', 'text-white'); 
+                button.classList.add('bg-gray-600', 'cursor-not-allowed', 'text-gray-300');
 
+                artistCard.querySelectorAll('.rating-container').forEach(container => {
+                    if (container.dataset.ratingType) { // Asegurarse de que es un contenedor de rating
+                        container.dataset.disabled = 'true'; // Deshabilitar las estrellas para este artista
+                        updateStarVisuals(container.querySelector('.stars-wrapper'), parseInt(container.dataset.currentValue));
+                    }
+                });
 
                 if (state.synth) {
                     Tone.start().then(() => state.synth.triggerAttackRelease("C5", "8n"));
@@ -564,12 +611,37 @@
             }
         }
 
+        // Función para cargar los votos previos del usuario (para deshabilitar artistas ya votados)
+        async function checkIfUserVoted() {
+            if (!state.userId) return;
+
+            try {
+                // Obtener todos los votos de este usuario anónimo
+                const userVotesCollectionRef = FirebaseOps.paths.userVotes(state.userId);
+                const querySnapshot = await getDocs(userVotesCollectionRef); 
+
+                state.votedArtistsByUser.clear(); // Limpiar antes de rellenar
+                querySnapshot.forEach(doc => {
+                    state.votedArtistsByUser.add(doc.id); // doc.id es el artistId en este caso
+                });
+
+                // Si hay artistas renderizados, actualizar su estado de votación
+                if (state.artistsData.length > 0) {
+                    renderArtists(state.artistsData);
+                }
+
+            } catch (error) {
+                console.error("Error al verificar si el usuario ya votó:", error);
+            }
+        }
+
+
         // --- MANEJO DE EVENTOS ---
         function setupEventListeners() {
             ui.validateTicketBtn.addEventListener('click', async () => {
                 const nameInput = ui.ticketNameInput.value.trim();
                 if (!nameInput) {
-                    displayMessage('Por favor, ingresa tu nombre para validar la entrada.', 'warning');
+                    displayMessage('Por favor, ingresa tu nombre o ID de entrada para validar.', 'warning');
                     return;
                 }
                 setLoading(true);
@@ -578,7 +650,9 @@
                     displayMessage(result.message, 'success');
                     ui.validationScreen.classList.add('hidden'); 
                     ui.votingContent.classList.remove('hidden'); 
-                    attachDataListeners(); 
+                    // Después de validar la entrada, cargar los votos previos del usuario
+                    await checkIfUserVoted(); 
+                    attachDataListeners(); // Y luego cargar los artistas
                 } else {
                     displayMessage(result.message, 'error');
                 }
@@ -586,16 +660,26 @@
             });
 
             // Nuevo: Listener para el botón de modo desarrollador
-            ui.devModeBtn.addEventListener('click', () => {
+            ui.devModeBtn.addEventListener('click', async () => { // Hacemos la función async
                 // Simula una entrada validada para pruebas
                 state.currentValidatedTicket = {
                     id: 'DEV_TICKET_12345',
                     name: 'Usuario Desarrollador',
-                    voted: false // Inicialmente no votado
+                    voted: false // Inicialmente no votado (para simular que puede votar)
                 };
                 displayMessage('Modo Desarrollador activado. Entrada simulada.', 'info');
                 ui.validationScreen.classList.add('hidden');
                 ui.votingContent.classList.remove('hidden');
+                
+                // En modo desarrollador, también necesitamos simular los votos previos del usuario
+                // para que los botones de artistas ya votados aparezcan deshabilitados.
+                // Podríamos simular algunos votos aquí o simplemente llamar a checkIfUserVoted
+                // si queremos que el modo dev se comporte como un usuario real que ya votó.
+                // Para simplificar, asumiremos que en modo dev el usuario no ha votado por nadie aún
+                // a menos que se carguen datos reales o se simulen.
+                state.votedArtistsByUser.clear(); // Asegurarse de que no haya votos previos simulados
+
+                await checkIfUserVoted(); // Cargar votos previos si los hay (en caso de que el userId anónimo persista)
                 attachDataListeners(); // Carga los artistas
             });
 
