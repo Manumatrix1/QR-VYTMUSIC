@@ -195,7 +195,7 @@
         }
     </style>
 </head>
-<body class="antialiased">
+<body>
 
     <!-- Overlays y Modales -->
     <div id="loading-overlay" class="loading-overlay hidden"><div class="spinner"></div></div>
@@ -319,7 +319,7 @@
                 const querySnapshot = await getDocs(FirebaseOps.paths.tickets());
                 
                 let availableTicket = null;
-                let foundButAlreadyVoted = false; // Flag para saber si se encontró pero ya votó
+                let foundAnyTicket = false; // Flag para saber si se encontró cualquier ticket con ese nombre/ID
 
                 querySnapshot.forEach(doc => {
                     const ticketData = doc.data();
@@ -328,28 +328,22 @@
 
                     // Comprobar si el nombre o ID coincide
                     if (normalizedName === normalizedInput || ticketId === input.trim()) {
-                        if (!ticketData.voted) { 
-                            availableTicket = { id: doc.id, ...ticketData };
-                            return; // Salir del forEach si se encuentra una no votada
-                        } else {
-                            foundButAlreadyVoted = true; // Se encontró pero ya votó
-                        }
+                        foundAnyTicket = true; // Se encontró un ticket con este nombre/ID
+                        // Ya no verificamos ticketData.voted aquí para permitir el reingreso.
+                        // Simplemente tomamos el primer ticket que coincida.
+                        availableTicket = { id: doc.id, ...ticketData }; // Tomamos el ticket
+                        return; // Salir del forEach si se encuentra una coincidencia
                     }
                 });
 
                 if (availableTicket) {
-                    // No marcamos la entrada como 'voted: true' aquí para permitir reingreso.
-                    // El campo 'voted' en el ticket se mantiene en 'false' si queremos reingreso.
-                    // Si 'voted' en el ticket significa 'ya usada para entrar a votar', entonces la lógica de reingreso cambia.
-                    // Para permitir reingreso, el campo 'voted' en el ticket NO DEBE CAMBIARSE A TRUE AQUÍ.
+                    // Si se encuentra un ticket, siempre se permite el acceso.
+                    // No se actualiza el campo 'voted' del ticket aquí.
                     state.currentValidatedTicket = availableTicket;
                     return { success: true, message: "Entrada validada. ¡Puedes votar!", ticket: availableTicket };
                 } else {
-                    if (foundButAlreadyVoted) {
-                        return { success: false, message: "La entrada con ese nombre/ID ya ha sido utilizada para votar." };
-                    } else {
-                        return { success: false, message: "Nombre o ID de entrada no encontrado. Por favor, verifica la ortografía o el ID." };
-                    }
+                    // Si no se encontró ningún ticket con ese nombre/ID
+                    return { success: false, message: "Nombre o ID de entrada no encontrado. Por favor, verifica la ortografía o el ID." };
                 }
             }
         };
