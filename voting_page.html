@@ -295,19 +295,27 @@
             paths: {
                 artists: () => collection(state.db, `artifacts/${state.appId}/public/data/artists`),
                 artist: (id) => doc(state.db, `artifacts/${state.appId}/public/data/artists`, id),
-                userVotes: (userId) => collection(state.db, `artifacts/${state.appId}/public/data/user_artist_votes/${userId}/votes`),
-                userVote: (userId, artistId) => doc(state.db, `artifacts/${state.appId}/public/data/user_artist_votes/${userId}/votes`, artistId),
+                // Colección para registrar votos de cada TICKET por artista
+                ticketArtistVotes: (ticketId) => collection(state.db, `artifacts/${state.appId}/public/data/ticket_artist_votes/${ticketId}/votes`),
+                ticketArtistVote: (ticketId, artistId) => doc(state.db, `artifacts/${state.appId}/public/data/ticket_artist_votes/${ticketId}/votes`, artistId),
                 tickets: () => collection(state.db, `artifacts/${state.appId}/public/data/tickets`),
                 ticket: (id) => doc(state.db, `artifacts/${state.appId}/public/data/tickets`, id)
             },
 
-            async recordUserVote(artistId) {
-                if (!state.userId) {
-                    console.error("No hay userId para registrar el voto.");
+            async recordUserVote(artistId, ticketData, scores) { // Añadido ticketData y scores
+                if (!state.userId || !ticketData || !ticketData.id) {
+                    console.error("Faltan datos para registrar el voto (userId o ticketData).");
                     return;
                 }
-                await setDoc(FirebaseOps.paths.userVote(state.userId, artistId), {
+                // Registrar voto de la entrada por artista
+                await setDoc(FirebaseOps.paths.ticketArtistVote(ticketData.id, artistId), {
                     artistId: artistId,
+                    userId: state.userId, // El userId anónimo que emitió el voto (para auditoría si es necesario)
+                    ticketName: ticketData.name, // Nombre de la entrada
+                    singingScore: scores.singing,
+                    transmissionScore: scores.transmission,
+                    attitudeScore: scores.attitude,
+                    originalityScore: scores.originality,
                     votedAt: new Date().toISOString()
                 });
             },
@@ -315,32 +323,27 @@
             async validateTicketByName(input) {
                 const normalizedInput = input.toLowerCase().trim();
                 
-                // Obtener todas las entradas para filtrar en el cliente
                 const querySnapshot = await getDocs(FirebaseOps.paths.tickets());
                 
-                let availableTicket = null;
-                let foundAnyTicket = false; // Flag para saber si se encontró cualquier ticket con ese nombre/ID
+                let foundTicket = null;
 
                 querySnapshot.forEach(doc => {
                     const ticketData = doc.data();
                     const normalizedName = (ticketData.name || '').toLowerCase().trim();
                     const ticketId = (ticketData.id || '').trim(); 
 
-                    // Comprobar si el nombre o ID coincide
+                    // Comprobar si el nombre (insensible a mayúsculas/minúsculas) o ID coincide
                     if (normalizedName === normalizedInput || ticketId === input.trim()) {
-                        foundAnyTicket = true; // Se encontró un ticket con este nombre/ID
-                        // Ya no verificamos ticketData.voted aquí para permitir el reingreso.
-                        // Simplemente tomamos el primer ticket que coincida.
-                        availableTicket = { id: doc.id, ...ticketData }; // Tomamos el ticket
-                        return; // Salir del forEach si se encuentra una coincidencia
+                        foundTicket = { id: doc.id, ...ticketData }; 
+                        return; 
                     }
                 });
 
-                if (availableTicket) {
+                if (foundTicket) {
                     // Si se encuentra un ticket, siempre se permite el acceso.
                     // No se actualiza el campo 'voted' del ticket aquí.
-                    state.currentValidatedTicket = availableTicket;
-                    return { success: true, message: "Entrada validada. ¡Puedes votar!", ticket: availableTicket };
+                    state.currentValidatedTicket = foundTicket;
+                    return { success: true, message: "Entrada validada. ¡Puedes votar!", ticket: foundTicket };
                 } else {
                     // Si no se encontró ningún ticket con ese nombre/ID
                     return { success: false, message: "Nombre o ID de entrada no encontrado. Por favor, verifica la ortografía o el ID." };
@@ -503,8 +506,7 @@
             });
             
             // Este mensaje se muestra si la entrada fue validada y ya votó por AL MENOS UN artista.
-            // Si la lógica es "votar por todos los artistas", este mensaje puede ser confuso.
-            // Lo dejaremos por ahora, pero su visibilidad se basa en si 'votedArtistsByUser' tiene elementos.
+            // Su visibilidad se basa en si 'votedArtistsByUser' tiene elementos.
             if (state.votedArtistsByUser.size > 0) { 
                 ui.votedStatusMessage.classList.remove('hidden');
             } else {
@@ -537,40 +539,77 @@
                 const originalityRating = parseInt(artistCard.querySelector('[data-rating-type="originality"]').dataset.currentValue);
 
                 // 1. Actualizar los puntajes del artista en Firebase
+                // Aquí es donde cambiaremos la lógica de suma a actualización directa para permitir la modificación del voto
+                // Primero, obtenemos el voto anterior de este ticket para este artista, si existe
+                const oldVoteDoc = await getDoc(FirebaseOps.paths.ticketArtistVote(state.currentValidatedTicket.id, artistId));
+                let oldSingingScore = 0;
+                let oldTransmissionScore = 0;
+                let oldAttitudeScore = 0;
+                let oldOriginalityScore = 0;
+                let oldTotalRatingsCount = 0; // Este debería ser 1 si ya votó
+
+                if (oldVoteDoc.exists()) {
+                    const oldVoteData = oldVoteDoc.data();
+                    oldSingingScore = oldVoteData.singingScore || 0;
+                    oldTransmissionScore = oldVoteData.transmissionScore || 0;
+                    oldAttitudeScore = oldVoteData.attitudeScore || 0;
+                    oldOriginalityScore = oldVoteData.originalityScore || 0;
+                    oldTotalRatingsCount = 1; // Si existe un voto previo, el contador era 1
+                }
+
+                // Calcular el cambio neto en la puntuación
+                const singingDiff = singingRating - oldSingingScore;
+                const transmissionDiff = transmissionRating - oldTransmissionScore;
+                const attitudeDiff = attitudeRating - oldAttitudeScore;
+                const originalityDiff = originalityRating - oldOriginalityScore;
+
+                // Actualizar los puntajes del artista en Firebase
                 await updateDoc(FirebaseOps.paths.artist(artistId), {
-                    totalSingingScore: increment(singingRating),
-                    totalTransmissionScore: increment(transmissionRating),
-                    totalAttitudeScore: increment(attitudeRating),
-                    totalOriginalityScore: increment(originalityRating),
-                    totalRatingsCount: increment(1) 
+                    totalSingingScore: increment(singingDiff),
+                    totalTransmissionScore: increment(transmissionDiff),
+                    totalAttitudeScore: increment(attitudeDiff),
+                    totalOriginalityScore: increment(originalityDiff),
+                    // totalRatingsCount solo se incrementa si es un voto NUEVO, no una modificación
+                    totalRatingsCount: increment(oldVoteDoc.exists() ? 0 : 1) 
                 });
 
-                // 2. Registrar el voto del usuario para ESTE artista en la colección user_artist_votes
-                await FirebaseOps.recordUserVote(artistId);
+
+                // 2. Registrar/Actualizar el voto de la entrada por artista en la colección ticket_artist_votes
+                const scores = { singing: singingRating, transmission: transmissionRating, attitude: attitudeRating, originality: originalityRating };
+                await FirebaseOps.recordUserVote(artistId, state.currentValidatedTicket, scores); // Pasa scores también
                 state.votedArtistsByUser.add(artistId); // Añadir el artista al Set local
 
                 // 3. Ya NO marcamos la entrada como 'voted: true' en el documento del ticket.
                 // La entrada siempre permitirá el reingreso para votar por otros artistas.
-                // El campo 'voted' en el ticket solo se usaría si quisiéramos que la entrada
-                // solo pudiera entrar al sistema de votación una vez en toda su vida útil.
-                // Como queremos reingreso, no modificamos 'voted' en el ticket aquí.
                 
                 displayMessage('¡Voto registrado con éxito! ¡Gracias!', 'success');
                 ui.votedStatusMessage.classList.remove('hidden'); 
 
-                // Deshabilitar el botón y las estrellas *solo para el artista que acaba de ser votado*
+                // Después de votar/modificar, el botón y las estrellas *solo para el artista que acaba de ser votado*
+                // Deberían reflejar el estado actual (votado/modificado)
+                // No deshabilitamos el botón, sino que lo cambiamos a "MODIFICAR VOTO" o similar
                 const button = event.target;
-                button.disabled = true;
-                button.textContent = 'VOTO REGISTRADO';
+                button.textContent = 'VOTO MODIFICADO'; // O 'MODIFICAR VOTO'
                 button.classList.remove('bg-purple-600', 'hover:bg-purple-700', 'text-white'); 
-                button.classList.add('bg-gray-600', 'cursor-not-allowed', 'text-gray-300');
+                button.classList.add('bg-gray-600', 'cursor-not-allowed', 'text-gray-300'); // Estilo de deshabilitado temporal
 
+                // Las estrellas no se deshabilitan, sino que se actualizan para reflejar el voto actual
+                // y se permite al usuario cambiarlas de nuevo.
+                // Quitamos el data-disabled="true" de aquí, ya que queremos que pueda modificar.
+                // La lógica de "ya votó" ahora es que puede modificar.
                 artistCard.querySelectorAll('.rating-container').forEach(container => {
-                    if (container.dataset.ratingType) { // Asegurarse de que es un contenedor de rating
-                        container.dataset.disabled = 'true'; // Deshabilitar las estrellas para este artista
+                    if (container.dataset.ratingType) {
+                        // NO HACER container.dataset.disabled = 'true';
                         updateStarVisuals(container.querySelector('.stars-wrapper'), parseInt(container.dataset.currentValue));
                     }
                 });
+                
+                // Si el botón no está deshabilitado, entonces no se puede hacer click
+                button.disabled = false; // Habilitar de nuevo para permitir modificar
+                button.textContent = 'MODIFICAR VOTO';
+                button.classList.remove('bg-gray-600', 'cursor-not-allowed', 'text-gray-300');
+                button.classList.add('bg-purple-600', 'hover:bg-purple-700', 'text-white');
+
 
                 if (state.synth) {
                     Tone.start().then(() => state.synth.triggerAttackRelease("C5", "8n"));
@@ -586,16 +625,26 @@
 
         // Función para cargar los votos previos del usuario (para deshabilitar artistas ya votados)
         async function checkIfUserVoted() {
-            if (!state.userId) return;
+            if (!state.currentValidatedTicket || !state.currentValidatedTicket.id) return; // Asegurarse de tener un ticket validado
 
             try {
-                // Obtener todos los votos de este usuario anónimo
-                const userVotesCollectionRef = FirebaseOps.paths.userVotes(state.userId);
-                const querySnapshot = await getDocs(userVotesCollectionRef); 
+                // Obtener todos los votos de ESTE TICKET para los artistas
+                const ticketVotesCollectionRef = FirebaseOps.paths.ticketArtistVotes(state.currentValidatedTicket.id);
+                const querySnapshot = await getDocs(ticketVotesCollectionRef); 
 
                 state.votedArtistsByUser.clear(); // Limpiar antes de rellenar
                 querySnapshot.forEach(doc => {
+                    const voteData = doc.data();
                     state.votedArtistsByUser.add(doc.id); // doc.id es el artistId en este caso
+                    // También podemos almacenar la puntuación previa para precargar las estrellas
+                    const artistId = doc.id;
+                    const artistCard = ui.artistsListContainer.querySelector(`[data-artist-id="${artistId}"]`).closest('.artist-card');
+                    if (artistCard) {
+                        artistCard.querySelector('[data-rating-type="singing"]').dataset.currentValue = voteData.singingScore;
+                        artistCard.querySelector('[data-rating-type="transmission"]').dataset.currentValue = voteData.transmissionScore;
+                        artistCard.querySelector('[data-rating-type="attitude"]').dataset.currentValue = voteData.attitudeScore;
+                        artistCard.querySelector('[data-rating-type="originality"]').dataset.currentValue = voteData.originalityScore;
+                    }
                 });
 
                 // Si hay artistas renderizados, actualizar su estado de votación
@@ -638,7 +687,7 @@
                 state.currentValidatedTicket = {
                     id: 'DEV_TICKET_12345',
                     name: 'Usuario Desarrollador',
-                    voted: false // Inicialmente no votado (para simular que puede votar)
+                    voted: false // Este campo no se usa para reingreso, solo para simular el ticket
                 };
                 displayMessage('Modo Desarrollador activado. Entrada simulada.', 'info');
                 ui.validationScreen.classList.add('hidden');
