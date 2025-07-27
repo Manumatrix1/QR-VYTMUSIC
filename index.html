@@ -555,8 +555,8 @@
         function setLoading(show) { ui.loadingOverlay.classList.toggle('hidden', !show); }
 
         function showShareLinkModal(link, type = 'tickets') {
-            ui.shareModalTitle.textContent = type === 'tickets' ? 'Compartir Entradas del Grupo' : 'Compartir Enlace de Votación';
-            ui.shareModalText.textContent = type === 'tickets' ? 'Copia el siguiente enlace:' : 'Copia el enlace para que el público pueda votar:';
+            ui.shareModalTitle.textContent = type === 'tickets' ? 'Compartir Enlace' : 'Compartir Enlace de Votación'; // CAMBIO: Título más genérico para compartir
+            ui.shareModalText.textContent = type === 'tickets' ? 'Copia el siguiente enlace para tus invitados:' : 'Copia el enlace para que el público pueda votar:'; // CAMBIO: Texto más específico
             ui.shareLinkDisplay.value = link;
             ui.shareLinkModal.classList.remove('hidden');
             
@@ -1248,7 +1248,8 @@
                 let path = loc.pathname;
                 path = path.substring(0, path.lastIndexOf('/'));
                 const baseUrl = `${loc.origin}${path}`;
-                const shareableLink = `${baseUrl}/voting_page.html?artist=${encodeURIComponent(artistPrefix)}&appId=${state.appId}`;
+                // CAMBIO CLAVE: Cambiar voting_page.html a shared_tickets.html
+                const shareableLink = `${baseUrl}/shared_tickets.html?artist=${encodeURIComponent(artistPrefix)}&appId=${state.appId}`; 
                 
                 showShareLinkModal(shareableLink, 'tickets');
             });
@@ -1382,6 +1383,12 @@
                         const userArtistVotesCollectionRef = collection(state.db, `artifacts/${state.appId}/public/data/user_artist_votes`);
                         const userArtistVotesSnapshot = await getDocs(userArtistVotesCollectionRef);
                         userArtistVotesSnapshot.forEach(doc => batch.delete(doc.ref));
+
+                        // CAMBIO: Eliminar también la colección ticket_artist_votes
+                        const ticketArtistVotesCollectionRef = collection(state.db, `artifacts/${state.appId}/public/data/ticket_artist_votes`);
+                        const ticketArtistVotesSnapshot = await getDocs(ticketArtistVotesCollectionRef);
+                        ticketArtistVotesSnapshot.forEach(doc => batch.delete(doc.ref));
+
 
                         // Delete scan history for the current user
                         const historySnapshot = await getDocs(FirebaseOps.paths.scanHistory());
@@ -1524,37 +1531,42 @@
                     setLoading(true);
                     try {
                         const batch = writeBatch(state.db);
-                        const artistsSnapshot = await getDocs(FirebaseOps.paths.artists());
-                        for (const artistDoc of artistsSnapshot.docs) {
-                            batch.delete(artistDoc.ref);
-                            // Delete associated photos from storage
-                            const photoURL = artistDoc.data().photoURL;
-                            if (photoURL) {
-                                const photoStorageRef = ref(state.storage, photoURL);
-                                deleteObject(photoStorageRef).catch(e => console.error("Error deleting photo:", e));
-                            }
+                        const collectionsToDelete = ['tickets', 'artists', 'votes', 'event_codes'];
+                        for (const coll of collectionsToDelete) {
+                            const snapshot = await getDocs(collection(state.db, `artifacts/${state.appId}/public/data/${coll}`));
+                            snapshot.forEach(doc => batch.delete(doc.ref));
                         }
-                        
-                        // Delete all votes (assuming a 'votes' collection at the same level as 'artists')
-                        // This part needs to be more specific if votes are in subcollections.
-                        // If votes are under user_artist_votes/{userId}/votes, this won't delete them easily.
-                        // A Cloud Function is ideal for recursive deletes.
-                        // For simplicity, we'll try to delete the top-level 'votes' collection if it exists.
-                        const votesCollectionRef = collection(state.db, `artifacts/${state.appId}/public/data/votes`);
-                        const votesSnapshot = await getDocs(votesCollectionRef);
-                        votesSnapshot.forEach(doc => batch.delete(doc.ref));
-
-                        // Also attempt to delete the user_artist_votes collection (top level)
+                        // Delete user-specific votes collections (user_artist_votes)
+                        // This requires listing subcollections, which is not directly supported by client SDK.
+                        // A more robust solution for deleting subcollections would involve a Cloud Function.
+                        // For now, we'll delete the main user_artist_votes collection, but subcollections will remain.
+                        // If this becomes a problem, we'd need a server-side solution.
                         const userArtistVotesCollectionRef = collection(state.db, `artifacts/${state.appId}/public/data/user_artist_votes`);
                         const userArtistVotesSnapshot = await getDocs(userArtistVotesCollectionRef);
                         userArtistVotesSnapshot.forEach(doc => batch.delete(doc.ref));
 
+                        // CAMBIO: Eliminar también la colección ticket_artist_votes
+                        const ticketArtistVotesCollectionRef = collection(state.db, `artifacts/${state.appId}/public/data/ticket_artist_votes`);
+                        const ticketArtistVotesSnapshot = await getDocs(ticketArtistVotesCollectionRef);
+                        ticketArtistVotesSnapshot.forEach(doc => batch.delete(doc.ref));
+
+
+                        // Delete scan history for the current user
+                        const historySnapshot = await getDocs(FirebaseOps.paths.scanHistory());
+                        historySnapshot.forEach(doc => batch.delete(doc.ref));
+
+                        // Delete all artist photos from storage
+                        const photosRef = ref(state.storage, `artifacts/${state.appId}/public/artist_photos`);
+                        const listResult = await listAll(photosRef);
+                        listResult.items.forEach((itemRef) => {
+                            deleteObject(itemRef).catch(e => console.error("Error deleting photo:", e));
+                        });
 
                         await batch.commit();
-                        displayMessage('Votación reiniciada. Artistas y votos eliminados.', 'success');
+                        displayMessage('Todos los datos han sido eliminados.', 'success');
                     } catch (error) {
-                        displayMessage(`Error al reiniciar votación: ${error.message}`, 'error');
-                        console.error("Error resetting voting:", error);
+                        displayMessage(`Error al reiniciar los datos: ${error.message}`, 'error');
+                        console.error("Error resetting all data:", error);
                     } finally {
                         setLoading(false);
                     }
