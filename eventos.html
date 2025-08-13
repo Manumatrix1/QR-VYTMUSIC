@@ -47,6 +47,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getFirestore, collection, addDoc, serverTimestamp, query, orderBy, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyC_2Ukoxf_ry7QfKtou1Cz6nY-qTVw4qTU",
@@ -58,68 +59,78 @@
         };
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
+        const auth = getAuth(app);
 
-        const eventsCol = collection(db, 'events');
-        const createEventForm = document.getElementById('create-event-form');
-        const eventsListDiv = document.getElementById('events-list');
-        const loader = document.getElementById('events-loader');
+        // AÑADIDO: Verificación de autenticación
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                // El usuario está logueado, se puede iniciar la aplicación
+                startApp();
+            } else {
+                // El usuario no está logueado, redirigir a la página de inicio
+                window.location.href = 'index.html';
+            }
+        });
 
-        // Función para renderizar la lista de eventos
-        function renderEvents(events) {
-            eventsListDiv.innerHTML = '';
-            loader.style.display = 'none';
+        function startApp() {
+            const eventsCol = collection(db, 'events');
+            const createEventForm = document.getElementById('create-event-form');
+            const eventsListDiv = document.getElementById('events-list');
+            const loader = document.getElementById('events-loader');
 
-            if (events.length === 0) {
-                const noEventsMessage = document.createElement('p');
-                noEventsMessage.textContent = 'No hay eventos creados todavía. ¡Crea el primero!';
-                noEventsMessage.className = 'text-center text-gray-400';
-                eventsListDiv.appendChild(noEventsMessage);
-                return;
+            function renderEvents(events) {
+                eventsListDiv.innerHTML = '';
+                loader.style.display = 'none';
+                
+                if (events.length === 0) {
+                    const noEventsMessage = document.createElement('p');
+                    noEventsMessage.textContent = 'No hay eventos creados todavía. ¡Crea el primero!';
+                    noEventsMessage.className = 'text-center text-gray-400';
+                    eventsListDiv.appendChild(noEventsMessage);
+                    return;
+                }
+
+                events.forEach(doc => {
+                    const event = { id: doc.id, ...doc.data() };
+                    const eventCard = document.createElement('a');
+                    eventCard.href = `panel_evento.html?eventId=${event.id}&eventName=${encodeURIComponent(event.name)}`;
+                    eventCard.className = 'event-card block p-6 rounded-lg shadow-md';
+                    eventCard.innerHTML = `
+                        <h3 class="text-xl font-bold text-sky-400">${event.name}</h3>
+                        <p class="text-gray-400">Fecha: ${event.date}</p>
+                    `;
+                    eventsListDiv.appendChild(eventCard);
+                });
             }
 
-            events.forEach(event => {
-                const eventCard = document.createElement('a');
-                eventCard.href = `panel_evento.html?eventId=${event.id}&eventName=${encodeURIComponent(event.name)}`;
-                eventCard.className = 'event-card block p-6 rounded-lg shadow-md';
-                eventCard.innerHTML = `
-                    <h3 class="text-xl font-bold text-sky-400">${event.name}</h3>
-                    <p class="text-gray-400">Fecha: ${event.date}</p>
-                `;
-                eventsListDiv.appendChild(eventCard);
+            createEventForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const eventName = document.getElementById('event-name').value;
+                const eventDate = document.getElementById('event-date').value;
+
+                if (eventName && eventDate) {
+                    try {
+                        await addDoc(eventsCol, {
+                            name: eventName,
+                            date: eventDate,
+                            createdAt: serverTimestamp()
+                        });
+                        createEventForm.reset();
+                    } catch (error) {
+                        console.error("Error al crear evento: ", error);
+                        alert("No se pudo crear el evento.");
+                    }
+                }
+            });
+
+            const q = query(eventsCol, orderBy('createdAt', 'desc'));
+            onSnapshot(q, (snapshot) => {
+                renderEvents(snapshot.docs);
+            }, (error) => {
+                console.error("Error al cargar eventos: ", error);
+                eventsListDiv.innerHTML = `<p class="text-center text-red-500">Error al cargar los eventos. Revisa la consola para más detalles.</p>`;
             });
         }
-        
-        // Listener para el formulario de creación de eventos
-        createEventForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const eventName = document.getElementById('event-name').value;
-            const eventDate = document.getElementById('event-date').value;
-
-            if (eventName && eventDate) {
-                try {
-                    await addDoc(eventsCol, {
-                        name: eventName,
-                        date: eventDate,
-                        createdAt: serverTimestamp()
-                    });
-                    createEventForm.reset();
-                } catch (error) {
-                    console.error("Error al crear evento: ", error);
-                    alert("No se pudo crear el evento.");
-                }
-            }
-        });
-
-        // Listener para la colección de eventos
-        // Esto se actualizará automáticamente cada vez que haya un cambio
-        const q = query(eventsCol, orderBy('createdAt', 'desc'));
-        onSnapshot(q, (snapshot) => {
-            const events = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            renderEvents(events);
-        }, (error) => {
-            console.error("Error al cargar eventos: ", error);
-            eventsListDiv.innerHTML = `<p class="text-center text-red-500">Error al cargar los eventos. Revisa la consola para más detalles.</p>`;
-        });
     </script>
 </body>
 </html>
