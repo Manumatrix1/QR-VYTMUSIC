@@ -3,123 +3,167 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gestor de Eventos - VYTMUSIC</title>
+    <title>Control de Entradas y Votaciones VYTMUSIC</title>
+
     <script src="https://cdn.tailwindcss.com"></script>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+
     <style>
-        body { font-family: 'Inter', sans-serif; background-color: #111827; color: #f9fafb; }
-        .event-card { background-color: #1f2937; transition: all 0.2s ease-in-out; border: 1px solid #374151; }
-        .event-card:hover { transform: translateY(-4px); background-color: #374151; border-color: #38bdf8; }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #111827;
+            color: #f9fafb;
+        }
+        .hidden { display: none !important; }
+        .loading-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(0, 0, 0, 0.8);
+            display: flex; justify-content: center; align-items: center;
+            z-index: 1000;
+        }
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-top: 4px solid #38bdf8;
+            border-radius: 50%; width: 40px; height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
-<body class="antialiased">
+<body>
+
+    <div id="loading-overlay" class="loading-overlay hidden">
+        <div class="spinner"></div>
+    </div>
+    
     <div class="container mx-auto max-w-4xl p-4 sm:p-6">
-        <header class="text-center mb-8">
-            <h1 class="text-4xl sm:text-5xl font-bold text-sky-400">Gestor de Eventos</h1>
-            <p class="text-lg text-gray-400 mt-2">Crea y administra tus galas y certámenes.</p>
+        <header class="text-center mb-6">
+            <img src="https://i.imgur.com/rqkZi9P.png" alt="VYTMUSIC Logo" class="mx-auto mb-4 bg-white rounded-full" style="max-width: 150px;">
+            <h1 class="text-3xl sm:text-4xl font-bold text-sky-400">VYTMUSIC</h1>
+            <p class="text-lg text-gray-300">Panel de Control</p>
         </header>
 
-        <main class="space-y-8">
-            <section id="create-event-section" class="bg-gray-800 p-6 rounded-lg shadow-xl">
-                <h2 class="text-2xl font-bold mb-4">Crear Nuevo Evento</h2>
-                <form id="create-event-form" class="space-y-4">
+        <div id="message-container" class="mb-4"></div>
+
+        <div id="auth-screen">
+            <div class="bg-gray-800 p-6 rounded-lg shadow-xl max-w-md mx-auto">
+                <h2 class="text-2xl font-bold mb-4 text-center">Iniciar Sesión o Registrarse</h2>
+                <form id="auth-form" class="space-y-4">
                     <div>
-                        <label for="event-name" class="block mb-1 font-semibold text-gray-300">Nombre del Evento</label>
-                        <input type="text" id="event-name" placeholder="Ej: Semifinal 1" required class="w-full p-3 rounded-md border border-gray-600 bg-gray-900 text-white">
+                        <label for="email-input" class="block mb-1 font-semibold text-gray-300">Email</label>
+                        <input type="email" id="email-input" required class="w-full p-3 rounded-md border border-gray-600 bg-gray-900 text-white focus:outline-none focus:ring-2 focus:ring-sky-500">
                     </div>
                     <div>
-                        <label for="event-date" class="block mb-1 font-semibold text-gray-300">Fecha del Evento</label>
-                        <input type="date" id="event-date" required class="w-full p-3 rounded-md border border-gray-600 bg-gray-900 text-white">
+                        <label for="password-input" class="block mb-1 font-semibold text-gray-300">Contraseña</label>
+                        <div class="relative">
+                            <input type="password" id="password-input" required class="w-full p-3 pr-10 rounded-md border border-gray-600 bg-gray-900 text-white focus:outline-none focus:ring-2 focus:ring-sky-500">
+                            <button type="button" id="toggle-password-btn" class="absolute inset-y-0 right-0 px-3 flex items-center text-gray-400 hover:text-sky-400">
+                                <svg id="eye-icon" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                                <svg id="eye-slash-icon" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.542-7 1.274 4.057 5.064 7 9.542 7 .847 0 1.67.134 2.46.382m-.022 2.992A3.004 3.004 0 0012 9a3 3 0 103 3m-3-3a3 3 0 00-3 3m2.25 4.5a10.013 10.013 0 01-1.25 1.325M16.5 10.5a3 3 0 00-3-3m-3 3a3 3 0 003 3m-3-3h3m-3 3v-3" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M1 1l22 22" /></svg>
+                            </button>
+                        </div>
                     </div>
-                    <button type="submit" class="w-full px-4 py-3 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700">Crear Evento</button>
+                    <div class="flex space-x-4">
+                        <button type="button" id="login-btn" class="w-full px-4 py-3 bg-sky-600 text-white font-bold rounded-lg hover:bg-sky-700">Iniciar Sesión</button>
+                        <button type="button" id="register-btn" class="w-full px-4 py-3 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700">Registrarse</button>
+                    </div>
+                     <div class="mt-4 text-center">
+                         <button type="button" id="assistant-login-btn" class="w-full px-4 py-2 bg-gray-600 text-white font-semibold rounded-lg hover:bg-gray-700">Ingresar como Asistente</button>
+                     </div>
                 </form>
-            </section>
-
-            <section id="events-list-section">
-                <h2 class="text-2xl font-bold mb-4">Eventos Creados</h2>
-                <div id="events-list" class="space-y-4">
-                    <p id="events-loader" class="text-center text-gray-400">Cargando eventos...</p>
-                </div>
-            </section>
-        </main>
+            </div>
+        </div>
     </div>
-
+    
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getFirestore, collection, addDoc, serverTimestamp, query, orderBy, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
+        import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        
         const firebaseConfig = {
-            apiKey: "AIzaSyC_2Ukoxf_ry7QfKtou1Cz6nY-qTVw4qTU",
+            apiKey: "AIzaSyC_2Ukoxf_ry7QfKtou1Cz6nY-qTVw4qTU", 
             authDomain: "vyt-music.firebaseapp.com",
-            projectId: "vyt-music",
-            storageBucket: "vyt-music.firebasestorage.app",
-            messagingSenderId: "574981837817",
+            projectId: "vyt-music", 
+            storageBucket: "vyt-music.firebasestorage.app", 
+            messagingSenderId: "574981837817", 
             appId: "1:574981837817:web:a29933a22bbfd51a086328"
         };
         const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
+        const auth = getAuth(app);
+        
+        const ui = {
+            authScreen: document.getElementById('auth-screen'),
+            appContent: document.getElementById('app-content'),
+            emailInput: document.getElementById('email-input'),
+            passwordInput: document.getElementById('password-input'),
+            loginBtn: document.getElementById('login-btn'),
+            registerBtn: document.getElementById('register-btn'),
+            assistantLoginBtn: document.getElementById('assistant-login-btn'),
+            messageContainer: document.getElementById('message-container'),
+            loadingOverlay: document.getElementById('loading-overlay'),
+            togglePasswordBtn: document.getElementById('toggle-password-btn'),
+            eyeIcon: document.getElementById('eye-icon'),
+            eyeSlashIcon: document.getElementById('eye-slash-icon')
+        };
 
-        const eventsCol = collection(db, 'events');
-        const createEventForm = document.getElementById('create-event-form');
-        const eventsListDiv = document.getElementById('events-list');
-        const loader = document.getElementById('events-loader');
+        function displayMessage(message, type = 'success') {
+            const colors = { success: 'bg-green-500', error: 'bg-red-500', warning: 'bg-yellow-500 text-black', info: 'bg-sky-500' };
+            ui.messageContainer.innerHTML = `<div class="p-4 rounded-md mb-4 text-white ${colors[type]}">${message}</div>`;
+            setTimeout(() => { ui.messageContainer.innerHTML = ''; }, 5000);
+        }
 
-        // Función para renderizar la lista de eventos
-        function renderEvents(events) {
-            eventsListDiv.innerHTML = '';
-            loader.style.display = 'none';
+        function setLoading(show) { ui.loadingOverlay.classList.toggle('hidden', !show); }
 
-            if (events.length === 0) {
-                const noEventsMessage = document.createElement('p');
-                noEventsMessage.textContent = 'No hay eventos creados todavía. ¡Crea el primero!';
-                noEventsMessage.className = 'text-center text-gray-400';
-                eventsListDiv.appendChild(noEventsMessage);
-                return;
-            }
-
-            events.forEach(event => {
-                const eventCard = document.createElement('a');
-                eventCard.href = `panel_evento.html?eventId=${event.id}&eventName=${encodeURIComponent(event.name)}`;
-                eventCard.className = 'event-card block p-6 rounded-lg shadow-md';
-                eventCard.innerHTML = `
-                    <h3 class="text-xl font-bold text-sky-400">${event.name}</h3>
-                    <p class="text-gray-400">Fecha: ${event.date}</p>
-                `;
-                eventsListDiv.appendChild(eventCard);
+        function checkAuthenticationState() {
+            onAuthStateChanged(auth, (user) => {
+                if (user) {
+                    // Si el usuario está logueado, redirigir a la página de eventos
+                    window.location.href = 'eventos.html';
+                } else {
+                    // Si no está logueado, mostrar la pantalla de autenticación
+                    ui.authScreen.classList.remove('hidden');
+                    setLoading(false);
+                }
             });
         }
         
-        // Listener para el formulario de creación de eventos
-        createEventForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const eventName = document.getElementById('event-name').value;
-            const eventDate = document.getElementById('event-date').value;
-
-            if (eventName && eventDate) {
-                try {
-                    await addDoc(eventsCol, {
-                        name: eventName,
-                        date: eventDate,
-                        createdAt: serverTimestamp()
-                    });
-                    createEventForm.reset();
-                } catch (error) {
-                    console.error("Error al crear evento: ", error);
-                    alert("No se pudo crear el evento.");
-                }
+        ui.loginBtn.addEventListener('click', async () => {
+            try {
+                setLoading(true);
+                await signInWithEmailAndPassword(auth, ui.emailInput.value, ui.passwordInput.value);
+                displayMessage('Inicio de sesión exitoso.', 'success');
+            } catch (err) {
+                displayMessage(`Error al iniciar sesión: ${err.message}`, 'error');
+                setLoading(false);
             }
         });
 
-        // Listener para la colección de eventos
-        // Esto se actualizará automáticamente cada vez que haya un cambio
-        const q = query(eventsCol, orderBy('createdAt', 'desc'));
-        onSnapshot(q, (snapshot) => {
-            const events = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            renderEvents(events);
-        }, (error) => {
-            console.error("Error al cargar eventos: ", error);
-            eventsListDiv.innerHTML = `<p class="text-center text-red-500">Error al cargar los eventos. Revisa la consola para más detalles.</p>`;
+        ui.registerBtn.addEventListener('click', async () => {
+            try {
+                setLoading(true);
+                await createUserWithEmailAndPassword(auth, ui.emailInput.value, ui.passwordInput.value);
+                displayMessage('Registro exitoso. ¡Bienvenido!', 'success');
+            } catch (err) {
+                displayMessage(`Error al registrarse: ${err.message}`, 'error');
+                setLoading(false);
+            }
         });
+        
+        ui.assistantLoginBtn.addEventListener('click', () => {
+            window.location.href = 'escaner_y_lista.html';
+        });
+
+        ui.togglePasswordBtn.addEventListener('click', () => {
+            const type = ui.passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
+            ui.passwordInput.setAttribute('type', type);
+            ui.eyeIcon.classList.toggle('hidden');
+            ui.eyeSlashIcon.classList.toggle('hidden');
+        });
+
+        setLoading(true);
+        checkAuthenticationState();
     </script>
 </body>
 </html>
