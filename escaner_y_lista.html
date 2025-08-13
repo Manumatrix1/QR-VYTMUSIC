@@ -1,160 +1,144 @@
-    <!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Escanear y Listar - VYTMUSIC</title>
+    <title>Escáner y Lista - VYTMUSIC</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
-        /* Incluye aquí los mismos estilos del <style> del body del index.html original */
         body { font-family: 'Inter', sans-serif; background-color: #111827; color: #f9fafb; }
         .hidden { display: none !important; }
-        /* Añade aquí los estilos para el scanner, modales, etc. del index.html original */
+        #fullscreen-scanner-container { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: #000; z-index: 50; display: flex; flex-direction: column; justify-content: center; align-items: center; }
+        #qr-code-reader { width: 100vw; height: 100vh; }
+        #qr-code-reader video { width: 100% !important; height: 100% !important; object-fit: cover; }
+        .scanner-button { position: absolute; z-index: 60; background-color: rgba(0,0,0,0.5); border-radius: 50%; width: 50px; height: 50px; display: flex; justify-content: center; align-items: center; color: white; border: 1px solid rgba(255,255,255,0.3); cursor: pointer; }
+        #close-scanner-btn { top: 1.5rem; right: 1.5rem; }
+        #scanned-ticket-info-fullscreen { position: absolute; bottom: 6rem; left: 50%; transform: translateX(-50%); width: 90%; max-width: 400px; z-index: 60; }
     </style>
 </head>
 <body>
     <div class="container mx-auto max-w-4xl p-4 sm:p-6">
         <header class="text-center mb-6">
             <a href="index.html" class="text-sky-400 hover:underline mb-4 inline-block">&larr; Volver al Panel Principal</a>
-            <h1 class="text-3xl sm:text-4xl font-bold text-sky-400">Escanear y Listar Entradas</h1>
+            <h1 class="text-3xl sm:text-4xl font-bold text-sky-400">Escáner y Lista de Entradas</h1>
         </header>
-
-        <div id="message-container" class="mb-4"></div>
-
-        <button id="open-scanner-btn" class="w-full max-w-md mx-auto flex items-center justify-center gap-3 p-4 mb-8 rounded-lg text-white font-bold bg-green-600 hover:bg-green-700">
-             <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
-             <span>Abrir Escáner</span>
-        </button>
-
-        <section id="all-tickets-section">
-            <div class="bg-gray-800 p-6 rounded-lg shadow-xl">
+        <main class="space-y-8">
+            <button id="open-scanner-btn" class="w-full max-w-md mx-auto flex items-center justify-center gap-3 p-4 rounded-lg text-white font-bold bg-blue-600 hover:bg-blue-700"><span>Abrir Escáner</span></button>
+            <section id="all-tickets-section" class="bg-gray-800 p-6 rounded-lg shadow-xl">
                 <h2 class="text-2xl font-bold mb-4">Lista de Todas las Entradas</h2>
-                <input type="text" id="all-tickets-search-input" placeholder="Buscar por nombre, artista, ID..." class="w-full p-3 rounded-md border border-gray-600 bg-gray-900 text-white focus:outline-none focus:ring-2 focus:ring-sky-500 mb-4">
-                 <div id="artist-info-container" class="hidden bg-gray-900 p-4 rounded-lg mb-4 text-center">
-                    <p id="artist-ticket-count" class="text-lg font-semibold"></p>
-                    <button id="share-artist-qrs-btn" class="mt-2 px-4 py-2 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700">Compartir Entradas del Artista</button>
-                </div>
+                <input type="text" id="all-tickets-search-input" placeholder="Buscar por nombre, artista, o ID..." class="w-full p-3 rounded-md border border-gray-600 bg-gray-900 text-white mb-4">
                 <ul id="all-tickets-list" class="space-y-3"></ul>
-            </div>
-        </section>
+            </section>
+        </main>
     </div>
-
+    <div id="fullscreen-scanner-container" class="hidden">
+        <div id="qr-code-reader"></div>
+        <button id="close-scanner-btn" class="scanner-button"><svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg></button>
+        <div id="scanned-ticket-info-fullscreen" class="hidden bg-gray-800 bg-opacity-90 p-4 rounded-lg shadow-xl text-center"></div>
+    </div>
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js" defer></script>
     <script type="module">
-        // Importa aquí todas las funciones de Firebase como en el index.html original
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, onAuthStateChanged, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, onSnapshot, query, doc, deleteDoc, getDocs, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-        // Pega aquí la configuración de Firebase
+        import { getFirestore, collection, onSnapshot, query, doc, deleteDoc, getDoc, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         const firebaseConfig = {
             apiKey: "AIzaSyC_2Ukoxf_ry7QfKtou1Cz6nY-qTVw4qTU",
             authDomain: "vyt-music.firebaseapp.com",
             projectId: "vyt-music",
-            storageBucket: "vyt-music.appspot.com",
+            storageBucket: "vyt-music.firebasestorage.app",
             messagingSenderId: "574981837817",
             appId: "1:574981837817:web:a29933a22bbfd51a086328"
         };
-
-        const state = { db: null, auth: null, allTicketsData: [], appId: firebaseConfig.projectId };
-        const ui = {}; // Define los elementos de la UI que usarás en esta página
-
-        // --- Funciones Reutilizables (displayMessage, setLoading, etc.) ---
-        // Pega aquí las funciones de UI que necesites
-
-        // --- NUEVO: Lógica de la Página ---
-
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        let allTicketsData = [];
+        let html5QrCode;
         function renderAllTickets(tickets) {
-            // ... (código existente de renderAllTickets)
-            // AÑADIR BOTÓN DE BORRADO:
-            li.innerHTML = `
-                <div class="flex-grow">
-                    <p class="font-semibold">${ticket.name} <span class="text-gray-400 text-sm">(${ticket.prefix})</span></p>
-                    <p class="text-sm text-gray-400">ID: ${ticket.id}</p>
-                </div>
-                <div class="flex items-center gap-2">
-                     <span class="px-3 py-1 rounded-full text-xs font-semibold ${ticket.used ? 'bg-yellow-600' : 'bg-green-600'}">${ticket.used ? 'USADO' : 'DISPONIBLE'}</span>
-                     <button data-ticket-id="${ticket.id}" class="delete-ticket-btn p-2 rounded-full bg-red-600 hover:bg-red-700 text-white">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                    </button>
-                </div>`;
-            // ...
-        }
-
-        async function deleteTicket(ticketId) {
-            if (!confirm(`¿Estás seguro de que quieres eliminar la entrada ${ticketId}? Esta acción no se puede deshacer.`)) {
-                return;
-            }
-            setLoading(true);
-            try {
-                await deleteDoc(doc(state.db, `artifacts/${state.appId}/public/data/tickets`, ticketId));
-                displayMessage('Entrada eliminada correctamente.', 'success');
-            } catch (error) {
-                console.error("Error al eliminar la entrada:", error);
-                displayMessage(`Error al eliminar la entrada: ${error.message}`, 'error');
-            } finally {
-                setLoading(false);
-            }
-        }
-
-        function setupEventListeners() {
-            // ... (listeners para abrir escáner, etc.)
-
-            ui.allTicketsList.addEventListener('click', (e) => {
-                const deleteBtn = e.target.closest('.delete-ticket-btn');
-                if (deleteBtn) {
-                    const ticketId = deleteBtn.dataset.ticketId;
-                    deleteTicket(ticketId);
-                }
+            const list = document.getElementById('all-tickets-list');
+            list.innerHTML = '';
+            tickets.forEach(ticket => {
+                const li = document.createElement('li');
+                li.className = 'bg-gray-900 p-4 rounded-md flex justify-between items-center gap-4 flex-wrap';
+                const paymentStatus = ticket.paymentStatus || 'Paga';
+                const paymentClass = paymentStatus === 'Paga' ? 'bg-green-600' : 'bg-red-600';
+                const actionButtonHTML = ticket.used ? `<button data-ticket-id="${ticket.id}" data-used="true" class="manual-check-in-btn px-3 py-1 bg-yellow-600 hover:bg-yellow-700 rounded-lg">Anular Ingreso</button>` : `<button data-ticket-id="${ticket.id}" data-used="false" class="manual-check-in-btn px-3 py-1 bg-green-600 hover:bg-green-700 rounded-lg">Ingresar</button>`;
+                li.innerHTML = `<div class="flex-grow"><p class="font-semibold">${ticket.name} <span class="text-gray-400 text-sm">(${ticket.prefix})</span></p><p class="text-sm text-gray-500">${ticket.id}</p></div><div class="flex items-center gap-2 text-xs font-semibold flex-shrink-0"><span class="px-3 py-1 rounded-full ${paymentClass}">${paymentStatus}</span>${actionButtonHTML}<button data-ticket-id="${ticket.id}" title="Eliminar Entrada" class="delete-ticket-btn p-2 rounded-full bg-gray-700 hover:bg-red-700 text-white leading-none">X</button></div>`;
+                list.appendChild(li);
             });
-
-            ui.allTicketsSearchInput.addEventListener('input', (e) => {
-                const term = e.target.value.toLowerCase().trim();
-                const artistInfoContainer = document.getElementById('artist-info-container');
-                if (!term) {
-                    renderAllTickets(state.allTicketsData);
-                    artistInfoContainer.classList.add('hidden');
-                    return;
-                }
-
-                // Filtrado mejorado
-                const filtered = state.allTicketsData.filter(ticket =>
-                    ticket.name.toLowerCase().includes(term) ||
-                    ticket.id.toLowerCase().includes(term) ||
-                    ticket.prefix.toLowerCase().includes(term)
-                );
-                renderAllTickets(filtered);
-
-                // Si la búsqueda parece ser por un artista (prefijo), muestra información adicional
-                const potentialPrefix = term;
-                const artistTickets = state.allTicketsData.filter(t => t.prefix.toLowerCase() === potentialPrefix);
-                if (artistTickets.length > 0) {
-                    document.getElementById('artist-ticket-count').textContent = `Se encontraron ${artistTickets.length} entradas para el artista "${artistTickets[0].prefix}".`;
-                    artistInfoContainer.classList.remove('hidden');
-
-                    document.getElementById('share-artist-qrs-btn').onclick = () => {
-                        const loc = window.location;
-                        let path = loc.pathname;
-                        path = path.substring(0, path.lastIndexOf('/'));
-                        const baseUrl = `${loc.origin}${path}`;
-                        const shareableLink = `${baseUrl}/visor_qr_compartido.html?artist=${encodeURIComponent(artistTickets[0].prefix)}&appId=${state.appId}`;
-                        navigator.clipboard.writeText(shareableLink).then(() => {
-                            displayMessage('¡Enlace de las entradas del artista copiado!', 'success');
-                        });
-                    };
+        }
+        async function toggleTicketStatus(ticketId, isCurrentlyUsed) {
+            const newUsedStatus = !isCurrentlyUsed;
+            const confirmationText = newUsedStatus ? `¿Marcar la entrada como USADA?` : `¿ANULAR el ingreso?`;
+            if (confirm(confirmationText)) {
+                const ticketRef = doc(db, `artifacts/${firebaseConfig.projectId}/public/data/tickets`, ticketId);
+                await updateDoc(ticketRef, { used: newUsedStatus, usedAt: newUsedStatus ? new Date().toISOString() : null });
+            }
+        }
+        function onScanSuccess(decodedText, decodedResult) {
+            html5QrCode.pause(true);
+            processScan(decodedText);
+        }
+        async function processScan(decodedText) {
+            const infoContainer = document.getElementById('scanned-ticket-info-fullscreen');
+            const ticketDoc = await getDoc(doc(db, `artifacts/${firebaseConfig.projectId}/public/data/tickets`, decodedText));
+            let status, colorClass, ticketData;
+            if (!ticketDoc.exists()) {
+                status = 'INVÁLIDO'; colorClass = 'text-red-500';
+                ticketData = { name: 'NO ENCONTRADA' };
+            } else {
+                ticketData = { id: ticketDoc.id, ...ticketDoc.data() };
+                if (ticketData.used) {
+                    status = 'YA USADO'; colorClass = 'text-yellow-500';
                 } else {
-                    artistInfoContainer.classList.add('hidden');
+                    status = 'VÁLIDO'; colorClass = 'text-green-500';
+                    await updateDoc(doc(db, `artifacts/${firebaseConfig.projectId}/public/data/tickets`, ticketDoc.id), { used: true, usedAt: new Date().toISOString() });
                 }
+            }
+            const paymentStatus = ticketData.paymentStatus || 'Paga';
+            const paymentClass = paymentStatus === 'Paga' ? 'text-green-500' : 'text-red-500';
+            infoContainer.innerHTML = `<h3 class="text-xl font-bold mb-2">Entrada Escaneada</h3><p><strong>Nombre:</strong> <span class="text-sky-300">${ticketData.name}</span></p><p class="mt-4 text-lg font-semibold">Estado: <span class="font-bold ${colorClass}">${status}</span></p><p class="mt-2 text-lg font-semibold">Pago: <span class="font-bold ${paymentClass}">${paymentStatus.toUpperCase()}</span></p><button id="scan-again-btn-internal" class="w-full mt-4 px-4 py-3 bg-sky-600 text-white font-bold rounded-lg">Escanear Siguiente</button>`;
+            infoContainer.classList.remove('hidden');
+            document.getElementById('scan-again-btn-internal').addEventListener('click', () => {
+                infoContainer.classList.add('hidden');
+                html5QrCode.resume();
             });
         }
-
-        // --- Función de Inicialización ---
-        async function initApp() {
-            // ... (pega aquí el código de initApp, pero solo con la lógica necesaria para esta página)
-            // Principalmente, necesitas la autenticación y el listener para la colección de 'tickets'.
+        function startScanner() {
+            document.getElementById('fullscreen-scanner-container').classList.remove('hidden');
+            html5QrCode = new Html5Qrcode("qr-code-reader");
+            html5QrCode.start({ facingMode: "environment" }, { fps: 10, qrbox: { width: 250, height: 250 } }, onScanSuccess, (e)=>{})
+                .catch(err => alert("Error al iniciar escáner."));
+        }
+        function stopScanner() {
+            if (html5QrCode?.getState() === 2) { // 2 = SCANNING
+                html5QrCode.stop();
+            }
+            document.getElementById('fullscreen-scanner-container').classList.add('hidden');
         }
 
-        window.onload = initApp;
+        const ticketsQuery = query(collection(db, `artifacts/${firebaseConfig.projectId}/public/data/tickets`));
+        onSnapshot(ticketsQuery, (snapshot) => {
+            allTicketsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a,b) => a.name.localeCompare(b.name));
+            renderAllTickets(allTicketsData);
+        });
+        document.getElementById('all-tickets-search-input').addEventListener('input', (e) => {
+            const filtered = allTicketsData.filter(t => t.name.toLowerCase().includes(e.target.value.toLowerCase()));
+            renderAllTickets(filtered);
+        });
+        document.getElementById('all-tickets-list').addEventListener('click', async (e) => {
+            const target = e.target.closest('button');
+            if (!target) return;
+            if (target.classList.contains('manual-check-in-btn')) {
+                toggleTicketStatus(target.dataset.ticketId, target.dataset.used === 'true');
+            }
+            if (target.classList.contains('delete-ticket-btn')) {
+                if(confirm(`¿Eliminar entrada?`)) {
+                    await deleteDoc(doc(db, `artifacts/${firebaseConfig.projectId}/public/data/tickets`, target.dataset.ticketId));
+                }
+            }
+        });
+        document.getElementById('open-scanner-btn').addEventListener('click', startScanner);
+        document.getElementById('close-scanner-btn').addEventListener('click', stopScanner);
     </script>
 </body>
 </html>
