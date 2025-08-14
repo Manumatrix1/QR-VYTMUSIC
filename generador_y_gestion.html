@@ -12,12 +12,25 @@
         .loading-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.8); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 1000; gap: 1rem; }
         .spinner { border: 4px solid rgba(255,255,255,0.3); border-top: 4px solid #38bdf8; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .modal-backdrop { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.7); z-index: 900; display: flex; justify-content: center; align-items: center; }
+        .modal-content { background-color: #1f2937; padding: 1.5rem; border-radius: 0.5rem; max-width: 90%; width: 500px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
     </style>
 </head>
 <body>
     <div id="loading-overlay" class="loading-overlay hidden">
         <div class="spinner"></div>
         <p id="loading-text">Procesando...</p>
+    </div>
+    <div id="share-link-modal" class="modal-backdrop hidden">
+        <div class="modal-content text-center">
+            <h3 class="text-xl font-bold mb-4">Compartir Enlace</h3>
+            <p class="mb-4">Copia el siguiente enlace:</p>
+            <input type="text" id="share-link-display" class="w-full p-3 rounded-md bg-gray-900 text-white" readonly>
+            <div class="flex justify-end space-x-4 mt-4">
+                <button id="copy-share-link-btn" class="px-4 py-2 bg-sky-600 text-white font-bold rounded-lg">Copiar</button>
+                <button id="close-share-modal-btn" class="px-4 py-2 bg-gray-600 text-white font-bold rounded-lg">Cerrar</button>
+            </div>
+        </div>
     </div>
     <div class="container mx-auto max-w-4xl p-4 sm:p-6">
         <header class="text-center mb-6">
@@ -87,6 +100,7 @@
                         <button id="generate-batch-btn" class="w-full px-4 py-3 bg-green-600 text-white font-bold rounded-lg disabled:opacity-50">
                             Generar <span id="person-count">0</span> Entradas
                         </button>
+                        <button id="share-batch-qrs-btn" class="w-full px-4 py-3 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 mt-4 hidden">Compartir Entradas del Grupo</button>
                     </div>
                 </div>
             </section>
@@ -107,6 +121,7 @@
         document.getElementById('back-to-panel-link').href = `panel_evento.html?eventId=${eventId}`;
 
         let people = [];
+        let generatedPrefix = '';
 
         const ui = {
             loadingOverlay: document.getElementById('loading-overlay'),
@@ -114,9 +129,15 @@
             previewList: document.getElementById('preview-list'),
             generateBatchBtn: document.getElementById('generate-batch-btn'),
             personCount: document.getElementById('person-count'),
-            photoInput: document.getElementById('artist-photo-input'),
-            photoPreview: document.getElementById('photo-preview')
+            shareBatchQrsBtn: document.getElementById('share-batch-qrs-btn'),
+            shareLinkModal: document.getElementById('share-link-modal'),
+            shareLinkDisplay: document.getElementById('share-link-display'),
+            copyShareLinkBtn: document.getElementById('copy-share-link-btn'),
+            closeShareModalBtn: document.getElementById('close-share-modal-btn'),
+            ticketPrefixInput: document.getElementById('ticket-prefix-input')
         };
+        
+        function setLoading(show) { ui.loadingOverlay.classList.toggle('hidden', !show); }
         
         function getPriceTiers() {
             const tiers = {};
@@ -136,6 +157,7 @@
                 ui.previewList.innerHTML = '<p class="text-center text-gray-500">Pega una lista de nombres.</p>';
                 ui.generateBatchBtn.disabled = true;
                 ui.personCount.textContent = 0;
+                ui.shareBatchQrsBtn.classList.add('hidden');
                 return;
             }
             people.forEach((person, index) => {
@@ -178,7 +200,7 @@
             const showName = document.getElementById('show-name-input').value;
             const prefix = document.getElementById('ticket-prefix-input').value;
             if (!showName || !prefix) { alert('Completa el nombre del show y el prefijo.'); return; }
-            ui.loadingOverlay.classList.remove('hidden');
+            setLoading(true);
             const batch = writeBatch(db);
             const ticketsCol = collection(db, `events/${eventId}/tickets`);
             const priceTiers = getPriceTiers();
@@ -188,12 +210,24 @@
                 batch.set(doc(ticketsCol, ticketId), ticketData);
             });
             await batch.commit();
-            ui.loadingOverlay.classList.add('hidden');
+            setLoading(false);
             alert(`${people.length} entradas generadas.`);
-            ui.nameListTextarea.value = '';
-            people = [];
-            renderPreview();
+            generatedPrefix = prefix;
+            ui.shareBatchQrsBtn.classList.remove('hidden');
         });
+        
+        ui.shareBatchQrsBtn.addEventListener('click', () => {
+            if (!generatedPrefix) return alert('Genera entradas primero para compartir el enlace.');
+            const shareableLink = `${window.location.origin}/visor_qr_compartido.html?eventId=${eventId}&artistPrefix=${encodeURIComponent(generatedPrefix)}`; 
+            ui.shareLinkDisplay.value = shareableLink;
+            ui.shareLinkModal.classList.remove('hidden');
+        });
+        
+        ui.copyShareLinkBtn.addEventListener('click', () => {
+            navigator.clipboard.writeText(ui.shareLinkDisplay.value);
+            alert('¡Enlace copiado!');
+        });
+        ui.closeShareModalBtn.addEventListener('click', () => ui.shareLinkModal.classList.add('hidden'));
 
         renderPreview();
     </script>

@@ -262,14 +262,20 @@
             renderTickets(filtered);
         }
 
-        async function loadArtistTickets(artistPrefix, eventId) {
+        async function loadTickets(eventId, artistPrefix = null) {
             setLoading(true);
             ui.qrsContainer.innerHTML = ''; 
-            ui.artistNameDisplay.textContent = `Entradas para: ${decodeURIComponent(artistPrefix)}`;
-
+            
             try {
                 const ticketsCollectionRef = collection(db, `events/${eventId}/tickets`);
-                const q = query(ticketsCollectionRef, where("prefix", "==", artistPrefix));
+                let q;
+                if (artistPrefix) {
+                     q = query(ticketsCollectionRef, where("prefix", "==", artistPrefix));
+                     ui.artistNameDisplay.textContent = `Entradas para: ${decodeURIComponent(artistPrefix)}`;
+                } else {
+                     q = query(ticketsCollectionRef);
+                     ui.artistNameDisplay.textContent = `Todas las Entradas del Evento`;
+                }
 
                 const querySnapshot = await getDocs(q);
                 state.allTicketsData = querySnapshot.docs.map(doc => doc.data()).sort((a,b) => a.name.localeCompare(b.name));
@@ -280,12 +286,12 @@
                     displayMessage(`${state.allTicketsData.length} entradas cargadas.`, 'success');
                     ui.controlsContainer.classList.remove('hidden');
                 } else {
-                    displayMessage('No se encontraron tickets para este grupo o el prefijo es incorrecto.', 'warning');
+                    displayMessage('No se encontraron entradas con este criterio.', 'warning');
                     ui.showNameDisplay.textContent = 'Show: No disponible';
                     ui.controlsContainer.classList.add('hidden');
                 }
             } catch (error) {
-                console.error('Error al cargar las entradas del artista:', error);
+                console.error('Error al cargar las entradas:', error);
                 displayMessage('Error al cargar las entradas. Revisa la consola.', 'error');
             } finally {
                 setLoading(false);
@@ -295,7 +301,7 @@
         async function startApp() {
             setLoading(true);
             const urlParams = new URLSearchParams(window.location.search);
-            const artistPrefix = urlParams.get('artist');
+            const artistPrefix = urlParams.get('artistPrefix');
             const eventId = urlParams.get('eventId');
             
             if (eventId) {
@@ -303,10 +309,10 @@
                 ui.backToPanelLink.classList.remove('hidden');
             }
 
-            if (artistPrefix && eventId) {
-                await loadArtistTickets(artistPrefix, eventId);
+            if (eventId) {
+                await loadTickets(eventId, artistPrefix);
             } else {
-                displayMessage('Falta el identificador del artista o el ID del evento en la URL.', 'error');
+                displayMessage('Falta el ID del evento en la URL.', 'error');
                 ui.artistNameDisplay.textContent = 'Información incompleta';
                 ui.showNameDisplay.textContent = 'Show: No disponible';
                 setLoading(false);
