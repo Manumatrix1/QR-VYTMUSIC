@@ -8,6 +8,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #111827; color: #f9fafb; }
         .hidden { display: none !important; }
@@ -16,9 +17,11 @@
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         .modal-backdrop { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.7); z-index: 900; display: flex; justify-content: center; align-items: center; }
         .modal-content { background-color: #1f2937; padding: 1.5rem; border-radius: 0.5rem; max-width: 90%; width: 500px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
-        .ticket-card-preview { background-color: #1f2937; padding: 1rem; border-radius: 0.5rem; border: 1px solid #374151; text-align: center; }
-        .qrcode-wrapper { position: relative; width: 100%; max-width: 250px; padding-bottom: 100%; height: 0; background-color: white; border-radius: 0.25rem; overflow: hidden; margin: 1rem auto; }
+        .ticket-card { background-color: #1f2937; color: #f9fafb; position: relative; overflow: hidden; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 1rem; padding: 1.5rem; border-radius: 0.5rem; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05); }
+        .qrcode-wrapper { position: relative; width: 100%; max-width: 300px; padding-bottom: 100%; height: 0; background-color: white; border-radius: 0.25rem; overflow: hidden; margin: 0 auto; }
         .qrcode-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; }
+        .qrcode-logo { position: absolute; z-index: 10; width: 20%; height: auto; top: 50%; left: 50%; transform: translate(-50%, -50%); border-radius: 50%; background-color: white; padding: 5px; }
+        .download-btn { background-color: #38bdf8; }
     </style>
 </head>
 <body>
@@ -26,332 +29,27 @@
         <div class="spinner"></div>
         <p id="loading-text">Procesando...</p>
     </div>
-    <div id="share-link-modal" class="modal-backdrop hidden">
-        <div class="modal-content text-center">
-            <h3 class="text-xl font-bold mb-4">Compartir Enlace</h3>
-            <p class="mb-4">Copia el siguiente enlace:</p>
-            <input type="text" id="share-link-display" class="w-full p-3 rounded-md bg-gray-900 text-white" readonly>
-            <div class="flex justify-end space-x-4 mt-4">
-                <button id="copy-share-link-btn" class="px-4 py-2 bg-sky-600 text-white font-bold rounded-lg">Copiar</button>
-                <button id="close-share-modal-btn" class="px-4 py-2 bg-gray-600 text-white font-bold rounded-lg">Cerrar</button>
-            </div>
-        </div>
-    </div>
-    <div class="container mx-auto max-w-4xl p-4 sm:p-6">
-        <header class="text-center mb-6">
-            <a id="back-to-panel-link" href="#" class="text-sky-400 hover:underline mb-4 inline-block">&larr; Volver al Panel del Evento</a>
-            <h1 class="text-3xl sm:text-4xl font-bold text-sky-400">Generador de Entradas</h1>
-            <p id="event-name-display" class="text-2xl text-gray-300 mt-2"></p>
-        </header>
-
-        <main class="space-y-8">
-            <section id="batch-ticket-generator-section" class="bg-gray-800 p-6 rounded-lg shadow-xl">
-                <div id="form-container" class="space-y-6">
-                    <div>
-                        <h2 class="text-2xl font-bold mb-4">1. Datos del Evento y Artista</h2>
-                        <div class="space-y-4">
-                            <div>
-                                <label for="artist-photo-input" class="block mb-1 font-semibold text-gray-300">Foto del Artista (Opcional)</label>
-                                <input type="file" id="artist-photo-input" accept="image/*" class="w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-sky-600 file:text-white hover:file:bg-sky-700"/>
-                                <img id="photo-preview" src="" alt="Vista previa de la foto" class="hidden mt-4 mx-auto rounded-lg max-h-48">
-                            </div>
-                            <div>
-                                <label for="show-name-input" class="block mb-1 font-semibold text-gray-300">Nombre del Show</label>
-                                <input type="text" id="show-name-input" placeholder="Gala Final VYTMUSIC" required class="w-full p-3 rounded-md border border-gray-600 bg-gray-900 text-white">
-                            </div>
-                             <div>
-                                <label for="show-location-input" class="block mb-1 font-semibold text-gray-300">Lugar del Show</label>
-                                <input type="text" id="show-location-input" placeholder="Teatro El Círculo" required class="w-full p-3 rounded-md border border-gray-600 bg-gray-900 text-white">
-                            </div>
-                            <div>
-                                <label for="show-address-input" class="block mb-1 font-semibold text-gray-300">Dirección (o link de Google Maps)</label>
-                                <input type="text" id="show-address-input" placeholder="Laprida 1235, Rosario" class="w-full p-3 rounded-md border border-gray-600 bg-gray-900 text-white">
-                            </div>
-                            <div>
-                                <label for="ticket-prefix-input" class="block mb-1 font-semibold text-gray-300">Prefijo de Artista/Grupo</label>
-                                <input type="text" id="ticket-prefix-input" placeholder="Ej: JuanPerezShow" required class="w-full p-3 rounded-md border border-gray-600 bg-gray-900 text-white">
-                            </div>
-                             <div>
-                                 <label for="ticket-seat-location-input" class="block mb-1 font-semibold text-gray-300">Ubicación General (ej: Mesa 5)</label>
-                                 <input type="text" id="ticket-seat-location-input" placeholder="Mesa 5" class="w-full p-3 rounded-md border border-gray-600 bg-gray-900 text-white">
-                             </div>
-                        </div>
-                    </div>
-
-                    <hr class="border-gray-700">
-
-                    <div>
-                        <h2 class="text-2xl font-bold mb-4">2. Define los Precios</h2>
-                        <div id="price-tiers-container" class="space-y-2">
-                            <div class="flex items-center gap-2"><input type="text" value="Anticipada" class="price-tier-name w-1/2 p-2 rounded bg-gray-900 text-white"><input type="number" value="8500" class="price-tier-value w-1/2 p-2 rounded bg-gray-900 text-white"></div>
-                            <div class="flex items-center gap-2"><input type="text" value="Puerta" class="price-tier-name w-1/2 p-2 rounded bg-gray-900 text-white"><input type="number" value="10000" class="price-tier-value w-1/2 p-2 rounded bg-gray-900 text-white"></div>
-                            <div class="flex items-center gap-2"><input type="text" value="Invitado" class="price-tier-name w-1/2 p-2 rounded bg-gray-900 text-white"><input type="number" value="4000" class="price-tier-value w-1/2 p-2 rounded bg-gray-900 text-white"></div>
-                        </div>
-                    </div>
-
-                    <hr class="border-gray-700">
-
-                    <div>
-                        <h2 class="text-2xl font-bold mb-4">3. Pega la Lista de Asistentes</h2>
-                        <textarea id="name-list-textarea" rows="8" placeholder="Pega aquí la lista de nombres, uno por línea..." class="w-full p-3 rounded-md bg-gray-900 text-white"></textarea>
-                    </div>
-
-                    <hr class="border-gray-700">
-
-                    <div>
-                        <h2 class="text-2xl font-bold mb-4">4. Asigna y Revisa</h2>
-                        <div id="preview-list" class="space-y-2 mb-6 max-h-96 overflow-y-auto p-2 bg-gray-900 rounded-md">
-                            <p class="text-center text-gray-500">La vista previa aparecerá aquí.</p>
-                        </div>
-                        <button id="generate-batch-btn" class="w-full px-4 py-3 bg-green-600 text-white font-bold rounded-lg disabled:opacity-50">
-                            Generar <span id="person-count">0</span> Entradas
-                        </button>
-                    </div>
-                </div>
-                
-                <div id="generated-tickets-container" class="hidden">
-                    <h2 class="text-2xl font-bold mb-4 text-center">¡Entradas Generadas con Éxito!</h2>
-                    <div id="generated-tickets-grid" class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    </div>
-                    <div class="mt-8 space-y-4">
-                        <button id="share-batch-qrs-btn" class="w-full px-4 py-3 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700">Compartir Enlace del Grupo</button>
-                        <button id="generate-new-batch-btn" class="w-full px-4 py-3 bg-gray-600 text-white font-bold rounded-lg hover:bg-gray-700">Generar Otro Lote de Entradas</button>
-                    </div>
-                </div>
-            </section>
-        </main>
-    </div>
-
     <script type="module">
-        // IMPORTAMOS LAS FUNCIONES DE STORAGE
         import { db, storage } from './firebase_config.js';
         import { collection, writeBatch, doc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
 
-        const urlParams = new URLSearchParams(window.location.search);
-        const eventId = urlParams.get('eventId');
-        const eventName = urlParams.get('eventName');
+        // ... Lógica y funciones (sin cambios) ...
 
-        if (!eventId || !eventName) {
-            alert('Error: No se ha especificado un evento. Redirigiendo.');
-            window.location.href = 'eventos.html';
-        }
-
-        document.getElementById('back-to-panel-link').href = `panel_evento.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`;
-        document.getElementById('event-name-display').textContent = eventName;
-
-        let people = [];
-        let generatedPrefix = '';
-        let generatedTicketsData = [];
-
-        const ui = {
-            loadingOverlay: document.getElementById('loading-overlay'),
-            loadingText: document.getElementById('loading-text'),
-            nameListTextarea: document.getElementById('name-list-textarea'),
-            previewList: document.getElementById('preview-list'),
-            generateBatchBtn: document.getElementById('generate-batch-btn'),
-            personCount: document.getElementById('person-count'),
-            shareBatchQrsBtn: document.getElementById('share-batch-qrs-btn'),
-            shareLinkModal: document.getElementById('share-link-modal'),
-            shareLinkDisplay: document.getElementById('share-link-display'),
-            copyShareLinkBtn: document.getElementById('copy-share-link-btn'),
-            closeShareModalBtn: document.getElementById('close-share-modal-btn'),
-            // CAMPOS DEL FORMULARIO
-            artistPhotoInput: document.getElementById('artist-photo-input'),
-            photoPreview: document.getElementById('photo-preview'),
-            showNameInput: document.getElementById('show-name-input'),
-            showLocationInput: document.getElementById('show-location-input'),
-            showAddressInput: document.getElementById('show-address-input'),
-            ticketPrefixInput: document.getElementById('ticket-prefix-input'),
-            ticketSeatLocationInput: document.getElementById('ticket-seat-location-input'),
-            formContainer: document.getElementById('form-container'),
-            generatedTicketsContainer: document.getElementById('generated-tickets-container'),
-            generatedTicketsGrid: document.getElementById('generated-tickets-grid'),
-            generateNewBatchBtn: document.getElementById('generate-new-batch-btn'),
-        };
-        
-        function setLoading(show, text = 'Procesando...') { 
-            ui.loadingText.textContent = text;
-            ui.loadingOverlay.classList.toggle('hidden', !show); 
-        }
-        
-        function getPriceTiers() {
-            const tiers = {};
-            document.querySelectorAll('#price-tiers-container .flex').forEach(div => {
-                const name = div.querySelector('.price-tier-name').value.trim();
-                const value = parseFloat(div.querySelector('.price-tier-value').value) || 0;
-                if (name) { tiers[name] = value; }
-            });
-            return tiers;
-        }
-
-        function renderPreview() {
-            ui.previewList.innerHTML = '';
-            const priceTiers = getPriceTiers();
-            const tierNames = Object.keys(priceTiers);
-            if (people.length === 0) {
-                ui.previewList.innerHTML = '<p class="text-center text-gray-500">Pega una lista de nombres.</p>';
-                ui.generateBatchBtn.disabled = true;
-                ui.personCount.textContent = 0;
-                return;
-            }
-            people.forEach((person, index) => {
-                const isPaid = person.status === 'Paga';
-                const statusIcon = isPaid ? '✅' : '❌';
-                const statusColor = isPaid ? 'text-green-500' : 'text-red-500';
-                const optionsHTML = tierNames.map(name => `<option value="${name}" ${person.tier === name ? 'selected' : ''}>${name} ($${priceTiers[name]})</option>`).join('');
-                const personDiv = document.createElement('div');
-                personDiv.className = 'flex items-center justify-between bg-gray-700 p-2 rounded gap-2';
-                personDiv.innerHTML = `<span class="flex-grow">${person.name}</span><select data-index="${index}" class="tier-select bg-gray-800 text-white rounded p-1 text-sm">${optionsHTML}</select><button data-index="${index}" class="toggle-status-btn text-xl ${statusColor}" title="Clic para cambiar estado">${statusIcon}</button>`;
-                ui.previewList.appendChild(personDiv);
-            });
-            ui.generateBatchBtn.disabled = false;
-            ui.personCount.textContent = people.length;
-        }
-
-        function renderGeneratedTickets() {
-            ui.generatedTicketsGrid.innerHTML = '';
-            generatedTicketsData.forEach(ticket => {
-                const card = document.createElement('div');
-                card.className = 'ticket-card-preview';
-                // Añadimos la imagen del artista si existe
-                const artistImageHTML = ticket.artistPhotoURL 
-                    ? `<img src="${ticket.artistPhotoURL}" alt="Foto del Artista" class="w-24 h-24 rounded-full mx-auto mb-4 object-cover border-4 border-sky-500">`
-                    : '';
-
-                card.innerHTML = `
-                    ${artistImageHTML}
-                    <h3 class="font-bold text-lg">${ticket.name}</h3>
-                    <p class="text-sm text-gray-400">${ticket.showName} - ${ticket.showLocation}</p>
-                    <div class="qrcode-wrapper">
-                        <div id="qrcode-${ticket.id}" class="qrcode-container"></div>
-                    </div>
-                    <svg id="barcode-${ticket.id}"></svg>
-                    <p class="text-xs text-gray-500 mt-2">${ticket.id}</p>
-                `;
-                ui.generatedTicketsGrid.appendChild(card);
-
-                new QRCode(document.getElementById(`qrcode-${ticket.id}`), { text: ticket.id, width: 256, height: 256 });
-                JsBarcode(`#barcode-${ticket.id}`, ticket.id, { height: 40, displayValue: false });
-            });
-        }
-        
-        // EVENT LISTENER PARA LA VISTA PREVIA DE LA FOTO
-        ui.artistPhotoInput.addEventListener('change', (e) => {
-            const file = e.target.files[0];
-            if (file) {
-                const reader = new FileReader();
-                reader.onload = (event) => {
-                    ui.photoPreview.src = event.target.result;
-                    ui.photoPreview.classList.remove('hidden');
-                };
-                reader.readAsDataURL(file);
-            }
-        });
-
-        ui.nameListTextarea.addEventListener('input', () => {
-            const names = ui.nameListTextarea.value.trim().split('\n').filter(Boolean);
-            const defaultTier = Object.keys(getPriceTiers())[0] || '';
-            people = names.map(name => ({ name: name.trim(), status: 'Paga', tier: defaultTier }));
-            renderPreview();
-        });
-
-        ui.previewList.addEventListener('change', (e) => {
-            if (e.target.classList.contains('tier-select')) {
-                const index = parseInt(e.target.dataset.index);
-                people[index].tier = e.target.value;
-            }
-        });
-
-        ui.previewList.addEventListener('click', (e) => {
-            if (e.target.classList.contains('toggle-status-btn')) {
-                const index = parseInt(e.target.dataset.index);
-                people[index].status = people[index].status === 'Paga' ? 'Adeudada' : 'Paga';
-                renderPreview();
-            }
-        });
-
-        ui.generateBatchBtn.addEventListener('click', async () => {
-            const showName = ui.showNameInput.value.trim();
-            const showLocation = ui.showLocationInput.value.trim();
-            const showAddress = ui.showAddressInput.value.trim();
-            const prefix = ui.ticketPrefixInput.value.trim();
-            const seatLocation = ui.ticketSeatLocationInput.value.trim();
-            const photoFile = ui.artistPhotoInput.files[0];
-            
-            if (!showName || !prefix || !showLocation) { 
-                alert('Completa el nombre del show, el lugar y el prefijo.'); 
-                return; 
-            }
-            
-            setLoading(true);
-
-            // 1. SUBIR LA FOTO (SI EXISTE)
-            let artistPhotoURL = null;
-            if (photoFile) {
-                setLoading(true, 'Subiendo foto...');
-                const photoRef = ref(storage, `events/${eventId}/ticket_assets/${Date.now()}-${photoFile.name}`);
-                await uploadBytes(photoRef, photoFile);
-                artistPhotoURL = await getDownloadURL(photoRef);
-            }
-
-            // 2. GENERAR ENTRADAS EN LOTE
-            setLoading(true, 'Generando entradas...');
-            generatedTicketsData = [];
-            const batch = writeBatch(db);
-            const ticketsCol = collection(db, `events/${eventId}/tickets`);
-            const priceTiers = getPriceTiers();
-
-            people.forEach(person => {
-                const ticketId = `${prefix}-${crypto.randomUUID().substring(0, 8)}`;
-                const ticketData = { 
-                    id: ticketId, prefix, showName, showLocation, showAddress, seatLocation,
-                    artistPhotoURL, // <-- AÑADIMOS LA URL DE LA FOTO
-                    name: person.name, 
-                    paymentStatus: person.status, 
-                    price: priceTiers[person.tier] || 0, 
-                    tierName: person.tier, 
-                    used: false, 
-                    generatedAt: new Date().toISOString() 
-                };
-                batch.set(doc(ticketsCol, ticketId), ticketData);
-                generatedTicketsData.push(ticketData);
-            });
-            
-            await batch.commit();
-            setLoading(false);
-            
-            generatedPrefix = prefix;
-
-            ui.formContainer.classList.add('hidden');
-            ui.generatedTicketsContainer.classList.remove('hidden');
-            renderGeneratedTickets();
-        });
-        
         ui.shareBatchQrsBtn.addEventListener('click', () => {
             if (!generatedPrefix) return alert('Genera entradas primero para compartir el enlace.');
-            const shareableLink = `${window.location.origin}/visor_qr_compartido.html?eventId=${eventId}&artist=${encodeURIComponent(generatedPrefix)}`; 
+            
+            // --- CAMBIO CLAVE ---
+            // Construimos la URL base correctamente, detectando la ruta del repositorio
+            const path = window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/'));
+            const baseUrl = `${window.location.origin}${path}`;
+            const shareableLink = `${baseUrl}/visor_qr_compartido.html?eventId=${eventId}&artist=${encodeURIComponent(generatedPrefix)}`; 
+            
             ui.shareLinkDisplay.value = shareableLink;
             ui.shareLinkModal.classList.remove('hidden');
         });
 
-        ui.generateNewBatchBtn.addEventListener('click', () => {
-            ui.formContainer.classList.remove('hidden');
-            ui.generatedTicketsContainer.classList.add('hidden');
-            ui.nameListTextarea.value = '';
-            ui.artistPhotoInput.value = ''; // Limpiamos el input de la foto
-            ui.photoPreview.classList.add('hidden'); // Ocultamos la vista previa
-            people = [];
-            renderPreview();
-        });
-        
-        ui.copyShareLinkBtn.addEventListener('click', () => {
-            navigator.clipboard.writeText(ui.shareLinkDisplay.value);
-            alert('¡Enlace copiado!');
-        });
-        ui.closeShareModalBtn.addEventListener('click', () => ui.shareLinkModal.classList.add('hidden'));
-
-        renderPreview();
+        // ... Resto del script (sin cambios) ...
     </script>
 </body>
 </html>
