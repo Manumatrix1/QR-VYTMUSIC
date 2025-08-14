@@ -1,122 +1,496 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    </head>
-<body>
-    <main id="voting-content">
-         <div class="text-center mb-6">
-            <button id="manage-artists-btn" class="px-4 py-2 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700">Gestionar Artistas</button>
-        </div>
-        <div id="artists-list-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            </div>
-    </main>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Votación VYTMUSIC</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
 
-    <div id="edit-artist-modal" class="modal-backdrop hidden">
-        <div class="modal-content">
-            <h3 class="text-xl font-bold mb-4">Editar Artista</h3>
-            <input type="hidden" id="edit-artist-id">
-            <div>
-                <label for="edit-artist-name" class="block mb-1 font-semibold">Nombre del Artista</label>
-                <input type="text" id="edit-artist-name" class="w-full p-3 rounded-md border border-gray-600 bg-gray-900">
-            </div>
-            <div class="flex justify-end space-x-4 mt-4">
-                <button type="button" id="cancel-edit-btn" class="px-4 py-2 bg-gray-600 rounded-lg">Cancelar</button>
-                <button type="button" id="save-edit-btn" class="px-4 py-2 bg-green-600 rounded-lg">Guardar Cambios</button>
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #111827; color: #f9fafb; }
+        .loading-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.8); display: flex; justify-content: center; align-items: center; z-index: 1000; transition: opacity 0.3s ease; }
+        .spinner { border: 4px solid rgba(255, 255, 255, 0.3); border-top: 4px solid #38bdf8; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        .artist-card { background-color: #1f2937; border-radius: 0.75rem; padding: 1.5rem; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05); border: 2px solid #374151; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 1rem; transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out; }
+        .artist-card:hover { transform: translateY(-5px); box-shadow: 0 15px 25px -5px rgba(0,0,0,0.2), 0 6px 10px -3px rgba(0,0,0,0.1); }
+        .artist-image-container { width: 120px; height: 120px; border-radius: 50%; overflow: hidden; border: 4px solid #38bdf8; display: flex; justify-content: center; align-items: center; flex-shrink: 0; }
+        .artist-image { width: 100%; height: 100%; object-fit: cover; }
+        .vote-button { background-color: #8b5cf6; color: #f9fafb; font-weight: bold; padding: 0.75rem 1.5rem; border-radius: 0.5rem; transition: background-color 0.2s, transform 0.1s; width: 100%; text-transform: uppercase; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .vote-button:hover:not(:disabled) { background-color: #7c3aed; transform: translateY(-1px); }
+        .vote-button:disabled { opacity: 0.6; cursor: not-allowed; background-color: #4a5568; color: #cbd5e0; box-shadow: none; }
+        .rating-container { width: 100%; margin-top: 0.5rem; text-align: left; margin-bottom: 1.5rem; }
+        .rating-container:last-of-type { margin-bottom: 0; }
+        .rating-container label { display: block; font-size: 0.9rem; color: #a0aec0; margin-bottom: 0.5rem; text-align: center; }
+        .stars-and-guidance-group { display: flex; flex-direction: column; align-items: center; }
+        .stars-wrapper { display: flex; justify-content: center; gap: 8px; width: 100%; max-width: 420px; flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 5px; }
+        .star-number-pair { display: flex; flex-direction: column; align-items: center; cursor: pointer; position: relative; }
+        .stars-wrapper .star-icon { width: 24px; height: 24px; color: #4a5568; transition: color 0.2s; flex-shrink: 0; }
+        .stars-wrapper .star-icon.filled { color: #fbbf24; }
+        .star-number { font-size: 0.7rem; color: #9ca3af; line-height: 1.2; margin-top: 2px; pointer-events: none; transition: color 0.2s; }
+        .star-number.filled-number { color: #fbbf24; }
+        .rating-container[data-disabled="true"] .stars-wrapper .star-icon, .rating-container[data-disabled="true"] .stars-wrapper .star-icon.filled { color: #4a5568 !important; cursor: not-allowed; }
+        .rating-container[data-disabled="true"] .star-number, .rating-container[data-disabled="true"] .star-number.filled-number { color: #9ca3af !important; }
+        .rating-value { font-weight: bold; color: #38bdf8; margin-left: 0.5rem; }
+        .guidance-text { font-size: 0.75rem; color: #9ca3af; font-style: italic; margin-top: 0.75rem; line-height: normal; text-align: center; width: 100%; max-width: 420px; }
+        .validation-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 60vh; padding: 1rem; text-align: center; }
+        .validation-card { background-color: #1f2937; padding: 2rem; border-radius: 0.75rem; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05); max-width: 450px; width: 100%; }
+    </style>
+</head>
+<body>
+
+    <div id="loading-overlay" class="loading-overlay hidden"><div class="spinner"></div></div>
+    <div id="message-container" class="fixed top-4 left-1/2 -translate-x-1/2 z-[1001] w-11/12 max-w-md"></div>
+
+    <div class="container mx-auto max-w-4xl p-4 sm:p-6">
+        <header class="text-center mb-8">
+            <img src="https://i.imgur.com/rqkZi9P.png" alt="VYTMUSIC Logo" class="mx-auto mb-4 bg-white rounded-full" style="max-width: 120px;">
+            <h1 class="text-4xl sm:text-5xl font-bold text-sky-400 mb-2">Votación en Vivo</h1>
+            <p class="text-lg text-gray-300">¡Vota por tu artista favorito de VYTMUSIC!</p>
+            <p id="voted-status-message" class="mt-4 text-xl font-semibold text-yellow-400 hidden">¡Gracias por tu voto!</p>
+        </header>
+
+        <div id="validation-screen" class="validation-screen">
+            <div class="validation-card">
+                <h2 class="text-2xl font-bold text-sky-400 mb-4">Verifica tu Entrada para Votar</h2>
+                <p class="text-gray-300 mb-6">Por favor, ingresa tu nombre completo o el ID de tu entrada.</p>
+                <input type="text" id="ticket-name-input" placeholder="Tu Nombre o ID de Entrada" class="w-full p-3 rounded-md border border-gray-600 bg-gray-900 text-white focus:outline-none focus:ring-2 focus:ring-sky-500 mb-4" required>
+                <button id="validate-ticket-btn" class="w-full px-4 py-3 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700">Validar Entrada</button>
             </div>
         </div>
+
+        <main id="voting-content" class="hidden">
+            <div id="artists-list-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <p class="text-center text-gray-400 col-span-full">Cargando artistas...</p>
+            </div>
+        </main>
     </div>
 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
 
     <script type="module">
-        // ... (misma configuración de Firebase y estado global)
-
-        function renderArtists(artists) {
-            // ... (dentro del bucle forEach de artistas)
-            const isManagementMode = document.body.classList.contains('management-mode');
-
-            artistCard.innerHTML = `
-                <div class="management-controls ${isManagementMode ? '' : 'hidden'} mt-4 flex gap-2">
-                    <button data-artist-id="${artist.id}" class="edit-artist-btn flex-1 px-3 py-1 bg-yellow-500 text-black font-bold rounded">Editar</button>
-                    <button data-artist-id="${artist.id}" data-artist-photo="${artist.photoURL}" class="delete-artist-btn flex-1 px-3 py-1 bg-red-600 text-white font-bold rounded">Eliminar</button>
-                </div>
-            `;
-            // ...
+        import { db, auth } from './firebase_config.js';
+        import { signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { collection, onSnapshot, doc, updateDoc, increment, getDoc, setDoc, getDocs, query, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        const urlParams = new URLSearchParams(window.location.search);
+        const eventId = urlParams.get('eventId');
+        if (!eventId) {
+            document.body.innerHTML = '<p class="text-center text-red-500">Error: No se ha especificado un evento. Por favor, contacta a un administrador.</p>';
         }
 
-        async function deleteArtist(artistId, photoURL) {
-            if (!confirm('¿Seguro que quieres eliminar este artista? Se borrarán sus votos y su foto. Esta acción no se puede deshacer.')) return;
+        const state = {
+            db: null, auth: null, userId: null,
+            artistsData: [],
+            votedArtistsByUser: new Map(),
+            synth: null,
+            unsubscribeArtists: null, 
+            unsubscribeUserVote: null,
+            currentValidatedTicket: null
+        };
+        const ui = {};
+
+        function cacheUIElements() {
+            const ids = [
+                'loading-overlay', 'message-container', 'artists-list-container', 'voted-status-message',
+                'validation-screen', 'ticket-name-input', 'validate-ticket-btn', 'voting-content',
+            ];
+            ids.forEach(id => {
+                const camelCaseId = id.replace(/-(\w)/g, (_, c) => c.toUpperCase());
+                ui[camelCaseId] = document.getElementById(id);
+            });
+        }
+
+        function displayMessage(message, type = 'success', duration = 5000) {
+            const colors = { success: 'bg-green-500', error: 'bg-red-500', warning: 'bg-yellow-500 text-black', info: 'bg-sky-500' };
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `p-4 rounded-md mb-4 text-white ${colors[type]} transition-opacity duration-300`;
+            messageDiv.textContent = message;
+            ui.messageContainer.prepend(messageDiv);
+            setTimeout(() => { 
+                messageDiv.style.opacity = '0';
+                setTimeout(() => messageDiv.remove(), 300);
+            }, duration);
+        }
+
+        function setLoading(show) { ui.loadingOverlay.classList.toggle('hidden', !show); }
+
+        const FirebaseOps = {
+            paths: {
+                artists: () => collection(db, `events/${eventId}/artists`),
+                artist: (id) => doc(db, `events/${eventId}/artists`, id),
+                ticketArtistVotes: (ticketId) => collection(db, `events/${eventId}/ticket_votes/${ticketId}/votes`),
+                ticketArtistVote: (ticketId, artistId) => doc(db, `events/${eventId}/ticket_votes/${ticketId}/votes`, artistId),
+                tickets: () => collection(db, `events/${eventId}/tickets`),
+                ticket: (id) => doc(db, `events/${eventId}/tickets`, id)
+            },
+
+            async recordUserVote(artistId, ticketData, scores) {
+                if (!state.userId || !ticketData || !ticketData.id) {
+                    console.error("Faltan datos para registrar el voto (userId o ticketData).");
+                    return;
+                }
+                await setDoc(FirebaseOps.paths.ticketArtistVote(ticketData.id, artistId), {
+                    artistId: artistId,
+                    userId: state.userId,
+                    ticketName: ticketData.name,
+                    singingScore: scores.singing,
+                    transmissionScore: scores.transmission,
+                    attitudeScore: scores.attitude,
+                    originalityScore: scores.originality,
+                    votedAt: new Date().toISOString()
+                });
+            },
+
+            async validateTicketByName(input) {
+                const normalizedInput = input.toLowerCase().trim();
+                
+                const querySnapshot = await getDocs(FirebaseOps.paths.tickets());
+                
+                let foundTicket = null;
+
+                querySnapshot.forEach(doc => {
+                    const ticketData = doc.data();
+                    const normalizedName = (ticketData.name || '').toLowerCase().trim();
+                    const ticketId = (ticketData.id || '').trim(); 
+
+                    if (normalizedName === normalizedInput || ticketId === input.trim()) {
+                        foundTicket = { id: doc.id, ...ticketData }; 
+                        return; 
+                    }
+                });
+
+                if (foundTicket) {
+                    state.currentValidatedTicket = foundTicket;
+                    return { success: true, message: "Entrada validada. ¡Puedes votar!", ticket: foundTicket };
+                } else {
+                    return { success: false, message: "Nombre o ID de entrada no encontrado. Por favor, verifica la ortografía o el ID." };
+                }
+            }
+        };
+
+        function updateStarVisuals(starContainer, value) {
+            const starPairs = starContainer.querySelectorAll('.star-number-pair');
+            starPairs.forEach((pair, index) => {
+                const star = pair.querySelector('.star-icon');
+                const number = pair.querySelector('.star-number');
+                if (index < value) {
+                    star.classList.add('filled');
+                    number.classList.add('filled-number');
+                } else {
+                    star.classList.remove('filled');
+                    number.classList.remove('filled-number'); 
+                }
+            });
+            starContainer.closest('.rating-container').querySelector('.rating-value').textContent = value;
+        }
+
+        function renderArtists(artists) {
+            state.artistsData = artists; 
+            ui.artistsListContainer.innerHTML = '';
+            if (!artists || artists.length === 0) {
+                ui.artistsListContainer.innerHTML = '<p class="text-center text-gray-400 col-span-full">No hay artistas disponibles para votación.</p>';
+                setLoading(false); 
+                return;
+            }
+
+            const sortedArtists = [...artists].sort((a, b) => b.totalScore - a.totalScore || a.name.localeCompare(b.name));
+
+            sortedArtists.forEach(artist => {
+                const previousVote = state.votedArtistsByUser.get(artist.id);
+                const hasVotedForThisArtist = !!previousVote;
+
+                const buttonText = hasVotedForThisArtist ? 'MODIFICAR VOTO' : 'VOTAR';
+                const buttonClasses = hasVotedForThisArtist 
+                    ? 'bg-gray-600 hover:bg-gray-700 text-white'
+                    : 'bg-purple-600 hover:bg-purple-700 text-white';
+
+                const initialSinging = previousVote ? previousVote.singingScore : 5;
+                const initialTransmission = previousVote ? previousVote.transmissionScore : 5;
+                const initialAttitude = previousVote ? previousVote.attitudeScore : 5;
+                const initialOriginality = previousVote ? previousVote.originalityScore : 5;
+
+                const artistCard = document.createElement('div');
+                artistCard.className = 'artist-card';
+                artistCard.innerHTML = `
+                    <div class="artist-image-container">
+                        <img src="${artist.photoURL || 'https://placehold.co/120x120/1f2937/f9fafb?text=ART'}" alt="${artist.name}" class="artist-image">
+                    </div>
+                    <h3 class="text-xl font-semibold text-sky-300">${artist.name}</h3>
+                    <p class="text-md text-gray-400 mt-1">${artist.totalRatingsCount > 0 ? `${artist.totalRatingsCount} voto(s)` : 'Sin votos'}</p>
+                    
+                    <div class="w-full text-left mt-2">
+                        <h4 class="text-md font-semibold text-gray-300 mb-2 text-center">VOTACIÓN DEL PÚBLICO:</h4>
+                        
+                        <div class="rating-container" data-rating-type="singing" data-current-value="${initialSinging}" data-disabled="false">
+                            <label class="text-center w-full">¿Te gustó cómo cantó? <span class="rating-value">${initialSinging}</span></label>
+                            <div class="stars-and-guidance-group">
+                                <div class="stars-wrapper" id="singing-stars-${artist.id}"></div>
+                                <p class="guidance-text w-full text-center">1: No me gustó | 5: Estuvo bien | 10: ¡Me encantó!</p>
+                            </div>
+                        </div>
+                        
+                        <div class="rating-container" data-rating-type="transmission" data-current-value="${initialTransmission}" data-disabled="false">
+                            <label class="text-center w-full">¿Te llegó lo que transmitió? <span class="rating-value">${initialTransmission}</span></label>
+                            <div class="stars-and-guidance-group">
+                                <div class="stars-wrapper" id="transmission-stars-${artist.id}"></div>
+                                <p class="guidance-text w-full text-center">1: No sentí nada | 5: Normal | 10: ¡Me hizo vibrar!</p>
+                            </div>
+                        </div>
+
+                        <div class="rating-container" data-rating-type="attitude" data-current-value="${initialAttitude}" data-disabled="false">
+                            <label class="text-center w-full">¿Tuvo actitud y presencia? <span class="rating-value">${initialAttitude}</span></label>
+                            <div class="stars-and-guidance-group">
+                                <div class="stars-wrapper" id="attitude-stars-${artist.id}"></div>
+                                <p class="guidance-text w-full text-center">1: Muy apagado | 5: Bien | 10: ¡Un/a artista con todo!</p>
+                            </div>
+                        </div>
+
+                        <div class="rating-container" data-rating-type="originality" data-current-value="${initialOriginality}" data-disabled="false">
+                            <label class="text-center w-full">¿Te pareció diferente y original? <span class="rating-value">${initialOriginality}</span></label>
+                            <div class="stars-and-guidance-group">
+                                <div class="stars-wrapper" id="originality-stars-${artist.id}"></div>
+                                <p class="guidance-text w-full text-center">1: Fue más de lo mismo | 5: Algo distinto | 10: ¡Tiene su estilo propio!</p>
+                            </div>
+                        </div>
+
+                    </div>
+                    
+                    <button data-artist-id="${artist.id}" class="send-vote-button vote-button mt-4 ${buttonClasses}">${buttonText}</button>
+                `;
+                ui.artistsListContainer.appendChild(artistCard);
+
+                ['singing', 'transmission', 'attitude', 'originality'].forEach(criterion => {
+                    const starsWrapper = artistCard.querySelector(`#${criterion}-stars-${artist.id}`);
+                    const ratingContainer = starsWrapper.closest('.rating-container');
+                    const isDisabled = false;
+
+                    for (let i = 1; i <= 10; i++) {
+                        const starNumberPair = document.createElement('div');
+                        starNumberPair.className = 'star-number-pair';
+
+                        const star = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+                        star.setAttribute("class", "star-icon");
+                        star.setAttribute("viewBox", "0 0 24 24");
+                        star.setAttribute("fill", "currentColor");
+                        star.setAttribute("stroke", "currentColor");
+                        star.setAttribute("stroke-width", "0");
+                        star.setAttribute("stroke-linecap", "butt"); 
+                        star.setAttribute("stroke-linejoin", "miter");
+                        star.innerHTML = '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>';
+                        star.dataset.value = i;
+                        
+                        const starNumber = document.createElement('span');
+                        starNumber.className = 'star-number';
+                        starNumber.textContent = i;
+
+                        starNumberPair.appendChild(star);
+                        starNumberPair.appendChild(starNumber);
+                        starsWrapper.appendChild(starNumberPair);
+
+                        if (!isDisabled) { 
+                            starNumberPair.addEventListener('click', () => {
+                                ratingContainer.dataset.currentValue = i;
+                                updateStarVisuals(starsWrapper, i);
+                            });
+
+                            starNumberPair.addEventListener('mouseover', () => {
+                                updateStarVisuals(starsWrapper, i);
+                            });
+                        }
+                    }
+                    if (!isDisabled) { 
+                        starsWrapper.addEventListener('mouseout', () => {
+                            const currentValue = parseInt(ratingContainer.dataset.currentValue || 0);
+                            updateStarVisuals(starsWrapper, currentValue);
+                        });
+                    }
+                    updateStarVisuals(starsWrapper, parseInt(ratingContainer.dataset.currentValue));
+                });
+            });
+            
+            if (state.votedArtistsByUser.size > 0) { 
+                ui.votedStatusMessage.classList.remove('hidden');
+            } else {
+                ui.votedStatusMessage.classList.add('hidden');
+            }
+            setLoading(false); 
+        }
+
+        async function handleVote(event) {
+            const artistId = event.target.dataset.artistId;
+            if (!artistId) return;
+
+            if (!state.currentValidatedTicket) {
+                 displayMessage('No has validado una entrada para votar.', 'warning');
+                 return;
+            }
 
             setLoading(true);
             try {
-                // Borrar el documento del artista de Firestore
-                await deleteDoc(doc(state.db, `artifacts/${state.appId}/public/data/artists`, artistId));
+                const artistCard = event.target.closest('.artist-card');
+                const singingRating = parseInt(artistCard.querySelector('[data-rating-type="singing"]').dataset.currentValue);
+                const transmissionRating = parseInt(artistCard.querySelector('[data-rating-type="transmission"]').dataset.currentValue);
+                const attitudeRating = parseInt(artistCard.querySelector('[data-rating-type="attitude"]').dataset.currentValue);
+                const originalityRating = parseInt(artistCard.querySelector('[data-rating-type="originality"]').dataset.currentValue);
 
-                // Borrar la foto de Firebase Storage
-                if (photoURL) {
-                    const photoRef = ref(state.storage, photoURL);
-                    await deleteObject(photoRef);
+                const oldVoteDoc = await getDoc(FirebaseOps.paths.ticketArtistVote(state.currentValidatedTicket.id, artistId));
+                let oldSingingScore = 0;
+                let oldTransmissionScore = 0;
+                let oldAttitudeScore = 0;
+                let oldOriginalityScore = 0;
+                let isNewVote = !oldVoteDoc.exists();
+
+                if (!isNewVote) {
+                    const oldVoteData = oldVoteDoc.data();
+                    oldSingingScore = oldVoteData.singingScore || 0;
+                    oldTransmissionScore = oldVoteData.transmissionScore || 0;
+                    oldAttitudeScore = oldVoteData.attitudeScore || 0;
+                    oldOriginalityScore = oldVoteData.originalityScore || 0;
                 }
 
-                displayMessage('Artista eliminado con éxito.', 'success');
+                const singingDiff = singingRating - oldSingingScore;
+                const transmissionDiff = transmissionRating - oldTransmissionScore;
+                const attitudeDiff = attitudeRating - oldAttitudeScore;
+                const originalityDiff = originalityRating - oldOriginalityScore;
+                
+                await updateDoc(FirebaseOps.paths.artist(artistId), {
+                    totalSingingScore: increment(singingDiff),
+                    totalTransmissionScore: increment(transmissionDiff),
+                    totalAttitudeScore: increment(attitudeDiff),
+                    totalOriginalityScore: increment(originalityDiff),
+                    totalScore: increment(singingDiff + transmissionDiff + attitudeDiff + originalityDiff),
+                    totalRatingsCount: increment(isNewVote ? 1 : 0) 
+                });
+
+                const scores = { singing: singingRating, transmission: transmissionRating, attitude: attitudeRating, originality: originalityRating };
+                await FirebaseOps.recordUserVote(artistId, state.currentValidatedTicket, scores);
+                
+                state.votedArtistsByUser.set(artistId, scores); 
+
+                displayMessage('¡Voto registrado con éxito! ¡Gracias!', 'success');
+                ui.votedStatusMessage.classList.remove('hidden'); 
+
+                const button = event.target;
+                button.textContent = 'MODIFICAR VOTO';
+                button.classList.remove('bg-purple-600', 'hover:bg-purple-700', 'text-white'); 
+                button.classList.add('bg-gray-600', 'hover:bg-gray-700', 'text-white');
+                
+                if (state.synth) {
+                    Tone.start().then(() => state.synth.triggerAttackRelease("C5", "8n"));
+                }
+
             } catch (error) {
-                console.error("Error al eliminar artista:", error);
-                displayMessage(`Error: ${error.message}`, 'error');
+                console.error("Error al registrar el voto:", error);
+                displayMessage(`Error al votar: ${error.message}`, 'error');
             } finally {
                 setLoading(false);
             }
         }
 
-        async function updateArtistName(artistId, newName) {
-             setLoading(true);
-             try {
-                await updateDoc(doc(state.db, `artifacts/${state.appId}/public/data/artists`, artistId), {
-                    name: newName
-                });
-                displayMessage('Nombre del artista actualizado.', 'success');
-                document.getElementById('edit-artist-modal').classList.add('hidden');
-             } catch (error) {
-                console.error("Error al actualizar artista:", error);
-                displayMessage(`Error: ${error.message}`, 'error');
-             } finally {
-                setLoading(false);
-             }
-        }
+        async function checkIfUserVoted() {
+            if (!state.currentValidatedTicket || !state.currentValidatedTicket.id) return; 
 
+            try {
+                const ticketVotesCollectionRef = FirebaseOps.paths.ticketArtistVotes(state.currentValidatedTicket.id);
+                const querySnapshot = await getDocs(ticketVotesCollectionRef); 
+
+                state.votedArtistsByUser.clear();
+                querySnapshot.forEach(doc => {
+                    const voteData = doc.data();
+                    state.votedArtistsByUser.set(doc.id, {
+                        singingScore: voteData.singingScore || 0,
+                        transmissionScore: voteData.transmissionScore || 0,
+                        attitudeScore: voteData.attitudeScore || 0,
+                        originalityScore: voteData.originalityScore || 0
+                    });
+                });
+
+                if (state.artistsData.length > 0) {
+                    renderArtists(state.artistsData);
+                }
+
+            } catch (error) {
+                console.error("Error al verificar si el usuario ya votó:", error);
+            }
+        }
 
         function setupEventListeners() {
-            // ... (otros listeners)
-
-            document.getElementById('manage-artists-btn').addEventListener('click', () => {
-                document.body.classList.toggle('management-mode');
-                renderArtists(state.artistsData); // Volver a renderizar para mostrar/ocultar controles
-            });
-
-            ui.artistsListContainer.addEventListener('click', e => {
-                if (e.target.classList.contains('delete-artist-btn')) {
-                    const artistId = e.target.dataset.artistId;
-                    const photoURL = e.target.dataset.artistPhoto;
-                    deleteArtist(artistId, photoURL);
+            ui.validateTicketBtn.addEventListener('click', async () => {
+                const nameInput = ui.ticketNameInput.value.trim();
+                if (!nameInput) {
+                    displayMessage('Por favor, ingresa tu nombre o ID de entrada para validar.', 'warning');
+                    return;
                 }
-                if (e.target.classList.contains('edit-artist-btn')) {
-                    const artistId = e.target.dataset.artistId;
-                    const artist = state.artistsData.find(a => a.id === artistId);
-                    document.getElementById('edit-artist-id').value = artistId;
-                    document.getElementById('edit-artist-name').value = artist.name;
-                    document.getElementById('edit-artist-modal').classList.remove('hidden');
+                setLoading(true);
+                const result = await FirebaseOps.validateTicketByName(nameInput);
+                if (result.success) {
+                    displayMessage(result.message, 'success');
+                    ui.validationScreen.classList.add('hidden'); 
+                    ui.votingContent.classList.remove('hidden'); 
+                    await checkIfUserVoted();
+                    attachDataListeners();
+                } else {
+                    displayMessage(result.message, 'error');
                 }
+                setLoading(false);
             });
 
-            document.getElementById('save-edit-btn').addEventListener('click', () => {
-                const artistId = document.getElementById('edit-artist-id').value;
-                const newName = document.getElementById('edit-artist-name').value;
-                updateArtistName(artistId, newName);
-            });
-             document.getElementById('cancel-edit-btn').addEventListener('click', () => {
-                document.getElementById('edit-artist-modal').classList.add('hidden');
+            ui.artistsListContainer.addEventListener('click', (e) => {
+                if (e.target.classList.contains('send-vote-button')) {
+                    handleVote(e);
+                }
             });
         }
 
-        // ...
+        function attachDataListeners() {
+            if (state.unsubscribeArtists) {
+                state.unsubscribeArtists();
+            }
+            state.unsubscribeArtists = onSnapshot(FirebaseOps.paths.artists(), (snapshot) => {
+                const artists = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                state.artistsData = artists;
+                renderArtists(artists);
+                if (state.currentValidatedTicket) {
+                    checkIfUserVoted();
+                }
+            }, (error) => {
+                console.error("Error en el listener de artistas:", error);
+                displayMessage("Error al cargar artistas: " + error.message, 'error');
+                setLoading(false);
+            });
+        }
+
+        async function initApp() {
+            cacheUIElements();
+            setLoading(true); 
+
+            try {
+                state.synth = new Tone.Synth().toDestination();
+            } catch(e) { console.warn("No se pudo inicializar el sintetizador de audio."); }
+            
+            state.db = db;
+            state.auth = auth;
+
+            try {
+                const userCredential = await signInAnonymously(state.auth);
+                state.userId = userCredential.user.uid;
+                setupEventListeners(); 
+                setLoading(false); 
+                ui.validationScreen.classList.remove('hidden'); 
+            } catch (error) {
+                console.error("Error al intentar signInAnonymously:", error);
+                displayMessage(`Error de conexión al iniciar sesión: ${error.message}. Recarga la página.`, 'error');
+                setLoading(false);
+            }
+        }
+
+        window.onload = initApp;
     </script>
 </body>
 </html>

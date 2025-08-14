@@ -13,25 +13,50 @@
 <body>
      <div class="container mx-auto max-w-4xl p-4 sm:p-6">
         <header class="text-center mb-6">
-            <a id="back-to-panel-link" href="#" class="text-sky-400 hover:underline mb-4 inline-block">&larr; Volver al Panel Principal</a>
+            <a id="back-to-panel-link" href="eventos.html" class="text-sky-400 hover:underline mb-4 inline-block">&larr; Volver al Gestor de Eventos</a>
             <h1 class="text-3xl sm:text-4xl font-bold text-sky-400">Reportes y Contabilidad</h1>
+            <p id="event-name-display" class="text-xl text-gray-300 mt-2"></p>
         </header>
 
         <main class="space-y-8">
-            <section id="accounting-section" class="bg-gray-800 p-6 rounded-lg shadow-xl">
-                <h2 class="text-2xl font-bold mb-6 text-center">Contabilidad del Certamen</h2>
-                
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 text-center">
+            <section id="general-report-section" class="bg-gray-800 p-6 rounded-lg shadow-xl">
+                <h2 class="text-2xl font-bold mb-6 text-center">Reporte General de Todas las Galas</h2>
+                <div id="general-stats" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8 text-center">
                     <div class="bg-gray-700 p-4 rounded-lg">
                         <h3 class="text-lg font-semibold text-green-400">Ingresos Totales</h3>
-                        <p id="total-income" class="text-3xl font-bold mt-2">$0</p>
+                        <p id="general-total-income" class="text-2xl font-bold mt-2">$0</p>
                     </div>
                     <div class="bg-gray-700 p-4 rounded-lg">
                         <h3 class="text-lg font-semibold text-red-400">Gastos Totales</h3>
+                        <p id="general-total-expenses" class="text-2xl font-bold mt-2">$0</p>
+                    </div>
+                    <div class="bg-gray-700 p-4 rounded-lg">
+                        <h3 class="text-lg font-semibold text-sky-400">Balance General</h3>
+                        <p id="general-net-balance" class="text-2xl font-bold mt-2">$0</p>
+                    </div>
+                    <div class="bg-gray-700 p-4 rounded-lg">
+                        <h3 class="text-lg font-semibold text-sky-400">Total de Entradas</h3>
+                        <p id="general-total-tickets" class="text-2xl font-bold mt-2">0</p>
+                    </div>
+                </div>
+            </section>
+            
+            <hr class="border-gray-700">
+
+            <section id="accounting-section" class="bg-gray-800 p-6 rounded-lg shadow-xl hidden">
+                <h2 class="text-2xl font-bold mb-6 text-center">Contabilidad de Gala</h2>
+                
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 text-center">
+                    <div class="bg-gray-700 p-4 rounded-lg">
+                        <h3 class="text-lg font-semibold text-green-400">Ingresos del Evento</h3>
+                        <p id="total-income" class="text-3xl font-bold mt-2">$0</p>
+                    </div>
+                    <div class="bg-gray-700 p-4 rounded-lg">
+                        <h3 class="text-lg font-semibold text-red-400">Gastos del Evento</h3>
                         <p id="total-expenses" class="text-3xl font-bold mt-2">$0</p>
                     </div>
                     <div class="bg-gray-700 p-4 rounded-lg">
-                        <h3 class="text-lg font-semibold text-sky-400">Balance Final</h3>
+                        <h3 class="text-lg font-semibold text-sky-400">Balance del Evento</h3>
                         <p id="net-balance" class="text-3xl font-bold mt-2">$0</p>
                     </div>
                 </div>
@@ -52,7 +77,7 @@
                 </div>
             </section>
 
-            <section class="bg-gray-800 p-6 rounded-lg shadow-xl">
+            <section id="event-attendance-section" class="bg-gray-800 p-6 rounded-lg shadow-xl hidden">
                 <h2 class="text-2xl font-bold mb-6 text-center">Reporte de Asistencia</h2>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div class="bg-gray-700 p-4 rounded-lg text-center">
@@ -70,71 +95,120 @@
 
     <script type="module">
         import { db } from './firebase_config.js';
-        import { collection, onSnapshot, query, addDoc, deleteDoc, doc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { collection, onSnapshot, query, addDoc, deleteDoc, doc, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         const urlParams = new URLSearchParams(window.location.search);
         const eventId = urlParams.get('eventId');
-        if (!eventId) {
-            document.body.innerHTML = '<p class="text-center text-red-500">Error: No se ha especificado un evento. Vuelve al Gestor de Eventos.</p>';
-        }
+        const eventName = urlParams.get('eventName');
 
-        document.getElementById('back-to-panel-link').href = `panel_evento.html?eventId=${eventId}`;
-        
         const formatCurrency = (value) => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' }).format(value);
-        let currentExpenses = 0;
-        let currentIncome = 0;
-
-        const ticketsQuery = query(collection(db, `events/${eventId}/tickets`));
-        onSnapshot(ticketsQuery, (snapshot) => {
-            const tickets = snapshot.docs.map(doc => doc.data());
-            currentIncome = tickets.reduce((sum, ticket) => sum + (ticket.price || 0), 0);
-            document.getElementById('total-income').textContent = formatCurrency(currentIncome);
-            document.getElementById('total-generated-tickets').textContent = tickets.length;
-            document.getElementById('total-used-tickets').textContent = tickets.filter(t => t.used).length;
-            updateBalance(); 
-        });
-
-        const expensesQuery = query(collection(db, `events/${eventId}/expenses`));
-        onSnapshot(expensesQuery, (snapshot) => {
-            const expensesList = document.getElementById('expenses-list');
-            expensesList.innerHTML = '';
-            let totalExpenses = 0;
-            snapshot.forEach(doc => {
-                const expense = { id: doc.id, ...doc.data() };
-                totalExpenses += expense.amount;
-                const li = document.createElement('li');
-                li.className = 'flex justify-between items-center bg-gray-700 p-2 rounded';
-                li.innerHTML = `<span>${expense.description}</span><span class="font-semibold">${formatCurrency(expense.amount)} <button data-id="${expense.id}" class="delete-expense-btn text-red-500 ml-2">X</button></span>`;
-                expensesList.appendChild(li);
-            });
-            currentExpenses = totalExpenses;
-            document.getElementById('total-expenses').textContent = formatCurrency(currentExpenses);
-            updateBalance();
-        });
         
-        document.getElementById('expense-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const description = document.getElementById('expense-description').value;
-            const amount = parseFloat(document.getElementById('expense-amount').value);
-            if (description && amount > 0) {
-                await addDoc(collection(db, `events/${eventId}/expenses`), { description, amount });
-                e.target.reset();
-            }
-        });
-
-        document.getElementById('expenses-list').addEventListener('click', async (e) => {
-            if (e.target.classList.contains('delete-expense-btn')) {
-                if(confirm("¿Seguro que quieres eliminar este gasto?")) {
-                    await deleteDoc(doc(db, `events/${eventId}/expenses`, e.target.dataset.id));
-                }
-            }
-        });
-
-        function updateBalance() {
-            const balance = currentIncome - currentExpenses;
-            const balanceEl = document.getElementById('net-balance');
+        // Función para actualizar el balance
+        function updateBalance(income, expenses, incomeEl, expensesEl, balanceEl) {
+            incomeEl.textContent = formatCurrency(income);
+            expensesEl.textContent = formatCurrency(expenses);
+            const balance = income - expenses;
             balanceEl.textContent = formatCurrency(balance);
             balanceEl.className = 'text-3xl font-bold mt-2 ' + (balance >= 0 ? 'text-sky-400' : 'text-red-400');
+        }
+
+        // Función para el reporte general de todas las galas
+        async function loadGeneralReport() {
+            let totalIncome = 0;
+            let totalExpenses = 0;
+            let totalTickets = 0;
+
+            const eventsQuery = query(collection(db, 'events'));
+            const eventsSnapshot = await getDocs(eventsQuery);
+
+            for (const eventDoc of eventsSnapshot.docs) {
+                // Obtener tickets de la subcolección
+                const ticketsQuery = query(collection(db, `events/${eventDoc.id}/tickets`));
+                const ticketsSnapshot = await getDocs(ticketsQuery);
+                ticketsSnapshot.forEach(doc => {
+                    totalIncome += (doc.data().price || 0);
+                    totalTickets++;
+                });
+
+                // Obtener gastos de la subcolección
+                const expensesQuery = query(collection(db, `events/${eventDoc.id}/expenses`));
+                const expensesSnapshot = await getDocs(expensesQuery);
+                expensesSnapshot.forEach(doc => {
+                    totalExpenses += (doc.data().amount || 0);
+                });
+            }
+
+            // Actualizar la interfaz del reporte general
+            const generalIncomeEl = document.getElementById('general-total-income');
+            const generalExpensesEl = document.getElementById('general-total-expenses');
+            const generalBalanceEl = document.getElementById('general-net-balance');
+            const generalTicketsEl = document.getElementById('general-total-tickets');
+
+            updateBalance(totalIncome, totalExpenses, generalIncomeEl, generalExpensesEl, generalBalanceEl);
+            generalTicketsEl.textContent = totalTickets;
+        }
+
+
+        // Lógica para el reporte de un evento específico (si existe)
+        if (eventId && eventName) {
+            document.getElementById('general-report-section').classList.add('hidden');
+            document.getElementById('accounting-section').classList.remove('hidden');
+            document.getElementById('event-attendance-section').classList.remove('hidden');
+            document.getElementById('event-name-display').textContent = eventName;
+            document.getElementById('back-to-panel-link').href = `panel_evento.html?eventId=${eventId}`;
+
+
+            const ticketsQuery = query(collection(db, `events/${eventId}/tickets`));
+            const expensesQuery = query(collection(db, `events/${eventId}/expenses`));
+            let currentExpenses = 0;
+            let currentIncome = 0;
+
+            onSnapshot(ticketsQuery, (snapshot) => {
+                const tickets = snapshot.docs.map(doc => doc.data());
+                currentIncome = tickets.reduce((sum, ticket) => sum + (ticket.price || 0), 0);
+                document.getElementById('total-generated-tickets').textContent = tickets.length;
+                document.getElementById('total-used-tickets').textContent = tickets.filter(t => t.used).length;
+                updateBalance(currentIncome, currentExpenses, document.getElementById('total-income'), document.getElementById('total-expenses'), document.getElementById('net-balance'));
+            });
+
+            onSnapshot(expensesQuery, (snapshot) => {
+                const expensesList = document.getElementById('expenses-list');
+                expensesList.innerHTML = '';
+                let totalExpenses = 0;
+                snapshot.forEach(doc => {
+                    const expense = { id: doc.id, ...doc.data() };
+                    totalExpenses += expense.amount;
+                    const li = document.createElement('li');
+                    li.className = 'flex justify-between items-center bg-gray-700 p-2 rounded';
+                    li.innerHTML = `<span>${expense.description}</span><span class="font-semibold">${formatCurrency(expense.amount)} <button data-id="${expense.id}" class="delete-expense-btn text-red-500 ml-2">X</button></span>`;
+                    expensesList.appendChild(li);
+                });
+                currentExpenses = totalExpenses;
+                updateBalance(currentIncome, currentExpenses, document.getElementById('total-income'), document.getElementById('total-expenses'), document.getElementById('net-balance'));
+            });
+            
+            document.getElementById('expense-form').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const description = document.getElementById('expense-description').value;
+                const amount = parseFloat(document.getElementById('expense-amount').value);
+                if (description && amount > 0) {
+                    await addDoc(collection(db, `events/${eventId}/expenses`), { description, amount });
+                    e.target.reset();
+                }
+            });
+
+            document.getElementById('expenses-list').addEventListener('click', async (e) => {
+                if (e.target.classList.contains('delete-expense-btn')) {
+                    if(confirm("¿Seguro que quieres eliminar este gasto?")) {
+                        await deleteDoc(doc(db, `events/${eventId}/expenses`, e.target.dataset.id));
+                    }
+                }
+            });
+
+        } else {
+            document.getElementById('event-name-display').textContent = "Reporte General";
+            document.getElementById('back-to-panel-link').textContent = "← Volver al Gestor de Eventos";
+            loadGeneralReport();
         }
     </script>
 </body>
