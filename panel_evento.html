@@ -10,17 +10,8 @@
         body { font-family: 'Inter', sans-serif; background-color: #111827; color: #f9fafb; }
         .nav-card { background-color: #1f2937; transition: all 0.2s ease-in-out; border: 1px solid #374151; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; font-weight: 600; padding: 1.5rem; border-radius: 0.5rem; text-decoration: none; color: #f9fafb; }
         .nav-card:hover { transform: translateY(-4px); background-color: #374151; border-color: #38bdf8; }
-        /* Estilos para la nueva vista previa de votaciones */
-        .artist-preview-card {
-            display: flex; align-items: center; background-color: #1f2937;
-            padding: 0.75rem; border-radius: 0.5rem; gap: 1rem;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-        }
-        .artist-image-container-small {
-            width: 50px; height: 50px; border-radius: 50%; overflow: hidden;
-            border: 2px solid #38bdf8; flex-shrink: 0;
-            display: flex; justify-content: center; align-items: center;
-        }
+        .artist-preview-card { display: flex; align-items: center; background-color: #1f2937; padding: 0.75rem; border-radius: 0.5rem; gap: 1rem; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
+        .artist-image-container-small { width: 50px; height: 50px; border-radius: 50%; overflow: hidden; border: 2px solid #38bdf8; flex-shrink: 0; display: flex; justify-content: center; align-items: center; }
         .artist-image { width: 100%; height: 100%; object-fit: cover; }
     </style>
 </head>
@@ -32,7 +23,7 @@
         <p id="event-name-display" class="text-2xl text-gray-300 mt-2"></p>
     </header>
 
-    <div class="bg-gray-800 p-4 rounded-lg shadow-md mb-6 w-full max-w-4xl flex flex-row justify-around items-center text-center space-x-4">
+    <div class="bg-gray-800 p-4 rounded-lg shadow-md mb-6 w-full max-w-5xl flex flex-row justify-around items-center text-center space-x-4">
         <div>
             <p class="text-sm text-gray-400">Entradas Generadas</p>
             <p id="total-generated-tickets" class="text-2xl font-bold text-sky-400">0</p>
@@ -43,10 +34,10 @@
         </div>
     </div>
 
-    <div id="navigation-container" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 max-w-5xl w-full">
+    <div id="navigation-container" class="grid grid-cols-2 md:grid-cols-3 gap-6 max-w-5xl w-full">
         </div>
 
-    <div id="live-voting-preview-container" class="mt-8 w-full max-w-4xl bg-gray-800 p-6 rounded-lg shadow-xl">
+    <div id="live-voting-preview-container" class="mt-8 w-full max-w-5xl bg-gray-800 p-6 rounded-lg shadow-xl">
         <h3 class="text-2xl font-bold mb-4 text-center text-sky-400">Votaciones en Vivo (Top 3)</h3>
         <div id="live-voting-preview-list" class="space-y-3 mb-6">
             <p class="text-center text-gray-400">Cargando ranking...</p>
@@ -69,9 +60,12 @@
         } else {
             document.getElementById('event-name-display').textContent = eventName;
             const navContainer = document.getElementById('navigation-container');
+            
+            // LISTA DE ENLACES CON EL NUEVO BOTÓN
             const links = [
                 { href: `generador_y_gestion.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`, text: 'Generador de Entradas' },
                 { href: `escaner_y_lista.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`, text: 'Escáner y Lista' },
+                { href: `lista_artistas_qr.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`, text: 'QR Generados' }, // <-- NUEVO BOTÓN
                 { href: `gestion_votacion.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`, text: 'Gestión de Votaciones' },
                 { href: `reportes.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`, text: 'Reportes y Contabilidad' },
                 { href: `gestion_asistentes.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`, text: 'Gestión de Asistentes' }
@@ -86,10 +80,8 @@
                 navContainer.appendChild(a);
             });
             
-            // Asignamos el enlace al botón de ver todas las votaciones
             document.getElementById('go-to-voting-panel-btn').href = `gestion_votacion.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`;
 
-            // Listener para las entradas (existente)
             const ticketsQuery = query(collection(db, `events/${eventId}/tickets`));
             onSnapshot(ticketsQuery, (snapshot) => {
                 const tickets = snapshot.docs.map(doc => doc.data());
@@ -97,7 +89,6 @@
                 document.getElementById('total-used-tickets').textContent = tickets.filter(t => t.used).length;
             });
 
-            // ===== NUEVA LÓGICA PARA EL TOP 3 DE VOTACIONES =====
             const artistsQuery = query(collection(db, `events/${eventId}/artists`), orderBy('totalScore', 'desc'));
             onSnapshot(artistsQuery, (snapshot) => {
                 const artists = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -107,13 +98,10 @@
             function renderLiveVotingPreview(artists) {
                 const previewList = document.getElementById('live-voting-preview-list');
                 previewList.innerHTML = '';
-
                 if (!artists || artists.length === 0) {
                     previewList.innerHTML = '<p class="text-center text-gray-400">Aún no hay artistas para la votación.</p>';
                     return;
                 }
-
-                // Tomamos solo los 3 primeros
                 artists.slice(0, 3).forEach((artist, index) => {
                     const card = document.createElement('div');
                     card.className = 'artist-preview-card';
@@ -122,14 +110,11 @@
                         <div class="artist-image-container-small">
                             <img src="${artist.photoURL || 'https://placehold.co/60x60/1f2937/f9fafb?text=ART'}" alt="${artist.name}" class="artist-image">
                         </div>
-                        <div class="flex-grow">
-                            <p class="font-semibold text-lg text-sky-300">${artist.name}</p>
-                        </div>
+                        <div class="flex-grow"><p class="font-semibold text-lg text-sky-300">${artist.name}</p></div>
                         <div class="text-right flex-shrink-0">
                             <span class="text-xl font-bold text-green-400">${artist.totalScore || 0}</span>
                             <span class="text-sm text-gray-400">puntos</span>
-                        </div>
-                    `;
+                        </div>`;
                     previewList.appendChild(card);
                 });
             }
