@@ -8,24 +8,40 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #111827; color: #f9fafb; }
-        .artist-card { 
+        .artist-card-link { 
             background-color: #1f2937; 
-            transition: all 0.2s ease-in-out; 
+            transition: background-color 0.2s ease-in-out; 
             border: 1px solid #374151; 
-            display: block; /* Para que toda la tarjeta sea un enlace */
+            display: flex; /* Cambiado a flex para alinear elementos */
+            justify-content: space-between; /* Para separar el nombre del botón */
+            align-items: center;
             padding: 1.5rem;
             border-radius: 0.5rem;
             text-decoration: none;
             color: #f9fafb;
         }
-        .artist-card:hover { 
-            transform: translateY(-4px); 
+        .artist-card-link:hover { 
             background-color: #374151; 
             border-color: #38bdf8; 
         }
+        .modal-backdrop { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.7); z-index: 900; display: flex; justify-content: center; align-items: center; }
+        .modal-content { background-color: #1f2937; padding: 1.5rem; border-radius: 0.5rem; max-width: 90%; width: 500px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+        .hidden { display: none !important; }
     </style>
 </head>
 <body class="antialiased">
+    <div id="share-link-modal" class="modal-backdrop hidden">
+        <div class="modal-content text-center">
+            <h3 id="share-modal-title" class="text-xl font-bold mb-4">Compartir Enlace</h3>
+            <p class="mb-4">Copia el siguiente enlace:</p>
+            <input type="text" id="share-link-display" class="w-full p-3 rounded-md bg-gray-900 text-white" readonly>
+            <div class="flex justify-end space-x-4 mt-4">
+                <button id="copy-share-link-btn" class="px-4 py-2 bg-sky-600 text-white font-bold rounded-lg">Copiar</button>
+                <button id="close-share-modal-btn" class="px-4 py-2 bg-gray-600 text-white font-bold rounded-lg">Cerrar</button>
+            </div>
+        </div>
+    </div>
+
     <div class="container mx-auto max-w-4xl p-4 sm:p-6">
         <header class="text-center mb-8">
             <a id="back-to-panel-link" href="#" class="text-sky-400 hover:underline mb-4 inline-block">&larr; Volver al Panel del Evento</a>
@@ -34,8 +50,12 @@
         </header>
 
         <main>
+            <div class="mb-8">
+                <button id="share-all-btn" class="w-full px-4 py-3 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700">Compartir Todas las Entradas del Evento</button>
+            </div>
+
             <section id="artists-list-section">
-                <h2 class="text-2xl font-bold mb-4">Selecciona un Artista/Grupo</h2>
+                <h2 class="text-2xl font-bold mb-4">O selecciona un Artista/Grupo</h2>
                 <div id="artists-list" class="space-y-4">
                     <p class="text-center text-gray-400">Cargando lista de artistas...</p>
                 </div>
@@ -51,6 +71,16 @@
         const eventId = urlParams.get('eventId');
         const eventName = urlParams.get('eventName');
 
+        const ui = {
+            shareLinkModal: document.getElementById('share-link-modal'),
+            shareModalTitle: document.getElementById('share-modal-title'),
+            shareLinkDisplay: document.getElementById('share-link-display'),
+            copyShareLinkBtn: document.getElementById('copy-share-link-btn'),
+            closeShareModalBtn: document.getElementById('close-share-modal-btn'),
+            shareAllBtn: document.getElementById('share-all-btn'),
+            artistsListDiv: document.getElementById('artists-list')
+        };
+
         if (!eventId || !eventName) {
             alert('Error: No se ha especificado un evento.');
             window.location.href = 'eventos.html';
@@ -58,34 +88,66 @@
 
         document.getElementById('back-to-panel-link').href = `panel_evento.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`;
         document.getElementById('event-name-display').textContent = `Para el evento: ${eventName}`;
+        
+        function showShareModal(link, title) {
+            ui.shareModalTitle.textContent = title;
+            ui.shareLinkDisplay.value = link;
+            ui.shareLinkModal.classList.remove('hidden');
+        }
+        
+        ui.copyShareLinkBtn.addEventListener('click', () => {
+            navigator.clipboard.writeText(ui.shareLinkDisplay.value).then(() => alert('¡Enlace copiado!'));
+        });
+        ui.closeShareModalBtn.addEventListener('click', () => ui.shareLinkModal.classList.add('hidden'));
 
         async function loadArtistsWithTickets() {
-            const artistsListDiv = document.getElementById('artists-list');
-            artistsListDiv.innerHTML = '<p class="text-center text-gray-400">Buscando artistas con entradas...</p>';
+            ui.artistsListDiv.innerHTML = '<p class="text-center text-gray-400">Buscando artistas con entradas...</p>';
             
             const ticketsQuery = query(collection(db, `events/${eventId}/tickets`));
             const querySnapshot = await getDocs(ticketsQuery);
-            
             const tickets = querySnapshot.docs.map(doc => doc.data());
             
             if (tickets.length === 0) {
-                artistsListDiv.innerHTML = '<p class="text-center text-gray-500">Aún no se han generado entradas para este evento.</p>';
+                ui.artistsListDiv.innerHTML = '<p class="text-center text-gray-500">Aún no se han generado entradas para este evento.</p>';
+                ui.shareAllBtn.disabled = true;
                 return;
             }
 
-            // Usamos un Set para obtener una lista de prefijos de artista únicos
             const artistPrefixes = [...new Set(tickets.map(ticket => ticket.prefix))];
-            
-            artistsListDiv.innerHTML = ''; // Limpiamos la lista
+            ui.artistsListDiv.innerHTML = '';
 
             artistPrefixes.sort().forEach(prefix => {
-                const link = document.createElement('a');
-                link.href = `visor_qr_compartido.html?eventId=${eventId}&artist=${encodeURIComponent(prefix)}`;
-                link.className = 'artist-card';
-                link.innerHTML = `<h3 class="text-xl font-bold text-sky-400">${prefix}</h3>`;
-                artistsListDiv.appendChild(link);
+                const card = document.createElement('div');
+                card.className = 'artist-card-link';
+                card.innerHTML = `
+                    <a href="visor_qr_compartido.html?eventId=${eventId}&artist=${encodeURIComponent(prefix)}" class="flex-grow">
+                        <h3 class="text-xl font-bold text-sky-400">${prefix}</h3>
+                    </a>
+                    <button data-prefix="${prefix}" class="share-artist-btn px-4 py-2 bg-gray-600 text-white font-semibold rounded-lg hover:bg-gray-700 text-sm">Compartir</button>
+                `;
+                ui.artistsListDiv.appendChild(card);
             });
         }
+        
+        // Listener para los botones de compartir individuales (Opción A)
+        ui.artistsListDiv.addEventListener('click', (e) => {
+            if (e.target.classList.contains('share-artist-btn')) {
+                const prefix = e.target.dataset.prefix;
+                const path = window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/'));
+                const baseUrl = `${window.location.origin}${path}`;
+                const shareableLink = `${baseUrl}/visor_qr_compartido.html?eventId=${eventId}&artist=${encodeURIComponent(prefix)}`;
+                showShareModal(shareableLink, `Enlace para "${prefix}"`);
+            }
+        });
+
+        // Listener para el botón de compartir todo (Opción B)
+        ui.shareAllBtn.addEventListener('click', () => {
+            const path = window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/'));
+            const baseUrl = `${window.location.origin}${path}`;
+            // Se genera el enlace SIN el parámetro 'artist'
+            const shareableLink = `${baseUrl}/visor_qr_compartido.html?eventId=${eventId}`;
+            showShareModal(shareableLink, 'Enlace para Todas las Entradas');
+        });
 
         loadArtistsWithTickets();
     </script>
