@@ -21,7 +21,7 @@
     </div>
     <div class="container mx-auto max-w-4xl p-4 sm:p-6">
         <header class="text-center mb-6">
-            <a id="back-to-panel-link" href="index.html" class="text-sky-400 hover:underline mb-4 inline-block">&larr; Volver al Panel del Evento</a>
+            <a id="back-to-panel-link" href="#" class="text-sky-400 hover:underline mb-4 inline-block">&larr; Volver al Panel del Evento</a>
             <h1 class="text-3xl sm:text-4xl font-bold text-sky-400">Generador de Entradas</h1>
         </header>
 
@@ -84,7 +84,7 @@
                         <div id="preview-list" class="space-y-2 mb-6 max-h-96 overflow-y-auto p-2 bg-gray-900 rounded-md">
                             <p class="text-center text-gray-500">La vista previa aparecerá aquí.</p>
                         </div>
-                        <button id="generate-batch-btn" class="w-full px-4 py-3 bg-green-600 text-white font-bold rounded-lg disabled:opacity-50" disabled>
+                        <button id="generate-batch-btn" class="w-full px-4 py-3 bg-green-600 text-white font-bold rounded-lg disabled:opacity-50">
                             Generar <span id="person-count">0</span> Entradas
                         </button>
                     </div>
@@ -94,24 +94,17 @@
     </div>
 
     <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getFirestore, collection, writeBatch, doc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
+        import { db } from './firebase_config.js';
+        import { collection, writeBatch, doc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        const firebaseConfig = {
-            apiKey: "AIzaSyC_2Ukoxf_ry7QfKtou1Cz6nY-qTVw4qTU",
-            authDomain: "vyt-music.firebaseapp.com",
-            projectId: "vyt-music",
-            storageBucket: "vyt-music.firebasestorage.app",
-            messagingSenderId: "574981837817",
-            appId: "1:574981837817:web:a29933a22bbfd51a086328"
-        };
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
-        const storage = getStorage(app);
-        
         const urlParams = new URLSearchParams(window.location.search);
         const eventId = urlParams.get('eventId');
+        if (!eventId) {
+            alert('Error: No se ha especificado un evento. Redirigiendo.');
+            window.location.href = 'eventos.html';
+        }
+
+        document.getElementById('back-to-panel-link').href = `panel_evento.html?eventId=${eventId}`;
 
         let people = [];
 
@@ -128,4 +121,81 @@
         function getPriceTiers() {
             const tiers = {};
             document.querySelectorAll('#price-tiers-container .flex').forEach(div => {
-                const name = div.querySelector('.price
+                const name = div.querySelector('.price-tier-name').value.trim();
+                const value = parseFloat(div.querySelector('.price-tier-value').value) || 0;
+                if (name) { tiers[name] = value; }
+            });
+            return tiers;
+        }
+
+        function renderPreview() {
+            ui.previewList.innerHTML = '';
+            const priceTiers = getPriceTiers();
+            const tierNames = Object.keys(priceTiers);
+            if (people.length === 0) {
+                ui.previewList.innerHTML = '<p class="text-center text-gray-500">Pega una lista de nombres.</p>';
+                ui.generateBatchBtn.disabled = true;
+                ui.personCount.textContent = 0;
+                return;
+            }
+            people.forEach((person, index) => {
+                const isPaid = person.status === 'Paga';
+                const statusIcon = isPaid ? '✅' : '❌';
+                const statusColor = isPaid ? 'text-green-500' : 'text-red-500';
+                const optionsHTML = tierNames.map(name => `<option value="${name}" ${person.tier === name ? 'selected' : ''}>${name} ($${priceTiers[name]})</option>`).join('');
+                const personDiv = document.createElement('div');
+                personDiv.className = 'flex items-center justify-between bg-gray-700 p-2 rounded gap-2';
+                personDiv.innerHTML = `<span class="flex-grow">${person.name}</span><select data-index="${index}" class="tier-select bg-gray-800 text-white rounded p-1 text-sm">${optionsHTML}</select><button data-index="${index}" class="toggle-status-btn text-xl ${statusColor}" title="Clic para cambiar estado">${statusIcon}</button>`;
+                ui.previewList.appendChild(personDiv);
+            });
+            ui.generateBatchBtn.disabled = false;
+            ui.personCount.textContent = people.length;
+        }
+
+        ui.nameListTextarea.addEventListener('input', () => {
+            const names = ui.nameListTextarea.value.trim().split('\n').filter(Boolean);
+            const defaultTier = Object.keys(getPriceTiers())[0] || '';
+            people = names.map(name => ({ name: name.trim(), status: 'Paga', tier: defaultTier }));
+            renderPreview();
+        });
+
+        ui.previewList.addEventListener('change', (e) => {
+            if (e.target.classList.contains('tier-select')) {
+                const index = parseInt(e.target.dataset.index);
+                people[index].tier = e.target.value;
+            }
+        });
+
+        ui.previewList.addEventListener('click', (e) => {
+            if (e.target.classList.contains('toggle-status-btn')) {
+                const index = parseInt(e.target.dataset.index);
+                people[index].status = people[index].status === 'Paga' ? 'Adeudada' : 'Paga';
+                renderPreview();
+            }
+        });
+
+        ui.generateBatchBtn.addEventListener('click', async () => {
+            const showName = document.getElementById('show-name-input').value;
+            const prefix = document.getElementById('ticket-prefix-input').value;
+            if (!showName || !prefix) { alert('Completa el nombre del show y el prefijo.'); return; }
+            ui.loadingOverlay.classList.remove('hidden');
+            const batch = writeBatch(db);
+            const ticketsCol = collection(db, `events/${eventId}/tickets`);
+            const priceTiers = getPriceTiers();
+            people.forEach(person => {
+                const ticketId = `${prefix}-${crypto.randomUUID().substring(0, 8)}`;
+                const ticketData = { id: ticketId, prefix, showName, name: person.name, paymentStatus: person.status, price: priceTiers[person.tier] || 0, tierName: person.tier, used: false, generatedAt: new Date().toISOString() };
+                batch.set(doc(ticketsCol, ticketId), ticketData);
+            });
+            await batch.commit();
+            ui.loadingOverlay.classList.add('hidden');
+            alert(`${people.length} entradas generadas.`);
+            ui.nameListTextarea.value = '';
+            people = [];
+            renderPreview();
+        });
+
+        renderPreview();
+    </script>
+</body>
+</html>
