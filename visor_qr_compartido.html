@@ -89,11 +89,31 @@
         .download-btn:hover {
             background-color: #0ea5e9;
         }
+        .modal-backdrop {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(0,0,0,0.7); z-index: 900;
+            display: flex; justify-content: center; align-items: center;
+        }
+        .modal-content {
+            background-color: #1f2937; padding: 1.5rem; border-radius: 0.5rem;
+            max-width: 90%; width: 500px; box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+        }
     </style>
 </head>
 <body class="antialiased">
 
     <div id="loading-overlay" class="loading-overlay hidden"></div>
+    <div id="share-link-modal" class="modal-backdrop hidden">
+        <div class="modal-content text-center">
+            <h3 class="text-xl font-bold mb-4">Compartir Enlace del Grupo</h3>
+            <p class="mb-4">Copia el siguiente enlace:</p>
+            <input type="text" id="share-link-display" class="w-full p-3 rounded-md bg-gray-900 text-white" readonly>
+            <div class="flex justify-end space-x-4 mt-4">
+                <button id="copy-share-link-btn" class="px-4 py-2 bg-sky-600 text-white font-bold rounded-lg">Copiar</button>
+                <button id="close-share-modal-btn" class="px-4 py-2 bg-gray-600 text-white font-bold rounded-lg">Cerrar</button>
+            </div>
+        </div>
+    </div>
     
     <div class="container mx-auto max-w-7xl p-4 sm:p-6">
         <header class="text-center mb-8">
@@ -108,7 +128,10 @@
         <div id="message-container" class="mb-4 max-w-4xl mx-auto"></div>
         
         <div id="controls-container" class="hidden max-w-xl mx-auto mb-8">
-             <input type="text" id="ticket-search-input" placeholder="Busca tu entrada por nombre o ID..." class="w-full p-3 rounded-md border border-gray-600 bg-gray-900 text-white focus:outline-none focus:ring-2 focus:ring-sky-500">
+             <div class="flex items-center gap-2">
+                 <input type="text" id="ticket-search-input" placeholder="Busca tu entrada por nombre o ID..." class="w-full p-3 rounded-md border border-gray-600 bg-gray-900 text-white focus:outline-none focus:ring-2 focus:ring-sky-500">
+                 <button id="share-filtered-link-btn" class="hidden px-4 py-3 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700">Compartir</button>
+             </div>
         </div>
 
         <div id="shared-qrs-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -139,6 +162,11 @@
             controlsContainer: document.getElementById('controls-container'),
             ticketSearchInput: document.getElementById('ticket-search-input'),
             backToPanelLink: document.getElementById('back-to-panel-link'),
+            shareLinkModal: document.getElementById('share-link-modal'),
+            shareLinkDisplay: document.getElementById('share-link-display'),
+            copyShareLinkBtn: document.getElementById('copy-share-link-btn'),
+            closeShareModalBtn: document.getElementById('close-share-modal-btn'),
+            shareFilteredLinkBtn: document.getElementById('share-filtered-link-btn'),
         };
 
         function displayMessage(message, type = 'info') {
@@ -149,6 +177,12 @@
 
         function setLoading(show) {
             ui.loadingOverlay.classList.toggle('hidden', !show);
+        }
+        
+        function showShareLinkModal(link, title = 'Compartir Enlace del Grupo') {
+             ui.shareLinkModal.querySelector('h3').textContent = title;
+             ui.shareLinkDisplay.value = link;
+             ui.shareLinkModal.classList.remove('hidden');
         }
 
         function createTicketCard(ticket) {
@@ -244,24 +278,28 @@
             ui.qrsContainer.innerHTML = '';
             if (ticketsToRender.length === 0) {
                 ui.qrsContainer.innerHTML = '<p class="text-center text-gray-400 col-span-full">No se encontraron entradas con ese criterio.</p>';
+                ui.shareFilteredLinkBtn.classList.add('hidden');
                 return;
             }
             ticketsToRender.forEach(ticket => createTicketCard(ticket));
+            ui.shareFilteredLinkBtn.classList.remove('hidden');
         }
 
         function filterTickets() {
             const searchTerm = ui.ticketSearchInput.value.toLowerCase().trim();
             if (!searchTerm) {
+                // If search term is empty, show all tickets and hide the share button
                 renderTickets(state.allTicketsData);
+                ui.shareFilteredLinkBtn.classList.add('hidden');
                 return;
             }
             const filtered = state.allTicketsData.filter(ticket => 
-                ticket.name.toLowerCase().includes(searchTerm) || 
-                ticket.id.toLowerCase().includes(searchTerm)
+                (ticket.name && ticket.name.toLowerCase().includes(searchTerm)) || 
+                (ticket.prefix && ticket.prefix.toLowerCase().includes(searchTerm))
             );
             renderTickets(filtered);
         }
-
+        
         async function loadTickets(eventId, artistPrefix = null) {
             setLoading(true);
             ui.qrsContainer.innerHTML = ''; 
@@ -278,7 +316,7 @@
                 }
 
                 const querySnapshot = await getDocs(q);
-                state.allTicketsData = querySnapshot.docs.map(doc => doc.data()).sort((a,b) => a.name.localeCompare(b.name));
+                state.allTicketsData = querySnapshot.docs.map(doc => doc.data()).sort((a,b) => (a.name || '').localeCompare(b.name || ''));
 
                 if (state.allTicketsData.length > 0) {
                     ui.showNameDisplay.textContent = `Show: ${state.allTicketsData[0].showName || 'N/A'}`;
@@ -311,6 +349,9 @@
 
             if (eventId) {
                 await loadTickets(eventId, artistPrefix);
+                if (artistPrefix) {
+                    ui.ticketSearchInput.value = artistPrefix;
+                }
             } else {
                 displayMessage('Falta el ID del evento en la URL.', 'error');
                 ui.artistNameDisplay.textContent = 'Información incompleta';
@@ -319,6 +360,21 @@
             }
 
             ui.ticketSearchInput.addEventListener('input', filterTickets);
+            ui.copyShareLinkBtn.addEventListener('click', () => {
+                navigator.clipboard.writeText(ui.shareLinkDisplay.value);
+                alert('¡Enlace copiado!');
+            });
+            ui.closeShareModalBtn.addEventListener('click', () => ui.shareLinkModal.classList.add('hidden'));
+
+            ui.shareFilteredLinkBtn.addEventListener('click', () => {
+                const searchTerm = ui.ticketSearchInput.value.trim();
+                if (!searchTerm) {
+                    alert("Por favor, busca por nombre o prefijo primero.");
+                    return;
+                }
+                const shareableLink = `${window.location.origin}/visor_qr_compartido.html?eventId=${eventId}&artist=${encodeURIComponent(searchTerm)}`;
+                showShareLinkModal(shareableLink, `Enlace para el grupo "${searchTerm}"`);
+            });
         }
 
         document.addEventListener('DOMContentLoaded', startApp);
