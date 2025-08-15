@@ -26,6 +26,7 @@
         </header>
         <main class="space-y-8">
             <button id="open-scanner-btn" class="w-full max-w-md mx-auto flex items-center justify-center gap-3 p-4 rounded-lg text-white font-bold bg-blue-600 hover:bg-blue-700"><span>Abrir Escáner</span></button>
+            
             <section class="bg-gray-800 p-6 rounded-lg shadow-xl">
                 <h2 class="text-2xl font-bold mb-4">Resumen de Entradas</h2>
                 <div id="total-summary" class="bg-gray-900 p-4 rounded-lg text-center mb-4">
@@ -36,6 +37,7 @@
                     <p class="text-center text-gray-400">Cargando desglose...</p>
                 </div>
             </section>
+            
             <section id="all-tickets-section" class="bg-gray-800 p-6 rounded-lg shadow-xl">
                 <h2 class="text-2xl font-bold mb-4">Lista de Todas las Entradas</h2>
                 <input type="text" id="all-tickets-search-input" placeholder="Buscar por nombre de invitado o artista..." class="w-full p-3 rounded-md border border-gray-600 bg-gray-900 text-white mb-4">
@@ -81,7 +83,110 @@
             });
         }
         
-        // ... (resto del script sin cambios) ...
+        async function toggleTicketStatus(ticketId, isCurrentlyUsed) {
+            const newUsedStatus = !isCurrentlyUsed;
+            const confirmationText = newUsedStatus ? `¿Marcar la entrada como USADA?` : `¿ANULAR el ingreso?`;
+            if (confirm(confirmationText)) {
+                const ticketRef = doc(db, `events/${eventId}/tickets`, ticketId);
+                await updateDoc(ticketRef, { used: newUsedStatus, usedAt: newUsedStatus ? new Date().toISOString() : null });
+            }
+        }
+
+        function onScanSuccess(decodedText, decodedResult) {
+            if(html5QrCode) html5QrCode.pause(true);
+            processScan(decodedText);
+        }
+
+        async function processScan(decodedText) {
+            const infoContainer = document.getElementById('scanned-ticket-info-fullscreen');
+            const ticketRef = doc(db, `events/${eventId}/tickets`, decodedText);
+            const ticketDoc = await getDoc(ticketRef);
+            let status, colorClass, ticketData;
+            if (!ticketDoc.exists()) {
+                status = 'INVÁLIDO'; colorClass = 'text-red-500';
+                ticketData = { name: 'NO ENCONTRADA' };
+            } else {
+                ticketData = { id: ticketDoc.id, ...ticketDoc.data() };
+                if (ticketData.used) {
+                    status = 'YA USADO'; colorClass = 'text-yellow-500';
+                } else {
+                    status = 'VÁLIDO'; colorClass = 'text-green-500';
+                    await updateDoc(ticketRef, { used: true, usedAt: new Date().toISOString() });
+                }
+            }
+            const paymentStatus = ticketData.paymentStatus || 'Paga';
+            const paymentClass = paymentStatus === 'Paga' ? 'text-green-500' : 'text-red-500';
+            infoContainer.innerHTML = `<h3 class="text-xl font-bold mb-2">Entrada Escaneada</h3><p><strong>Nombre:</strong> <span class="text-sky-300">${ticketData.name}</span></p><p class="mt-4 text-lg font-semibold">Estado: <span class="font-bold ${colorClass}">${status}</span></p><p class="mt-2 text-lg font-semibold">Pago: <span class="font-bold ${paymentClass}">${paymentStatus.toUpperCase()}</span></p><button id="scan-again-btn-internal" class="w-full mt-4 px-4 py-3 bg-sky-600 text-white font-bold rounded-lg">Escanear Siguiente</button>`;
+            infoContainer.classList.remove('hidden');
+            document.getElementById('scan-again-btn-internal').addEventListener('click', () => {
+                infoContainer.classList.add('hidden');
+                if (html5QrCode && html5QrCode.getState() === 2) {
+                    html5QrCode.resume();
+                }
+            });
+        }
+        
+        function startScanner() {
+            document.getElementById('fullscreen-scanner-container').classList.remove('hidden');
+            html5QrCode = new Html5Qrcode("qr-code-reader");
+            html5QrCode.start({ facingMode: "environment" }, { fps: 10, qrbox: { width: 250, height: 250 } }, onScanSuccess, (e)=>{})
+                .catch(err => alert("Error al iniciar escáner. Asegúrate de dar permisos de cámara."));
+        }
+
+        function stopScanner() {
+            if (html5QrCode && html5QrCode.isScanning) {
+                html5QrCode.stop().catch(err => console.error("Error al detener el escáner:", err));
+            }
+            document.getElementById('fullscreen-scanner-container').classList.add('hidden');
+        }
+
+        const ticketsQuery = query(collection(db, `events/${eventId}/tickets`));
+        onSnapshot(ticketsQuery, (snapshot) => {
+            allTicketsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a,b) => a.name.localeCompare(b.name));
+            renderAllTickets(allTicketsData);
+
+            document.getElementById('total-tickets-summary').textContent = allTicketsData.length;
+            const prefixCounts = allTicketsData.reduce((acc, ticket) => {
+                const prefix = ticket.prefix || "Sin Grupo";
+                acc[prefix] = (acc[prefix] || 0) + 1;
+                return acc;
+            }, {});
+            const reportContainer = document.getElementById('assistant-report-container');
+            reportContainer.innerHTML = '';
+            Object.keys(prefixCounts).sort().forEach(prefix => {
+                const card = document.createElement('div');
+                card.className = 'artist-card';
+                card.innerHTML = `
+                    <span class="font-semibold text-lg text-sky-300">${prefix}</span>
+                    <span class="font-bold text-xl text-green-400">${prefixCounts[prefix]}</span>
+                `;
+                reportContainer.appendChild(card);
+            });
+        });
+
+        document.getElementById('all-tickets-search-input').addEventListener('input', (e) => {
+            const term = e.target.value.toLowerCase().trim();
+            const filtered = allTicketsData.filter(t => 
+                t.name.toLowerCase().includes(term) ||
+                (t.prefix && t.prefix.toLowerCase().includes(term))
+            );
+            renderAllTickets(filtered);
+        });
+
+        document.getElementById('all-tickets-list').addEventListener('click', async (e) => {
+            const target = e.target.closest('button');
+            if (!target) return;
+            if (target.classList.contains('manual-check-in-btn')) {
+                toggleTicketStatus(target.dataset.ticketId, target.dataset.used === 'true');
+            }
+            if (target.classList.contains('delete-ticket-btn')) {
+                if(confirm("¿Seguro que quieres eliminar esta entrada?")) {
+                    await deleteDoc(doc(db, `events/${eventId}/tickets`, target.dataset.ticketId));
+                }
+            }
+        });
+        document.getElementById('open-scanner-btn').addEventListener('click', startScanner);
+        document.getElementById('close-scanner-btn').addEventListener('click', stopScanner);
     </script>
 </body>
 </html>
