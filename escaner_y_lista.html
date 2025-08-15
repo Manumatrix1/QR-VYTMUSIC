@@ -88,7 +88,7 @@
 
             function playSound(note) {
                 if (synth) {
-                    Tone.start().then(() => synth.triggerAttackRelease(note, "8n"));
+                    synth.triggerAttackRelease(note, "8n");
                 }
             }
             
@@ -189,8 +189,8 @@
                     processScan(decodedText);
                 }
             }
-
-            function startScanner() {
+            
+            async function startScanner() {
                 if (isScannerActive) return;
                 
                 document.getElementById('fullscreen-scanner-container').classList.remove('hidden');
@@ -198,25 +198,36 @@
                 
                 html5QrCode = new Html5Qrcode("qr-code-reader");
 
-                // ===== CONFIGURACIÓN FINAL: SIMPLE Y RÁPIDA =====
-                // Eliminamos 'formatsToSupport' para evitar el error y dejamos que la librería
-                // use su detección por defecto, que es muy eficiente.
-                const config = { 
-                    fps: 60
-                };
+                const config = { fps: 25 }; // Mantenemos FPS altos pero razonables
 
-                html5QrCode.start({ facingMode: "environment" }, config, onScanSuccess, (e) => {})
-                    .catch(err => {
+                const videoConstraints = {
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 },
+                    advanced: [{ focusMode: 'continuous' }]
+                };
+                
+                try {
+                    await html5QrCode.start({ facingMode: "environment", videoConstraints }, config, onScanSuccess, (e) => {});
+                } catch (err) {
+                    console.warn("Ajustes avanzados fallaron. Reintentando con configuración básica.", err);
+                    html5QrCode = new Html5Qrcode("qr-code-reader");
+                    try {
+                        await html5QrCode.start({ facingMode: "environment" }, config, onScanSuccess, (e) => {});
+                    } catch (finalErr) {
                         alert("No se pudo iniciar la cámara. Asegúrate de dar permisos y refresca la página.");
-                        console.error("Error al iniciar escáner:", err);
-                        stopScanner();
-                    });
+                        console.error("Error final al iniciar escáner:", finalErr);
+                        await stopScanner();
+                    }
+                }
             }
 
-            function stopScanner() {
+            async function stopScanner() {
                 if (html5QrCode && isScannerActive) {
-                    html5QrCode.stop()
-                        .catch(err => { console.error("Error al detener el escáner:", err); });
+                    try {
+                        await html5QrCode.stop();
+                    } catch (err) {
+                        console.error("Error al detener escáner:", err);
+                    }
                 }
                 isScannerActive = false;
                 html5QrCode = null;
@@ -225,6 +236,8 @@
                 infoContainer.classList.add('hidden');
                 infoContainer.innerHTML = '';
             }
+
+            // ... (resto del código sin cambios) ...
 
             const ticketsQuery = query(collection(db, `events/${eventId}/tickets`));
             onSnapshot(ticketsQuery, (snapshot) => {
@@ -266,7 +279,14 @@
                     }
                 }
             });
-            document.getElementById('open-scanner-btn').addEventListener('click', startScanner);
+
+            // ===== CORRECCIÓN DE SONIDO =====
+            document.getElementById('open-scanner-btn').addEventListener('click', () => {
+                // Desbloqueamos el audio con la primera interacción del usuario.
+                Tone.start();
+                startScanner();
+            });
+            
             document.getElementById('close-scanner-btn').addEventListener('click', stopScanner);
         });
     </script>
