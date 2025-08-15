@@ -62,13 +62,10 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
 
     <script type="module">
-        // Las importaciones DEBEN quedar aquí afuera, en el nivel superior.
         import { db } from './firebase_config.js';
         import { collection, onSnapshot, query, doc, deleteDoc, getDoc, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // Envolvemos todo el código en este evento para esperar a que el HTML esté listo.
         document.addEventListener('DOMContentLoaded', () => {
-
             const urlParams = new URLSearchParams(window.location.search);
             const eventId = urlParams.get('eventId');
             const eventName = urlParams.get('eventName');
@@ -78,11 +75,12 @@
                 window.location.href = 'eventos.html';
             }
 
-            // Esta línea ahora funcionará porque el elemento ya existe.
             document.getElementById('back-to-panel-link').href = `panel_evento.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`;
             
             let allTicketsData = [];
             let synth;
+            let html5QrCode = null;
+            let isScannerActive = false;
 
             try {
                 synth = new Tone.Synth().toDestination();
@@ -93,7 +91,7 @@
                     Tone.start().then(() => synth.triggerAttackRelease(note, "8n"));
                 }
             }
-
+            
             function renderAllTickets(tickets) {
                 const list = document.getElementById('all-tickets-list');
                 if (!list) return;
@@ -121,28 +119,20 @@
                 }
             }
             
-            let html5QrCode = null;
-            let isScanning = false;
-
             function resumeScanner() {
                 const infoContainer = document.getElementById('scanned-ticket-info-fullscreen');
                 infoContainer.classList.add('hidden');
-                if (html5QrCode && !isScanning) {
+                infoContainer.innerHTML = ''; 
+                if (html5QrCode && isScannerActive) {
                     try {
                         html5QrCode.resume();
-                        isScanning = true;
                     } catch (e) {
-                        console.error("No se pudo reanudar el escáner.", e);
-                        stopScanner();
-                        startScanner();
+                        console.error("Error al reanudar el escáner.", e);
                     }
                 }
             }
 
             async function processScan(decodedText) {
-                isScanning = false;
-                html5QrCode.pause();
-                
                 const infoContainer = document.getElementById('scanned-ticket-info-fullscreen');
                 const ticketRef = doc(db, `events/${eventId}/tickets`, decodedText);
                 const ticketDoc = await getDoc(ticketRef);
@@ -170,7 +160,7 @@
                 playSound(sound);
                 
                 const flashOverlay = document.getElementById('scan-flash-overlay');
-                const statusType = status.split(' ')[1].toLowerCase();
+                const statusType = status.split(' ')[1].toLowerCase(); 
                 flashOverlay.className = `scan-flash ${statusType === 'inválida' ? 'invalid' : (statusType === 'utilizada' ? 'used' : 'valid')}`;
                 flashOverlay.style.opacity = '1';
                 setTimeout(() => { flashOverlay.style.opacity = '0'; }, 600);
@@ -178,83 +168,70 @@
                 const paymentStatus = ticketData.paymentStatus || 'Paga';
                 const paymentClass = paymentStatus === 'Paga' ? 'text-green-400' : 'text-red-400';
                 
-                let buttonHTML = '';
-                if (status === 'ENTRADA VÁLIDA') {
-                    buttonHTML = '<p class="mt-4 text-gray-300 text-sm">Escaneando siguiente en 1 segundo...</p>';
-                    setTimeout(resumeScanner, 800);
-                } else {
-                    buttonHTML = '<button id="scan-again-btn-internal" class="w-full mt-4 px-4 py-3 bg-sky-600 text-white font-bold rounded-lg hover:bg-sky-700">Escanear Siguiente</button>';
-                }
+                const buttonHTML = '<button id="scan-again-btn-internal" class="w-full mt-6 px-4 py-3 bg-sky-600 text-white font-bold rounded-lg hover:bg-sky-700 text-lg">Escanear Siguiente</button>';
 
                 infoContainer.innerHTML = `
-                    <h3 class="text-3xl font-bold ${colorClass}">${status}</h3>
-                    <div class="mt-4 text-left">
+                    <h3 class="text-4xl font-bold ${colorClass}">${status}</h3>
+                    <div class="mt-4 text-left text-lg">
                         <p><strong>Nombre:</strong> <span class="text-sky-300 font-semibold">${ticketData.name}</span></p>
                         <p><strong>Pago:</strong> <span class="font-bold ${paymentClass}">${paymentStatus.toUpperCase()}</span></p>
                     </div>
                     ${buttonHTML}`;
                 
                 infoContainer.classList.remove('hidden');
-
-                if (status !== 'ENTRADA VÁLIDA') {
-                    document.getElementById('scan-again-btn-internal').addEventListener('click', resumeScanner);
-                }
+                document.getElementById('scan-again-btn-internal').addEventListener('click', resumeScanner);
+                document.getElementById('scan-again-btn-internal').focus(); // Poner foco en el botón para facilitar el uso
             }
 
-            function onScanSuccess(decodedText, decodedResult) {
-                if (isScanning) {
-                    processScan(decodedText);
+            function onScanSuccess(decodedText) {
+                if (html5QrCode) {
+                    html5QrCode.pause(true); // Pausar la cámara
                 }
+                processScan(decodedText);
             }
-
-            function onScanFailure(error) { }
 
             function startScanner() {
-                document.getElementById('fullscreen-scanner-container').classList.remove('hidden');
-                if (!html5QrCode) {
-                    html5QrCode = new Html5Qrcode("qr-code-reader", { 
-                        formatsToSupport: [ 
-                            Html5QrcodeSupportedFormats.QR_CODE,
-                            Html5QrcodeSupportedFormats.CODE_128 
-                        ]
-                    });
-                }
+                if (isScannerActive) return;
                 
+                document.getElementById('fullscreen-scanner-container').classList.remove('hidden');
+                // Se crea una nueva instancia cada vez para asegurar un estado limpio
+                html5QrCode = new Html5Qrcode("qr-code-reader");
+                isScannerActive = true;
+
+                // Configuración simple y robusta, sin qrbox para usar la pantalla completa
                 const config = { 
-                    fps: 20,
-                    qrbox: (viewfinderWidth, viewfinderHeight) => {
-                        let minEdge = Math.min(viewfinderWidth, viewfinderHeight);
-                        let qrboxSize = Math.floor(minEdge * 0.75);
-                        return {
-                            width: qrboxSize,
-                            height: qrboxSize
-                        };
-                    },
-                    aspectRatio: 1.0
+                    fps: 10,
+                    formatsToSupport: [ 
+                        Html5QrcodeSupportedFormats.QR_CODE,
+                        Html5QrcodeSupportedFormats.CODE_128 
+                    ]
                 };
                 
-                if (!isScanning) {
-                    html5QrCode.start({ facingMode: "environment" }, config, onScanSuccess, onScanFailure)
-                        .then(() => {
-                            isScanning = true;
-                            console.log("Escáner iniciado correctamente.");
-                        })
-                        .catch(err => {
-                            console.error("Error al iniciar escáner:", err);
-                            alert("No se pudo iniciar la cámara. Asegúrate de haber dado los permisos necesarios y refresca la página.");
-                            stopScanner();
-                        });
-                }
+                html5QrCode.start({ facingMode: "environment" }, config, onScanSuccess, (e) => {})
+                    .catch(err => {
+                        alert("No se pudo iniciar la cámara. Asegúrate de dar permisos y refresca la página.");
+                        console.error("Error al iniciar escáner:", err);
+                        stopScanner();
+                    });
             }
 
             function stopScanner() {
-                if (html5QrCode && (isScanning || html5QrCode.isScanning)) {
+                if (html5QrCode && isScannerActive) {
                     html5QrCode.stop()
-                        .then(() => { isScanning = false; })
-                        .catch(err => { console.error("Error al detener el escáner:", err); });
+                        .then(() => {
+                            isScannerActive = false;
+                            html5QrCode = null;
+                        })
+                        .catch(err => {
+                            console.error("Error al detener el escáner:", err);
+                            isScannerActive = false;
+                            html5QrCode = null;
+                        });
                 }
                 document.getElementById('fullscreen-scanner-container').classList.add('hidden');
-                document.getElementById('scanned-ticket-info-fullscreen').classList.add('hidden');
+                const infoContainer = document.getElementById('scanned-ticket-info-fullscreen');
+                infoContainer.classList.add('hidden');
+                infoContainer.innerHTML = '';
             }
 
             const ticketsQuery = query(collection(db, `events/${eventId}/tickets`));
@@ -299,8 +276,7 @@
             });
             document.getElementById('open-scanner-btn').addEventListener('click', startScanner);
             document.getElementById('close-scanner-btn').addEventListener('click', stopScanner);
-        
-        }); // <-- Aquí cerramos el 'DOMContentLoaded'
+        });
     </script>
 </body>
 </html>
