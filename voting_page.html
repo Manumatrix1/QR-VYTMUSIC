@@ -78,24 +78,19 @@
         const urlParams = new URLSearchParams(window.location.search);
         const eventId = urlParams.get('eventId');
         if (!eventId) {
-            document.body.innerHTML = '<p class="text-center text-red-500">Error: No se ha especificado un evento. Por favor, contacta a un administrador.</p>';
+            document.body.innerHTML = '<p class="text-center text-red-500">Error: No se ha especificado un evento.</p>';
         }
 
         const state = {
+            userId: null,
             currentValidatedTicket: null,
             votedArtistsByUser: new Map()
         };
         const ui = {};
 
         function cacheUIElements() {
-             const ids = [
-                'loading-overlay', 'message-container', 'artists-list-container', 'voted-status-message',
-                'validation-screen', 'ticket-name-input', 'validate-ticket-btn', 'voting-content'
-            ];
-            ids.forEach(id => {
-                const camelCaseId = id.replace(/-(\w)/g, (_, c) => c.toUpperCase());
-                ui[camelCaseId] = document.getElementById(id);
-            });
+             const ids = ['loading-overlay', 'message-container', 'artists-list-container', 'voted-status-message', 'validation-screen', 'ticket-name-input', 'validate-ticket-btn', 'voting-content'];
+            ids.forEach(id => { ui[id.replace(/-(\w)/g, (_, c) => c.toUpperCase())] = document.getElementById(id); });
         }
         function displayMessage(message, type = 'success', duration = 5000) {
             const colors = { success: 'bg-green-500', error: 'bg-red-500', warning: 'bg-yellow-500 text-black', info: 'bg-sky-500' };
@@ -112,15 +107,12 @@
 
         async function validateTicket(input) {
             const normalizedInput = input.toLowerCase().trim();
-
             if (normalizedInput === 'elratonperez') {
                 state.currentValidatedTicket = { id: 'ADMIN_ACCESS', name: 'Administrador' };
                 return { success: true, message: "Acceso de administrador concedido." };
             }
-
             const ticketsPath = collection(db, `events/${eventId}/tickets`);
             const querySnapshot = await getDocs(ticketsPath);
-            
             let foundTicket = null;
             for (const doc of querySnapshot.docs) {
                 const ticketData = doc.data();
@@ -131,15 +123,25 @@
                     break;
                 }
             }
-
             if (foundTicket) {
                 state.currentValidatedTicket = foundTicket;
                 return { success: true, message: "Entrada validada. ¡Puedes votar!", ticket: foundTicket };
-            } else {
-                return { success: false, message: "Nombre o ID de entrada no encontrado." };
             }
+            return { success: false, message: "Nombre o ID de entrada no encontrado." };
         }
         
+        function updateStarVisuals(starContainer, value) {
+            const starPairs = starContainer.querySelectorAll('.star-number-pair');
+            starPairs.forEach((pair, index) => {
+                const star = pair.querySelector('.star-icon');
+                const number = pair.querySelector('.star-number');
+                const isFilled = index < value;
+                star.classList.toggle('filled', isFilled);
+                number.classList.toggle('filled-number', isFilled);
+            });
+            starContainer.closest('.rating-container').querySelector('.rating-value').textContent = value;
+        }
+
         function renderArtists(artists) {
             ui.artistsListContainer.innerHTML = '';
             if (!artists || artists.length === 0) {
@@ -148,22 +150,65 @@
             }
             
             artists.forEach(artist => {
+                const previousVote = state.votedArtistsByUser.get(artist.id);
+                const hasVoted = !!previousVote;
+                const buttonText = hasVoted ? 'MODIFICAR VOTO' : 'VOTAR';
+                const buttonClasses = hasVoted ? 'bg-gray-600 hover:bg-gray-700' : 'bg-purple-600 hover:bg-purple-700';
+
+                const initialScores = {
+                    singing: previousVote ? previousVote.singingScore : 5,
+                    transmission: previousVote ? previousVote.transmissionScore : 5,
+                    attitude: previousVote ? previousVote.attitudeScore : 5,
+                    originality: previousVote ? previousVote.originalityScore : 5
+                };
+
                 const artistCard = document.createElement('div');
                 artistCard.className = 'artist-card';
                 artistCard.innerHTML = `
-                    <div class="artist-image-container">
-                        <img src="${artist.photoURL || 'https://placehold.co/120x120/1f2937/f9fafb?text=ART'}" alt="${artist.name}" class="artist-image">
-                    </div>
+                    <div class="artist-image-container"><img src="${artist.photoURL || 'https://placehold.co/120x120/1f2937/f9fafb?text=ART'}" alt="${artist.name}" class="artist-image"></div>
                     <h3 class="text-xl font-semibold text-sky-300">${artist.name}</h3>
-                    <div class="w-full text-left mt-2">
+                    <p class="text-md text-gray-400 mt-1">${artist.totalRatingsCount || 0} voto(s)</p>
+                    <div class="w-full text-left mt-2 space-y-4">
+                        <div class="rating-container" data-rating-type="singing" data-current-value="${initialScores.singing}">
+                            <label>¿Te gustó cómo cantó? <span class="rating-value">${initialScores.singing}</span></label>
+                            <div class="stars-and-guidance-group"><div class="stars-wrapper"></div><p class="guidance-text">1: No me gustó | 10: ¡Me encantó!</p></div>
                         </div>
-                    <button data-artist-id="${artist.id}" class="send-vote-button vote-button mt-4">VOTAR (Lógica pendiente)</button>
+                        <div class="rating-container" data-rating-type="transmission" data-current-value="${initialScores.transmission}">
+                            <label>¿Te llegó lo que transmitió? <span class="rating-value">${initialScores.transmission}</span></label>
+                            <div class="stars-and-guidance-group"><div class="stars-wrapper"></div><p class="guidance-text">1: No sentí nada | 10: ¡Me hizo vibrar!</p></div>
+                        </div>
+                        <div class="rating-container" data-rating-type="attitude" data-current-value="${initialScores.attitude}">
+                            <label>¿Tuvo actitud y presencia? <span class="rating-value">${initialScores.attitude}</span></label>
+                            <div class="stars-and-guidance-group"><div class="stars-wrapper"></div><p class="guidance-text">1: Muy apagado | 10: ¡Un/a artista con todo!</p></div>
+                        </div>
+                        <div class="rating-container" data-rating-type="originality" data-current-value="${initialScores.originality}">
+                            <label>¿Te pareció diferente y original? <span class="rating-value">${initialScores.originality}</span></label>
+                            <div class="stars-and-guidance-group"><div class="stars-wrapper"></div><p class="guidance-text">1: Más de lo mismo | 10: ¡Estilo propio!</p></div>
+                        </div>
+                    </div>
+                    <button data-artist-id="${artist.id}" class="send-vote-button vote-button mt-4 ${buttonClasses}">${buttonText}</button>
                 `;
+                
+                artistCard.querySelectorAll('.rating-container').forEach(container => {
+                    const starsWrapper = container.querySelector('.stars-wrapper');
+                    for (let i = 1; i <= 10; i++) {
+                        const starPair = document.createElement('div');
+                        starPair.className = 'star-number-pair';
+                        starPair.innerHTML = `<svg class="star-icon" viewBox="0 0 24 24" fill="currentColor"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg><span class="star-number">${i}</span>`;
+                        starPair.addEventListener('click', () => {
+                            container.dataset.currentValue = i;
+                            updateStarVisuals(starsWrapper, i);
+                        });
+                        starsWrapper.appendChild(starPair);
+                    }
+                    updateStarVisuals(starsWrapper, parseInt(container.dataset.currentValue));
+                });
+                
                 ui.artistsListContainer.appendChild(artistCard);
             });
         }
-
-        function attachArtistListener() {
+        
+        async function attachArtistListener() {
             setLoading(true);
             const artistsQuery = query(collection(db, `events/${eventId}/artists`), orderBy('name'));
             onSnapshot(artistsQuery, (snapshot) => {
@@ -181,7 +226,9 @@
             cacheUIElements();
             setLoading(true);
             try {
-                await signInAnonymously(auth);
+                const userCredential = await signInAnonymously(auth);
+                state.userId = userCredential.user.uid;
+
                 ui.validateTicketBtn.addEventListener('click', async () => {
                     const nameInput = ui.ticketNameInput.value.trim();
                     if (!nameInput) return displayMessage('Por favor, ingresa tu nombre o ID.', 'warning');
@@ -191,7 +238,7 @@
                         displayMessage(result.message, 'success');
                         ui.validationScreen.classList.add('hidden'); 
                         ui.votingContent.classList.remove('hidden');
-                        attachArtistListener(); // LLAMADA A LA FUNCIÓN CORREGIDA
+                        attachArtistListener();
                     } else {
                         displayMessage(result.message, 'error');
                     }
