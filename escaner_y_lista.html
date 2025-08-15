@@ -10,7 +10,7 @@
         body { font-family: 'Inter', sans-serif; background-color: #111827; color: #f9fafb; }
         .hidden { display: none !important; }
         #fullscreen-scanner-container { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: #000; z-index: 50; display: flex; flex-direction: column; justify-content: center; align-items: center; }
-        #qr-code-reader { width: 100vw; height: 100vh; }
+        #qr-code-reader { width: 100vw; height: 100vh; overflow: hidden; }
         #qr-code-reader video { width: 100% !important; height: 100% !important; object-fit: cover; }
         .scanner-button { position: absolute; z-index: 60; background-color: rgba(0,0,0,0.5); border-radius: 50%; width: 50px; height: 50px; display: flex; justify-content: center; align-items: center; color: white; border: 1px solid rgba(255,255,255,0.3); cursor: pointer; }
         #close-scanner-btn { top: 1.5rem; right: 1.5rem; }
@@ -35,9 +35,7 @@
             <section id="all-tickets-section" class="bg-gray-800 p-6 rounded-lg shadow-xl">
                 <h2 class="text-2xl font-bold mb-4">Lista de Todas las Entradas</h2>
                 <input type="text" id="all-tickets-search-input" placeholder="Buscar por nombre de invitado o artista..." class="w-full p-3 rounded-md border border-gray-600 bg-gray-900 text-white mb-4">
-                <ul id="all-tickets-list" class="space-y-3">
-                    <p class="text-center text-gray-400">Cargando lista de entradas...</p>
-                </ul>
+                <ul id="all-tickets-list" class="space-y-3"></ul>
             </section>
 
             <section class="bg-gray-800 p-6 rounded-lg shadow-xl">
@@ -93,10 +91,6 @@
         function renderAllTickets(tickets) {
             const list = document.getElementById('all-tickets-list');
             list.innerHTML = '';
-            if (tickets.length === 0) {
-                list.innerHTML = '<p class="text-center text-gray-400">No hay entradas generadas para este evento.</p>';
-                return;
-            }
             tickets.forEach(ticket => {
                 const li = document.createElement('li');
                 li.className = 'bg-gray-900 p-4 rounded-md flex justify-between items-center gap-4 flex-wrap';
@@ -171,7 +165,7 @@
             html5QrCode = new Html5Qrcode("qr-code-reader");
             const config = { 
                 fps: 10, 
-                qrbox: (w, h) => ({ width: Math.floor(w * 0.8), height: Math.floor(h * 0.6) }),
+                qrbox: (w, h) => { const s = Math.min(w,h) * 0.7; return {width: s, height: s}; },
                 formatsToSupport: [ Html5QrcodeSupportedFormats.QR_CODE, Html5QrcodeSupportedFormats.CODE_128 ]
             };
             html5QrCode.start({ facingMode: "environment" }, config, onScanSuccess, (e)=>{})
@@ -189,7 +183,6 @@
         onSnapshot(ticketsQuery, (snapshot) => {
             allTicketsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a,b) => a.name.localeCompare(b.name));
             renderAllTickets(allTicketsData);
-
             document.getElementById('total-tickets-summary').textContent = allTicketsData.length;
             const prefixCounts = allTicketsData.reduce((acc, ticket) => {
                 const prefix = ticket.prefix || "Sin Grupo";
@@ -201,10 +194,7 @@
             Object.keys(prefixCounts).sort().forEach(prefix => {
                 const card = document.createElement('div');
                 card.className = 'artist-card';
-                card.innerHTML = `
-                    <span class="font-semibold text-lg text-sky-300">${prefix}</span>
-                    <span class="font-bold text-xl text-green-400">${prefixCounts[prefix]}</span>
-                `;
+                card.innerHTML = `<span class="font-semibold text-lg text-sky-300">${prefix}</span><span class="font-bold text-xl text-green-400">${prefixCounts[prefix]}</span>`;
                 reportContainer.appendChild(card);
             });
         });
