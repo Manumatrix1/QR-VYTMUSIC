@@ -190,13 +190,14 @@
                 }
             }
 
-            // ===== FUNCIÓN START SCANNER CORREGIDA Y ROBUSTA =====
+            // ===== FUNCIÓN START SCANNER A PRUEBA DE FALLOS =====
             async function startScanner() {
                 if (isScannerActive) return;
                 
                 document.getElementById('fullscreen-scanner-container').classList.remove('hidden');
-                html5QrCode = new Html5Qrcode("qr-code-reader");
                 isScannerActive = true;
+                
+                html5QrCode = new Html5Qrcode("qr-code-reader");
 
                 const config = { 
                     fps: 25,
@@ -213,43 +214,38 @@
                 };
                 
                 try {
-                    // Intento 1: Iniciar con ajustes avanzados
                     await html5QrCode.start({ facingMode: "environment", videoConstraints }, config, onScanSuccess, (e) => {});
                 } catch (err) {
-                    console.warn("No se pudo iniciar con ajustes avanzados, reintentando con configuración básica.", err);
+                    console.warn("Ajustes avanzados fallaron. Creando nueva instancia para reintentar con básicos.", err);
+                    
+                    // LÓGICA CRÍTICA: Si falla, creamos una instancia NUEVA antes de reintentar.
+                    html5QrCode = new Html5Qrcode("qr-code-reader");
+
                     try {
-                        // Intento 2: Iniciar con configuración básica si la avanzada falla
                         await html5QrCode.start({ facingMode: "environment" }, config, onScanSuccess, (e) => {});
                     } catch (finalErr) {
                         alert("No se pudo iniciar la cámara. Asegúrate de dar permisos y refresca la página.");
                         console.error("Error final al iniciar escáner:", finalErr);
-                        stopScanner();
+                        await stopScanner(); // Usamos await para un cierre limpio
                     }
                 }
             }
 
-            function stopScanner() {
+            async function stopScanner() {
                 if (html5QrCode && isScannerActive) {
-                    // Usamos una promesa para asegurarnos de que se detenga antes de limpiar
-                    html5QrCode.stop()
-                        .then(() => {
-                            isScannerActive = false;
-                            html5QrCode = null;
-                            document.getElementById('fullscreen-scanner-container').classList.add('hidden');
-                            const infoContainer = document.getElementById('scanned-ticket-info-fullscreen');
-                            infoContainer.classList.add('hidden');
-                            infoContainer.innerHTML = '';
-                        })
-                        .catch(err => {
-                            console.error("Error al detener el escáner:", err);
-                            // Forzar limpieza incluso si hay error
-                            isScannerActive = false;
-                            html5QrCode = null;
-                            document.getElementById('fullscreen-scanner-container').classList.add('hidden');
-                        });
-                } else {
-                     document.getElementById('fullscreen-scanner-container').classList.add('hidden');
+                    try {
+                        await html5QrCode.stop();
+                    } catch (err) {
+                        console.error("Error al detener escáner (puede ser normal si no inició correctamente):", err);
+                    }
                 }
+                // Limpieza de estado y UI sin importar qué
+                isScannerActive = false;
+                html5QrCode = null;
+                document.getElementById('fullscreen-scanner-container').classList.add('hidden');
+                const infoContainer = document.getElementById('scanned-ticket-info-fullscreen');
+                infoContainer.classList.add('hidden');
+                infoContainer.innerHTML = '';
             }
 
             const ticketsQuery = query(collection(db, `events/${eventId}/tickets`));
