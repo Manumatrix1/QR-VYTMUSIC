@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale-1.0">
     <title>Votación VYTMUSIC</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
@@ -17,7 +17,6 @@
         .spinner { border: 4px solid rgba(255, 255, 255, 0.3); border-top: 4px solid #38bdf8; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         .artist-card { background-color: #1f2937; border-radius: 0.75rem; padding: 1.5rem; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05); border: 2px solid #374151; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 1rem; transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out; }
-        .artist-card:hover { transform: translateY(-5px); box-shadow: 0 15px 25px -5px rgba(0,0,0,0.2), 0 6px 10px -3px rgba(0,0,0,0.1); }
         .artist-image-container { width: 120px; height: 120px; border-radius: 50%; overflow: hidden; border: 4px solid #38bdf8; display: flex; justify-content: center; align-items: center; flex-shrink: 0; }
         .artist-image { width: 100%; height: 100%; object-fit: cover; }
         .vote-button { background-color: #8b5cf6; color: #f9fafb; font-weight: bold; padding: 0.75rem 1.5rem; border-radius: 0.5rem; transition: background-color 0.2s, transform 0.1s; width: 100%; text-transform: uppercase; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
@@ -170,20 +169,20 @@
                     <p class="text-md text-gray-400 mt-1">${artist.totalRatingsCount || 0} voto(s)</p>
                     <div class="w-full text-left mt-2 space-y-4">
                         <div class="rating-container" data-rating-type="singing" data-current-value="${initialScores.singing}">
-                            <label>¿Te gustó cómo cantó? <span class="rating-value">${initialScores.singing}</span></label>
-                            <div class="stars-and-guidance-group"><div class="stars-wrapper"></div><p class="guidance-text">1: No me gustó | 10: ¡Me encantó!</p></div>
+                            <label>Canto <span class="rating-value">${initialScores.singing}</span></label>
+                            <div class="stars-and-guidance-group"><div class="stars-wrapper"></div></div>
                         </div>
                         <div class="rating-container" data-rating-type="transmission" data-current-value="${initialScores.transmission}">
-                            <label>¿Te llegó lo que transmitió? <span class="rating-value">${initialScores.transmission}</span></label>
-                            <div class="stars-and-guidance-group"><div class="stars-wrapper"></div><p class="guidance-text">1: No sentí nada | 10: ¡Me hizo vibrar!</p></div>
+                            <label>Transmisión <span class="rating-value">${initialScores.transmission}</span></label>
+                            <div class="stars-and-guidance-group"><div class="stars-wrapper"></div></div>
                         </div>
                         <div class="rating-container" data-rating-type="attitude" data-current-value="${initialScores.attitude}">
-                            <label>¿Tuvo actitud y presencia? <span class="rating-value">${initialScores.attitude}</span></label>
-                            <div class="stars-and-guidance-group"><div class="stars-wrapper"></div><p class="guidance-text">1: Muy apagado | 10: ¡Un/a artista con todo!</p></div>
+                            <label>Actitud <span class="rating-value">${initialScores.attitude}</span></label>
+                            <div class="stars-and-guidance-group"><div class="stars-wrapper"></div></div>
                         </div>
                         <div class="rating-container" data-rating-type="originality" data-current-value="${initialScores.originality}">
-                            <label>¿Te pareció diferente y original? <span class="rating-value">${initialScores.originality}</span></label>
-                            <div class="stars-and-guidance-group"><div class="stars-wrapper"></div><p class="guidance-text">1: Más de lo mismo | 10: ¡Estilo propio!</p></div>
+                            <label>Originalidad <span class="rating-value">${initialScores.originality}</span></label>
+                            <div class="stars-and-guidance-group"><div class="stars-wrapper"></div></div>
                         </div>
                     </div>
                     <button data-artist-id="${artist.id}" class="send-vote-button vote-button mt-4 ${buttonClasses}">${buttonText}</button>
@@ -208,11 +207,115 @@
             });
         }
         
-        async function attachArtistListener() {
+        // ===== FUNCIÓN handleVote COMPLETA Y FUNCIONAL =====
+        async function handleVote(event) {
+            const artistId = event.target.dataset.artistId;
+            if (!artistId || !state.currentValidatedTicket) {
+                displayMessage("Debes validar una entrada para poder votar.", "warning");
+                return;
+            }
+            if (state.currentValidatedTicket.id === 'ADMIN_ACCESS') {
+                displayMessage("El acceso de administrador es solo para supervisar, no para votar.", "info");
+                return;
+            }
+
+            setLoading(true);
+            try {
+                const artistCard = event.target.closest('.artist-card');
+                const scores = {
+                    singing: parseInt(artistCard.querySelector('[data-rating-type="singing"]').dataset.currentValue),
+                    transmission: parseInt(artistCard.querySelector('[data-rating-type="transmission"]').dataset.currentValue),
+                    attitude: parseInt(artistCard.querySelector('[data-rating-type="attitude"]').dataset.currentValue),
+                    originality: parseInt(artistCard.querySelector('[data-rating-type="originality"]').dataset.currentValue)
+                };
+
+                const voteRef = doc(db, `events/${eventId}/ticket_votes/${state.currentValidatedTicket.id}/votes`, artistId);
+                const oldVoteDoc = await getDoc(voteRef);
+                
+                let oldScores = { singing: 0, transmission: 0, attitude: 0, originality: 0 };
+                let isNewVote = !oldVoteDoc.exists();
+
+                if (!isNewVote) {
+                    const oldData = oldVoteDoc.data();
+                    oldScores = {
+                        singing: oldData.singingScore || 0,
+                        transmission: oldData.transmissionScore || 0,
+                        attitude: oldData.attitudeScore || 0,
+                        originality: oldData.originalityScore || 0
+                    };
+                }
+
+                const diffs = {
+                    singing: scores.singing - oldScores.singing,
+                    transmission: scores.transmission - oldScores.transmission,
+                    attitude: scores.attitude - oldScores.attitude,
+                    originality: scores.originality - oldScores.originality
+                };
+                const totalDiff = diffs.singing + diffs.transmission + diffs.attitude + diffs.originality;
+
+                await updateDoc(doc(db, `events/${eventId}/artists`, artistId), {
+                    totalSingingScore: increment(diffs.singing),
+                    totalTransmissionScore: increment(diffs.transmission),
+                    totalAttitudeScore: increment(diffs.attitude),
+                    totalOriginalityScore: increment(diffs.originality),
+                    totalScore: increment(totalDiff),
+                    totalRatingsCount: increment(isNewVote ? 1 : 0) 
+                });
+
+                await setDoc(voteRef, {
+                    artistId,
+                    ticketName: state.currentValidatedTicket.name,
+                    singingScore: scores.singing,
+                    transmissionScore: scores.transmission,
+                    attitudeScore: scores.attitude,
+                    originalityScore: scores.originality,
+                    votedAt: new Date().toISOString()
+                });
+
+                state.votedArtistsByUser.set(artistId, scores);
+                displayMessage('¡Voto registrado con éxito!', 'success');
+                ui.votedStatusMessage.classList.remove('hidden');
+
+                const button = event.target;
+                button.textContent = 'MODIFICAR VOTO';
+                button.classList.remove('bg-purple-600');
+                button.classList.add('bg-gray-600', 'hover:bg-gray-700');
+
+            } catch (error) {
+                console.error("Error al registrar el voto:", error);
+                displayMessage(`Error al votar: ${error.message}`, 'error');
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        async function checkIfUserVoted() {
+            if (!state.currentValidatedTicket || state.currentValidatedTicket.id === 'ADMIN_ACCESS') return;
+
+            const ticketVotesPath = collection(db, `events/${eventId}/ticket_votes/${state.currentValidatedTicket.id}/votes`);
+            const querySnapshot = await getDocs(ticketVotesPath);
+            
+            state.votedArtistsByUser.clear();
+            querySnapshot.forEach(doc => {
+                const voteData = doc.data();
+                state.votedArtistsByUser.set(doc.id, {
+                    singingScore: voteData.singingScore || 0,
+                    transmissionScore: voteData.transmissionScore || 0,
+                    attitudeScore: voteData.attitudeScore || 0,
+                    originalityScore: voteData.originalityScore || 0,
+                });
+            });
+            if (state.votedArtistsByUser.size > 0) {
+                ui.votedStatusMessage.classList.remove('hidden');
+            }
+        }
+
+        function attachArtistListener() {
             setLoading(true);
             const artistsQuery = query(collection(db, `events/${eventId}/artists`), orderBy('name'));
-            onSnapshot(artistsQuery, (snapshot) => {
+            onSnapshot(artistsQuery, async (snapshot) => {
                 const artists = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                await checkIfUserVoted(); // Chequeamos votos previos antes de renderizar
                 renderArtists(artists);
                 setLoading(false);
             }, (error) => {
@@ -244,6 +347,13 @@
                     }
                     setLoading(false);
                 });
+                
+                ui.artistsListContainer.addEventListener('click', (e) => {
+                    if (e.target.classList.contains('send-vote-button')) {
+                        handleVote(e);
+                    }
+                });
+
                 setLoading(false); 
                 ui.validationScreen.classList.remove('hidden'); 
             } catch (error) {
