@@ -23,17 +23,32 @@
     </style>
 </head>
 <body>
-    <div id="scan-flash-overlay" class="scan-flash"></div> <div class="container mx-auto max-w-4xl p-4 sm:p-6">
+    <div id="scan-flash-overlay" class="scan-flash"></div>
+    <div class="container mx-auto max-w-4xl p-4 sm:p-6">
         <header class="text-center mb-6">
             <a id="back-to-panel-link" href="#" class="text-sky-400 hover:underline mb-4 inline-block">&larr; Volver al Panel Principal</a>
             <h1 class="text-3xl sm:text-4xl font-bold text-sky-400">Escáner y Lista de Entradas</h1>
         </header>
         <main class="space-y-8">
             <button id="open-scanner-btn" class="w-full max-w-md mx-auto flex items-center justify-center gap-3 p-4 rounded-lg text-white font-bold bg-blue-600 hover:bg-blue-700"><span>Abrir Escáner</span></button>
+            
             <section id="all-tickets-section" class="bg-gray-800 p-6 rounded-lg shadow-xl">
                 <h2 class="text-2xl font-bold mb-4">Lista de Todas las Entradas</h2>
                 <input type="text" id="all-tickets-search-input" placeholder="Buscar por nombre de invitado o artista..." class="w-full p-3 rounded-md border border-gray-600 bg-gray-900 text-white mb-4">
-                <ul id="all-tickets-list" class="space-y-3"></ul>
+                <ul id="all-tickets-list" class="space-y-3">
+                    <p class="text-center text-gray-400">Cargando lista de entradas...</p>
+                </ul>
+            </section>
+
+            <section class="bg-gray-800 p-6 rounded-lg shadow-xl">
+                <h2 class="text-2xl font-bold mb-4">Resumen de Entradas</h2>
+                <div id="total-summary" class="bg-gray-900 p-4 rounded-lg text-center mb-4">
+                    <h3 class="text-md font-semibold text-yellow-400">Total Convocados</h3>
+                    <p id="total-tickets-summary" class="text-4xl font-bold">0</p>
+                </div>
+                <div id="assistant-report-container" class="space-y-2">
+                    <p class="text-center text-gray-400">Cargando desglose...</p>
+                </div>
             </section>
         </main>
     </div>
@@ -48,7 +63,7 @@
 
     <script type="module">
         import { db } from './firebase_config.js';
-        import { collection, onSnapshot, query, doc, getDoc, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { collection, onSnapshot, query, doc, deleteDoc, getDoc, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         const urlParams = new URLSearchParams(window.location.search);
         const eventId = urlParams.get('eventId');
@@ -63,7 +78,7 @@
         
         let allTicketsData = [];
         let html5QrCode;
-        let synth; // Variable para el sintetizador de sonido
+        let synth;
 
         try {
             synth = new Tone.Synth().toDestination();
@@ -72,6 +87,32 @@
         function playSound(note) {
             if (synth) {
                 Tone.start().then(() => synth.triggerAttackRelease(note, "8n"));
+            }
+        }
+
+        function renderAllTickets(tickets) {
+            const list = document.getElementById('all-tickets-list');
+            list.innerHTML = '';
+            if (tickets.length === 0) {
+                list.innerHTML = '<p class="text-center text-gray-400">No hay entradas generadas para este evento.</p>';
+                return;
+            }
+            tickets.forEach(ticket => {
+                const li = document.createElement('li');
+                li.className = 'bg-gray-900 p-4 rounded-md flex justify-between items-center gap-4 flex-wrap';
+                const paymentStatus = ticket.paymentStatus || 'Paga';
+                const paymentClass = paymentStatus === 'Paga' ? 'bg-green-600' : 'bg-red-600';
+                const actionButtonHTML = ticket.used ? `<button data-ticket-id="${ticket.id}" data-used="true" class="manual-check-in-btn px-3 py-1 bg-yellow-600 hover:bg-yellow-700 rounded-lg">Anular Ingreso</button>` : `<button data-ticket-id="${ticket.id}" data-used="false" class="manual-check-in-btn px-3 py-1 bg-green-600 hover:bg-green-700 rounded-lg">Ingresar</button>`;
+                li.innerHTML = `<div class="flex-grow"><p class="font-semibold">${ticket.name} <span class="text-gray-400 text-sm">(${ticket.prefix || 'N/A'})</span></p><p class="text-sm text-gray-500">${ticket.id}</p></div><div class="flex items-center gap-2 text-xs font-semibold flex-shrink-0"><span class="px-3 py-1 rounded-full ${paymentClass}">${paymentStatus}</span>${actionButtonHTML}<button data-ticket-id="${ticket.id}" title="Eliminar Entrada" class="delete-ticket-btn p-2 rounded-full bg-gray-700 hover:bg-red-700 text-white leading-none">X</button></div>`;
+                list.appendChild(li);
+            });
+        }
+        
+        async function toggleTicketStatus(ticketId, isCurrentlyUsed) {
+            const newUsedStatus = !isCurrentlyUsed;
+            if (confirm(newUsedStatus ? `¿Marcar la entrada como USADA?` : `¿ANULAR el ingreso?`)) {
+                const ticketRef = doc(db, `events/${eventId}/tickets`, ticketId);
+                await updateDoc(ticketRef, { used: newUsedStatus, usedAt: newUsedStatus ? new Date().toISOString() : null });
             }
         }
 
@@ -95,7 +136,7 @@
                 }
             }
 
-            playSound(sound); // Reproducimos el sonido correspondiente
+            playSound(sound);
             const flashOverlay = document.getElementById('scan-flash-overlay');
             flashOverlay.className = `scan-flash ${status.toLowerCase().split(' ')[0]}`;
             flashOverlay.style.opacity = '1';
@@ -104,7 +145,6 @@
             const paymentStatus = ticketData.paymentStatus || 'Paga';
             const paymentClass = paymentStatus === 'Paga' ? 'text-green-500' : 'text-red-500';
             const buttonHTML = isAutoResuming ? '<p class="mt-4 text-gray-300">Reanudando escáner...</p>' : '<button id="scan-again-btn-internal" class="w-full mt-4 px-4 py-3 bg-sky-600 text-white font-bold rounded-lg">Escanear Siguiente</button>';
-
             infoContainer.innerHTML = `<h3 class="text-xl font-bold mb-2">Entrada Escaneada</h3><p><strong>Nombre:</strong> <span class="text-sky-300">${ticketData.name}</span></p><p class="mt-4 text-lg font-semibold">Estado: <span class="font-bold ${colorClass}">${status}</span></p><p class="mt-2 text-lg font-semibold">Pago: <span class="font-bold ${paymentClass}">${paymentStatus.toUpperCase()}</span></p>${buttonHTML}`;
             infoContainer.classList.remove('hidden');
 
@@ -131,15 +171,8 @@
             html5QrCode = new Html5Qrcode("qr-code-reader");
             const config = { 
                 fps: 10, 
-                qrbox: (viewfinderWidth, viewfinderHeight) => {
-                    const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
-                    const qrboxSize = Math.floor(minEdge * 0.8);
-                    return { width: qrboxSize, height: qrboxSize };
-                },
-                formatsToSupport: [ 
-                    Html5QrcodeSupportedFormats.QR_CODE,
-                    Html5QrcodeSupportedFormats.CODE_128
-                ]
+                qrbox: (w, h) => ({ width: Math.floor(w * 0.8), height: Math.floor(h * 0.6) }),
+                formatsToSupport: [ Html5QrcodeSupportedFormats.QR_CODE, Html5QrcodeSupportedFormats.CODE_128 ]
             };
             html5QrCode.start({ facingMode: "environment" }, config, onScanSuccess, (e)=>{})
                 .catch(err => alert("Error al iniciar escáner. Asegúrate de dar permisos de cámara."));
@@ -155,13 +188,49 @@
         const ticketsQuery = query(collection(db, `events/${eventId}/tickets`));
         onSnapshot(ticketsQuery, (snapshot) => {
             allTicketsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a,b) => a.name.localeCompare(b.name));
-            // renderAllTickets(allTicketsData); // No necesitamos renderizar la lista completa aquí
+            renderAllTickets(allTicketsData);
+
+            document.getElementById('total-tickets-summary').textContent = allTicketsData.length;
+            const prefixCounts = allTicketsData.reduce((acc, ticket) => {
+                const prefix = ticket.prefix || "Sin Grupo";
+                acc[prefix] = (acc[prefix] || 0) + 1;
+                return acc;
+            }, {});
+            const reportContainer = document.getElementById('assistant-report-container');
+            reportContainer.innerHTML = '';
+            Object.keys(prefixCounts).sort().forEach(prefix => {
+                const card = document.createElement('div');
+                card.className = 'artist-card';
+                card.innerHTML = `
+                    <span class="font-semibold text-lg text-sky-300">${prefix}</span>
+                    <span class="font-bold text-xl text-green-400">${prefixCounts[prefix]}</span>
+                `;
+                reportContainer.appendChild(card);
+            });
         });
 
-        // Event listeners (simplificado para no incluir la lista que ya no se muestra)
+        document.getElementById('all-tickets-search-input').addEventListener('input', (e) => {
+            const term = e.target.value.toLowerCase().trim();
+            const filtered = allTicketsData.filter(t => 
+                t.name.toLowerCase().includes(term) || (t.prefix && t.prefix.toLowerCase().includes(term))
+            );
+            renderAllTickets(filtered);
+        });
+
+        document.getElementById('all-tickets-list').addEventListener('click', async (e) => {
+            const target = e.target.closest('button');
+            if (!target) return;
+            if (target.classList.contains('manual-check-in-btn')) {
+                toggleTicketStatus(target.dataset.ticketId, target.dataset.used === 'true');
+            }
+            if (target.classList.contains('delete-ticket-btn')) {
+                if(confirm("¿Seguro que quieres eliminar esta entrada?")) {
+                    await deleteDoc(doc(db, `events/${eventId}/tickets`, target.dataset.ticketId));
+                }
+            }
+        });
         document.getElementById('open-scanner-btn').addEventListener('click', startScanner);
         document.getElementById('close-scanner-btn').addEventListener('click', stopScanner);
-
     </script>
 </body>
 </html>
