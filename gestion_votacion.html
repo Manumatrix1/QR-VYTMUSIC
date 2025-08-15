@@ -68,7 +68,186 @@
     </div>
     
     <script type="module">
-        // El script completo va aquí, sin cambios en la lógica
+        import { db, storage } from './firebase_config.js';
+        import { collection, onSnapshot, query, addDoc, doc, deleteDoc, writeBatch, orderBy } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { ref, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const eventId = urlParams.get('eventId');
+        const eventName = urlParams.get('eventName');
+
+        if (!eventId || !eventName) {
+            alert('Error: No se ha especificado un evento. Redirigiendo.');
+            window.location.href = 'eventos.html';
+        }
+        document.getElementById('back-to-panel-link').href = `panel_evento.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`;
+        document.getElementById('event-name-display').textContent = eventName;
+
+        let pendingArtists = [];
+
+        const ui = {};
+        function cacheUIElements() {
+            const ids = [
+                'loading-overlay', 'artist-photos-input', 'artist-previews-container',
+                'add-artists-btn', 'votes-stats', 'share-voting-link-btn', 'reset-voting-btn',
+                'share-results-link-btn', 'share-link-modal', 'share-modal-title',
+                'share-link-display', 'copy-share-link-btn', 'close-share-modal-btn'
+            ];
+            ids.forEach(id => {
+                ui[id.replace(/-(\w)/g, (_, c) => c.toUpperCase())] = document.getElementById(id);
+            });
+        }
+        
+        function setLoading(show) { ui.loadingOverlay.classList.toggle('hidden', !show); }
+        
+        function displayMessage(message, type = 'success') {
+            const colors = { success: 'bg-green-500', error: 'bg-red-500', warning: 'bg-yellow-500 text-black', info: 'bg-sky-500' };
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `fixed top-4 left-1/2 transform -translate-x-1/2 p-4 rounded-md mb-4 text-white ${colors[type]} transition-opacity duration-300 z-50`;
+            messageDiv.textContent = message;
+            document.body.appendChild(messageDiv);
+            setTimeout(() => { 
+                messageDiv.style.opacity = '0';
+                setTimeout(() => messageDiv.remove(), 300);
+            }, 5000);
+        }
+
+        function showShareLinkModal(link, title) {
+            ui.shareModalTitle.textContent = title;
+            ui.shareLinkDisplay.value = link;
+            ui.shareLinkModal.classList.remove('hidden');
+        }
+
+        async function handleArtistFormSubmit(e) {
+            e.preventDefault();
+            if (pendingArtists.length === 0) return;
+            setLoading(true);
+            try {
+                const uploadPromises = pendingArtists.map(async (artist) => {
+                    const { file, name } = artist;
+                    const fileName = `${Date.now()}-${name.replace(/\s+/g, '-')}-${file.name}`;
+                    const photoRef = ref(storage, `events/${eventId}/artist_photos/${fileName}`);
+                    await uploadBytes(photoRef, file);
+                    const photoURL = await getDownloadURL(photoRef);
+                    return { name, photoURL, totalScore: 0, totalRatingsCount: 0 };
+                });
+                const artistsToSave = await Promise.all(uploadPromises);
+                const batch = writeBatch(db);
+                const artistsCollection = collection(db, `events/${eventId}/artists`);
+                artistsToSave.forEach(artistData => {
+                    batch.set(doc(artistsCollection), artistData);
+                });
+                await batch.commit();
+                displayMessage(`${artistsToSave.length} artista(s) agregado(s) con éxito.`, 'success');
+                ui.artistPhotosInput.value = '';
+                ui.artistPreviewsContainer.innerHTML = '';
+                pendingArtists = [];
+                ui.addArtistsBtn.disabled = true;
+            } catch (error) {
+                displayMessage(`Error al agregar artistas: ${error.message}`, 'error');
+            } finally {
+                setLoading(false);
+            }
+        }
+        
+        function renderArtistPreviews(files) {
+            ui.artistPreviewsContainer.innerHTML = '';
+            pendingArtists = [];
+            if (files.length === 0) {
+                ui.addArtistsBtn.disabled = true;
+                return;
+            }
+            Array.from(files).forEach((file, index) => {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    let defaultName = file.name.split('.').slice(0, -1).join('.');
+                    defaultName = defaultName.replace(/[_-]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                    const artist = { file, name: defaultName, previewUrl: e.target.result, id: `pending-${index}` };
+                    pendingArtists.push(artist);
+                    const card = document.createElement('div');
+                    card.className = 'artist-preview-card';
+                    card.innerHTML = `
+                        <div class="artist-image-container-small"><img src="${artist.previewUrl}" alt="Vista previa" class="artist-image"></div>
+                        <div class="flex-grow"><input type="text" value="${artist.name}" data-artist-id="${artist.id}" class="artist-name-input w-full p-2 rounded-md bg-gray-900 text-white"></div>
+                        <button type="button" data-artist-id="${artist.id}" class="remove-artist-preview-btn p-2 rounded-full bg-red-600 text-white"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>`;
+                    ui.artistPreviewsContainer.appendChild(card);
+                };
+                reader.readAsDataURL(file);
+            });
+            ui.addArtistsBtn.disabled = false;
+        }
+
+        function renderFullVotingResults(artists) {
+            ui.votesStats.innerHTML = '';
+            if (!artists || artists.length === 0) {
+                ui.votesStats.innerHTML = '<p class="text-center text-gray-400">No hay artistas registrados.</p>';
+                return;
+            }
+            const sortedArtists = [...artists].sort((a, b) => (b.totalScore || 0) - (a.totalScore || 0) || a.name.localeCompare(b.name));
+            sortedArtists.forEach((artist, index) => {
+                const card = document.createElement('div');
+                card.className = 'bg-gray-700 p-4 rounded-lg flex items-center justify-between gap-4';
+                card.innerHTML = `
+                    <div class="artist-image-container-small"><img src="${artist.photoURL || 'https://placehold.co/60x60/1f2937/f9fafb?text=ART'}" alt="${artist.name}" class="artist-image"></div>
+                    <div class="flex-grow">
+                        <p class="font-semibold text-lg text-sky-300">${index + 1}. ${artist.name}</p>
+                        <p class="text-sm text-gray-400">Votos: ${artist.totalRatingsCount || 0}</p>
+                    </div>
+                    <div class="text-right flex-shrink-0">
+                        <span class="text-2xl font-bold text-green-400">${artist.totalScore || 0}</span><span class="text-gray-400 text-sm"> puntos</span>
+                    </div>
+                    <button data-id="${artist.id}" class="delete-artist-btn p-2 bg-red-600 hover:bg-red-800 rounded-full leading-none" title="Eliminar Artista">🗑️</button>`;
+                ui.votesStats.appendChild(card);
+            });
+        }
+        
+        function setupEventListeners() {
+            ui.artistPhotosInput.addEventListener('change', (e) => renderArtistPreviews(e.target.files));
+            document.getElementById('artist-form').addEventListener('submit', handleArtistFormSubmit);
+            
+            ui.shareVotingLinkBtn.addEventListener('click', () => {
+                const path = window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/'));
+                const baseUrl = `${window.location.origin}${path}`;
+                const shareableLink = `${baseUrl}/voting_page.html?eventId=${eventId}`; 
+                showShareLinkModal(shareableLink, "Compartir Enlace de Votación");
+            });
+
+            ui.shareResultsLinkBtn.addEventListener('click', () => {
+                const path = window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/'));
+                const baseUrl = `${window.location.origin}${path}`;
+                const shareableLink = `${baseUrl}/resultados_votacion.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`;
+                showShareLinkModal(shareableLink, "Compartir Enlace de Resultados");
+            });
+
+            ui.copyShareLinkBtn.addEventListener('click', () => {
+                navigator.clipboard.writeText(ui.shareLinkDisplay.value); 
+                displayMessage('¡Enlace copiado!', 'success');
+            });
+            ui.closeShareModalBtn.addEventListener('click', () => ui.shareLinkModal.classList.add('hidden'));
+
+            ui.votesStats.addEventListener('click', async (e) => {
+                const target = e.target.closest('.delete-artist-btn');
+                if (target) {
+                    const artistId = target.dataset.id;
+                    if (confirm("¿Seguro que quieres eliminar a este artista de la votación?")) {
+                        await deleteDoc(doc(db, `events/${eventId}/artists`, artistId));
+                    }
+                }
+            });
+        }
+
+        // --- INICIALIZACIÓN ---
+        cacheUIElements();
+        setupEventListeners();
+
+        const artistsQuery = query(collection(db, `events/${eventId}/artists`), orderBy('name'));
+        onSnapshot(artistsQuery, (snapshot) => {
+            const artists = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            renderFullVotingResults(artists);
+        }, err => {
+            console.error("Error en listener de artistas:", err);
+            ui.votesStats.innerHTML = `<p class="text-red-400 text-center">Error al cargar resultados: ${err.message}</p>`;
+        });
     </script>
 </body>
 </html>
