@@ -26,7 +26,6 @@
         </header>
         <main class="space-y-8">
             <button id="open-scanner-btn" class="w-full max-w-md mx-auto flex items-center justify-center gap-3 p-4 rounded-lg text-white font-bold bg-blue-600 hover:bg-blue-700"><span>Abrir Escáner</span></button>
-            
             <section class="bg-gray-800 p-6 rounded-lg shadow-xl">
                 <h2 class="text-2xl font-bold mb-4">Resumen de Entradas</h2>
                 <div id="total-summary" class="bg-gray-900 p-4 rounded-lg text-center mb-4">
@@ -37,7 +36,6 @@
                     <p class="text-center text-gray-400">Cargando desglose...</p>
                 </div>
             </section>
-            
             <section id="all-tickets-section" class="bg-gray-800 p-6 rounded-lg shadow-xl">
                 <h2 class="text-2xl font-bold mb-4">Lista de Todas las Entradas</h2>
                 <input type="text" id="all-tickets-search-input" placeholder="Buscar por nombre de invitado o artista..." class="w-full p-3 rounded-md border border-gray-600 bg-gray-900 text-white mb-4">
@@ -46,40 +44,44 @@
         </main>
     </div>
     <div id="fullscreen-scanner-container" class="hidden">
-        </div>
+        <div id="qr-code-reader"></div>
+        <button id="close-scanner-btn" class="scanner-button"><svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg></button>
+        <div id="scanned-ticket-info-fullscreen" class="hidden bg-gray-800 bg-opacity-90 p-4 rounded-lg shadow-xl text-center"></div>
+    </div>
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
     <script type="module">
         import { db } from './firebase_config.js';
         import { collection, onSnapshot, query, doc, deleteDoc, getDoc, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // ... (Lógica inicial y de escáner sin cambios) ...
+        const urlParams = new URLSearchParams(window.location.search);
+        const eventId = urlParams.get('eventId');
+        const eventName = urlParams.get('eventName');
 
-        const ticketsQuery = query(collection(db, `events/${eventId}/tickets`));
-        onSnapshot(ticketsQuery, (snapshot) => {
-            allTicketsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a,b) => a.name.localeCompare(b.name));
-            renderAllTickets(allTicketsData);
+        if (!eventId || !eventName) {
+            alert('Error: No se ha especificado un evento.');
+            window.location.href = 'eventos.html';
+        }
 
-            // --- LÓGICA AÑADIDA PARA EL REPORTE DE ASISTENTE ---
-            document.getElementById('total-tickets-summary').textContent = allTicketsData.length;
-            const prefixCounts = allTicketsData.reduce((acc, ticket) => {
-                const prefix = ticket.prefix || "Sin Grupo";
-                acc[prefix] = (acc[prefix] || 0) + 1;
-                return acc;
-            }, {});
-            const reportContainer = document.getElementById('assistant-report-container');
-            reportContainer.innerHTML = '';
-            Object.keys(prefixCounts).sort().forEach(prefix => {
-                const card = document.createElement('div');
-                card.className = 'artist-card';
-                card.innerHTML = `
-                    <span class="font-semibold text-lg text-sky-300">${prefix}</span>
-                    <span class="font-bold text-xl text-green-400">${prefixCounts[prefix]}</span>
-                `;
-                reportContainer.appendChild(card);
+        document.getElementById('back-to-panel-link').href = `panel_evento.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`;
+        
+        let allTicketsData = [];
+        let html5QrCode;
+
+        function renderAllTickets(tickets) {
+            const list = document.getElementById('all-tickets-list');
+            list.innerHTML = '';
+            tickets.forEach(ticket => {
+                const li = document.createElement('li');
+                li.className = 'bg-gray-900 p-4 rounded-md flex justify-between items-center gap-4 flex-wrap';
+                const paymentStatus = ticket.paymentStatus || 'Paga';
+                const paymentClass = paymentStatus === 'Paga' ? 'bg-green-600' : 'bg-red-600';
+                const actionButtonHTML = ticket.used ? `<button data-ticket-id="${ticket.id}" data-used="true" class="manual-check-in-btn px-3 py-1 bg-yellow-600 hover:bg-yellow-700 rounded-lg">Anular Ingreso</button>` : `<button data-ticket-id="${ticket.id}" data-used="false" class="manual-check-in-btn px-3 py-1 bg-green-600 hover:bg-green-700 rounded-lg">Ingresar</button>`;
+                li.innerHTML = `<div class="flex-grow"><p class="font-semibold">${ticket.name} <span class="text-gray-400 text-sm">(${ticket.prefix || 'N/A'})</span></p><p class="text-sm text-gray-500">${ticket.id}</p></div><div class="flex items-center gap-2 text-xs font-semibold flex-shrink-0"><span class="px-3 py-1 rounded-full ${paymentClass}">${paymentStatus}</span>${actionButtonHTML}<button data-ticket-id="${ticket.id}" title="Eliminar Entrada" class="delete-ticket-btn p-2 rounded-full bg-gray-700 hover:bg-red-700 text-white leading-none">X</button></div>`;
+                list.appendChild(li);
             });
-        });
-
-        // ... (Resto de los event listeners sin cambios) ...
+        }
+        
+        // ... (resto del script sin cambios) ...
     </script>
 </body>
 </html>

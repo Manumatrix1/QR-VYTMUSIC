@@ -54,7 +54,82 @@
         const urlParams = new URLSearchParams(window.location.search);
         const eventId = urlParams.get('eventId');
         const eventName = urlParams.get('eventName');
-        // ... (resto del script sin cambios) ...
+
+        if (!eventId || !eventName) {
+            alert('Error: No se ha especificado un evento.');
+            window.location.href = 'eventos.html';
+        }
+
+        document.getElementById('back-to-panel-link').href = `panel_evento.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`;
+        document.getElementById('event-name-display').textContent = `Para el evento: ${eventName}`;
+        
+        const ui = {
+            artistsListDiv: document.getElementById('artists-list'),
+            shareLinkModal: document.getElementById('share-link-modal'),
+            shareModalTitle: document.getElementById('share-modal-title'),
+            shareLinkDisplay: document.getElementById('share-link-display'),
+            copyShareLinkBtn: document.getElementById('copy-share-link-btn'),
+            closeShareModalBtn: document.getElementById('close-share-modal-btn'),
+            shareSummaryBtn: document.getElementById('share-summary-btn')
+        };
+
+        function showShareModal(link, title) {
+            ui.shareModalTitle.textContent = title;
+            ui.shareLinkDisplay.value = link;
+            ui.shareLinkModal.classList.remove('hidden');
+        }
+        
+        ui.copyShareLinkBtn.addEventListener('click', () => { navigator.clipboard.writeText(ui.shareLinkDisplay.value).then(() => alert('¡Enlace copiado!')); });
+        ui.closeShareModalBtn.addEventListener('click', () => ui.shareLinkModal.classList.add('hidden'));
+
+        async function loadArtistsWithTickets() {
+            ui.artistsListDiv.innerHTML = '<p class="text-center text-gray-400">Buscando artistas con entradas...</p>';
+            const ticketsQuery = query(collection(db, `events/${eventId}/tickets`));
+            const querySnapshot = await getDocs(ticketsQuery);
+            const tickets = querySnapshot.docs.map(doc => doc.data());
+            
+            if (tickets.length === 0) {
+                ui.artistsListDiv.innerHTML = '<p class="text-center text-gray-500">Aún no se han generado entradas para este evento.</p>';
+                ui.shareSummaryBtn.disabled = true;
+                return;
+            }
+            const prefixCounts = tickets.reduce((acc, ticket) => {
+                if (ticket.prefix) acc[ticket.prefix] = (acc[ticket.prefix] || 0) + 1;
+                return acc;
+            }, {});
+            const artistPrefixes = Object.keys(prefixCounts).sort();
+            ui.artistsListDiv.innerHTML = '';
+            artistPrefixes.forEach(prefix => {
+                const count = prefixCounts[prefix];
+                const card = document.createElement('div');
+                card.className = 'artist-card';
+                card.innerHTML = `
+                    <a href="visor_qr_compartido.html?eventId=${eventId}&artist=${encodeURIComponent(prefix)}" class="flex-grow">
+                        <h3 class="text-xl font-bold text-sky-400">${prefix}</h3>
+                        <p class="text-sm text-gray-400">${count} entrada(s)</p>
+                    </a>
+                    <button data-prefix="${prefix}" class="share-artist-btn px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 text-sm">Compartir QR</button>`;
+                ui.artistsListDiv.appendChild(card);
+            });
+        }
+
+        ui.artistsListDiv.addEventListener('click', (e) => {
+            if (e.target.classList.contains('share-artist-btn')) {
+                const prefix = e.target.dataset.prefix;
+                const path = window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/'));
+                const baseUrl = `${window.location.origin}${path}`;
+                const shareableLink = `${baseUrl}/visor_qr_compartido.html?eventId=${eventId}&artist=${encodeURIComponent(prefix)}`;
+                showShareModal(shareableLink, `Enlace de QR para "${prefix}"`);
+            }
+        });
+        ui.shareSummaryBtn.addEventListener('click', () => {
+            const path = window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/'));
+            const baseUrl = `${window.location.origin}${path}`;
+            const shareableLink = `${baseUrl}/reporte_entradas_publico.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`;
+            showShareModal(shareableLink, 'Enlace de Reporte de Entradas');
+        });
+
+        loadArtistsWithTickets();
     </script>
 </body>
 </html>

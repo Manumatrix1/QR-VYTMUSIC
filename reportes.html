@@ -90,20 +90,69 @@
         const formatCurrency = (value) => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' }).format(value);
         
         async function exportGeneralReportToCSV() {
-            // ... (función de exportación completa aquí)
+            let csvContent = "data:text/csv;charset=utf-8,";
+            const headers = ["Nombre del Evento", "Fecha del Evento", "Artista/Grupo", "Total de Entradas por Artista", "Asistencia por Artista", "Ingresos del Evento", "Gastos del Evento", "Balance del Evento"];
+            csvContent += headers.join(",") + "\r\n";
+            const eventsQuery = query(collection(db, 'events'));
+            const eventsSnapshot = await getDocs(eventsQuery);
+            for (const eventDoc of eventsSnapshot.docs) {
+                const eventData = eventDoc.data();
+                const eventId = eventDoc.id;
+                let eventTotalIncome = 0; let eventTotalExpenses = 0;
+                const ticketsSnapshot = await getDocs(query(collection(db, `events/${eventId}/tickets`)));
+                const tickets = ticketsSnapshot.docs.map(d => d.data());
+                eventTotalIncome = tickets.reduce((sum, t) => sum + (t.price || 0), 0);
+                const expensesSnapshot = await getDocs(query(collection(db, `events/${eventId}/expenses`)));
+                eventTotalExpenses = expensesSnapshot.docs.reduce((sum, d) => sum + (d.data().amount || 0), 0);
+                const artistData = tickets.reduce((acc, ticket) => {
+                    const prefix = ticket.prefix || "Sin Grupo";
+                    if (!acc[prefix]) acc[prefix] = { totalTickets: 0, attendance: 0 };
+                    acc[prefix].totalTickets++;
+                    if (ticket.used) acc[prefix].attendance++;
+                    return acc;
+                }, {});
+                Object.keys(artistData).forEach(artist => {
+                    const data = artistData[artist];
+                    const row = [`"${eventData.name}"`, `"${eventData.date}"`, `"${artist}"`, data.totalTickets, data.attendance, eventTotalIncome, eventTotalExpenses, (eventTotalIncome - eventTotalExpenses)];
+                    csvContent += row.join(",") + "\r\n";
+                });
+            }
+            const link = document.createElement("a");
+            link.setAttribute("href", encodeURI(csvContent));
+            link.setAttribute("download", "reporte_general_vytmusic.csv");
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
         }
         
         async function loadGeneralReport() {
-            // ... (función de reporte general completa aquí)
+            let totalIncome = 0, totalExpenses = 0, totalTickets = 0;
+            const eventsQuery = query(collection(db, 'events'));
+            const eventsSnapshot = await getDocs(eventsQuery);
+            for (const eventDoc of eventsSnapshot.docs) {
+                const eventData = eventDoc.data();
+                if (eventData.manualTicketAdjustment) totalTickets += eventData.manualTicketAdjustment;
+                const ticketsSnapshot = await getDocs(query(collection(db, `events/${eventDoc.id}/tickets`)));
+                ticketsSnapshot.forEach(doc => {
+                    totalIncome += (doc.data().price || 0);
+                    totalTickets++;
+                });
+                const expensesSnapshot = await getDocs(query(collection(db, `events/${eventDoc.id}/expenses`)));
+                expensesSnapshot.forEach(doc => totalExpenses += (doc.data().amount || 0));
+            }
+            const balance = totalIncome - totalExpenses;
+            document.getElementById('general-total-income').textContent = formatCurrency(totalIncome);
+            document.getElementById('general-total-expenses').textContent = formatCurrency(totalExpenses);
+            document.getElementById('general-total-tickets').textContent = totalTickets;
+            const generalNetBalanceEl = document.getElementById('general-net-balance');
+            generalNetBalanceEl.textContent = formatCurrency(balance);
+            generalNetBalanceEl.className = 'text-xl md:text-2xl font-bold mt-2 break-words ' + (balance >= 0 ? 'text-sky-400' : 'text-red-400');
         }
 
-        // --- LÓGICA PRINCIPAL CORREGIDA ---
         if (eventId && eventName) {
-            // MODO: REPORTE DE EVENTO ESPECÍFICO (LÓGICA RESTAURADA)
             document.getElementById('general-report-section').classList.add('hidden');
             document.getElementById('accounting-section').classList.remove('hidden');
             document.getElementById('event-name-display').textContent = `Gala: ${eventName}`;
-            
             const backToPanelBtn = document.getElementById('back-to-panel-btn');
             const backToEventsLink = document.getElementById('back-to-events-link');
             const panelUrl = `panel_evento.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`;
@@ -111,13 +160,10 @@
             backToEventsLink.textContent = '← Volver al Panel del Evento';
             backToPanelBtn.href = panelUrl;
             backToPanelBtn.classList.remove('hidden');
-
             const eventRef = doc(db, 'events', eventId);
             const ticketsQuery = query(collection(db, `events/${eventId}/tickets`));
             const expensesQuery = query(collection(db, `events/${eventId}/expenses`));
-
             const state = { income: 0, expenses: 0, ticketsInSystem: 0, manualAdjustment: 0 };
-            
             function updateUI() {
                 const { income, expenses, ticketsInSystem, manualAdjustment } = state;
                 const balance = income - expenses;
@@ -129,7 +175,6 @@
                 netBalanceEl.textContent = formatCurrency(balance);
                 netBalanceEl.className = 'text-xl md:text-2xl font-bold mt-2 break-words ' + (balance >= 0 ? 'text-sky-400' : 'text-red-400');
             }
-
             getDoc(eventRef).then(docSnap => {
                 if (docSnap.exists() && docSnap.data().manualTicketAdjustment) {
                     state.manualAdjustment = docSnap.data().manualTicketAdjustment;
@@ -137,7 +182,6 @@
                     updateUI();
                 }
             });
-
             onSnapshot(ticketsQuery, (snapshot) => {
                 const tickets = snapshot.docs.map(doc => doc.data());
                 state.ticketsInSystem = tickets.length;
@@ -160,7 +204,6 @@
                 });
                 updateUI();
             });
-
             onSnapshot(expensesQuery, (snapshot) => {
                 const expensesList = document.getElementById('expenses-list');
                 expensesList.innerHTML = '';
@@ -168,32 +211,24 @@
                 snapshot.forEach(doc => {
                     const expense = { id: doc.id, ...doc.data() };
                     state.expenses += expense.amount;
-                    const li = document.createElement('li');
+                    const li = document.createElement('div');
                     li.className = 'flex justify-between items-center bg-gray-700 p-2 rounded';
                     li.innerHTML = `<span>${expense.description}</span><span class="font-semibold">${formatCurrency(expense.amount)} <button data-id="${expense.id}" class="delete-expense-btn text-red-500 ml-2">X</button></span>`;
                     expensesList.appendChild(li);
                 });
                 updateUI();
             });
-
             document.getElementById('expense-form').addEventListener('submit', async (e) => {
                 e.preventDefault();
                 const description = document.getElementById('expense-description').value;
                 const amount = parseFloat(document.getElementById('expense-amount').value);
-                if (description && amount > 0) {
-                    await addDoc(collection(db, `events/${eventId}/expenses`), { description, amount });
-                    e.target.reset();
-                }
+                if (description && amount > 0) await addDoc(collection(db, `events/${eventId}/expenses`), { description, amount }); e.target.reset();
             });
-
             document.getElementById('expenses-list').addEventListener('click', async (e) => {
                 if (e.target.classList.contains('delete-expense-btn')) {
-                    if(confirm("¿Seguro que quieres eliminar este gasto?")) {
-                        await deleteDoc(doc(db, `events/${eventId}/expenses`, e.target.dataset.id));
-                    }
+                    if(confirm("¿Seguro que quieres eliminar este gasto?")) await deleteDoc(doc(db, `events/${eventId}/expenses`, e.target.dataset.id));
                 }
             });
-
             document.getElementById('save-adjustment-btn').addEventListener('click', async () => {
                 const adjustmentValue = parseInt(document.getElementById('manual-adjustment-input').value) || 0;
                 await updateDoc(eventRef, { manualTicketAdjustment: adjustmentValue });
@@ -201,9 +236,7 @@
                 updateUI();
                 alert("Ajuste guardado con éxito.");
             });
-
         } else {
-            // MODO: REPORTE GENERAL
             document.getElementById('event-name-display').textContent = "Reporte General";
             document.getElementById('general-report-section').classList.remove('hidden');
             document.getElementById('accounting-section').classList.add('hidden');
