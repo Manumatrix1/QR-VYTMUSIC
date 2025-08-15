@@ -25,7 +25,7 @@
             </a>
 
             <section id="general-report-section" class="bg-gray-800 p-6 rounded-lg shadow-xl">
-                <h2 class="text-2xl font-bold mb-6 text-center">Reporte General de Todas las Galas</h2>
+                 <h2 class="text-2xl font-bold mb-6 text-center">Reporte General de Todas las Galas</h2>
                 <div id="general-stats" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8 text-center">
                     <div class="bg-gray-700 p-4 rounded-lg"><h3 class="text-lg font-semibold text-green-400">Ingresos Totales</h3><p id="general-total-income" class="text-2xl font-bold mt-2 break-words">$0</p></div>
                     <div class="bg-gray-700 p-4 rounded-lg"><h3 class="text-lg font-semibold text-red-400">Gastos Totales</h3><p id="general-total-expenses" class="text-2xl font-bold mt-2 break-words">$0</p></div>
@@ -69,7 +69,7 @@
                 
                 <div class="pt-8 border-t border-gray-700">
                     <h3 class="text-xl font-bold mb-4">Ajuste Manual de Entradas</h3>
-                    <p class="text-gray-400 text-sm mb-4">Usa esta opción si necesitas corregir el total de entradas por ventas realizadas fuera de este sistema (ej: sistema viejo).</p>
+                    <p class="text-gray-400 text-sm mb-4">Usa esta opción si necesitas corregir el total de entradas por ventas realizadas fuera de este sistema.</p>
                     <div class="flex items-center gap-4">
                         <input type="number" id="manual-adjustment-input" placeholder="Ej: 22" class="w-full p-2 rounded-md bg-gray-900">
                         <button id="save-adjustment-btn" class="px-6 py-2 bg-green-600 font-bold rounded-lg">Guardar Ajuste</button>
@@ -89,7 +89,26 @@
 
         const formatCurrency = (value) => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' }).format(value);
         
-        // ... (updateBalance y loadGeneralReport sin cambios) ...
+        // --- LÓGICA REESTRUCTURADA ---
+        const state = {
+            income: 0,
+            expenses: 0,
+            ticketsInSystem: 0,
+            manualAdjustment: 0
+        };
+
+        function updateReportUI() {
+            const { income, expenses, ticketsInSystem, manualAdjustment } = state;
+            const balance = income - expenses;
+            const totalTickets = ticketsInSystem + manualAdjustment;
+
+            document.getElementById('total-income').textContent = formatCurrency(income);
+            document.getElementById('total-expenses').textContent = formatCurrency(expenses);
+            document.getElementById('total-tickets').textContent = totalTickets;
+            const netBalanceEl = document.getElementById('net-balance');
+            netBalanceEl.textContent = formatCurrency(balance);
+            netBalanceEl.className = 'text-2xl font-bold mt-2 ' + (balance >= 0 ? 'text-sky-400' : 'text-red-400');
+        }
 
         if (eventId && eventName) {
             // MODO: REPORTE DE EVENTO ESPECÍFICO
@@ -107,28 +126,23 @@
             const eventRef = doc(db, 'events', eventId);
             const ticketsQuery = query(collection(db, `events/${eventId}/tickets`));
             const expensesQuery = query(collection(db, `events/${eventId}/expenses`));
-            
-            let currentIncome = 0;
-            let manualAdjustment = 0;
 
-            // Cargar el ajuste manual una vez
             getDoc(eventRef).then(docSnap => {
                 if (docSnap.exists() && docSnap.data().manualTicketAdjustment) {
-                    manualAdjustment = docSnap.data().manualTicketAdjustment;
-                    document.getElementById('manual-adjustment-input').value = manualAdjustment;
+                    state.manualAdjustment = docSnap.data().manualTicketAdjustment;
+                    document.getElementById('manual-adjustment-input').value = state.manualAdjustment;
+                    updateReportUI();
                 }
             });
 
             onSnapshot(ticketsQuery, (snapshot) => {
                 const tickets = snapshot.docs.map(doc => doc.data());
-                currentIncome = tickets.reduce((sum, ticket) => sum + (ticket.price || 0), 0);
+                state.ticketsInSystem = tickets.length;
+                state.income = tickets.reduce((sum, ticket) => sum + (ticket.price || 0), 0);
                 
-                // --- LÓGICA PARA DESGLOSE DE INGRESOS ---
                 const incomeBreakdown = tickets.reduce((acc, ticket) => {
                     const tier = ticket.tierName || 'Sin Tipo';
-                    if (!acc[tier]) {
-                        acc[tier] = { count: 0, total: 0, price: ticket.price || 0 };
-                    }
+                    if (!acc[tier]) acc[tier] = { count: 0, total: 0, price: ticket.price || 0 };
                     acc[tier].count++;
                     acc[tier].total += (ticket.price || 0);
                     return acc;
@@ -143,31 +157,52 @@
                     li.innerHTML = `<span>${item.count} x ${tier} (${formatCurrency(item.price)})</span><span class="font-semibold">${formatCurrency(item.total)}</span>`;
                     incomeBreakdownList.appendChild(li);
                 });
-
-                document.getElementById('total-tickets').textContent = tickets.length + manualAdjustment;
-                const currentExpenses = parseFloat(document.getElementById('total-expenses').textContent.replace(/\$|\./g, '').replace(',', '.')) || 0;
-                updateBalance(currentIncome, currentExpenses, document.getElementById('total-income'), document.getElementById('total-expenses'), document.getElementById('net-balance'));
+                updateReportUI();
             });
 
-            // ... (resto de la lógica de gastos sin cambios) ...
-
-            // --- LÓGICA PARA GUARDAR AJUSTE MANUAL ---
+            onSnapshot(expensesQuery, (snapshot) => {
+                const expensesList = document.getElementById('expenses-list');
+                expensesList.innerHTML = '';
+                state.expenses = 0;
+                snapshot.forEach(doc => {
+                    const expense = { id: doc.id, ...doc.data() };
+                    state.expenses += expense.amount;
+                    const li = document.createElement('div');
+                    li.className = 'flex justify-between items-center bg-gray-700 p-2 rounded';
+                    li.innerHTML = `<span>${expense.description}</span><span class="font-semibold">${formatCurrency(expense.amount)} <button data-id="${expense.id}" class="delete-expense-btn text-red-500 ml-2">X</button></span>`;
+                    expensesList.appendChild(li);
+                });
+                updateReportUI();
+            });
+            
+            document.getElementById('expense-form').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const description = document.getElementById('expense-description').value;
+                const amount = parseFloat(document.getElementById('expense-amount').value);
+                if (description && amount > 0) {
+                    await addDoc(collection(db, `events/${eventId}/expenses`), { description, amount });
+                    e.target.reset();
+                }
+            });
+            document.getElementById('expenses-list').addEventListener('click', async (e) => {
+                if (e.target.classList.contains('delete-expense-btn')) {
+                    if(confirm("¿Seguro que quieres eliminar este gasto?")) {
+                        await deleteDoc(doc(db, `events/${eventId}/expenses`, e.target.dataset.id));
+                    }
+                }
+            });
             document.getElementById('save-adjustment-btn').addEventListener('click', async () => {
                 const adjustmentValue = parseInt(document.getElementById('manual-adjustment-input').value) || 0;
                 await updateDoc(eventRef, { manualTicketAdjustment: adjustmentValue });
-                manualAdjustment = adjustmentValue; // Actualizamos la variable local
-                // Forzamos la actualización visual del total de entradas
-                const ticketsCount = parseInt(document.getElementById('total-tickets').textContent) - manualAdjustment + adjustmentValue;
-                const currentTicketsInSystem = ticketsCount - adjustmentValue;
-                document.getElementById('total-tickets').textContent = currentTicketsInSystem + manualAdjustment;
-
+                state.manualAdjustment = adjustmentValue;
+                updateReportUI();
                 alert("Ajuste guardado con éxito.");
             });
 
         } else {
             // MODO: REPORTE GENERAL
             document.getElementById('event-name-display').textContent = "Reporte General";
-            loadGeneralReport(); // Nota: Esta función necesitaría ser actualizada para sumar los ajustes de todos los eventos.
+            // ... (Función loadGeneralReport necesitaría ser actualizada para incluir los ajustes de todos los eventos)
         }
     </script>
 </body>
