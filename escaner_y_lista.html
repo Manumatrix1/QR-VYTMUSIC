@@ -198,18 +198,34 @@
                 isScannerActive = true;
 
                 const config = { 
-                    fps: 25, // Máxima velocidad de detección
+                    fps: 25,
                     formatsToSupport: [ 
                         Html5QrcodeSupportedFormats.QR_CODE,
                         Html5QrcodeSupportedFormats.CODE_128 
                     ]
                 };
+
+                // ===== NUEVOS AJUSTES AVANZADOS PARA LA CÁMARA =====
+                // Pedimos una resolución HD y activamos el enfoque automático continuo.
+                // Esto mejora drásticamente la velocidad y la lectura en ángulos difíciles.
+                const videoConstraints = {
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 },
+                    advanced: [
+                        { focusMode: 'continuous' }
+                    ]
+                };
                 
-                html5QrCode.start({ facingMode: "environment" }, config, onScanSuccess, (e) => {})
+                html5QrCode.start({ facingMode: "environment", videoConstraints }, config, onScanSuccess, (e) => {})
                     .catch(err => {
-                        alert("No se pudo iniciar la cámara. Asegúrate de dar permisos y refresca la página.");
-                        console.error("Error al iniciar escáner:", err);
-                        stopScanner();
+                        console.warn("No se pudo iniciar con ajustes avanzados, reintentando con configuración básica:", err);
+                        // Si falla (cámara no soporta los ajustes), reintentar sin ellos.
+                        html5QrCode.start({ facingMode: "environment" }, config, onScanSuccess, (e) => {})
+                            .catch(finalErr => {
+                                alert("No se pudo iniciar la cámara. Asegúrate de dar permisos y refresca la página.");
+                                console.error("Error final al iniciar escáner:", finalErr);
+                                stopScanner();
+                            });
                     });
             }
 
