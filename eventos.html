@@ -11,6 +11,7 @@
         .event-card { background-color: #1f2937; transition: all 0.2s ease-in-out; border: 1px solid #374151; }
         .event-card:hover { transform: translateY(-4px); background-color: #374151; }
         .action-btn { transition: background-color 0.2s; }
+        .hidden { display: none; }
     </style>
 </head>
 <body class="antialiased">
@@ -18,6 +19,11 @@
         <header class="text-center mb-8">
             <h1 class="text-4xl sm:text-5xl font-bold text-sky-400">Gestor de Eventos</h1>
             <p class="text-lg text-gray-400 mt-2">Crea y administra tus galas y certámenes.</p>
+            
+            <div id="user-info" class="hidden mt-4 text-sm text-gray-400">
+                Sesión iniciada como: <span id="user-email" class="font-semibold text-sky-300"></span>
+                <button id="logout-btn" class="ml-4 px-3 py-1 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700 text-xs">[Cerrar Sesión]</button>
+            </div>
         </header>
 
         <main class="space-y-8">
@@ -52,17 +58,34 @@
     <script type="module">
         import { db, auth } from './firebase_config.js';
         import { collection, addDoc, serverTimestamp, query, orderBy, onSnapshot, doc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+
+        // CAPTURAMOS LOS NUEVOS ELEMENTOS DE LA UI
+        const userInfoDiv = document.getElementById('user-info');
+        const userEmailSpan = document.getElementById('user-email');
+        const logoutBtn = document.getElementById('logout-btn');
 
         onAuthStateChanged(auth, (user) => {
             if (user) {
-                startApp();
+                // Si hay un usuario, mostramos su info y activamos el botón de logout
+                userEmailSpan.textContent = user.email;
+                userInfoDiv.classList.remove('hidden');
+                startApp(user);
             } else {
+                // Si no, lo redirigimos a la página de inicio
                 window.location.href = 'index.html';
             }
         });
 
-        function startApp() {
+        // Event listener para el botón de cerrar sesión
+        logoutBtn.addEventListener('click', () => {
+            signOut(auth).catch((error) => {
+                console.error("Error al cerrar sesión:", error);
+                alert("Hubo un error al cerrar la sesión.");
+            });
+        });
+
+        function startApp(user) {
             const eventsCol = collection(db, 'events');
             const createEventForm = document.getElementById('create-event-form');
             const eventsListDiv = document.getElementById('events-list');
@@ -103,7 +126,7 @@
                 const eventDate = document.getElementById('event-date').value;
 
                 if (eventName && eventDate) {
-                    await addDoc(eventsCol, { name: eventName, date: eventDate, createdAt: serverTimestamp() });
+                    await addDoc(eventsCol, { name: eventName, date: eventDate, createdAt: serverTimestamp(), ownerId: user.uid });
                     createEventForm.reset();
                 }
             });
@@ -125,8 +148,6 @@
 
                 if (target.classList.contains('delete-event-btn')) {
                     if (confirm("¿Estás seguro de que quieres eliminar este evento? Se borrarán TODOS sus datos asociados. Esta acción no se puede deshacer.")) {
-                        // Idealmente, esto se manejaría con una Cloud Function para borrar subcolecciones.
-                        // Por ahora, borramos el documento principal del evento.
                         await deleteDoc(eventRef);
                     }
                 }
