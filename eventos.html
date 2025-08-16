@@ -57,32 +57,25 @@
 
     <script type="module">
         import { db, auth } from './firebase_config.js';
-        import { collection, addDoc, serverTimestamp, query, orderBy, onSnapshot, doc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { collection, addDoc, serverTimestamp, query, orderBy, onSnapshot, doc, updateDoc, deleteDoc, writeBatch, where, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 
-        // CAPTURAMOS LOS NUEVOS ELEMENTOS DE LA UI
         const userInfoDiv = document.getElementById('user-info');
         const userEmailSpan = document.getElementById('user-email');
         const logoutBtn = document.getElementById('logout-btn');
 
         onAuthStateChanged(auth, (user) => {
             if (user) {
-                // Si hay un usuario, mostramos su info y activamos el botón de logout
                 userEmailSpan.textContent = user.email;
                 userInfoDiv.classList.remove('hidden');
                 startApp(user);
             } else {
-                // Si no, lo redirigimos a la página de inicio
                 window.location.href = 'index.html';
             }
         });
 
-        // Event listener para el botón de cerrar sesión
         logoutBtn.addEventListener('click', () => {
-            signOut(auth).catch((error) => {
-                console.error("Error al cerrar sesión:", error);
-                alert("Hubo un error al cerrar la sesión.");
-            });
+            signOut(auth).catch((error) => console.error("Error al cerrar sesión:", error));
         });
 
         function startApp(user) {
@@ -104,13 +97,19 @@
                     const event = { id: eventDoc.id, ...eventDoc.data() };
                     const eventCard = document.createElement('div');
                     eventCard.className = 'event-card p-4 rounded-lg shadow-md';
+
+                    const isActive = event.activeForVoting === true;
+                    const activeButtonClass = isActive ? 'bg-green-600 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700';
+                    const activeButtonText = isActive ? 'Votación Activada' : 'Activar Votación';
+
                     eventCard.innerHTML = `
-                        <div class="flex justify-between items-center">
-                            <a href="panel_evento.html?eventId=${event.id}&eventName=${encodeURIComponent(event.name)}" class="flex-grow">
+                        <div class="flex flex-col sm:flex-row justify-between items-center gap-4">
+                            <a href="panel_evento.html?eventId=${event.id}&eventName=${encodeURIComponent(event.name)}" class="flex-grow text-center sm:text-left">
                                 <h3 class="text-xl font-bold text-sky-400">${event.name}</h3>
                                 <p class="text-gray-400">Fecha: ${event.date}</p>
                             </a>
-                            <div class="flex space-x-2">
+                            <div class="flex-shrink-0 flex items-center gap-2">
+                                <button data-id="${event.id}" class="activate-voting-btn action-btn px-4 py-2 text-sm font-semibold rounded-md ${activeButtonClass}" ${isActive ? 'disabled' : ''}>${activeButtonText}</button>
                                 <button data-id="${event.id}" data-name="${event.name}" class="edit-event-btn action-btn p-2 bg-gray-600 hover:bg-yellow-600 rounded-md" title="Editar nombre">✏️</button>
                                 <button data-id="${event.id}" class="delete-event-btn action-btn p-2 bg-gray-600 hover:bg-red-600 rounded-md" title="Eliminar evento">🗑️</button>
                             </div>
@@ -124,9 +123,8 @@
                 e.preventDefault();
                 const eventName = document.getElementById('event-name').value;
                 const eventDate = document.getElementById('event-date').value;
-
                 if (eventName && eventDate) {
-                    await addDoc(eventsCol, { name: eventName, date: eventDate, createdAt: serverTimestamp(), ownerId: user.uid });
+                    await addDoc(eventsCol, { name: eventName, date: eventDate, createdAt: serverTimestamp(), ownerId: user.uid, activeForVoting: false });
                     createEventForm.reset();
                 }
             });
@@ -134,29 +132,39 @@
             eventsListDiv.addEventListener('click', async (e) => {
                 const target = e.target.closest('button');
                 if (!target) return;
-
                 const eventId = target.dataset.id;
-                const eventRef = doc(db, 'events', eventId);
+                
+                if (target.classList.contains('activate-voting-btn')) {
+                    const q = query(eventsCol, where("activeForVoting", "==", true));
+                    const currentlyActiveSnapshot = await getDocs(q);
+                    const batch = writeBatch(db);
+                    
+                    currentlyActiveSnapshot.forEach(doc => {
+                        batch.update(doc.ref, { activeForVoting: false });
+                    });
+                    
+                    const newActiveRef = doc(db, 'events', eventId);
+                    batch.update(newActiveRef, { activeForVoting: true });
+                    
+                    await batch.commit();
+                }
 
                 if (target.classList.contains('edit-event-btn')) {
-                    const currentName = target.dataset.name;
-                    const newName = prompt("Ingresa el nuevo nombre para el evento:", currentName);
-                    if (newName && newName.trim() !== "") {
-                        await updateDoc(eventRef, { name: newName.trim() });
+                    const newName = prompt("Ingresa el nuevo nombre:", target.dataset.name);
+                    if (newName && newName.trim()) {
+                        await updateDoc(doc(db, 'events', eventId), { name: newName.trim() });
                     }
                 }
 
                 if (target.classList.contains('delete-event-btn')) {
-                    if (confirm("¿Estás seguro de que quieres eliminar este evento? Se borrarán TODOS sus datos asociados. Esta acción no se puede deshacer.")) {
-                        await deleteDoc(eventRef);
+                    if (confirm("¿Seguro que quieres eliminar este evento?")) {
+                        await deleteDoc(doc(db, 'events', eventId));
                     }
                 }
             });
 
             const q = query(eventsCol, orderBy('createdAt', 'desc'));
-            onSnapshot(q, (snapshot) => {
-                renderEvents(snapshot.docs);
-            });
+            onSnapshot(q, (snapshot) => renderEvents(snapshot.docs));
         }
     </script>
 </body>
