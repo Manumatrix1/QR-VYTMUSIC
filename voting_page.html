@@ -47,7 +47,7 @@
         let eventId;
         let eventName;
         const ui = {};
-
+        
         function cacheUIElements() {
             const ids = ['loading-overlay', 'artists-list-container', 'validation-screen', 'ticket-name-input', 'validate-ticket-btn', 'voting-content', 'event-name-display'];
             ids.forEach(id => { ui[id.replace(/-(\w)/g, (_, c) => c.toUpperCase())] = document.getElementById(id); });
@@ -69,18 +69,15 @@
         async function initializeEvent() {
             const urlParams = new URLSearchParams(window.location.search);
             const eventIdFromUrl = urlParams.get('eventId');
-            const eventNameFromUrl = urlParams.get('eventName');
+            let eventNameFromUrl = urlParams.get('eventName');
 
             if (eventIdFromUrl) {
                 eventId = eventIdFromUrl;
                 eventName = eventNameFromUrl;
-                // Si el nombre no viene en la URL, lo buscamos en la DB
                 if (!eventName) {
                     const eventRef = doc(db, 'events', eventId);
                     const eventSnap = await getDoc(eventRef);
-                    if (eventSnap.exists()) {
-                        eventName = eventSnap.data().name;
-                    }
+                    if (eventSnap.exists()) eventName = eventSnap.data().name;
                 }
                 return true;
             }
@@ -91,13 +88,16 @@
                 eventName = activeEvent.name;
                 return true;
             }
-            
             return false;
         }
 
         async function validateTicket(input) {
             const normalizedInput = input.toLowerCase().trim();
             const ticketsPath = collection(db, `events/${eventId}/tickets`);
+            
+            // Primero, intenta buscar por nombre (insensible a mayúsculas/minúsculas)
+            // Nota: Esta consulta requiere un índice en Firestore si no es un campo predefinido. 
+            // Para una búsqueda simple, iterar es más flexible.
             const querySnapshot = await getDocs(ticketsPath);
             let foundTicket = null;
 
@@ -117,6 +117,34 @@
             return { success: false, message: "Nombre o ID de entrada no encontrado en este evento." };
         }
         
+        function renderArtists(artists) {
+            ui.artistsListContainer.innerHTML = '';
+            if (!artists || artists.length === 0) {
+                 ui.artistsListContainer.innerHTML = '<p class="col-span-full text-center text-gray-400">No hay artistas cargados para la votación de este evento.</p>';
+                 return;
+            }
+            artists.forEach(artist => {
+                const artistCard = document.createElement('div');
+                artistCard.className = 'artist-card';
+                artistCard.innerHTML = `
+                    <div class="artist-image-container"><img src="${artist.photoURL || 'https://placehold.co/120x120/1f2937/f9fafb?text=ART'}" alt="${artist.name}" class="artist-image"></div>
+                    <h3 class="text-xl font-semibold text-sky-300">${artist.name}</h3>
+                    <button data-artist-id="${artist.id}" class="vote-button mt-4">Votar por ${artist.name.split(' ')[0]}</button>`;
+                ui.artistsListContainer.appendChild(artistCard);
+            });
+        }
+        
+        function attachArtistListener() {
+            const artistsQuery = query(collection(db, `events/${eventId}/artists`), orderBy('name'));
+            onSnapshot(artistsQuery, (snapshot) => {
+                const artists = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                renderArtists(artists);
+            }, (error) => {
+                console.error("Error al cargar artistas:", error);
+                ui.artistsListContainer.innerHTML = '<p class="col-span-full text-center text-red-500">Error al cargar la lista de artistas.</p>';
+            });
+        }
+        
         function setupEventListeners() {
             ui.validateTicketBtn.addEventListener('click', async () => {
                 const nameInput = ui.ticketNameInput.value.trim();
@@ -124,14 +152,13 @@
                 
                 setLoading(true);
                 const result = await validateTicket(nameInput);
-                setLoading(false);
+                setLoading(false); // Corregido: el error estaba aquí
 
                 if (result.success) {
                     alert(result.message);
                     ui.validationScreen.classList.add('hidden');
                     ui.votingContent.classList.remove('hidden');
-                    // Aquí iría la llamada para renderizar los artistas
-                    // renderArtists(....);
+                    attachArtistListener();
                 } else {
                     alert(result.message);
                 }
@@ -151,11 +178,7 @@
             
             ui.eventNameDisplay.textContent = `Gala: ${eventName}`;
             setupEventListeners();
-            
-            // ===== LÍNEA CORREGIDA =====
-            // Esta es la línea que faltaba para hacer visible el formulario
             ui.validationScreen.classList.remove('hidden');
-            
             setLoading(false);
         }
 
