@@ -42,18 +42,27 @@
     </div>
     <script type="module">
         import { db } from './firebase_config.js';
-        import { collection, onSnapshot, doc, updateDoc, increment, getDoc, setDoc, getDocs, query, where, orderBy } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { collection, onSnapshot, doc, getDoc, getDocs, query, where, orderBy, limit } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         let eventId;
         let eventName;
+        const ui = {};
+        let state = {};
+
+        function cacheUIElements() {
+            const ids = ['loading-overlay', 'artists-list-container', 'validation-screen', 'ticket-name-input', 'validate-ticket-btn', 'voting-content', 'event-name-display'];
+            ids.forEach(id => { ui[id.replace(/-(\w)/g, (_, c) => c.toUpperCase())] = document.getElementById(id); });
+        }
+
+        function setLoading(show) {
+            ui.loadingOverlay.classList.toggle('hidden', !show);
+        }
 
         async function findActiveEvent() {
             const eventsRef = collection(db, 'events');
-            const q = query(eventsRef, where("activeForVoting", "==", true), orderBy("createdAt", "desc"), limit(1));
+            const q = query(eventsRef, where("activeForVoting", "==", true), limit(1));
             const snapshot = await getDocs(q);
-            if (snapshot.empty) {
-                return null;
-            }
+            if (snapshot.empty) return null;
             const activeEventDoc = snapshot.docs[0];
             return { id: activeEventDoc.id, ...activeEventDoc.data() };
         }
@@ -61,51 +70,91 @@
         async function initializeEvent() {
             const urlParams = new URLSearchParams(window.location.search);
             let eventIdFromUrl = urlParams.get('eventId');
-            let eventNameFromUrl = urlParams.get('eventName');
 
             if (eventIdFromUrl) {
-                eventId = eventIdFromUrl;
-                eventName = eventNameFromUrl;
-                return true;
-            } else {
-                const activeEvent = await findActiveEvent();
-                if (activeEvent) {
-                    eventId = activeEvent.id;
-                    eventName = activeEvent.name;
+                const eventRef = doc(db, 'events', eventIdFromUrl);
+                const eventSnap = await getDoc(eventRef);
+                if (eventSnap.exists()) {
+                    eventId = eventIdFromUrl;
+                    eventName = eventSnap.data().name;
                     return true;
-                } else {
-                    return false;
                 }
             }
+            
+            const activeEvent = await findActiveEvent();
+            if (activeEvent) {
+                eventId = activeEvent.id;
+                eventName = activeEvent.name;
+                return true;
+            }
+            
+            return false;
         }
 
-        // --- El resto del script de voting_page.html (validación, renderizado, etc.) va aquí ---
-        // ... (pega aquí el resto de tu script de voting_page.html, desde la declaración de 'state' hacia abajo)
-        // ... Asegúrate de que toda la lógica de validación, renderizado de artistas y manejo de votos esté presente.
+        async function validateTicket(input) {
+            const normalizedInput = input.toLowerCase().trim();
+            // La búsqueda se hace solo dentro de las entradas del evento activo
+            const ticketsPath = collection(db, `events/${eventId}/tickets`);
+            const querySnapshot = await getDocs(ticketsPath);
+            let foundTicket = null;
+
+            for (const doc of querySnapshot.docs) {
+                const ticketData = doc.data();
+                const normalizedName = (ticketData.name || '').toLowerCase().trim();
+                const ticketId = (ticketData.id || '').trim();
+                if (normalizedName === normalizedInput || ticketId === input.trim()) {
+                    foundTicket = { id: doc.id, ...ticketData };
+                    break;
+                }
+            }
+
+            if (foundTicket) {
+                return { success: true, message: `Entrada validada para ${foundTicket.name}. ¡Puedes votar!`, ticket: foundTicket };
+            }
+            return { success: false, message: "Nombre o ID de entrada no encontrado en este evento." };
+        }
         
-        // --- Ejemplo de cómo integrar el resto del script ---
-        const state = { /* ... tu objeto state ... */ };
-        const ui = { /* ... tu objeto ui ... */ };
-        // ... todas tus funciones (cacheUIElements, displayMessage, setLoading, validateTicket, renderArtists, handleVote, etc.)
+        // Aquí irían las demás funciones (renderArtists, handleVote, etc.) que ya tienes en tu archivo.
+        // Por simplicidad, me enfoco en la inicialización y validación que es donde estaba el problema.
+
+        function setupEventListeners() {
+            ui.validateTicketBtn.addEventListener('click', async () => {
+                const nameInput = ui.ticketNameInput.value.trim();
+                if (!nameInput) return alert('Por favor, ingresa tu nombre o ID.');
+                
+                setLoading(true);
+                const result = await validateTicket(nameInput);
+                setLoading(false);
+
+                if (result.success) {
+                    alert(result.message);
+                    ui.validationScreen.classList.add('hidden');
+                    ui.votingContent.classList.remove('hidden');
+                    // Aquí llamarías a la función que carga y renderiza los artistas
+                    // attachArtistListener(); 
+                } else {
+                    alert(result.message);
+                }
+            });
+        }
 
         async function startApp() {
+            cacheUIElements();
             setLoading(true);
             const eventReady = await initializeEvent();
+            
             if (!eventReady) {
                 document.body.innerHTML = '<div class="text-center p-8"><h1 class="text-2xl text-yellow-400">No hay ninguna gala de votación activa en este momento.</h1><p class="text-gray-300">Por favor, consulta con la organización.</p></div>';
                 setLoading(false);
                 return;
             }
-            document.getElementById('event-name-display').textContent = `Gala: ${eventName}`;
-            // Ahora que tenemos eventId, el resto de tu app puede iniciar
-            cacheUIElements();
+            
+            ui.eventNameDisplay.textContent = `Gala: ${eventName}`;
             setupEventListeners();
             setLoading(false);
-            ui.validationScreen.classList.remove('hidden');
         }
 
         window.onload = startApp;
-
     </script>
 </body>
 </html>
