@@ -52,6 +52,7 @@
                     <button type="submit" id="add-artists-btn" class="w-full px-4 py-3 bg-green-600 text-white font-bold rounded-lg disabled:opacity-50" disabled>Agregar Artistas</button>
                 </form>
                 <button id="share-voting-link-btn" class="w-full px-4 py-3 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 mt-6">Compartir Enlace de Votación</button>
+                <button id="set-active-event-btn" class="w-full px-4 py-3 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700 mt-4">Marcar como Evento Activo</button>
                 <button id="share-results-link-btn" class="w-full px-4 py-3 bg-teal-600 text-white font-bold rounded-lg hover:bg-teal-700 mt-4">Compartir Resultados Públicos</button>
                 <div class="mt-6">
                     <button id="reset-voting-btn" class="w-full px-4 py-3 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700">Reiniciar Votación</button>
@@ -69,7 +70,7 @@
     
     <script type="module">
         import { db, storage } from './firebase_config.js';
-        import { collection, onSnapshot, query, addDoc, doc, deleteDoc, writeBatch, orderBy } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { collection, onSnapshot, query, addDoc, doc, deleteDoc, writeBatch, orderBy, getDocs, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { ref, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
 
         const urlParams = new URLSearchParams(window.location.search);
@@ -91,7 +92,7 @@
                 'loading-overlay', 'artist-photos-input', 'artist-previews-container',
                 'add-artists-btn', 'votes-stats', 'share-voting-link-btn', 'reset-voting-btn',
                 'share-results-link-btn', 'share-link-modal', 'share-modal-title',
-                'share-link-display', 'copy-share-link-btn', 'close-share-modal-btn'
+                'share-link-display', 'copy-share-link-btn', 'close-share-modal-btn', 'set-active-event-btn'
             ];
             ids.forEach(id => {
                 ui[id.replace(/-(\w)/g, (_, c) => c.toUpperCase())] = document.getElementById(id);
@@ -208,7 +209,7 @@
             ui.shareVotingLinkBtn.addEventListener('click', () => {
                 const path = window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/'));
                 const baseUrl = `${window.location.origin}${path}`;
-                const shareableLink = `${baseUrl}/voting_page.html?eventId=${eventId}`; 
+                const shareableLink = `${baseUrl}/voting_page.html`; 
                 showShareLinkModal(shareableLink, "Compartir Enlace de Votación");
             });
 
@@ -232,6 +233,28 @@
                     if (confirm("¿Seguro que quieres eliminar a este artista de la votación?")) {
                         await deleteDoc(doc(db, `events/${eventId}/artists`, artistId));
                     }
+                }
+            });
+            
+            ui.setActiveEventBtn.addEventListener('click', async () => {
+                setLoading(true);
+                try {
+                    const allEventsRef = collection(db, 'events');
+                    const allEventsSnapshot = await getDocs(allEventsRef);
+                    const batch = writeBatch(db);
+                    allEventsSnapshot.forEach(doc => {
+                        batch.update(doc.ref, { isActive: false });
+                    });
+                    await batch.commit();
+
+                    const eventRef = doc(db, 'events', eventId);
+                    await updateDoc(eventRef, { isActive: true });
+                    displayMessage('¡Evento marcado como activo con éxito!', 'success');
+                } catch (error) {
+                    console.error("Error al marcar el evento como activo:", error);
+                    displayMessage(`Error: ${error.message}`, 'error');
+                } finally {
+                    setLoading(false);
                 }
             });
         }
