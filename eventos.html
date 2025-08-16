@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestor de Eventos - VYTMUSIC</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #111827; color: #f9fafb; }
+        .event-card { background-color: #1f2937; transition: all 0.2s ease-in-out; border: 1px solid #374151; }
+        .event-card:hover { transform: translateY(-4px); background-color: #374151; }
+        .action-btn { transition: background-color 0.2s; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body class="antialiased">
+    <div class="container mx-auto max-w-4xl p-4 sm:p-6">
+        <header class="text-center mb-8">
+            <h1 class="text-4xl sm:text-5xl font-bold text-sky-400">Gestor de Eventos</h1>
+            <p class="text-lg text-gray-400 mt-2">Crea y administra tus galas y certámenes.</p>
+            
+            <div id="user-info" class="hidden mt-4 text-sm text-gray-400">
+                Sesión iniciada como: <span id="user-email" class="font-semibold text-sky-300"></span>
+                <button id="logout-btn" class="ml-4 px-3 py-1 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700 text-xs">[Cerrar Sesión]</button>
+            </div>
+        </header>
+
+        <main class="space-y-8">
+            <section id="create-event-section" class="bg-gray-800 p-6 rounded-lg shadow-xl">
+                <h2 class="text-2xl font-bold mb-4">Crear Nuevo Evento</h2>
+                <form id="create-event-form" class="space-y-4">
+                    <div>
+                        <label for="event-name" class="block mb-1 font-semibold text-gray-300">Nombre del Evento</label>
+                        <input type="text" id="event-name" placeholder="Ej: Semifinal 1" required class="w-full p-3 rounded-md border border-gray-600 bg-gray-900 text-white">
+                    </div>
+                    <div>
+                        <label for="event-date" class="block mb-1 font-semibold text-gray-300">Fecha del Evento</label>
+                        <input type="date" id="event-date" required class="w-full p-3 rounded-md border border-gray-600 bg-gray-900 text-white">
+                    </div>
+                    <button type="submit" class="w-full px-4 py-3 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700">Crear Evento</button>
+                </form>
+            </section>
+            
+            <a href="reportes.html" class="block w-full text-center px-4 py-3 bg-gray-700 text-white font-bold rounded-lg hover:bg-gray-600">
+                Ver Reporte General del Certamen
+            </a>
+
+            <section id="events-list-section">
+                <h2 class="text-2xl font-bold mb-4">Eventos Creados</h2>
+                <div id="events-list" class="space-y-4">
+                    <p id="events-loader" class="text-center text-gray-400">Cargando eventos...</p>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script type="module">
+        import { db, auth } from './firebase_config.js';
+        import { collection, addDoc, serverTimestamp, query, orderBy, onSnapshot, doc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+
+        // CAPTURAMOS LOS NUEVOS ELEMENTOS DE LA UI
+        const userInfoDiv = document.getElementById('user-info');
+        const userEmailSpan = document.getElementById('user-email');
+        const logoutBtn = document.getElementById('logout-btn');
+
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                // Si hay un usuario, mostramos su info y activamos el botón de logout
+                userEmailSpan.textContent = user.email;
+                userInfoDiv.classList.remove('hidden');
+                startApp(user);
+            } else {
+                // Si no, lo redirigimos a la página de inicio
+                window.location.href = 'index.html';
+            }
+        });
+
+        // Event listener para el botón de cerrar sesión
+        logoutBtn.addEventListener('click', () => {
+            signOut(auth).catch((error) => {
+                console.error("Error al cerrar sesión:", error);
+                alert("Hubo un error al cerrar la sesión.");
+            });
+        });
+
+        function startApp(user) {
+            const eventsCol = collection(db, 'events');
+            const createEventForm = document.getElementById('create-event-form');
+            const eventsListDiv = document.getElementById('events-list');
+            const loader = document.getElementById('events-loader');
+            
+            function renderEvents(events) {
+                eventsListDiv.innerHTML = '';
+                loader.style.display = 'none';
+                
+                if (events.length === 0) {
+                    eventsListDiv.innerHTML = '<p class="text-center text-gray-400">No hay eventos creados todavía.</p>';
+                    return;
+                }
+
+                events.forEach(eventDoc => {
+                    const event = { id: eventDoc.id, ...eventDoc.data() };
+                    const eventCard = document.createElement('div');
+                    eventCard.className = 'event-card p-4 rounded-lg shadow-md';
+                    eventCard.innerHTML = `
+                        <div class="flex justify-between items-center">
+                            <a href="panel_evento.html?eventId=${event.id}&eventName=${encodeURIComponent(event.name)}" class="flex-grow">
+                                <h3 class="text-xl font-bold text-sky-400">${event.name}</h3>
+                                <p class="text-gray-400">Fecha: ${event.date}</p>
+                            </a>
+                            <div class="flex space-x-2">
+                                <button data-id="${event.id}" data-name="${event.name}" class="edit-event-btn action-btn p-2 bg-gray-600 hover:bg-yellow-600 rounded-md" title="Editar nombre">✏️</button>
+                                <button data-id="${event.id}" class="delete-event-btn action-btn p-2 bg-gray-600 hover:bg-red-600 rounded-md" title="Eliminar evento">🗑️</button>
+                            </div>
+                        </div>
+                    `;
+                    eventsListDiv.appendChild(eventCard);
+                });
+            }
+
+            createEventForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const eventName = document.getElementById('event-name').value;
+                const eventDate = document.getElementById('event-date').value;
+
+                if (eventName && eventDate) {
+                    await addDoc(eventsCol, { name: eventName, date: eventDate, createdAt: serverTimestamp(), ownerId: user.uid });
+                    createEventForm.reset();
+                }
+            });
+
+            eventsListDiv.addEventListener('click', async (e) => {
+                const target = e.target.closest('button');
+                if (!target) return;
+
+                const eventId = target.dataset.id;
+                const eventRef = doc(db, 'events', eventId);
+
+                if (target.classList.contains('edit-event-btn')) {
+                    const currentName = target.dataset.name;
+                    const newName = prompt("Ingresa el nuevo nombre para el evento:", currentName);
+                    if (newName && newName.trim() !== "") {
+                        await updateDoc(eventRef, { name: newName.trim() });
+                    }
+                }
+
+                if (target.classList.contains('delete-event-btn')) {
+                    if (confirm("¿Estás seguro de que quieres eliminar este evento? Se borrarán TODOS sus datos asociados. Esta acción no se puede deshacer.")) {
+                        await deleteDoc(eventRef);
+                    }
+                }
+            });
+
+            const q = query(eventsCol, orderBy('createdAt', 'desc'));
+            onSnapshot(q, (snapshot) => {
+                renderEvents(snapshot.docs);
+            });
+        }
+    </script>
+</body>
+</html>

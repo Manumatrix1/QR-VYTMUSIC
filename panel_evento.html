@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Panel de Evento - VYTMUSIC</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #111827; color: #f9fafb; }
+        .nav-card { background-color: #1f2937; transition: all 0.2s ease-in-out; border: 1px solid #374151; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; font-weight: 600; padding: 1.5rem; border-radius: 0.5rem; text-decoration: none; color: #f9fafb; }
+        .nav-card:hover { transform: translateY(-4px); background-color: #374151; border-color: #38bdf8; }
+        .artist-preview-card { display: flex; align-items: center; background-color: #1f2937; padding: 0.75rem; border-radius: 0.5rem; gap: 1rem; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
+        .artist-image-container-small { width: 50px; height: 50px; border-radius: 50%; overflow: hidden; border: 2px solid #38bdf8; flex-shrink: 0; display: flex; justify-content: center; align-items: center; }
+        .artist-image { width: 100%; height: 100%; object-fit: cover; }
+    </style>
+</head>
+<body class="flex flex-col items-center min-h-screen p-4">
+
+    <header class="text-center mb-6">
+        <a href="eventos.html" class="text-sky-400 hover:underline mb-4 inline-block">&larr; Volver al Gestor de Eventos</a>
+        <h1 class="text-4xl font-bold text-sky-400">Panel de Control</h1>
+        <p id="event-name-display" class="text-2xl text-gray-300 mt-2"></p>
+    </header>
+
+    <div class="bg-gray-800 p-4 rounded-lg shadow-md mb-6 w-full max-w-5xl flex flex-row justify-around items-center text-center space-x-4">
+        <div>
+            <p class="text-sm text-gray-400">Entradas Generadas</p>
+            <p id="total-generated-tickets" class="text-2xl font-bold text-sky-400">0</p>
+        </div>
+        <div>
+            <p class="text-sm text-gray-400">Entradas Usadas</p>
+            <p id="total-used-tickets" class="text-2xl font-bold text-green-400">0</p>
+        </div>
+    </div>
+
+    <div id="navigation-container" class="grid grid-cols-2 md:grid-cols-3 gap-6 max-w-5xl w-full">
+        </div>
+
+    <div id="live-voting-preview-container" class="mt-8 w-full max-w-5xl bg-gray-800 p-6 rounded-lg shadow-xl">
+        <h3 class="text-2xl font-bold mb-4 text-center text-sky-400">Votaciones en Vivo (Top 3)</h3>
+        <div id="live-voting-preview-list" class="space-y-3 mb-6">
+            <p class="text-center text-gray-400">Cargando ranking...</p>
+        </div>
+        <a id="go-to-voting-panel-btn" class="block w-full text-center px-4 py-3 bg-sky-600 text-white font-bold rounded-lg hover:bg-sky-700 transition-colors">
+            Ver Todas las Votaciones
+        </a>
+    </div>
+
+    <script type="module">
+        import { db } from './firebase_config.js';
+        import { collection, onSnapshot, query, orderBy } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        const urlParams = new URLSearchParams(window.location.search);
+        const eventId = urlParams.get('eventId');
+        const eventName = urlParams.get('eventName');
+
+        if (!eventId || !eventName) {
+            document.body.innerHTML = '<p class="text-center text-red-500">Error: No se ha especificado un evento. Vuelve al Gestor de Eventos.</p>';
+        } else {
+            document.getElementById('event-name-display').textContent = eventName;
+            const navContainer = document.getElementById('navigation-container');
+            
+            // LISTA DE ENLACES CON EL NUEVO BOTÓN
+            const links = [
+                { href: `generador_y_gestion.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`, text: 'Generador de Entradas' },
+                { href: `escaner_y_lista.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`, text: 'Escáner y Lista' },
+                { href: `lista_artistas_qr.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`, text: 'QR Generados' }, // <-- NUEVO BOTÓN
+                { href: `gestion_votacion.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`, text: 'Gestión de Votaciones' },
+                { href: `reportes.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`, text: 'Reportes y Contabilidad' },
+                { href: `gestion_asistentes.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`, text: 'Gestión de Asistentes' }
+            ];
+            
+            navContainer.innerHTML = '';
+            links.forEach(link => {
+                const a = document.createElement('a');
+                a.href = link.href;
+                a.className = 'nav-card';
+                a.innerHTML = `<span>${link.text}</span>`;
+                navContainer.appendChild(a);
+            });
+            
+            document.getElementById('go-to-voting-panel-btn').href = `gestion_votacion.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`;
+
+            const ticketsQuery = query(collection(db, `events/${eventId}/tickets`));
+            onSnapshot(ticketsQuery, (snapshot) => {
+                const tickets = snapshot.docs.map(doc => doc.data());
+                document.getElementById('total-generated-tickets').textContent = tickets.length;
+                document.getElementById('total-used-tickets').textContent = tickets.filter(t => t.used).length;
+            });
+
+            const artistsQuery = query(collection(db, `events/${eventId}/artists`), orderBy('totalScore', 'desc'));
+            onSnapshot(artistsQuery, (snapshot) => {
+                const artists = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                renderLiveVotingPreview(artists);
+            });
+
+            function renderLiveVotingPreview(artists) {
+                const previewList = document.getElementById('live-voting-preview-list');
+                previewList.innerHTML = '';
+                if (!artists || artists.length === 0) {
+                    previewList.innerHTML = '<p class="text-center text-gray-400">Aún no hay artistas para la votación.</p>';
+                    return;
+                }
+                artists.slice(0, 3).forEach((artist, index) => {
+                    const card = document.createElement('div');
+                    card.className = 'artist-preview-card';
+                    card.innerHTML = `
+                        <div class="w-10 text-center text-xl font-bold text-gray-400">${index + 1}.</div>
+                        <div class="artist-image-container-small">
+                            <img src="${artist.photoURL || 'https://placehold.co/60x60/1f2937/f9fafb?text=ART'}" alt="${artist.name}" class="artist-image">
+                        </div>
+                        <div class="flex-grow"><p class="font-semibold text-lg text-sky-300">${artist.name}</p></div>
+                        <div class="text-right flex-shrink-0">
+                            <span class="text-xl font-bold text-green-400">${artist.totalScore || 0}</span>
+                            <span class="text-sm text-gray-400">puntos</span>
+                        </div>`;
+                    previewList.appendChild(card);
+                });
+            }
+        }
+    </script>
+</body>
+</html>

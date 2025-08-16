@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestión de Asistentes - VYTMUSIC</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #111827; color: #f9fafb; }
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body class="antialiased">
+    <div class="container mx-auto max-w-4xl p-4 sm:p-6">
+        <header class="text-center mb-6">
+            <a id="back-to-panel-link" href="#" class="text-sky-400 hover:underline mb-4 inline-block">&larr; Volver al Panel del Evento</a>
+            <h1 class="text-3xl sm:text-4xl font-bold text-sky-400">Gestión de Asistentes</h1>
+            <p id="event-name-display" class="text-xl text-gray-300 mt-2"></p>
+        </header>
+
+        <main class="space-y-8">
+            <section class="bg-gray-800 p-6 rounded-lg shadow-xl">
+                <h2 class="text-2xl font-bold mb-4">Generar Código para Asistente</h2>
+                <p class="text-gray-400 mb-6">Genera códigos para que tus asistentes puedan acceder a las funciones de escaneo y lista de entradas de este evento.</p>
+                <button id="generate-code-btn" class="w-full max-w-xs mx-auto block px-4 py-3 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700 mb-6">Generar Nuevo Código de Evento</button>
+                <div>
+                    <h3 class="text-xl font-semibold mb-4 text-center">Códigos Activos para este Evento</h3>
+                    <ul id="event-codes-list" class="space-y-3">
+                        </ul>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script type="module">
+        import { db, auth } from './firebase_config.js';
+        import { collection, onSnapshot, query, addDoc, serverTimestamp, deleteDoc, doc, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const eventId = urlParams.get('eventId');
+        const eventName = urlParams.get('eventName');
+
+        if (!eventId || !eventName) {
+            alert('Error: No se ha especificado un evento.');
+            window.location.href = 'eventos.html';
+        }
+
+        document.getElementById('back-to-panel-link').href = `panel_evento.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`;
+        document.getElementById('event-name-display').textContent = eventName;
+        
+        const codesCol = collection(db, `events/${eventId}/assistant_codes`);
+
+        // Renderizar la lista de códigos
+        function renderCodes(codes) {
+            const list = document.getElementById('event-codes-list');
+            list.innerHTML = '';
+            if (codes.length === 0) {
+                list.innerHTML = '<li class="text-center text-gray-500">No hay códigos activos para este evento.</li>';
+                return;
+            }
+            codes.forEach(codeDoc => {
+                const code = { id: codeDoc.id, ...codeDoc.data() };
+                const li = document.createElement('li');
+                li.className = 'bg-gray-900 p-4 rounded-md flex justify-between items-center gap-4';
+                li.innerHTML = `
+                    <div>
+                        <p class="font-bold text-2xl text-sky-300">${code.code}</p>
+                        <p class="text-xs text-gray-500">Generado: ${new Date(code.createdAt?.toDate()).toLocaleString()}</p>
+                    </div>
+                    <button data-id="${code.id}" class="deactivate-code-btn px-3 py-1 text-sm bg-red-600 text-white font-bold rounded-lg hover:bg-red-700">Desactivar</button>
+                `;
+                list.appendChild(li);
+            });
+        }
+
+        // Generar un nuevo código
+        document.getElementById('generate-code-btn').addEventListener('click', async () => {
+            const newCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+            await addDoc(codesCol, {
+                code: newCode,
+                createdAt: serverTimestamp(),
+                active: true,
+                eventId: eventId // Guardamos el ID del evento para referencia
+            });
+            alert(`Código generado: ${newCode}`);
+        });
+
+        // Desactivar un código
+        document.getElementById('event-codes-list').addEventListener('click', async (e) => {
+            if (e.target.classList.contains('deactivate-code-btn')) {
+                if (confirm("¿Seguro que quieres desactivar este código?")) {
+                    await deleteDoc(doc(db, `events/${eventId}/assistant_codes`, e.target.dataset.id));
+                }
+            }
+        });
+
+        // Escuchar cambios en los códigos
+        const q = query(codesCol, where("active", "==", true));
+        onSnapshot(q, (snapshot) => {
+            renderCodes(snapshot.docs);
+        });
+
+    </script>
+</body>
+</html>
