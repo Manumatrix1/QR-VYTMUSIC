@@ -18,6 +18,12 @@
         .vote-button { background-color: #8b5cf6; color: #f9fafb; font-weight: bold; padding: 0.75rem 1.5rem; border-radius: 0.5rem; width: 100%; }
         .validation-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 60vh; padding: 1rem; text-align: center; }
         .validation-card { background-color: #1f2937; padding: 2rem; border-radius: 0.75rem; max-width: 450px; width: 100%; }
+        .rating-container { width: 100%; margin-bottom: 1rem; }
+        .rating-container label { display: block; font-size: 0.9rem; color: #a0aec0; margin-bottom: 0.5rem; text-align: center; }
+        .stars-wrapper { display: flex; justify-content: center; gap: 5px; }
+        .star-icon { width: 24px; height: 24px; color: #4a5568; cursor: pointer; }
+        .star-icon.filled { color: #fbbf24; }
+        .rating-value { font-weight: bold; color: #38bdf8; margin-left: 0.5rem; }
     </style>
 </head>
 <body>
@@ -27,6 +33,7 @@
             <img src="https://i.imgur.com/rqkZi9P.png" alt="VYTMUSIC Logo" class="mx-auto mb-4 bg-white rounded-full" style="max-width: 120px;">
             <h1 class="text-4xl sm:text-5xl font-bold text-sky-400 mb-2">Votación en Vivo</h1>
             <p id="event-name-display" class="text-lg text-gray-300">¡Vota por tu artista favorito!</p>
+            <p id="voted-status-message" class="mt-4 text-xl font-semibold text-yellow-400 hidden">¡Gracias por tu voto! Puedes modificarlo si lo deseas.</p>
         </header>
         <div id="validation-screen" class="validation-screen hidden">
              <div class="validation-card">
@@ -42,28 +49,27 @@
     </div>
     <script type="module">
         import { db } from './firebase_config.js';
-        import { collection, onSnapshot, doc, getDoc, getDocs, query, where, orderBy, limit } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { collection, onSnapshot, doc, getDoc, getDocs, query, where, orderBy, limit, writeBatch, increment } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         let eventId;
         let eventName;
+        let currentValidatedTicket = null;
+        let votedArtistsByUser = new Map();
         const ui = {};
         
         function cacheUIElements() {
-            const ids = ['loading-overlay', 'artists-list-container', 'validation-screen', 'ticket-name-input', 'validate-ticket-btn', 'voting-content', 'event-name-display'];
+            const ids = ['loading-overlay', 'artists-list-container', 'validation-screen', 'ticket-name-input', 'validate-ticket-btn', 'voting-content', 'event-name-display', 'voted-status-message'];
             ids.forEach(id => { ui[id.replace(/-(\w)/g, (_, c) => c.toUpperCase())] = document.getElementById(id); });
         }
 
-        function setLoading(show) {
-            ui.loadingOverlay.classList.toggle('hidden', !show);
-        }
+        function setLoading(show) { ui.loadingOverlay.classList.toggle('hidden', !show); }
 
         async function findActiveEvent() {
             const eventsRef = collection(db, 'events');
             const q = query(eventsRef, where("activeForVoting", "==", true), limit(1));
             const snapshot = await getDocs(q);
             if (snapshot.empty) return null;
-            const activeEventDoc = snapshot.docs[0];
-            return { id: activeEventDoc.id, ...activeEventDoc.data() };
+            return { id: snapshot.docs[0].id, ...snapshot.docs[0].data() };
         }
 
         async function initializeEvent() {
@@ -94,10 +100,6 @@
         async function validateTicket(input) {
             const normalizedInput = input.toLowerCase().trim();
             const ticketsPath = collection(db, `events/${eventId}/tickets`);
-            
-            // Primero, intenta buscar por nombre (insensible a mayúsculas/minúsculas)
-            // Nota: Esta consulta requiere un índice en Firestore si no es un campo predefinido. 
-            // Para una búsqueda simple, iterar es más flexible.
             const querySnapshot = await getDocs(ticketsPath);
             let foundTicket = null;
 
@@ -116,7 +118,15 @@
             }
             return { success: false, message: "Nombre o ID de entrada no encontrado en este evento." };
         }
-        
+
+        function updateStarVisuals(starContainer, value) {
+            const stars = starContainer.querySelectorAll('.star-icon');
+            stars.forEach((star, index) => {
+                star.classList.toggle('filled', index < value);
+            });
+            starContainer.closest('.rating-container').querySelector('.rating-value').textContent = value;
+        }
+
         function renderArtists(artists) {
             ui.artistsListContainer.innerHTML = '';
             if (!artists || artists.length === 0) {
@@ -124,13 +134,107 @@
                  return;
             }
             artists.forEach(artist => {
+                const previousVote = votedArtistsByUser.get(artist.id);
+                const hasVoted = !!previousVote;
+                const buttonText = hasVoted ? 'Modificar Voto' : 'Registrar Voto';
+                const initialScores = {
+                    singing: previousVote ? previousVote.singingScore : 5,
+                    transmission: previousVote ? previousVote.transmissionScore : 5,
+                    attitude: previousVote ? previousVote.attitudeScore : 5,
+                    originality: previousVote ? previousVote.originalityScore : 5
+                };
+
                 const artistCard = document.createElement('div');
                 artistCard.className = 'artist-card';
                 artistCard.innerHTML = `
                     <div class="artist-image-container"><img src="${artist.photoURL || 'https://placehold.co/120x120/1f2937/f9fafb?text=ART'}" alt="${artist.name}" class="artist-image"></div>
                     <h3 class="text-xl font-semibold text-sky-300">${artist.name}</h3>
-                    <button data-artist-id="${artist.id}" class="vote-button mt-4">Votar por ${artist.name.split(' ')[0]}</button>`;
+                    <div class="w-full text-left mt-2 space-y-4">
+                        ${['singing:Canto', 'transmission:Transmisión', 'attitude:Actitud', 'originality:Originalidad'].map(([key, label]) => `
+                        <div class="rating-container" data-rating-type="${key}" data-current-value="${initialScores[key]}">
+                            <label>${label} <span class="rating-value">${initialScores[key]}</span></label>
+                            <div class="stars-wrapper">
+                                ${Array.from({length: 10}, (_, i) => `<svg class="star-icon" data-value="${i + 1}" viewBox="0 0 24 24" fill="currentColor"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>`).join('')}
+                            </div>
+                        </div>
+                        `).join('')}
+                    </div>
+                    <button data-artist-id="${artist.id}" class="vote-button mt-4">${buttonText}</button>`;
                 ui.artistsListContainer.appendChild(artistCard);
+
+                artistCard.querySelectorAll('.rating-container').forEach(container => {
+                    const starsWrapper = container.querySelector('.stars-wrapper');
+                    updateStarVisuals(starsWrapper, parseInt(container.dataset.currentValue));
+                    starsWrapper.addEventListener('click', (e) => {
+                        if (e.target.classList.contains('star-icon')) {
+                            const value = parseInt(e.target.dataset.value);
+                            container.dataset.currentValue = value;
+                            updateStarVisuals(starsWrapper, value);
+                        }
+                    });
+                });
+            });
+        }
+        
+        async function handleVote(artistId, artistCard) {
+            if (!currentValidatedTicket) return alert("Error: No hay una entrada validada.");
+            setLoading(true);
+
+            const scores = {
+                singingScore: parseInt(artistCard.querySelector('[data-rating-type="singing"]').dataset.currentValue),
+                transmissionScore: parseInt(artistCard.querySelector('[data-rating-type="transmission"]').dataset.currentValue),
+                attitudeScore: parseInt(artistCard.querySelector('[data-rating-type="attitude"]').dataset.currentValue),
+                originalityScore: parseInt(artistCard.querySelector('[data-rating-type="originality"]').dataset.currentValue)
+            };
+            const totalScore = scores.singingScore + scores.transmissionScore + scores.attitudeScore + scores.originalityScore;
+            
+            const ticketVoteRef = doc(db, `events/${eventId}/ticket_votes/${currentValidatedTicket.id}/votes`, artistId);
+            const artistRef = doc(db, `events/${eventId}/artists`, artistId);
+            
+            const batch = writeBatch(db);
+            const oldVote = votedArtistsByUser.get(artistId);
+            const isNewVote = !oldVote;
+
+            let scoreDiffs = { singing: 0, transmission: 0, attitude: 0, originality: 0, total: 0 };
+            if (isNewVote) {
+                scoreDiffs = { singing: scores.singingScore, transmission: scores.transmissionScore, attitude: scores.attitudeScore, originality: scores.originalityScore, total: totalScore };
+            } else {
+                scoreDiffs = {
+                    singing: scores.singingScore - oldVote.singingScore,
+                    transmission: scores.transmissionScore - oldVote.transmissionScore,
+                    attitude: scores.attitudeScore - oldVote.attitudeScore,
+                    originality: scores.originalityScore - oldVote.originalityScore,
+                    total: totalScore - (oldVote.singingScore + oldVote.transmissionScore + oldVote.attitudeScore + oldVote.originalityScore)
+                };
+            }
+            
+            batch.update(artistRef, {
+                totalSingingScore: increment(scoreDiffs.singing),
+                totalTransmissionScore: increment(scoreDiffs.transmission),
+                totalAttitudeScore: increment(scoreDiffs.attitude),
+                totalOriginalityScore: increment(scoreDiffs.originality),
+                totalScore: increment(scoreDiffs.total),
+                totalRatingsCount: increment(isNewVote ? 1 : 0)
+            });
+            
+            batch.set(ticketVoteRef, { artistId, ...scores, votedAt: new Date().toISOString() });
+            
+            await batch.commit();
+            votedArtistsByUser.set(artistId, scores);
+            alert("¡Voto registrado con éxito!");
+            ui.votedStatusMessage.classList.remove('hidden');
+            artistCard.querySelector('.vote-button').textContent = 'Modificar Voto';
+            setLoading(false);
+        }
+
+        async function loadPreviousVotes() {
+            if (!currentValidatedTicket) return;
+            votedArtistsByUser.clear();
+            const votesPath = collection(db, `events/${eventId}/ticket_votes/${currentValidatedTicket.id}/votes`);
+            const snapshot = await getDocs(votesPath);
+            snapshot.forEach(doc => {
+                const vote = doc.data();
+                votedArtistsByUser.set(vote.artistId, vote);
             });
         }
         
@@ -139,9 +243,6 @@
             onSnapshot(artistsQuery, (snapshot) => {
                 const artists = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                 renderArtists(artists);
-            }, (error) => {
-                console.error("Error al cargar artistas:", error);
-                ui.artistsListContainer.innerHTML = '<p class="col-span-full text-center text-red-500">Error al cargar la lista de artistas.</p>';
             });
         }
         
@@ -152,15 +253,25 @@
                 
                 setLoading(true);
                 const result = await validateTicket(nameInput);
-                setLoading(false); // Corregido: el error estaba aquí
-
+                
                 if (result.success) {
+                    currentValidatedTicket = result.ticket;
+                    await loadPreviousVotes();
                     alert(result.message);
                     ui.validationScreen.classList.add('hidden');
                     ui.votingContent.classList.remove('hidden');
                     attachArtistListener();
                 } else {
                     alert(result.message);
+                }
+                setLoading(false);
+            });
+
+            ui.artistsListContainer.addEventListener('click', (e) => {
+                if(e.target.classList.contains('vote-button')) {
+                    const artistId = e.target.dataset.artistId;
+                    const artistCard = e.target.closest('.artist-card');
+                    handleVote(artistId, artistCard);
                 }
             });
         }
