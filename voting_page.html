@@ -28,7 +28,7 @@
             <h1 class="text-4xl sm:text-5xl font-bold text-sky-400 mb-2">Votación en Vivo</h1>
             <p id="event-name-display" class="text-lg text-gray-300">¡Vota por tu artista favorito!</p>
         </header>
-        <div id="validation-screen" class="validation-screen">
+        <div id="validation-screen" class="validation-screen hidden">
              <div class="validation-card">
                 <h2 class="text-2xl font-bold text-sky-400 mb-4">Verifica tu Entrada para Votar</h2>
                 <p class="text-gray-300 mb-6">Por favor, ingresa tu nombre completo o el ID de tu entrada.</p>
@@ -47,7 +47,6 @@
         let eventId;
         let eventName;
         const ui = {};
-        let state = {};
 
         function cacheUIElements() {
             const ids = ['loading-overlay', 'artists-list-container', 'validation-screen', 'ticket-name-input', 'validate-ticket-btn', 'voting-content', 'event-name-display'];
@@ -69,16 +68,21 @@
 
         async function initializeEvent() {
             const urlParams = new URLSearchParams(window.location.search);
-            let eventIdFromUrl = urlParams.get('eventId');
+            const eventIdFromUrl = urlParams.get('eventId');
+            const eventNameFromUrl = urlParams.get('eventName');
 
             if (eventIdFromUrl) {
-                const eventRef = doc(db, 'events', eventIdFromUrl);
-                const eventSnap = await getDoc(eventRef);
-                if (eventSnap.exists()) {
-                    eventId = eventIdFromUrl;
-                    eventName = eventSnap.data().name;
-                    return true;
+                eventId = eventIdFromUrl;
+                eventName = eventNameFromUrl;
+                // Si el nombre no viene en la URL, lo buscamos en la DB
+                if (!eventName) {
+                    const eventRef = doc(db, 'events', eventId);
+                    const eventSnap = await getDoc(eventRef);
+                    if (eventSnap.exists()) {
+                        eventName = eventSnap.data().name;
+                    }
                 }
+                return true;
             }
             
             const activeEvent = await findActiveEvent();
@@ -93,7 +97,6 @@
 
         async function validateTicket(input) {
             const normalizedInput = input.toLowerCase().trim();
-            // La búsqueda se hace solo dentro de las entradas del evento activo
             const ticketsPath = collection(db, `events/${eventId}/tickets`);
             const querySnapshot = await getDocs(ticketsPath);
             let foundTicket = null;
@@ -114,9 +117,6 @@
             return { success: false, message: "Nombre o ID de entrada no encontrado en este evento." };
         }
         
-        // Aquí irían las demás funciones (renderArtists, handleVote, etc.) que ya tienes en tu archivo.
-        // Por simplicidad, me enfoco en la inicialización y validación que es donde estaba el problema.
-
         function setupEventListeners() {
             ui.validateTicketBtn.addEventListener('click', async () => {
                 const nameInput = ui.ticketNameInput.value.trim();
@@ -130,8 +130,8 @@
                     alert(result.message);
                     ui.validationScreen.classList.add('hidden');
                     ui.votingContent.classList.remove('hidden');
-                    // Aquí llamarías a la función que carga y renderiza los artistas
-                    // attachArtistListener(); 
+                    // Aquí iría la llamada para renderizar los artistas
+                    // renderArtists(....);
                 } else {
                     alert(result.message);
                 }
@@ -151,6 +151,11 @@
             
             ui.eventNameDisplay.textContent = `Gala: ${eventName}`;
             setupEventListeners();
+            
+            // ===== LÍNEA CORREGIDA =====
+            // Esta es la línea que faltaba para hacer visible el formulario
+            ui.validationScreen.classList.remove('hidden');
+            
             setLoading(false);
         }
 
