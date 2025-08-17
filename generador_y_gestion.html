@@ -111,6 +111,7 @@
                     </div>
                     <div class="mt-8 space-y-4">
                         <button id="share-batch-qrs-btn" class="w-full px-4 py-3 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700">Compartir Enlace del Grupo</button>
+                        <button id="delete-batch-btn" class="w-full px-4 py-3 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700">Borrar Todas las Entradas</button>
                         <button id="generate-new-batch-btn" class="w-full px-4 py-3 bg-gray-600 text-white font-bold rounded-lg hover:bg-gray-700">Generar Otro Lote de Entradas</button>
                     </div>
                 </div>
@@ -120,7 +121,7 @@
 
     <script type="module">
         import { db, storage } from './firebase_config.js';
-        import { collection, writeBatch, doc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { collection, writeBatch, doc, query, where, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
 
         const urlParams = new URLSearchParams(window.location.search);
@@ -139,7 +140,6 @@
         let generatedPrefix = '';
         let generatedTicketsData = [];
 
-        // OBJETO 'ui' RESTAURADO Y COMPLETO
         const ui = {
             loadingOverlay: document.getElementById('loading-overlay'),
             loadingText: document.getElementById('loading-text'),
@@ -163,6 +163,7 @@
             generatedTicketsContainer: document.getElementById('generated-tickets-container'),
             generatedTicketsGrid: document.getElementById('generated-tickets-grid'),
             generateNewBatchBtn: document.getElementById('generate-new-batch-btn'),
+            deleteBatchBtn: document.getElementById('delete-batch-btn')
         };
         
         function setLoading(show, text = 'Procesando...') { 
@@ -379,6 +380,53 @@
             const shareableLink = `${baseUrl}/visor_qr_compartido.html?eventId=${eventId}&artist=${encodeURIComponent(generatedPrefix)}`; 
             ui.shareLinkDisplay.value = shareableLink;
             ui.shareLinkModal.classList.remove('hidden');
+        });
+        
+        ui.deleteBatchBtn.addEventListener('click', async () => {
+            if (!generatedPrefix) {
+                alert('No hay entradas generadas recientemente para borrar.');
+                return;
+            }
+            
+            if (!confirm(`¿Estás seguro de que quieres borrar TODAS las entradas del artista "${generatedPrefix}"? Esta acción no se puede deshacer.`)) {
+                return;
+            }
+
+            setLoading(true, 'Borrando entradas...');
+            try {
+                const ticketsToDeleteQuery = query(collection(db, `events/${eventId}/tickets`), where("prefix", "==", generatedPrefix));
+                const ticketsSnapshot = await getDocs(ticketsToDeleteQuery);
+
+                if (ticketsSnapshot.empty) {
+                    alert('No se encontraron entradas para este artista.');
+                    setLoading(false);
+                    return;
+                }
+
+                const batch = writeBatch(db);
+                ticketsSnapshot.forEach((doc) => {
+                    batch.delete(doc.ref);
+                });
+                await batch.commit();
+                
+                alert(`Se han borrado ${ticketsSnapshot.size} entradas del artista "${generatedPrefix}".`);
+                
+                // Restablecer la interfaz de usuario después de borrar
+                ui.generatedTicketsContainer.classList.add('hidden');
+                ui.formContainer.classList.remove('hidden');
+                ui.nameListTextarea.value = '';
+                ui.artistPhotoInput.value = '';
+                ui.photoPreview.classList.add('hidden');
+                people = [];
+                generatedPrefix = '';
+                renderPreview();
+                
+            } catch (error) {
+                console.error("Error al borrar entradas:", error);
+                alert('Hubo un error al borrar las entradas. Revisa la consola para más detalles.');
+            } finally {
+                setLoading(false);
+            }
         });
 
         ui.generateNewBatchBtn.addEventListener('click', () => {
