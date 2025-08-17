@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale-1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Votación VYTMUSIC</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
@@ -26,7 +26,7 @@
         .rating-container:last-of-type { margin-bottom: 0; }
         .rating-container label { display: block; font-size: 0.9rem; color: #a0aec0; margin-bottom: 0.5rem; text-align: center; }
         .stars-and-guidance-group { display: flex; flex-direction: column; align-items: center; }
-        .stars-wrapper { display: flex; justify-content: center; gap: 8px; width: 100%; max-width: 420px; flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 5px; }
+        .stars-wrapper { display: flex; justify-content: center; gap: 8px; width: 100%; max-width: 420px; flex-wrap: wrap; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 5px; }
         .star-number-pair { display: flex; flex-direction: column; align-items: center; cursor: pointer; position: relative; }
         .stars-wrapper .star-icon { width: 24px; height: 24px; color: #4a5568; transition: color 0.2s; flex-shrink: 0; }
         .stars-wrapper .star-icon.filled { color: #fbbf24; }
@@ -48,6 +48,7 @@
         <header class="text-center mb-8">
             <img src="https://i.imgur.com/rqkZi9P.png" alt="VYTMUSIC Logo" class="mx-auto mb-4 bg-white rounded-full" style="max-width: 120px;">
             <h1 class="text-4xl sm:text-5xl font-bold text-sky-400 mb-2">Votación en Vivo</h1>
+            <h3 id="event-name-display" class="text-xl font-semibold text-gray-300 mt-1 mb-2"></h3>
             <p class="text-lg text-gray-300">¡Vota por tu artista favorito de VYTMUSIC!</p>
             <p id="voted-status-message" class="mt-4 text-xl font-semibold text-yellow-400 hidden">¡Gracias por tu voto!</p>
         </header>
@@ -72,23 +73,18 @@
     <script type="module">
         import { db, auth } from './firebase_config.js';
         import { signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { collection, onSnapshot, doc, updateDoc, increment, getDoc, setDoc, getDocs, query, orderBy } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { collection, onSnapshot, doc, updateDoc, increment, getDoc, setDoc, getDocs, query, orderBy, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         
-        const urlParams = new URLSearchParams(window.location.search);
-        const eventId = urlParams.get('eventId');
-        if (!eventId) {
-            document.body.innerHTML = '<p class="text-center text-red-500">Error: No se ha especificado un evento.</p>';
-        }
-
         const state = {
             userId: null,
             currentValidatedTicket: null,
             votedArtistsByUser: new Map()
         };
         const ui = {};
+        let activeEventId = null;
 
         function cacheUIElements() {
-             const ids = ['loading-overlay', 'message-container', 'artists-list-container', 'voted-status-message', 'validation-screen', 'ticket-name-input', 'validate-ticket-btn', 'voting-content'];
+             const ids = ['loading-overlay', 'message-container', 'artists-list-container', 'voted-status-message', 'validation-screen', 'ticket-name-input', 'validate-ticket-btn', 'voting-content', 'event-name-display'];
             ids.forEach(id => { ui[id.replace(/-(\w)/g, (_, c) => c.toUpperCase())] = document.getElementById(id); });
         }
         function displayMessage(message, type = 'success', duration = 5000) {
@@ -110,7 +106,7 @@
                 state.currentValidatedTicket = { id: 'ADMIN_ACCESS', name: 'Administrador' };
                 return { success: true, message: "Acceso de administrador concedido." };
             }
-            const ticketsPath = collection(db, `events/${eventId}/tickets`);
+            const ticketsPath = collection(db, `events/${activeEventId}/tickets`);
             const querySnapshot = await getDocs(ticketsPath);
             let foundTicket = null;
             for (const doc of querySnapshot.docs) {
@@ -173,7 +169,7 @@
                             <div class="stars-and-guidance-group"><div class="stars-wrapper"></div></div>
                         </div>
                         <div class="rating-container" data-rating-type="transmission" data-current-value="${initialScores.transmission}">
-                            <label>Transmisión <span class="rating-value">${initialScores.transmission}</span></label>
+                            <label>Conexión con el Público <span class="rating-value">${initialScores.transmission}</span></label>
                             <div class="stars-and-guidance-group"><div class="stars-wrapper"></div></div>
                         </div>
                         <div class="rating-container" data-rating-type="attitude" data-current-value="${initialScores.attitude}">
@@ -185,6 +181,7 @@
                             <div class="stars-and-guidance-group"><div class="stars-wrapper"></div></div>
                         </div>
                     </div>
+                    <p class="guidance-text text-gray-400 mt-2">1-4: Regular, 5-7: Bien, 8-10: Excelente</p>
                     <button data-artist-id="${artist.id}" class="send-vote-button vote-button mt-4 ${buttonClasses}">${buttonText}</button>
                 `;
                 
@@ -207,7 +204,6 @@
             });
         }
         
-        // ===== FUNCIÓN handleVote COMPLETA Y FUNCIONAL =====
         async function handleVote(event) {
             const artistId = event.target.dataset.artistId;
             if (!artistId || !state.currentValidatedTicket) {
@@ -229,7 +225,7 @@
                     originality: parseInt(artistCard.querySelector('[data-rating-type="originality"]').dataset.currentValue)
                 };
 
-                const voteRef = doc(db, `events/${eventId}/ticket_votes/${state.currentValidatedTicket.id}/votes`, artistId);
+                const voteRef = doc(db, `events/${activeEventId}/ticket_votes/${state.currentValidatedTicket.id}/votes`, artistId);
                 const oldVoteDoc = await getDoc(voteRef);
                 
                 let oldScores = { singing: 0, transmission: 0, attitude: 0, originality: 0 };
@@ -253,7 +249,7 @@
                 };
                 const totalDiff = diffs.singing + diffs.transmission + diffs.attitude + diffs.originality;
 
-                await updateDoc(doc(db, `events/${eventId}/artists`, artistId), {
+                await updateDoc(doc(db, `events/${activeEventId}/artists`, artistId), {
                     totalSingingScore: increment(diffs.singing),
                     totalTransmissionScore: increment(diffs.transmission),
                     totalAttitudeScore: increment(diffs.attitude),
@@ -292,7 +288,7 @@
         async function checkIfUserVoted() {
             if (!state.currentValidatedTicket || state.currentValidatedTicket.id === 'ADMIN_ACCESS') return;
 
-            const ticketVotesPath = collection(db, `events/${eventId}/ticket_votes/${state.currentValidatedTicket.id}/votes`);
+            const ticketVotesPath = collection(db, `events/${activeEventId}/ticket_votes/${state.currentValidatedTicket.id}/votes`);
             const querySnapshot = await getDocs(ticketVotesPath);
             
             state.votedArtistsByUser.clear();
@@ -312,10 +308,10 @@
 
         function attachArtistListener() {
             setLoading(true);
-            const artistsQuery = query(collection(db, `events/${eventId}/artists`), orderBy('name'));
+            const artistsQuery = query(collection(db, `events/${activeEventId}/artists`), orderBy('name'));
             onSnapshot(artistsQuery, async (snapshot) => {
                 const artists = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                await checkIfUserVoted(); // Chequeamos votos previos antes de renderizar
+                await checkIfUserVoted(); 
                 renderArtists(artists);
                 setLoading(false);
             }, (error) => {
@@ -329,6 +325,24 @@
             cacheUIElements();
             setLoading(true);
             try {
+                let eventQuery = query(collection(db, 'events'), where("isActive", "==", true));
+                let eventSnapshot = await getDocs(eventQuery);
+                
+                if (eventSnapshot.empty) {
+                    eventQuery = query(collection(db, 'events'), where("activeForVoting", "==", true));
+                    eventSnapshot = await getDocs(eventQuery);
+                }
+
+                if (eventSnapshot.empty) {
+                    displayMessage('No hay un evento activo en este momento. Intenta de nuevo más tarde.', 'warning', 0);
+                    setLoading(false);
+                    return;
+                }
+                const activeEventDoc = eventSnapshot.docs[0];
+                activeEventId = activeEventDoc.id;
+                const activeEventName = activeEventDoc.data().name;
+                ui.eventNameDisplay.textContent = activeEventName;
+
                 const userCredential = await signInAnonymously(auth);
                 state.userId = userCredential.user.uid;
 

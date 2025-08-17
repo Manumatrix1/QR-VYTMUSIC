@@ -49,7 +49,7 @@
 
     <script type="module">
         import { db } from './firebase_config.js';
-        import { collection, query, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { collection, query, getDocs, writeBatch, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         const urlParams = new URLSearchParams(window.location.search);
         const eventId = urlParams.get('eventId');
@@ -108,20 +108,54 @@
                         <h3 class="text-xl font-bold text-sky-400">${prefix}</h3>
                         <p class="text-sm text-gray-400">${count} entrada(s)</p>
                     </a>
-                    <button data-prefix="${prefix}" class="share-artist-btn px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 text-sm">Compartir QR</button>`;
+                    <div class="flex space-x-2">
+                        <button data-prefix="${prefix}" class="share-artist-btn px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 text-sm">Compartir QR</button>
+                        <button data-prefix="${prefix}" class="delete-artist-tickets-btn px-4 py-2 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 text-sm">Borrar Entradas</button>
+                    </div>`;
                 ui.artistsListDiv.appendChild(card);
             });
         }
-
-        ui.artistsListDiv.addEventListener('click', (e) => {
-            if (e.target.classList.contains('share-artist-btn')) {
-                const prefix = e.target.dataset.prefix;
+        
+        ui.artistsListDiv.addEventListener('click', async (e) => {
+            const target = e.target;
+            if (target.classList.contains('share-artist-btn')) {
+                const prefix = target.dataset.prefix;
                 const path = window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/'));
                 const baseUrl = `${window.location.origin}${path}`;
                 const shareableLink = `${baseUrl}/visor_qr_compartido.html?eventId=${eventId}&artist=${encodeURIComponent(prefix)}`;
                 showShareModal(shareableLink, `Enlace de QR para "${prefix}"`);
             }
+            
+            if (target.classList.contains('delete-artist-tickets-btn')) {
+                const prefix = target.dataset.prefix;
+                if (confirm(`¿Estás seguro de que quieres borrar TODAS las entradas del artista "${prefix}"? Esta acción no se puede deshacer.`)) {
+                    // Lógica para borrar las entradas
+                    try {
+                        const ticketsToDeleteQuery = query(collection(db, `events/${eventId}/tickets`), where("prefix", "==", prefix));
+                        const ticketsSnapshot = await getDocs(ticketsToDeleteQuery);
+                        
+                        if (ticketsSnapshot.empty) {
+                            alert('No se encontraron entradas para este artista.');
+                            return;
+                        }
+                        
+                        const batch = writeBatch(db);
+                        ticketsSnapshot.forEach((doc) => {
+                            batch.delete(doc.ref);
+                        });
+                        await batch.commit();
+                        
+                        alert(`Se han borrado ${ticketsSnapshot.size} entradas del artista "${prefix}".`);
+                        loadArtistsWithTickets(); // Recargar la lista
+                        
+                    } catch (error) {
+                        console.error("Error al borrar entradas:", error);
+                        alert('Hubo un error al borrar las entradas. Revisa la consola para más detalles.');
+                    }
+                }
+            }
         });
+        
         ui.shareSummaryBtn.addEventListener('click', () => {
             const path = window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/'));
             const baseUrl = `${window.location.origin}${path}`;
