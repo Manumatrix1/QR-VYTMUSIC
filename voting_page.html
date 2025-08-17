@@ -26,11 +26,11 @@
         .rating-container:last-of-type { margin-bottom: 0; }
         .rating-container label { display: block; font-size: 0.9rem; color: #a0aec0; margin-bottom: 0.5rem; text-align: center; }
         .stars-and-guidance-group { display: flex; flex-direction: column; align-items: center; }
-        .stars-wrapper { display: flex; justify-content: center; gap: 8px; width: 100%; max-width: 420px; flex-wrap: wrap; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 5px; }
+        .stars-wrapper { display: flex; justify-content: center; gap: 4px; width: 100%; max-width: 420px; flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 5px; }
         .star-number-pair { display: flex; flex-direction: column; align-items: center; cursor: pointer; position: relative; }
-        .stars-wrapper .star-icon { width: 24px; height: 24px; color: #4a5568; transition: color 0.2s; flex-shrink: 0; }
+        .stars-wrapper .star-icon { width: 20px; height: 20px; color: #4a5568; transition: color 0.2s; flex-shrink: 0; }
         .stars-wrapper .star-icon.filled { color: #fbbf24; }
-        .star-number { font-size: 0.7rem; color: #9ca3af; line-height: 1.2; margin-top: 2px; pointer-events: none; transition: color 0.2s; }
+        .star-number { font-size: 0.65rem; color: #9ca3af; line-height: 1.2; margin-top: 2px; pointer-events: none; transition: color 0.2s; }
         .star-number.filled-number { color: #fbbf24; }
         .rating-value { font-weight: bold; color: #38bdf8; margin-left: 0.5rem; }
         .guidance-text { font-size: 0.75rem; color: #9ca3af; font-style: italic; margin-top: 0.75rem; line-height: normal; text-align: center; width: 100%; max-width: 420px; }
@@ -49,7 +49,7 @@
             <img src="https://i.imgur.com/rqkZi9P.png" alt="VYTMUSIC Logo" class="mx-auto mb-4 bg-white rounded-full" style="max-width: 120px;">
             <h1 class="text-4xl sm:text-5xl font-bold text-sky-400 mb-2">Votación en Vivo</h1>
             <h3 id="event-name-display" class="text-xl font-semibold text-gray-300 mt-1 mb-2"></h3>
-            <p class="text-lg text-gray-300">¡Vota por tu artista favorito de VYTMUSIC!</p>
+            <p class="text-lg text-gray-300">Sé parte del jurado y califica a los artistas.</p>
             <p id="voted-status-message" class="mt-4 text-xl font-semibold text-yellow-400 hidden">¡Gracias por tu voto!</p>
         </header>
 
@@ -82,6 +82,7 @@
         };
         const ui = {};
         let activeEventId = null;
+        let tiebreakerArtists = [];
 
         function cacheUIElements() {
              const ids = ['loading-overlay', 'message-container', 'artists-list-container', 'voted-status-message', 'validation-screen', 'ticket-name-input', 'validate-ticket-btn', 'voting-content', 'event-name-display'];
@@ -139,12 +140,18 @@
 
         function renderArtists(artists) {
             ui.artistsListContainer.innerHTML = '';
-            if (!artists || artists.length === 0) {
+            let artistsToRender = artists;
+
+            if (tiebreakerArtists.length > 0) {
+                artistsToRender = artists.filter(artist => tiebreakerArtists.includes(artist.id));
+            }
+            
+            if (!artistsToRender || artistsToRender.length === 0) {
                 ui.artistsListContainer.innerHTML = '<p class="text-center text-gray-400 col-span-full">Aún no hay artistas cargados para este evento.</p>';
                 return;
             }
             
-            artists.forEach(artist => {
+            artistsToRender.forEach(artist => {
                 const previousVote = state.votedArtistsByUser.get(artist.id);
                 const hasVoted = !!previousVote;
                 const buttonText = hasVoted ? 'MODIFICAR VOTO' : 'VOTAR';
@@ -154,7 +161,9 @@
                     singing: previousVote ? previousVote.singingScore : 5,
                     transmission: previousVote ? previousVote.transmissionScore : 5,
                     attitude: previousVote ? previousVote.attitudeScore : 5,
-                    originality: previousVote ? previousVote.originalityScore : 5
+                    originality: previousVote ? previousVote.originalityScore : 5,
+                    costume: previousVote ? previousVote.costumeScore : 5,
+                    staging: previousVote ? previousVote.stagingScore : 5
                 };
 
                 const artistCard = document.createElement('div');
@@ -178,6 +187,14 @@
                         </div>
                         <div class="rating-container" data-rating-type="originality" data-current-value="${initialScores.originality}">
                             <label>Originalidad <span class="rating-value">${initialScores.originality}</span></label>
+                            <div class="stars-and-guidance-group"><div class="stars-wrapper"></div></div>
+                        </div>
+                        <div class="rating-container" data-rating-type="costume" data-current-value="${initialScores.costume}">
+                            <label>Vestuario <span class="rating-value">${initialScores.costume}</span></label>
+                            <div class="stars-and-guidance-group"><div class="stars-wrapper"></div></div>
+                        </div>
+                        <div class="rating-container" data-rating-type="staging" data-current-value="${initialScores.staging}">
+                            <label>Puesta en Escena <span class="rating-value">${initialScores.staging}</span></label>
                             <div class="stars-and-guidance-group"><div class="stars-wrapper"></div></div>
                         </div>
                     </div>
@@ -222,13 +239,15 @@
                     singing: parseInt(artistCard.querySelector('[data-rating-type="singing"]').dataset.currentValue),
                     transmission: parseInt(artistCard.querySelector('[data-rating-type="transmission"]').dataset.currentValue),
                     attitude: parseInt(artistCard.querySelector('[data-rating-type="attitude"]').dataset.currentValue),
-                    originality: parseInt(artistCard.querySelector('[data-rating-type="originality"]').dataset.currentValue)
+                    originality: parseInt(artistCard.querySelector('[data-rating-type="originality"]').dataset.currentValue),
+                    costume: parseInt(artistCard.querySelector('[data-rating-type="costume"]').dataset.currentValue),
+                    staging: parseInt(artistCard.querySelector('[data-rating-type="staging"]').dataset.currentValue)
                 };
 
                 const voteRef = doc(db, `events/${activeEventId}/ticket_votes/${state.currentValidatedTicket.id}/votes`, artistId);
                 const oldVoteDoc = await getDoc(voteRef);
                 
-                let oldScores = { singing: 0, transmission: 0, attitude: 0, originality: 0 };
+                let oldScores = { singing: 0, transmission: 0, attitude: 0, originality: 0, costume: 0, staging: 0 };
                 let isNewVote = !oldVoteDoc.exists();
 
                 if (!isNewVote) {
@@ -237,7 +256,9 @@
                         singing: oldData.singingScore || 0,
                         transmission: oldData.transmissionScore || 0,
                         attitude: oldData.attitudeScore || 0,
-                        originality: oldData.originalityScore || 0
+                        originality: oldData.originalityScore || 0,
+                        costume: oldData.costumeScore || 0,
+                        staging: oldData.stagingScore || 0
                     };
                 }
 
@@ -245,15 +266,19 @@
                     singing: scores.singing - oldScores.singing,
                     transmission: scores.transmission - oldScores.transmission,
                     attitude: scores.attitude - oldScores.attitude,
-                    originality: scores.originality - oldScores.originality
+                    originality: scores.originality - oldScores.originality,
+                    costume: scores.costume - oldScores.costume,
+                    staging: scores.staging - oldScores.staging
                 };
-                const totalDiff = diffs.singing + diffs.transmission + diffs.attitude + diffs.originality;
+                const totalDiff = diffs.singing + diffs.transmission + diffs.attitude + diffs.originality + diffs.costume + diffs.staging;
 
                 await updateDoc(doc(db, `events/${activeEventId}/artists`, artistId), {
                     totalSingingScore: increment(diffs.singing),
                     totalTransmissionScore: increment(diffs.transmission),
                     totalAttitudeScore: increment(diffs.attitude),
                     totalOriginalityScore: increment(diffs.originality),
+                    totalCostumeScore: increment(diffs.costume),
+                    totalStagingScore: increment(diffs.staging),
                     totalScore: increment(totalDiff),
                     totalRatingsCount: increment(isNewVote ? 1 : 0) 
                 });
@@ -265,6 +290,8 @@
                     transmissionScore: scores.transmission,
                     attitudeScore: scores.attitude,
                     originalityScore: scores.originality,
+                    costumeScore: scores.costume,
+                    stagingScore: scores.staging,
                     votedAt: new Date().toISOString()
                 });
 
@@ -299,6 +326,8 @@
                     transmissionScore: voteData.transmissionScore || 0,
                     attitudeScore: voteData.attitudeScore || 0,
                     originalityScore: voteData.originalityScore || 0,
+                    costumeScore: voteData.costumeScore || 0,
+                    stagingScore: voteData.stagingScore || 0
                 });
             });
             if (state.votedArtistsByUser.size > 0) {
@@ -340,8 +369,13 @@
                 }
                 const activeEventDoc = eventSnapshot.docs[0];
                 activeEventId = activeEventDoc.id;
-                const activeEventName = activeEventDoc.data().name;
+                const activeEventData = activeEventDoc.data();
+                const activeEventName = activeEventData.name;
                 ui.eventNameDisplay.textContent = activeEventName;
+                
+                if (activeEventData.isTiebreaker && activeEventData.tiebreakerArtists) {
+                    tiebreakerArtists = activeEventData.tiebreakerArtists;
+                }
 
                 const userCredential = await signInAnonymously(auth);
                 state.userId = userCredential.user.uid;
@@ -379,4 +413,4 @@
         window.onload = initApp;
     </script>
 </body>
-</html>
+</html> 

@@ -59,6 +59,16 @@
                 </div>
             </section>
 
+            <section id="tiebreaker-section" class="bg-gray-800 p-6 rounded-lg shadow-xl">
+                <h2 class="text-2xl font-bold mb-4">Gestión de Desempate</h2>
+                <p class="text-gray-400 mb-4">Selecciona manualmente a los artistas para la ronda de desempate.</p>
+                <div id="tiebreaker-artists-list" class="space-y-2 mb-4 max-h-60 overflow-y-auto p-2 bg-gray-900 rounded-md">
+                    <p class="text-center text-gray-500">Cargando lista de artistas...</p>
+                </div>
+                <button id="start-tiebreaker-btn" class="w-full px-4 py-3 bg-yellow-600 text-white font-bold rounded-lg hover:bg-yellow-700">Iniciar Ronda de Desempate</button>
+                <button id="end-tiebreaker-btn" class="w-full px-4 py-3 bg-gray-600 text-white font-bold rounded-lg hover:bg-gray-700 mt-4 hidden">Finalizar Ronda de Desempate</button>
+            </section>
+
             <section id="results-voting-section" class="bg-gray-800 p-6 rounded-lg shadow-xl">
                  <h2 class="text-2xl font-bold mb-4">Resultados en Vivo</h2>
                  <div id="votes-stats" class="space-y-4">
@@ -70,7 +80,7 @@
     
     <script type="module">
         import { db, storage } from './firebase_config.js';
-        import { collection, onSnapshot, query, addDoc, doc, deleteDoc, writeBatch, orderBy, getDocs, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { collection, onSnapshot, query, addDoc, doc, deleteDoc, writeBatch, orderBy, getDocs, updateDoc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { ref, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
 
         const urlParams = new URLSearchParams(window.location.search);
@@ -85,6 +95,7 @@
         document.getElementById('event-name-display').textContent = eventName;
 
         let pendingArtists = [];
+        let allArtists = [];
 
         const ui = {};
         function cacheUIElements() {
@@ -92,7 +103,8 @@
                 'loading-overlay', 'artist-photos-input', 'artist-previews-container',
                 'add-artists-btn', 'votes-stats', 'share-voting-link-btn', 'reset-voting-btn',
                 'share-results-link-btn', 'share-link-modal', 'share-modal-title',
-                'share-link-display', 'copy-share-link-btn', 'close-share-modal-btn', 'set-active-event-btn'
+                'share-link-display', 'copy-share-link-btn', 'close-share-modal-btn', 'set-active-event-btn',
+                'start-tiebreaker-btn', 'end-tiebreaker-btn', 'tiebreaker-artists-list'
             ];
             ids.forEach(id => {
                 ui[id.replace(/-(\w)/g, (_, c) => c.toUpperCase())] = document.getElementById(id);
@@ -202,6 +214,64 @@
             });
         }
         
+        async function renderTiebreakerArtists(tiebreakerArtistIds) {
+            ui.tiebreakerArtistsList.innerHTML = '';
+            if (allArtists.length === 0) {
+                ui.tiebreakerArtistsList.innerHTML = '<p class="text-center text-gray-500">No hay artistas cargados para el desempate.</p>';
+                return;
+            }
+            allArtists.forEach(artist => {
+                const isChecked = tiebreakerArtistIds.includes(artist.id);
+                const li = document.createElement('div');
+                li.className = 'flex items-center gap-2 bg-gray-700 p-2 rounded';
+                li.innerHTML = `
+                    <input type="checkbox" id="tiebreaker-artist-${artist.id}" value="${artist.id}" class="tiebreaker-checkbox" ${isChecked ? 'checked' : ''}>
+                    <label for="tiebreaker-artist-${artist.id}" class="flex-grow">${artist.name}</label>
+                `;
+                ui.tiebreakerArtistsList.appendChild(li);
+            });
+        }
+        
+        async function startTiebreaker() {
+            const selectedArtists = Array.from(ui.tiebreakerArtistsList.querySelectorAll('.tiebreaker-checkbox:checked')).map(cb => cb.value);
+            
+            if (selectedArtists.length === 0) {
+                displayMessage('Por favor, selecciona al menos un artista para el desempate.', 'warning');
+                return;
+            }
+
+            try {
+                await updateDoc(doc(db, 'events', eventId), {
+                    isTiebreaker: true,
+                    tiebreakerArtists: selectedArtists
+                });
+                displayMessage('¡Ronda de desempate iniciada con éxito!', 'success');
+                ui.startTiebreakerBtn.classList.add('hidden');
+                ui.endTiebreakerBtn.classList.remove('hidden');
+            } catch (error) {
+                console.error("Error al iniciar desempate:", error);
+                displayMessage(`Error al iniciar el desempate: ${error.message}`, 'error');
+            }
+        }
+        
+        async function endTiebreaker() {
+             if (!confirm('¿Estás seguro de que quieres finalizar la ronda de desempate?')) {
+                return;
+            }
+            try {
+                 await updateDoc(doc(db, 'events', eventId), {
+                    isTiebreaker: false,
+                    tiebreakerArtists: []
+                });
+                displayMessage('¡Ronda de desempate finalizada!', 'success');
+                ui.startTiebreakerBtn.classList.remove('hidden');
+                ui.endTiebreakerBtn.classList.add('hidden');
+            } catch (error) {
+                console.error("Error al finalizar desempate:", error);
+                displayMessage(`Error al finalizar el desempate: ${error.message}`, 'error');
+            }
+        }
+
         function setupEventListeners() {
             ui.artistPhotosInput.addEventListener('change', (e) => renderArtistPreviews(e.target.files));
             document.getElementById('artist-form').addEventListener('submit', handleArtistFormSubmit);
@@ -243,7 +313,7 @@
                     const allEventsSnapshot = await getDocs(allEventsRef);
                     const batch = writeBatch(db);
                     allEventsSnapshot.forEach(doc => {
-                        batch.update(doc.ref, { isActive: false });
+                        batch.update(doc.ref, { isActive: false, isTiebreaker: false, tiebreakerArtists: [] });
                     });
                     await batch.commit();
 
@@ -257,16 +327,34 @@
                     setLoading(false);
                 }
             });
+
+            ui.startTiebreakerBtn.onclick = () => startTiebreaker();
+            ui.endTiebreakerBtn.onclick = () => endTiebreaker();
         }
 
         // --- INICIALIZACIÓN ---
         cacheUIElements();
         setupEventListeners();
 
-        const artistsQuery = query(collection(db, `events/${eventId}/artists`), orderBy('name'));
-        onSnapshot(artistsQuery, (snapshot) => {
+        const artistsQuery = query(collection(db, `events/${eventId}/artists`), orderBy('totalScore', 'desc'));
+        onSnapshot(artistsQuery, async (snapshot) => {
             const artists = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            allArtists = artists.sort((a,b) => a.name.localeCompare(b.name));
             renderFullVotingResults(artists);
+
+            const eventDoc = await getDoc(doc(db, 'events', eventId));
+            if (eventDoc.exists()) {
+                const eventData = eventDoc.data();
+                if (eventData.isTiebreaker) {
+                    renderTiebreakerArtists(eventData.tiebreakerArtists || []);
+                    ui.startTiebreakerBtn.classList.add('hidden');
+                    ui.endTiebreakerBtn.classList.remove('hidden');
+                } else {
+                    renderTiebreakerArtists([]);
+                    ui.startTiebreakerBtn.classList.remove('hidden');
+                    ui.endTiebreakerBtn.classList.add('hidden');
+                }
+            }
         }, err => {
             console.error("Error en listener de artistas:", err);
             ui.votesStats.innerHTML = `<p class="text-red-400 text-center">Error al cargar resultados: ${err.message}</p>`;
