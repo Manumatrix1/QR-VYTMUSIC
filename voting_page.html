@@ -26,7 +26,7 @@
         .rating-container:last-of-type { margin-bottom: 0; }
         .rating-container label { display: block; font-size: 0.9rem; color: #a0aec0; margin-bottom: 0.5rem; text-align: center; }
         .stars-and-guidance-group { display: flex; flex-direction: column; align-items: center; }
-        .stars-wrapper { display: flex; justify-content: center; gap: 8px; width: 100%; max-width: 420px; flex-wrap: wrap; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 5px; }
+        .stars-wrapper { display: flex; justify-content: center; gap: 8px; width: 100%; max-width: 420px; flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 5px; }
         .star-number-pair { display: flex; flex-direction: column; align-items: center; cursor: pointer; position: relative; }
         .stars-wrapper .star-icon { width: 24px; height: 24px; color: #4a5568; transition: color 0.2s; flex-shrink: 0; }
         .stars-wrapper .star-icon.filled { color: #fbbf24; }
@@ -72,20 +72,15 @@
     <script type="module">
         import { db, auth } from './firebase_config.js';
         import { signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { collection, onSnapshot, doc, updateDoc, increment, getDoc, setDoc, getDocs, query, orderBy } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { collection, onSnapshot, doc, updateDoc, increment, getDoc, setDoc, getDocs, query, orderBy, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         
-        const urlParams = new URLSearchParams(window.location.search);
-        const eventId = urlParams.get('eventId');
-        if (!eventId) {
-            document.body.innerHTML = '<p class="text-center text-red-500">Error: No se ha especificado un evento.</p>';
-        }
-
         const state = {
             userId: null,
             currentValidatedTicket: null,
             votedArtistsByUser: new Map()
         };
         const ui = {};
+        let activeEventId = null;
 
         function cacheUIElements() {
              const ids = ['loading-overlay', 'message-container', 'artists-list-container', 'voted-status-message', 'validation-screen', 'ticket-name-input', 'validate-ticket-btn', 'voting-content'];
@@ -110,7 +105,7 @@
                 state.currentValidatedTicket = { id: 'ADMIN_ACCESS', name: 'Administrador' };
                 return { success: true, message: "Acceso de administrador concedido." };
             }
-            const ticketsPath = collection(db, `events/${eventId}/tickets`);
+            const ticketsPath = collection(db, `events/${activeEventId}/tickets`);
             const querySnapshot = await getDocs(ticketsPath);
             let foundTicket = null;
             for (const doc of querySnapshot.docs) {
