@@ -17,6 +17,7 @@
         .spinner { border: 4px solid rgba(255, 255, 255, 0.3); border-top: 4px solid #38bdf8; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         .artist-card { background-color: #1f2937; border-radius: 0.75rem; padding: 1.5rem; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05); border: 2px solid #374151; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 1rem; transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out; }
+        .artist-card:hover { transform: translateY(-4px); box-shadow: 0 14px 20px -3px rgba(0,0,0,0.2), 0 6px 8px -2px rgba(0,0,0,0.1); }
         .artist-image-container { width: 120px; height: 120px; border-radius: 50%; overflow: hidden; border: 4px solid #38bdf8; display: flex; justify-content: center; align-items: center; flex-shrink: 0; }
         .artist-image { width: 100%; height: 100%; object-fit: cover; }
         .vote-button { background-color: #8b5cf6; color: #f9fafb; font-weight: bold; padding: 0.75rem 1.5rem; border-radius: 0.5rem; transition: background-color 0.2s, transform 0.1s; width: 100%; text-transform: uppercase; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
@@ -37,6 +38,7 @@
         .validation-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 60vh; padding: 1rem; text-align: center; }
         .validation-card { background-color: #1f2937; padding: 2rem; border-radius: 0.75rem; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05); max-width: 450px; width: 100%; }
         .hidden { display: none !important; }
+        .sponsor-banner { cursor: pointer; display: block; width: 100%; max-width: 600px; margin: 2rem auto; border-radius: 0.5rem; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
     </style>
 </head>
 <body>
@@ -65,7 +67,8 @@
 
         <main id="voting-content" class="hidden">
             <div id="artists-list-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                </div>
+            </div>
+            <div id="sponsors-container" class="mt-8 grid grid-cols-1 gap-4"></div>
         </main>
     </div>
 
@@ -86,7 +89,7 @@
         let tiebreakerArtists = [];
 
         function cacheUIElements() {
-             const ids = ['loading-overlay', 'message-container', 'artists-list-container', 'voted-status-message', 'validation-screen', 'ticket-name-input', 'validate-ticket-btn', 'voting-content', 'event-name-display'];
+             const ids = ['loading-overlay', 'message-container', 'artists-list-container', 'voted-status-message', 'validation-screen', 'ticket-name-input', 'validate-ticket-btn', 'voting-content', 'event-name-display', 'sponsors-container'];
             ids.forEach(id => { ui[id.replace(/-(\w)/g, (_, c) => c.toUpperCase())] = document.getElementById(id); });
         }
         function displayMessage(message, type = 'success', duration = 5000) {
@@ -336,6 +339,24 @@
             }
         }
 
+        function renderSponsors(sponsors) {
+            if (!ui.sponsorsContainer) return;
+            ui.sponsorsContainer.innerHTML = '';
+            if (sponsors.length === 0) {
+                ui.sponsorsContainer.classList.add('hidden');
+                return;
+            }
+            ui.sponsorsContainer.classList.remove('hidden');
+            sponsors.forEach(sponsor => {
+                const a = document.createElement('a');
+                a.href = sponsor.redirectURL;
+                a.target = "_blank";
+                a.className = "sponsor-banner";
+                a.innerHTML = `<img src="${sponsor.bannerURL}" alt="Patrocinador" class="w-full h-auto">`;
+                ui.sponsorsContainer.appendChild(a);
+            });
+        }
+        
         function attachArtistListener() {
             setLoading(true);
             const artistsQuery = query(collection(db, `events/${activeEventId}/artists`), orderBy('name'));
@@ -348,6 +369,15 @@
                 console.error("Error al cargar artistas: ", error);
                 displayMessage('Error al cargar la lista de artistas.', 'error');
                 setLoading(false);
+            });
+        }
+
+        function attachSponsorsListener() {
+            if (!activeEventId) return;
+            const sponsorsQuery = query(collection(db, `events/${activeEventId}/sponsors`));
+            onSnapshot(sponsorsQuery, (snapshot) => {
+                const sponsors = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                renderSponsors(sponsors);
             });
         }
         
@@ -391,6 +421,7 @@
                         ui.validationScreen.classList.add('hidden'); 
                         ui.votingContent.classList.remove('hidden');
                         attachArtistListener();
+                        attachSponsorsListener(); // Agregamos el listener de sponsors
                     } else {
                         displayMessage(result.message, 'error');
                     }
@@ -404,7 +435,7 @@
                 });
 
                 setLoading(false); 
-                ui.validation-screen.classList.remove('hidden'); 
+                ui.validationScreen.classList.remove('hidden'); 
             } catch (error) {
                 displayMessage(`Error de conexión: ${error.message}. Recarga la página.`, 'error');
                 setLoading(false);
