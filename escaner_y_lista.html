@@ -119,6 +119,33 @@
                 }
             }
             
+            async function handleManualCheckIn(ticketId) {
+                const infoContainer = document.getElementById('scanned-ticket-info-fullscreen');
+                try {
+                    const ticketRef = doc(db, `events/${eventId}/tickets`, ticketId);
+                    await updateDoc(ticketRef, { used: true, usedAt: new Date().toISOString() });
+                    
+                    const flashOverlay = document.getElementById('scan-flash-overlay');
+                    flashOverlay.className = `scan-flash valid`;
+                    flashOverlay.style.opacity = '1';
+                    playSound("C5");
+                    setTimeout(() => { flashOverlay.style.opacity = '0'; }, 600);
+
+                    infoContainer.innerHTML = `
+                        <h3 class="text-4xl font-bold text-green-400">INGRESO VALIDADO</h3>
+                        <p class="mt-4 text-white text-lg">Se ha marcado como usada.</p>
+                        <button id="scan-again-btn-internal" class="w-full mt-6 px-4 py-3 bg-sky-600 text-white font-bold rounded-lg hover:bg-sky-700 text-lg">Escanear Siguiente</button>
+                    `;
+                    document.getElementById('scan-again-btn-internal').addEventListener('click', resumeScanner);
+                    document.getElementById('scan-again-btn-internal').focus();
+
+                } catch (error) {
+                    console.error("Error al validar ingreso:", error);
+                    alert("Ocurrió un error al validar el ingreso.");
+                    resumeScanner();
+                }
+            }
+
             function resumeScanner() {
                 const infoContainer = document.getElementById('scanned-ticket-info-fullscreen');
                 infoContainer.classList.add('hidden');
@@ -136,6 +163,7 @@
                 const infoContainer = document.getElementById('scanned-ticket-info-fullscreen');
                 const ticketRef = doc(db, `events/${eventId}/tickets`, decodedText);
                 const ticketDoc = await getDoc(ticketRef);
+                
                 let status, colorClass, ticketData, sound;
 
                 if (!ticketDoc.exists()) {
@@ -153,12 +181,12 @@
                         status = 'ENTRADA VÁLIDA';
                         colorClass = 'text-green-400';
                         sound = "C5";
-                        await updateDoc(ticketRef, { used: true, usedAt: new Date().toISOString() });
                     }
                 }
-
-                playSound(sound);
                 
+                html5QrCode.pause(true); // Pausar el escáner
+                playSound(sound);
+
                 const flashOverlay = document.getElementById('scan-flash-overlay');
                 const statusType = status.split(' ')[1].toLowerCase(); 
                 flashOverlay.className = `scan-flash ${statusType === 'inválida' ? 'invalid' : (statusType === 'utilizada' ? 'used' : 'valid')}`;
@@ -168,24 +196,36 @@
                 const paymentStatus = ticketData.paymentStatus || 'Paga';
                 const paymentClass = paymentStatus === 'Paga' ? 'text-green-400' : 'text-red-400';
                 
-                const buttonHTML = '<button id="scan-again-btn-internal" class="w-full mt-6 px-4 py-3 bg-sky-600 text-white font-bold rounded-lg hover:bg-sky-700 text-lg">Escanear Siguiente</button>';
+                let buttonHTML = '';
+                if (!ticketData.used && status === 'ENTRADA VÁLIDA') {
+                     buttonHTML = `<button id="check-in-btn-internal" data-ticket-id="${ticketData.id}" class="w-full mt-6 px-4 py-3 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700 text-lg">Ingresar</button>`;
+                } else {
+                    buttonHTML = `<button id="scan-again-btn-internal" class="w-full mt-6 px-4 py-3 bg-sky-600 text-white font-bold rounded-lg hover:bg-sky-700 text-lg">Escanear Siguiente</button>`;
+                }
 
                 infoContainer.innerHTML = `
                     <h3 class="text-4xl font-bold ${colorClass}">${status}</h3>
                     <div class="mt-4 text-left text-lg">
                         <p><strong>Nombre:</strong> <span class="text-sky-300 font-semibold">${ticketData.name}</span></p>
+                        <p><strong>Grupo:</strong> <span class="text-gray-300 font-semibold">${ticketData.prefix || 'N/A'}</span></p>
                         <p><strong>Pago:</strong> <span class="font-bold ${paymentClass}">${paymentStatus.toUpperCase()}</span></p>
                     </div>
                     ${buttonHTML}`;
                 
                 infoContainer.classList.remove('hidden');
-                document.getElementById('scan-again-btn-internal').addEventListener('click', resumeScanner);
-                document.getElementById('scan-again-btn-internal').focus();
+                
+                const checkInButton = document.getElementById('check-in-btn-internal');
+                if (checkInButton) {
+                    checkInButton.addEventListener('click', () => handleManualCheckIn(checkInButton.dataset.ticketId));
+                    checkInButton.focus();
+                } else {
+                    document.getElementById('scan-again-btn-internal').addEventListener('click', resumeScanner);
+                    document.getElementById('scan-again-btn-internal').focus();
+                }
             }
 
             function onScanSuccess(decodedText) {
                 if (isScannerActive) {
-                    html5QrCode.pause(true);
                     processScan(decodedText);
                 }
             }
@@ -198,7 +238,7 @@
                 
                 html5QrCode = new Html5Qrcode("qr-code-reader");
 
-                const config = { fps: 25 }; // Mantenemos FPS altos pero razonables
+                const config = { fps: 25 };
 
                 const videoConstraints = {
                     width: { ideal: 1280 },
@@ -236,9 +276,7 @@
                 infoContainer.classList.add('hidden');
                 infoContainer.innerHTML = '';
             }
-
-            // ... (resto del código sin cambios) ...
-
+            
             const ticketsQuery = query(collection(db, `events/${eventId}/tickets`));
             onSnapshot(ticketsQuery, (snapshot) => {
                 allTicketsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a,b) => a.name.localeCompare(b.name));
@@ -280,9 +318,7 @@
                 }
             });
 
-            // ===== CORRECCIÓN DE SONIDO =====
             document.getElementById('open-scanner-btn').addEventListener('click', () => {
-                // Desbloqueamos el audio con la primera interacción del usuario.
                 Tone.start();
                 startScanner();
             });
