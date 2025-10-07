@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reporte Final del Certamen - VYTMUSIC</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { 
+            font-family: 'Inter', sans-serif; 
+            background-color: #111827; 
+            color: #f9fafb; 
+        }
+        .hidden { display: none !important; }
+        .loading-overlay { 
+            position: fixed; 
+            top: 0; left: 0; width: 100%; height: 100%; 
+            background-color: rgba(0,0,0,0.8); 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            z-index: 1000; 
+        }
+        .spinner { 
+            border: 4px solid rgba(255,255,255,0.3); 
+            border-top: 4px solid #38bdf8; 
+            border-radius: 50%; 
+            width: 40px; height: 40px; 
+            animation: spin 1s linear infinite; 
+        }
+        @keyframes spin { 
+            0% { transform: rotate(0deg); } 
+            100% { transform: rotate(360deg); } 
+        }
+        
+        .ranking-card {
+            background: linear-gradient(135deg, #1f2937 0%, #374151 100%);
+            border-left: 4px solid #38bdf8;
+            transition: all 0.3s ease;
+        }
+        .ranking-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.3);
+        }
+        .ranking-card.position-1 {
+            border-left-color: #ffd700;
+            background: linear-gradient(135deg, #1f2937 0%, #2d1b0e 100%);
+        }
+        .ranking-card.position-2 {
+            border-left-color: #c0c0c0;
+            background: linear-gradient(135deg, #1f2937 0%, #1a1a1a 100%);
+        }
+        .ranking-card.position-3 {
+            border-left-color: #cd7f32;
+            background: linear-gradient(135deg, #1f2937 0%, #2d1f1a 100%);
+        }
+        
+        .medal {
+            font-size: 2rem;
+            margin-right: 0.5rem;
+        }
+        
+        .score-evolution {
+            background-color: #374151;
+            border-radius: 0.5rem;
+            padding: 1rem;
+            margin: 0.5rem 0;
+        }
+        
+        .gala-score {
+            display: inline-block;
+            padding: 0.25rem 0.5rem;
+            margin: 0.125rem;
+            border-radius: 0.25rem;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+        
+        /* OPTIMIZACIÓN MÓVIL */
+        @media (max-width: 768px) {
+            .container { 
+                padding: 0.5rem; 
+                max-width: 100%;
+            }
+            
+            header h1 { 
+                font-size: 1.75rem; 
+                margin-bottom: 0.5rem;
+            }
+            
+            section {
+                padding: 1rem !important;
+                margin-bottom: 1rem !important;
+            }
+            
+            .grid-cols-2,
+            .grid-cols-3 {
+                grid-template-columns: 1fr;
+                gap: 0.75rem;
+            }
+            
+            .ranking-card {
+                padding: 0.75rem;
+            }
+            
+            .medal {
+                font-size: 1.5rem;
+            }
+            
+            .score-evolution {
+                padding: 0.75rem;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            .container {
+                padding: 0.25rem;
+            }
+            
+            header h1 {
+                font-size: 1.5rem;
+            }
+            
+            section {
+                padding: 0.75rem !important;
+            }
+        }
+    </style>
+</head>
+<body class="antialiased">
+    <div id="loading-overlay" class="loading-overlay hidden">
+        <div class="spinner"></div>
+    </div>
+
+    <div class="container mx-auto max-w-7xl p-4 sm:p-6">
+        <header class="text-center mb-6">
+            <a href="panel_evento.html" class="text-sky-400 hover:underline mb-4 inline-block">&larr; Volver al Panel del Evento</a>
+            <img src="https://i.imgur.com/rqkZi9P.png" alt="VYTMUSIC Logo" class="mx-auto mb-4 bg-white rounded-full" style="max-width: 100px;">
+            <h1 class="text-3xl sm:text-4xl font-bold text-sky-400">🏆 Reporte Final del Certamen</h1>
+            <p id="event-name-display" class="text-xl text-gray-300 mt-2"></p>
+            <p class="text-gray-400 mt-1">Resultados completos de todas las galas</p>
+        </header>
+
+        <div id="message-container" class="mb-4"></div>
+
+        <!-- Filtros -->
+        <section class="bg-gray-800 p-6 rounded-lg shadow-xl mb-6">
+            <h2 class="text-2xl font-bold mb-4">🔍 Filtros de Reporte</h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                    <label for="include-secret" class="flex items-center space-x-2 cursor-pointer">
+                        <input type="checkbox" id="include-secret" checked class="text-sky-600 focus:ring-sky-600">
+                        <span class="font-semibold text-gray-300">Incluir Jurado Secreto</span>
+                    </label>
+                    <p class="text-xs text-gray-400 mt-1">Para resultados finales oficiales</p>
+                </div>
+                <div>
+                    <label for="voting-mode-filter" class="block text-sm font-medium text-gray-300 mb-2">Tipo de Votación</label>
+                    <select id="voting-mode-filter" class="w-full p-3 border border-gray-600 rounded-lg bg-gray-700 text-white">
+                        <option value="all">Todos los votos</option>
+                        <option value="individual">Solo individuales</option>
+                        <option value="collaborative">Solo colaborativos</option>
+                    </select>
+                </div>
+                <div class="flex items-end">
+                    <button id="update-report-btn" class="w-full py-3 px-6 bg-sky-600 text-white font-bold rounded-lg hover:bg-sky-700 transition-colors">
+                        🔄 Actualizar Reporte
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Podio de Ganadores -->
+        <section class="bg-gray-800 p-6 rounded-lg shadow-xl mb-6">
+            <h2 class="text-2xl font-bold mb-6 text-center">🥇 Podio Final del Certamen</h2>
+            <div id="podium" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <!-- Se llenará dinámicamente -->
+            </div>
+        </section>
+
+        <!-- Ranking Completo -->
+        <section class="bg-gray-800 p-6 rounded-lg shadow-xl mb-6">
+            <h2 class="text-2xl font-bold mb-6">📊 Ranking Completo</h2>
+            <div id="full-ranking" class="space-y-4">
+                <p class="text-center text-gray-400">Cargando ranking...</p>
+            </div>
+        </section>
+
+        <!-- Estadísticas Generales -->
+        <section class="bg-gray-800 p-6 rounded-lg shadow-xl mb-6">
+            <h2 class="text-2xl font-bold mb-6">📈 Estadísticas del Certamen</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                <div class="bg-gray-700 p-4 rounded-lg text-center">
+                    <p class="text-2xl font-bold text-sky-400" id="total-artists">0</p>
+                    <p class="text-gray-400">Artistas Participantes</p>
+                </div>
+                <div class="bg-gray-700 p-4 rounded-lg text-center">
+                    <p class="text-2xl font-bold text-green-400" id="total-galas">0</p>
+                    <p class="text-gray-400">Galas Realizadas</p>
+                </div>
+                <div class="bg-gray-700 p-4 rounded-lg text-center">
+                    <p class="text-2xl font-bold text-yellow-400" id="total-votes">0</p>
+                    <p class="text-gray-400">Votos Totales</p>
+                </div>
+                <div class="bg-gray-700 p-4 rounded-lg text-center">
+                    <p class="text-2xl font-bold text-purple-400" id="avg-score">0</p>
+                    <p class="text-gray-400">Promedio General</p>
+                </div>
+            </div>
+            
+            <!-- Gráfico de Evolución -->
+            <div class="bg-gray-700 p-4 rounded-lg">
+                <h3 class="text-lg font-bold mb-4 text-center">Evolución de Top 5 por Gala</h3>
+                <canvas id="evolutionChart" class="w-full" style="max-height: 400px;"></canvas>
+            </div>
+        </section>
+
+        <!-- Detalle por Galas -->
+        <section class="bg-gray-800 p-6 rounded-lg shadow-xl mb-6">
+            <h2 class="text-2xl font-bold mb-6">🎭 Detalle por Galas</h2>
+            <div id="gala-details" class="space-y-4">
+                <p class="text-center text-gray-400">Cargando detalles de galas...</p>
+            </div>
+        </section>
+
+        <!-- Exportar Resultados -->
+        <section class="bg-gray-800 p-6 rounded-lg shadow-xl">
+            <h2 class="text-2xl font-bold mb-4">💾 Exportar Resultados</h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <button id="export-csv-btn" class="py-3 px-6 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700 transition-colors">
+                    📊 Exportar CSV
+                </button>
+                <button id="print-report-btn" class="py-3 px-6 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 transition-colors">
+                    🖨️ Imprimir Reporte
+                </button>
+                <button id="share-results-btn" class="py-3 px-6 bg-purple-600 text-white font-bold rounded-lg hover:bg-purple-700 transition-colors">
+                    🔗 Compartir Resultados
+                </button>
+            </div>
+        </section>
+    </div>
+
+    <script type="module">
+        import { db } from './firebase_config.js';
+        import { collection, getDocs, doc, getDoc, query, orderBy, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const eventId = urlParams.get('eventId');
+        const eventName = urlParams.get('eventName') || 'Evento';
+        
+        if (!eventId) {
+            document.body.innerHTML = '<p class="text-center text-red-500">Error: No se ha especificado un evento.</p>';
+            throw new Error('Event ID missing');
+        }
+
+        // Variables globales
+        let allVotes = [];
+        let allArtists = [];
+        let allGalas = [];
+        let finalRanking = [];
+        let evolutionChart = null;
+
+        // Elementos del DOM
+        const ui = {
+            eventNameDisplay: document.getElementById('event-name-display'),
+            loadingOverlay: document.getElementById('loading-overlay'),
+            messageContainer: document.getElementById('message-container'),
+            includeSecret: document.getElementById('include-secret'),
+            votingModeFilter: document.getElementById('voting-mode-filter'),
+            updateReportBtn: document.getElementById('update-report-btn'),
+            podium: document.getElementById('podium'),
+            fullRanking: document.getElementById('full-ranking'),
+            totalArtists: document.getElementById('total-artists'),
+            totalGalas: document.getElementById('total-galas'),
+            totalVotes: document.getElementById('total-votes'),
+            avgScore: document.getElementById('avg-score'),
+            galaDetails: document.getElementById('gala-details'),
+            exportCsvBtn: document.getElementById('export-csv-btn'),
+            printReportBtn: document.getElementById('print-report-btn'),
+            shareResultsBtn: document.getElementById('share-results-btn')
+        };
+
+        // Criterios de evaluación
+        const CRITERIA = {
+            afinacion: 'Afinación',
+            ritmo: 'Ritmo y Tempo',
+            tecnica: 'Técnica Vocal',
+            expresion: 'Expresión',
+            presencia: 'Presencia Escénica',
+            originalidad: 'Originalidad',
+            diccion: 'Dicción',
+            conexion: 'Conexión con Público',
+            actitud: 'Actitud',
+            evolucion: 'Evolución'
+        };
+
+        // Inicialización
+        async function initialize() {
+            try {
+                showLoading(true);
+                ui.eventNameDisplay.textContent = eventName;
+                
+                await loadAllData();
+                await generateFinalReport();
+                setupEventListeners();
+                
+                showMessage('Reporte final generado correctamente', 'success');
+            } catch (error) {
+                console.error('Error inicializando:', error);
+                showMessage('Error al cargar el reporte: ' + error.message, 'error');
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        async function loadAllData() {
+            // Cargar artistas
+            const artistsSnapshot = await getDocs(collection(db, 'events', eventId, 'artists'));
+            allArtists = artistsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+            // Cargar todos los votos
+            const votesSnapshot = await getDocs(collection(db, 'events', eventId, 'jury_votes'));
+            allVotes = votesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+            // Extraer galas únicas
+            const galaIds = [...new Set(allVotes.map(vote => vote.galaId))].sort();
+            allGalas = galaIds.map(id => ({ id, name: `Gala ${id}` }));
+        }
+
+        async function generateFinalReport() {
+            const includeSecret = ui.includeSecret.checked;
+            const votingModeFilter = ui.votingModeFilter.value;
+
+            // Filtrar votos según configuración
+            let filteredVotes = allVotes.filter(vote => {
+                if (!includeSecret && vote.isSecret) return false;
+                
+                if (votingModeFilter === 'individual' && vote.isCollaborative) return false;
+                if (votingModeFilter === 'collaborative' && !vote.isCollaborative) return false;
+                
+                return true;
+            });
+
+            // Calcular puntajes finales por artista
+            const artistScores = {};
+            
+            allArtists.forEach(artist => {
+                artistScores[artist.id] = {
+                    artist: artist,
+                    totalScore: 0,
+                    voteCount: 0,
+                    galaScores: {},
+                    averageScore: 0,
+                    evolution: []
+                };
+            });
+
+            // Procesar votos por gala
+            allGalas.forEach(gala => {
+                const galaVotes = filteredVotes.filter(vote => vote.galaId === gala.id);
+                
+                // Agrupar votos por artista en esta gala
+                const galaArtistVotes = {};
+                galaVotes.forEach(vote => {
+                    if (!galaArtistVotes[vote.artistId]) {
+                        galaArtistVotes[vote.artistId] = [];
+                    }
+                    galaArtistVotes[vote.artistId].push(vote);
+                });
+
+                // Calcular promedio por artista en esta gala
+                Object.keys(galaArtistVotes).forEach(artistId => {
+                    const votes = galaArtistVotes[artistId];
+                    
+                    if (votes.length > 0) {
+                        // Si es colaborativo, hay un solo voto
+                        // Si es individual, promediamos
+                        let galaScore;
+                        if (votes[0].isCollaborative) {
+                            galaScore = Object.values(votes[0].scores).reduce((sum, val) => sum + val, 0);
+                        } else {
+                            const totalSum = votes.reduce((sum, vote) => {
+                                return sum + Object.values(vote.scores).reduce((s, v) => s + v, 0);
+                            }, 0);
+                            galaScore = Math.round(totalSum / votes.length);
+                        }
+
+                        if (artistScores[artistId]) {
+                            artistScores[artistId].galaScores[gala.id] = galaScore;
+                            artistScores[artistId].totalScore += galaScore;
+                            artistScores[artistId].voteCount++;
+                            artistScores[artistId].evolution.push({ gala: gala.id, score: galaScore });
+                        }
+                    }
+                });
+            });
+
+            // Calcular promedios y crear ranking
+            finalRanking = Object.values(artistScores)
+                .filter(artistData => artistData.voteCount > 0)
+                .map(artistData => ({
+                    ...artistData,
+                    averageScore: Math.round(artistData.totalScore / artistData.voteCount)
+                }))
+                .sort((a, b) => b.averageScore - a.averageScore);
+
+            // Actualizar UI
+            updatePodium();
+            updateFullRanking();
+            updateStatistics();
+            updateGalaDetails();
+            updateEvolutionChart();
+        }
+
+        function updatePodium() {
+            const topThree = finalRanking.slice(0, 3);
+            const medals = ['🥇', '🥈', '🥉'];
+            const positions = ['Primer Lugar', 'Segundo Lugar', 'Tercer Lugar'];
+            
+            ui.podium.innerHTML = '';
+            
+            topThree.forEach((artistData, index) => {
+                const card = document.createElement('div');
+                card.className = `ranking-card position-${index + 1} p-6 rounded-lg text-center`;
+                
+                card.innerHTML = `
+                    <div class="medal">${medals[index]}</div>
+                    <h3 class="text-xl font-bold text-white mb-2">${positions[index]}</h3>
+                    ${artistData.artist.photoUrl ? `
+                        <img src="${artistData.artist.photoUrl}" alt="${artistData.artist.name}" 
+                             class="w-20 h-20 object-cover rounded-full mx-auto mb-3 border-4 border-current">
+                    ` : `
+                        <div class="w-20 h-20 bg-gray-600 rounded-full mx-auto mb-3 flex items-center justify-center border-4 border-current">
+                            <span class="text-2xl">🎤</span>
+                        </div>
+                    `}
+                    <h4 class="text-lg font-bold text-sky-300">${artistData.artist.name}</h4>
+                    <p class="text-sm text-gray-400 mb-2">${artistData.artist.city || ''}</p>
+                    <div class="text-3xl font-bold text-green-400">${artistData.averageScore}</div>
+                    <p class="text-sm text-gray-400">puntos promedio</p>
+                    <p class="text-xs text-gray-500 mt-1">${artistData.voteCount} galas participadas</p>
+                `;
+                
+                ui.podium.appendChild(card);
+            });
+        }
+
+        function updateFullRanking() {
+            ui.fullRanking.innerHTML = '';
+            
+            finalRanking.forEach((artistData, index) => {
+                const position = index + 1;
+                const card = document.createElement('div');
+                card.className = `ranking-card p-4 rounded-lg ${position <= 3 ? `position-${position}` : ''}`;
+                
+                card.innerHTML = `
+                    <div class="flex items-center gap-4">
+                        <div class="text-2xl font-bold text-sky-400 w-12 text-center">
+                            ${position <= 3 ? ['🥇', '🥈', '🥉'][position - 1] : `#${position}`}
+                        </div>
+                        ${artistData.artist.photoUrl ? `
+                            <img src="${artistData.artist.photoUrl}" alt="${artistData.artist.name}" 
+                                 class="w-16 h-16 object-cover rounded-full border-2 border-sky-300">
+                        ` : `
+                            <div class="w-16 h-16 bg-gray-600 rounded-full flex items-center justify-center border-2 border-sky-300">
+                                <span class="text-xl">🎤</span>
+                            </div>
+                        `}
+                        <div class="flex-1">
+                            <h3 class="text-lg font-bold text-sky-300">${artistData.artist.name}</h3>
+                            <p class="text-sm text-gray-400">${artistData.artist.city || ''}</p>
+                            <div class="score-evolution">
+                                <div class="flex flex-wrap gap-1">
+                                    ${artistData.evolution.map(evo => `
+                                        <span class="gala-score bg-gray-600 text-white">
+                                            G${evo.gala}: ${evo.score}
+                                        </span>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <div class="text-2xl font-bold text-green-400">${artistData.averageScore}</div>
+                            <p class="text-sm text-gray-400">promedio</p>
+                            <p class="text-xs text-gray-500">${artistData.voteCount} galas</p>
+                        </div>
+                    </div>
+                `;
+                
+                ui.fullRanking.appendChild(card);
+            });
+        }
+
+        function updateStatistics() {
+            ui.totalArtists.textContent = finalRanking.length;
+            ui.totalGalas.textContent = allGalas.length;
+            ui.totalVotes.textContent = allVotes.length;
+            
+            const avgScore = finalRanking.length > 0 
+                ? Math.round(finalRanking.reduce((sum, artist) => sum + artist.averageScore, 0) / finalRanking.length)
+                : 0;
+            ui.avgScore.textContent = avgScore;
+        }
+
+        function updateGalaDetails() {
+            ui.galaDetails.innerHTML = '';
+            
+            allGalas.forEach(gala => {
+                const galaVotes = allVotes.filter(vote => vote.galaId === gala.id);
+                const galaRanking = finalRanking
+                    .filter(artist => artist.galaScores[gala.id])
+                    .map(artist => ({
+                        ...artist,
+                        galaScore: artist.galaScores[gala.id]
+                    }))
+                    .sort((a, b) => b.galaScore - a.galaScore)
+                    .slice(0, 5);
+
+                const galaCard = document.createElement('div');
+                galaCard.className = 'bg-gray-700 p-4 rounded-lg';
+                
+                galaCard.innerHTML = `
+                    <h3 class="text-lg font-bold text-sky-300 mb-3">${gala.name}</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <h4 class="font-semibold text-gray-300 mb-2">Top 5 de la Gala:</h4>
+                            <div class="space-y-1">
+                                ${galaRanking.map((artist, idx) => `
+                                    <div class="flex justify-between items-center text-sm">
+                                        <span class="text-gray-300">${idx + 1}. ${artist.artist.name}</span>
+                                        <span class="text-green-400 font-bold">${artist.galaScore}</span>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                        <div>
+                            <h4 class="font-semibold text-gray-300 mb-2">Estadísticas:</h4>
+                            <div class="text-sm text-gray-400">
+                                <p>• Participantes: ${galaRanking.length}</p>
+                                <p>• Votos emitidos: ${galaVotes.length}</p>
+                                <p>• Puntaje más alto: ${galaRanking[0]?.galaScore || 0}</p>
+                                <p>• Promedio de gala: ${galaRanking.length > 0 ? Math.round(galaRanking.reduce((sum, a) => sum + a.galaScore, 0) / galaRanking.length) : 0}</p>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                ui.galaDetails.appendChild(galaCard);
+            });
+        }
+
+        function updateEvolutionChart() {
+            const ctx = document.getElementById('evolutionChart');
+            
+            if (evolutionChart) {
+                evolutionChart.destroy();
+            }
+
+            // Datos para el top 5
+            const topFive = finalRanking.slice(0, 5);
+            const galaLabels = allGalas.map(g => `Gala ${g.id}`);
+            
+            const datasets = topFive.map((artistData, index) => {
+                const colors = ['#ff6384', '#36a2eb', '#cc65fe', '#ffce56', '#ff9f40'];
+                
+                const data = allGalas.map(gala => {
+                    return artistData.galaScores[gala.id] || null;
+                });
+
+                return {
+                    label: artistData.artist.name,
+                    data: data,
+                    borderColor: colors[index],
+                    backgroundColor: colors[index] + '20',
+                    tension: 0.4,
+                    fill: false
+                };
+            });
+
+            evolutionChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: galaLabels,
+                    datasets: datasets
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: {
+                            labels: { color: '#f9fafb' }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            ticks: { color: '#f9fafb' },
+                            grid: { color: '#374151' }
+                        },
+                        y: {
+                            ticks: { color: '#f9fafb' },
+                            grid: { color: '#374151' },
+                            beginAtZero: true,
+                            max: 1000
+                        }
+                    }
+                }
+            });
+        }
+
+        function exportToCSV() {
+            let csv = 'Posición,Artista,Ciudad,Promedio,Total Galas';
+            
+            // Agregar columnas por gala
+            allGalas.forEach(gala => {
+                csv += `,Gala ${gala.id}`;
+            });
+            csv += '\n';
+
+            // Agregar datos
+            finalRanking.forEach((artistData, index) => {
+                csv += `${index + 1},"${artistData.artist.name}","${artistData.artist.city || ''}",${artistData.averageScore},${artistData.voteCount}`;
+                
+                allGalas.forEach(gala => {
+                    csv += `,${artistData.galaScores[gala.id] || ''}`;
+                });
+                csv += '\n';
+            });
+
+            // Descargar
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `reporte_final_${eventName.replace(/\s+/g, '_')}.csv`;
+            link.click();
+        }
+
+        function printReport() {
+            window.print();
+        }
+
+        function shareResults() {
+            const url = window.location.href;
+            if (navigator.share) {
+                navigator.share({
+                    title: `Resultados Finales - ${eventName}`,
+                    text: `Ve los resultados completos del certamen ${eventName}`,
+                    url: url
+                });
+            } else {
+                navigator.clipboard.writeText(url).then(() => {
+                    showMessage('Enlace copiado al portapapeles', 'success');
+                });
+            }
+        }
+
+        function setupEventListeners() {
+            ui.updateReportBtn.addEventListener('click', () => {
+                showLoading(true);
+                generateFinalReport().finally(() => showLoading(false));
+            });
+            
+            ui.includeSecret.addEventListener('change', () => {
+                showLoading(true);
+                generateFinalReport().finally(() => showLoading(false));
+            });
+            
+            ui.votingModeFilter.addEventListener('change', () => {
+                showLoading(true);
+                generateFinalReport().finally(() => showLoading(false));
+            });
+
+            ui.exportCsvBtn.addEventListener('click', exportToCSV);
+            ui.printReportBtn.addEventListener('click', printReport);
+            ui.shareResultsBtn.addEventListener('click', shareResults);
+        }
+
+        function showLoading(show) {
+            ui.loadingOverlay.classList.toggle('hidden', !show);
+        }
+
+        function showMessage(message, type = 'info') {
+            const bgColor = type === 'success' ? 'bg-green-600' : type === 'error' ? 'bg-red-600' : 'bg-blue-600';
+            
+            ui.messageContainer.innerHTML = `
+                <div class="${bgColor} text-white p-4 rounded-lg shadow-xl">
+                    ${message}
+                </div>
+            `;
+            
+            setTimeout(() => {
+                ui.messageContainer.innerHTML = '';
+            }, 5000);
+        }
+
+        // Inicializar la aplicación
+        initialize();
+    </script>
+</body>
+</html>
