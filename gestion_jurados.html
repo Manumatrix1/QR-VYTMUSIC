@@ -170,10 +170,22 @@
     <div id="delete-modal" class="modal-backdrop hidden">
         <div class="modal-content">
             <h3 class="text-xl font-bold mb-4 text-red-400">¿Eliminar Jurado?</h3>
-            <p class="mb-4 text-gray-300">Esta acción no se puede deshacer. Se eliminarán todos los votos de este jurado.</p>
+            <div class="mb-4">
+                <p class="text-gray-300 mb-3">Esta acción eliminará completamente:</p>
+                <div class="bg-red-900 bg-opacity-30 p-3 rounded border border-red-600">
+                    <ul class="text-red-200 space-y-1">
+                        <li>🗑️ El jurado y su información</li>
+                        <li>🗳️ Todos sus votos en todas las galas</li>
+                        <li>📊 Sus puntuaciones de todos los artistas</li>
+                    </ul>
+                </div>
+                <p class="text-gray-400 text-sm mt-3">
+                    ⚠️ Esta acción no se puede deshacer, pero no afectará a otros jurados ni sus votaciones.
+                </p>
+            </div>
             <div class="flex justify-end space-x-4">
                 <button id="cancel-delete-btn" class="px-4 py-2 bg-gray-600 text-white font-semibold rounded-lg hover:bg-gray-700">Cancelar</button>
-                <button id="confirm-delete-btn" class="px-4 py-2 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700">Eliminar</button>
+                <button id="confirm-delete-btn" class="px-4 py-2 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700">Sí, Eliminar Definitivamente</button>
             </div>
         </div>
     </div>
@@ -321,7 +333,7 @@
 
     <script type="module">
         import { db } from './firebase_config.js';
-        import { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, onSnapshot, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, onSnapshot, setDoc, getDoc, query, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         const urlParams = new URLSearchParams(window.location.search);
         const eventId = urlParams.get('eventId');
@@ -590,17 +602,38 @@
             
             try {
                 showLoading(true);
+                
+                // Primero eliminar todos los votos de este jurado
+                console.log('Eliminando votos del jurado:', currentJurorId);
+                const votesSnapshot = await getDocs(
+                    query(
+                        collection(db, 'events', eventId, 'jury_votes'),
+                        where('jurorId', '==', currentJurorId)
+                    )
+                );
+                
+                // Eliminar cada voto encontrado
+                const deletePromises = votesSnapshot.docs.map(voteDoc => 
+                    deleteDoc(doc(db, 'events', eventId, 'jury_votes', voteDoc.id))
+                );
+                
+                if (deletePromises.length > 0) {
+                    await Promise.all(deletePromises);
+                    console.log(`Eliminados ${deletePromises.length} votos del jurado`);
+                }
+                
+                // Luego eliminar el documento del jurado
                 await deleteDoc(doc(db, `events/${eventId}/jurors`, currentJurorId));
+                console.log('Jurado eliminado de la base de datos');
                 
-                // TODO: Also delete all votes from this juror
-                
-                showMessage('Jurado eliminado correctamente');
+                showMessage('✅ Jurado y sus votos eliminados correctamente');
                 ui.deleteModal.classList.add('hidden');
+                currentJurorId = null;
                 loadJurors();
                 
             } catch (error) {
                 console.error('Error deleting juror:', error);
-                showMessage('Error al eliminar jurado', 'error');
+                showMessage('❌ Error al eliminar jurado: ' + error.message, 'error');
             } finally {
                 showLoading(false);
             }
