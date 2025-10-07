@@ -679,12 +679,24 @@
         function closeArtistProfileModal() {
             ui.artistProfileModal.classList.add('hidden');
             currentArtistId = null;
+            
+            // Resetear el formulario para evitar datos fantasma
+            document.getElementById('artist-profile-form').reset();
+            
+            // Limpiar campos específicos
+            document.getElementById('artist-name-edit').value = '';
+            document.getElementById('artist-city').value = '';
+            document.getElementById('current-song').value = '';
+            document.getElementById('jury-notes').value = '';
         }
 
         async function saveArtistProfile(e) {
             e.preventDefault();
             
-            if (!currentArtistId) return;
+            if (!currentArtistId) {
+                console.log('Error: No hay artista seleccionado');
+                return;
+            }
             
             const newName = document.getElementById('artist-name-edit').value.trim();
             if (!newName) {
@@ -701,19 +713,26 @@
             };
 
             try {
+                console.log('Guardando perfil para artista:', currentArtistId);
                 showLoading(true);
                 
                 await updateDoc(doc(db, `events/${eventId}/artists`, currentArtistId), profileData);
                 
-                showMessage('Perfil actualizado correctamente');
+                console.log('Perfil guardado exitosamente');
+                
+                // Cerrar modal ANTES de otros procesos
+                showLoading(false);
                 closeArtistProfileModal();
-                loadArtists(); // Recargar para mostrar cambios
+                
+                // Mostrar mensaje y recargar
+                showMessage('✅ Perfil actualizado correctamente');
+                await loadArtists(); // Recargar para mostrar cambios
                 
             } catch (error) {
                 console.error('Error saving profile:', error);
-                showMessage('Error al guardar el perfil', 'error');
-            } finally {
                 showLoading(false);
+                showMessage('❌ Error al guardar el perfil: ' + error.message, 'error');
+                // NO cerrar modal si hay error para que el usuario pueda intentar de nuevo
             }
         }
 
