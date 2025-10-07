@@ -452,7 +452,7 @@
 
     <script type="module">
         import { db } from './firebase_config.js';
-        import { collection, getDocs, doc, getDoc, query, orderBy, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { collection, getDocs, doc, getDoc, query, orderBy, where, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         const urlParams = new URLSearchParams(window.location.search);
         const eventId = urlParams.get('eventId');
@@ -580,7 +580,10 @@
             // Cargar votos del público
             const publicVotesSnapshot = await getDocs(collection(db, 'events', eventId, 'votes'));
             allPublicVotes = publicVotesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
+            
+            // Cargar cambios editoriales existentes
+            await loadExistingChanges();
+            
             // Extraer galas únicas de ambos tipos de votos
             const juryGalas = [...new Set(allVotes.map(vote => vote.galaId))];
             const publicGalas = [...new Set(allPublicVotes.map(vote => vote.galaId))];
@@ -868,6 +871,7 @@
                     customWinners.primer = selectedArtist;
                     changes.primer = {
                         artist: selectedArtist.artist.name,
+                        artistId: selectedArtist.artist.id,
                         razon: ui.primerRazon.value.trim(),
                         originalPos: juryRanking.findIndex(a => a.artist.id === selectedArtist.artist.id) + 1
                     };
@@ -883,6 +887,7 @@
                     customWinners.segundo = selectedArtist;
                     changes.segundo = {
                         artist: selectedArtist.artist.name,
+                        artistId: selectedArtist.artist.id,
                         razon: ui.segundoRazon.value.trim(),
                         originalPos: juryRanking.findIndex(a => a.artist.id === selectedArtist.artist.id) + 1
                     };
@@ -909,6 +914,7 @@
                     customWinners.tercero = selectedArtist;
                     changes.tercero = {
                         artist: selectedArtist.artist.name,
+                        artistId: selectedArtist.artist.id,
                         razon: ui.terceroRazon.value.trim(),
                         originalPos: publicRanking.findIndex(a => a.artist.id === selectedArtist.artist.id) + 1 || 'N/A'
                     };
@@ -918,18 +924,144 @@
 
             if (hasChanges) {
                 // Registrar cambio en historial
-                editorialChanges.push({
+                const changeRecord = {
                     timestamp: new Date().toLocaleString(),
                     changes: changes
-                });
+                };
+                editorialChanges.push(changeRecord);
 
-                // Actualizar UI
-                updatePodium();
-                toggleEditMode();
-                
-                showMessage('Cambios editoriales guardados correctamente', 'success');
+                // Guardar en base de datos
+                saveChangesToDatabase(changeRecord).then(() => {
+                    // Actualizar UI
+                    updatePodium();
+                    toggleEditMode();
+                    
+                    showMessage('Cambios guardados en el registro oficial del certamen', 'success');
+                }).catch(error => {
+                    console.error('Error guardando cambios:', error);
+                    showMessage('Error al guardar cambios: ' + error.message, 'error');
+                });
             } else {
                 showMessage('No se detectaron cambios', 'info');
+            }
+        }
+
+        async function saveChangesToDatabase(changeRecord) {
+            try {
+                // Crear documento con los ganadores oficiales editados
+                const finalResults = {
+                    eventId: eventId,
+                    eventName: eventName,
+                    generatedAt: new Date().toISOString(),
+                    
+                    // Ganadores oficiales (editados o automáticos)
+                    officialWinners: {
+                        primerPremio: {
+                            artistId: (customWinners.primer || juryRanking[0])?.artist.id,
+                            artistName: (customWinners.primer || juryRanking[0])?.artist.name,
+                            category: 'Mejor Cantante (Jurados)',
+                            isEdited: !!customWinners.primer,
+                            editReason: customWinners.primer ? changeRecord.changes.primer?.razon : null
+                        },
+                        segundoPremio: {
+                            artistId: (customWinners.segundo || juryRanking[1])?.artist.id,
+                            artistName: (customWinners.segundo || juryRanking[1])?.artist.name,
+                            category: 'Segundo Mejor (Jurados)',
+                            isEdited: !!customWinners.segundo,
+                            editReason: customWinners.segundo ? changeRecord.changes.segundo?.razon : null
+                        },
+                        tercerPremio: {
+                            artistId: (customWinners.tercero || publicRanking[0])?.artist.id,
+                            artistName: (customWinners.tercero || publicRanking[0])?.artist.name,
+                            category: 'Elegido por el Público',
+                            isEdited: !!customWinners.tercero,
+                            editReason: customWinners.tercero ? changeRecord.changes.tercero?.razon : null
+                        }
+                    },
+                    
+                    // Rankings originales para referencia
+                    originalRankings: {
+                        juryRanking: juryRanking.map((artist, index) => ({
+                            position: index + 1,
+                            artistId: artist.artist.id,
+                            artistName: artist.artist.name,
+                            score: artist.averageScore
+                        })),
+                        publicRanking: publicRanking.map((artist, index) => ({
+                            position: index + 1,
+                            artistId: artist.artist.id,
+                            artistName: artist.artist.name,
+                            votes: artist.totalVotes
+                        }))
+                    },
+                    
+                    // Historial de cambios editoriales
+                    editorialHistory: editorialChanges,
+                    
+                    // Metadata para auditoría
+                    lastEditedAt: new Date().toISOString(),
+                    editedBy: 'Administrador del Certamen',
+                    version: editorialChanges.length
+                };
+
+                // Guardar en Firebase
+                await setDoc(doc(db, 'events', eventId, 'final_results', 'official'), finalResults);
+                
+                // También crear un backup con timestamp
+                const backupId = `backup_${Date.now()}`;
+                await setDoc(doc(db, 'events', eventId, 'final_results', backupId), finalResults);
+                
+                console.log('Resultados oficiales guardados en la base de datos');
+                
+            } catch (error) {
+                console.error('Error guardando resultados oficiales:', error);
+                throw error;
+            }
+        }
+
+        async function loadExistingChanges() {
+            try {
+                // Cargar cambios editoriales existentes si los hay
+                const resultsDoc = await getDoc(doc(db, 'events', eventId, 'final_results', 'official'));
+                
+                if (resultsDoc.exists()) {
+                    const data = resultsDoc.data();
+                    
+                    // Restaurar ganadores editados
+                    if (data.officialWinners.primerPremio.isEdited) {
+                        const artist = juryRanking.find(a => a.artist.id === data.officialWinners.primerPremio.artistId);
+                        if (artist) customWinners.primer = artist;
+                    }
+                    
+                    if (data.officialWinners.segundoPremio.isEdited) {
+                        const artist = juryRanking.find(a => a.artist.id === data.officialWinners.segundoPremio.artistId);
+                        if (artist) customWinners.segundo = artist;
+                    }
+                    
+                    if (data.officialWinners.tercerPremio.isEdited) {
+                        let artist = publicRanking.find(a => a.artist.id === data.officialWinners.tercerPremio.artistId);
+                        if (!artist) {
+                            artist = juryRanking.find(a => a.artist.id === data.officialWinners.tercerPremio.artistId);
+                        }
+                        if (!artist) {
+                            const foundArtist = allArtists.find(a => a.id === data.officialWinners.tercerPremio.artistId);
+                            if (foundArtist) {
+                                artist = { artist: foundArtist, totalVotes: 0, averageVotes: 0 };
+                            }
+                        }
+                        if (artist) customWinners.tercero = artist;
+                    }
+                    
+                    // Restaurar historial
+                    if (data.editorialHistory) {
+                        editorialChanges = data.editorialHistory;
+                    }
+                    
+                    console.log('Cambios editoriales existentes cargados');
+                }
+            } catch (error) {
+                console.error('Error cargando cambios existentes:', error);
+                // No es crítico, continuar sin cambios previos
             }
         }
 
