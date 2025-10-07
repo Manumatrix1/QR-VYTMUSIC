@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reporte Administrativo de Jurados - VYTMUSIC</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #111827; color: #f9fafb; }
+        .hidden { display: none !important; }
+        .loading-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.8); display: flex; justify-content: center; align-items: center; z-index: 1000; }
+        .spinner { border: 4px solid rgba(255,255,255,0.3); border-top: 4px solid #38bdf8; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        .report-section { background-color: #1f2937; padding: 1.5rem; border-radius: 0.75rem; margin-bottom: 1.5rem; border: 1px solid #374151; }
+        .stat-card { background-color: #374151; padding: 1rem; border-radius: 0.5rem; text-align: center; }
+        .chart-container { background-color: white; padding: 1rem; border-radius: 0.5rem; margin: 1rem 0; }
+        .table-container { overflow-x: auto; }
+        .data-table { width: 100%; border-collapse: collapse; }
+        .data-table th, .data-table td { padding: 0.75rem; text-align: left; border-bottom: 1px solid #374151; }
+        .data-table th { background-color: #374151; font-weight: 600; }
+        .export-btn { background-color: #059669; color: white; padding: 0.5rem 1rem; border-radius: 0.5rem; border: none; cursor: pointer; }
+        .export-btn:hover { background-color: #047857; }
+    </style>
+</head>
+<body class="antialiased">
+    <div id="loading-overlay" class="loading-overlay hidden"><div class="spinner"></div></div>
+
+    <div class="container mx-auto max-w-7xl p-4 sm:p-6">
+        <header class="text-center mb-8">
+            <a href="#" id="back-to-management" class="text-sky-400 hover:underline mb-4 inline-block">&larr; Volver a Gestión de Jurados</a>
+            <h1 class="text-4xl sm:text-5xl font-bold text-sky-400">Reporte Administrativo</h1>
+            <p class="text-xl text-gray-300 mt-2">Análisis Detallado de Votaciones de Jurados</p>
+            <p id="event-name-display" class="text-lg text-gray-400 mt-1"></p>
+        </header>
+
+        <!-- Controles de exportación y filtros -->
+        <section class="report-section">
+            <div class="flex flex-wrap justify-between items-center gap-4">
+                <div>
+                    <h2 class="text-xl font-bold">Configuración del Reporte</h2>
+                    <p class="text-gray-400">Genera reportes detallados y exporta los datos</p>
+                </div>
+                <div class="flex gap-2">
+                    <button id="export-csv-btn" class="export-btn">Exportar CSV</button>
+                    <button id="export-pdf-btn" class="export-btn">Exportar PDF</button>
+                    <button id="print-report-btn" class="export-btn">Imprimir</button>
+                </div>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+                <div>
+                    <label for="gala-filter" class="block mb-2 font-semibold text-gray-300">Filtrar por Gala:</label>
+                    <select id="gala-filter" class="w-full p-2 rounded bg-gray-800 text-white border border-gray-600">
+                        <option value="all">Todas las Galas</option>
+                        <option value="1">Gala 1</option>
+                        <option value="2">Gala 2</option>
+                        <option value="3">Gala 3</option>
+                        <option value="4">Gala 4</option>
+                        <option value="5">Gala 5</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="date-from" class="block mb-2 font-semibold text-gray-300">Desde:</label>
+                    <input type="date" id="date-from" class="w-full p-2 rounded bg-gray-800 text-white border border-gray-600">
+                </div>
+                <div>
+                    <label for="date-to" class="block mb-2 font-semibold text-gray-300">Hasta:</label>
+                    <input type="date" id="date-to" class="w-full p-2 rounded bg-gray-800 text-white border border-gray-600">
+                </div>
+            </div>
+        </section>
+
+        <!-- Resumen ejecutivo -->
+        <section class="report-section">
+            <h2 class="text-2xl font-bold mb-4">Resumen Ejecutivo</h2>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div class="stat-card">
+                    <p class="text-3xl font-bold text-sky-400" id="total-jurors-stat">0</p>
+                    <p class="text-gray-400">Jurados Totales</p>
+                </div>
+                <div class="stat-card">
+                    <p class="text-3xl font-bold text-green-400" id="active-jurors-stat">0</p>
+                    <p class="text-gray-400">Jurados Activos</p>
+                </div>
+                <div class="stat-card">
+                    <p class="text-3xl font-bold text-yellow-400" id="total-votes-stat">0</p>
+                    <p class="text-gray-400">Votos Totales</p>
+                </div>
+                <div class="stat-card">
+                    <p class="text-3xl font-bold text-purple-400" id="completion-rate-stat">0%</p>
+                    <p class="text-gray-400">Tasa Completitud</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Gráficos de análisis -->
+        <section class="report-section">
+            <h2 class="text-2xl font-bold mb-4">Análisis Gráfico</h2>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div>
+                    <h3 class="text-lg font-semibold mb-2">Distribución de Puntuaciones por Artista</h3>
+                    <div class="chart-container">
+                        <canvas id="scores-chart" width="400" height="200"></canvas>
+                    </div>
+                </div>
+                <div>
+                    <h3 class="text-lg font-semibold mb-2">Progreso de Votación por Gala</h3>
+                    <div class="chart-container">
+                        <canvas id="progress-chart" width="400" height="200"></canvas>
+                    </div>
+                </div>
+                <div>
+                    <h3 class="text-lg font-semibold mb-2">Análisis por Criterios</h3>
+                    <div class="chart-container">
+                        <canvas id="criteria-chart" width="400" height="200"></canvas>
+                    </div>
+                </div>
+                <div>
+                    <h3 class="text-lg font-semibold mb-2">Participación de Jurados</h3>
+                    <div class="chart-container">
+                        <canvas id="participation-chart" width="400" height="200"></canvas>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Tabla detallada de resultados -->
+        <section class="report-section">
+            <h2 class="text-2xl font-bold mb-4">Resultados Detallados por Artista</h2>
+            <div class="table-container">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Pos.</th>
+                            <th>Artista</th>
+                            <th>Promedio</th>
+                            <th>Afinación</th>
+                            <th>Ritmo</th>
+                            <th>Técnica</th>
+                            <th>Expresión</th>
+                            <th>Presencia</th>
+                            <th>Original.</th>
+                            <th>Dicción</th>
+                            <th>Conexión</th>
+                            <th>Actitud</th>
+                            <th>Evolución</th>
+                            <th>Votos</th>
+                            <th>Gala</th>
+                        </tr>
+                    </thead>
+                    <tbody id="results-table-body">
+                        <tr><td colspan="15" class="text-center text-gray-400">Cargando datos...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Análisis de jurados -->
+        <section class="report-section">
+            <h2 class="text-2xl font-bold mb-4">Análisis de Jurados</h2>
+            <div class="table-container">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Jurado</th>
+                            <th>Tipo</th>
+                            <th>Votos Emitidos</th>
+                            <th>Promedio Otorgado</th>
+                            <th>Última Actividad</th>
+                            <th>Porcentaje Completitud</th>
+                        </tr>
+                    </thead>
+                    <tbody id="jurors-table-body">
+                        <tr><td colspan="6" class="text-center text-gray-400">Cargando datos...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Análisis estadístico avanzado -->
+        <section class="report-section">
+            <h2 class="text-2xl font-bold mb-4">Análisis Estadístico Avanzado</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div class="stat-card">
+                    <p class="text-lg font-bold text-blue-400" id="highest-avg-stat">0</p>
+                    <p class="text-gray-400">Promedio Más Alto</p>
+                </div>
+                <div class="stat-card">
+                    <p class="text-lg font-bold text-red-400" id="lowest-avg-stat">0</p>
+                    <p class="text-gray-400">Promedio Más Bajo</p>
+                </div>
+                <div class="stat-card">
+                    <p class="text-lg font-bold text-green-400" id="std-deviation-stat">0</p>
+                    <p class="text-gray-400">Desviación Estándar</p>
+                </div>
+                <div class="stat-card">
+                    <p class="text-lg font-bold text-yellow-400" id="most-votes-stat">0</p>
+                    <p class="text-gray-400">Máx. Votos por Artista</p>
+                </div>
+                <div class="stat-card">
+                    <p class="text-lg font-bold text-purple-400" id="consensus-stat">0%</p>
+                    <p class="text-gray-400">Consenso Jurados</p>
+                </div>
+                <div class="stat-card">
+                    <p class="text-lg font-bold text-indigo-400" id="best-criteria-stat">-</p>
+                    <p class="text-gray-400">Criterio Mejor Evaluado</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Footer con información del reporte -->
+        <footer class="text-center mt-8 text-gray-500">
+            <p>Reporte generado el <span id="report-date"></span></p>
+            <p class="text-sm">Sistema de Votación VYTMUSIC - Análisis Profesional</p>
+        </footer>
+    </div>
+
+    <script type="module">
+        import { db } from './firebase_config.js';
+        import { collection, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const eventId = urlParams.get('eventId');
+        const eventName = urlParams.get('eventName');
+
+        if (!eventId) {
+            document.body.innerHTML = '<p class="text-center text-red-500">Error: No se ha especificado un evento.</p>';
+            throw new Error('Event ID missing');
+        }
+
+        // UI Elements
+        const ui = {
+            loadingOverlay: document.getElementById('loading-overlay'),
+            backToManagement: document.getElementById('back-to-management'),
+            eventNameDisplay: document.getElementById('event-name-display'),
+            galaFilter: document.getElementById('gala-filter'),
+            dateFrom: document.getElementById('date-from'),
+            dateTo: document.getElementById('date-to'),
+            
+            // Export buttons
+            exportCsvBtn: document.getElementById('export-csv-btn'),
+            exportPdfBtn: document.getElementById('export-pdf-btn'),
+            printReportBtn: document.getElementById('print-report-btn'),
+            
+            // Stats
+            totalJurorsStat: document.getElementById('total-jurors-stat'),
+            activeJurorsStat: document.getElementById('active-jurors-stat'),
+            totalVotesStat: document.getElementById('total-votes-stat'),
+            completionRateStat: document.getElementById('completion-rate-stat'),
+            
+            // Advanced stats
+            highestAvgStat: document.getElementById('highest-avg-stat'),
+            lowestAvgStat: document.getElementById('lowest-avg-stat'),
+            stdDeviationStat: document.getElementById('std-deviation-stat'),
+            mostVotesStat: document.getElementById('most-votes-stat'),
+            consensusStat: document.getElementById('consensus-stat'),
+            bestCriteriaStat: document.getElementById('best-criteria-stat'),
+            
+            // Tables
+            resultsTableBody: document.getElementById('results-table-body'),
+            jurorsTableBody: document.getElementById('jurors-table-body'),
+            
+            // Report info
+            reportDate: document.getElementById('report-date')
+        };
+
+        // Data stores
+        let artists = [];
+        let jurors = [];
+        let votes = [];
+        let charts = {};
+
+        // Constants
+        const CRITERIA = [
+            { id: 'afinacion', name: 'Afinación' },
+            { id: 'ritmo-tempo', name: 'Ritmo y Tempo' },
+            { id: 'tecnica-vocal', name: 'Técnica Vocal' },
+            { id: 'expresion-interpretacion', name: 'Expresión e Interpretación' },
+            { id: 'presencia-escenica', name: 'Presencia Escénica' },
+            { id: 'originalidad-estilo', name: 'Originalidad y Estilo' },
+            { id: 'diccion-claridad', name: 'Dicción y Claridad' },
+            { id: 'conexion-publico', name: 'Conexión con el Público' },
+            { id: 'actitud-compromiso', name: 'Actitud y Compromiso' },
+            { id: 'evolucion-certamen', name: 'Evolución en el Certamen' }
+        ];
+
+        const RATING_VALUES = {
+            malo: 20,
+            mediocre: 40,
+            bueno: 60,
+            'muy-bueno': 80,
+            excelente: 100
+        };
+
+        // Initialize
+        ui.eventNameDisplay.textContent = eventName || 'Evento VYTMUSIC';
+        ui.backToManagement.href = `gestion_jurados.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName || '')}`;
+        ui.reportDate.textContent = new Date().toLocaleDateString();
+
+        // Functions
+        function showLoading(show) {
+            ui.loadingOverlay.classList.toggle('hidden', !show);
+        }
+
+        async function loadAllData() {
+            try {
+                showLoading(true);
+
+                // Load all data
+                const [artistsSnapshot, jurorsSnapshot, votesSnapshot] = await Promise.all([
+                    getDocs(collection(db, `events/${eventId}/artists`)),
+                    getDocs(collection(db, `events/${eventId}/jurors`)),
+                    getDocs(collection(db, `events/${eventId}/jury-votes`))
+                ]);
+
+                artists = artistsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                jurors = jurorsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                votes = votesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+                generateReport();
+
+            } catch (error) {
+                console.error('Error loading data:', error);
+                alert('Error al cargar los datos del reporte');
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        function generateReport() {
+            calculateBasicStats();
+            calculateAdvancedStats();
+            generateCharts();
+            generateResultsTable();
+            generateJurorsTable();
+        }
+
+        function calculateBasicStats() {
+            const totalJurors = jurors.length;
+            const activeJurors = new Set(votes.map(v => v.jurorId)).size;
+            const totalVotes = votes.length;
+            const maxPossibleVotes = totalJurors * artists.length;
+            const completionRate = maxPossibleVotes > 0 ? (totalVotes / maxPossibleVotes * 100) : 0;
+
+            ui.totalJurorsStat.textContent = totalJurors;
+            ui.activeJurorsStat.textContent = activeJurors;
+            ui.totalVotesStat.textContent = totalVotes;
+            ui.completionRateStat.textContent = completionRate.toFixed(1) + '%';
+        }
+
+        function calculateAdvancedStats() {
+            if (votes.length === 0) return;
+
+            const scores = votes.map(v => v.averageScore);
+            const highest = Math.max(...scores);
+            const lowest = Math.min(...scores);
+            const mean = scores.reduce((sum, score) => sum + score, 0) / scores.length;
+            const variance = scores.reduce((sum, score) => sum + Math.pow(score - mean, 2), 0) / scores.length;
+            const stdDev = Math.sqrt(variance);
+
+            // Vote counts per artist
+            const artistVoteCounts = {};
+            votes.forEach(vote => {
+                artistVoteCounts[vote.artistId] = (artistVoteCounts[vote.artistId] || 0) + 1;
+            });
+            const maxVotes = Math.max(...Object.values(artistVoteCounts));
+
+            // Consensus calculation (simplified)
+            const consensus = 100 - (stdDev / mean * 100);
+
+            // Best evaluated criteria
+            const criteriaAverages = {};
+            CRITERIA.forEach(criteria => {
+                const criteriaScores = votes
+                    .filter(vote => vote.scores && vote.scores[criteria.id])
+                    .map(vote => RATING_VALUES[vote.scores[criteria.id]]);
+                
+                if (criteriaScores.length > 0) {
+                    criteriaAverages[criteria.id] = criteriaScores.reduce((sum, score) => sum + score, 0) / criteriaScores.length;
+                }
+            });
+
+            const bestCriteria = Object.entries(criteriaAverages)
+                .sort((a, b) => b[1] - a[1])[0];
+
+            ui.highestAvgStat.textContent = highest.toFixed(1);
+            ui.lowestAvgStat.textContent = lowest.toFixed(1);
+            ui.stdDeviationStat.textContent = stdDev.toFixed(2);
+            ui.mostVotesStat.textContent = maxVotes || 0;
+            ui.consensusStat.textContent = consensus.toFixed(1) + '%';
+            ui.bestCriteriaStat.textContent = bestCriteria ? CRITERIA.find(c => c.id === bestCriteria[0])?.name : '-';
+        }
+
+        function generateCharts() {
+            // Artist scores chart
+            const artistScores = calculateArtistAverages();
+            createScoresChart(artistScores);
+
+            // Progress by gala chart
+            createProgressChart();
+
+            // Criteria analysis chart
+            createCriteriaChart();
+
+            // Participation chart
+            createParticipationChart();
+        }
+
+        function calculateArtistAverages() {
+            const artistAverages = {};
+            
+            artists.forEach(artist => {
+                const artistVotes = votes.filter(vote => vote.artistId === artist.id);
+                if (artistVotes.length > 0) {
+                    const average = artistVotes.reduce((sum, vote) => sum + vote.averageScore, 0) / artistVotes.length;
+                    artistAverages[artist.name] = average;
+                }
+            });
+
+            return artistAverages;
+        }
+
+        function createScoresChart(artistScores) {
+            const ctx = document.getElementById('scores-chart').getContext('2d');
+            
+            if (charts.scores) charts.scores.destroy();
+            
+            charts.scores = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: Object.keys(artistScores),
+                    datasets: [{
+                        label: 'Promedio de Puntuación',
+                        data: Object.values(artistScores),
+                        backgroundColor: 'rgba(56, 189, 248, 0.8)',
+                        borderColor: 'rgba(56, 189, 248, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 100
+                        }
+                    }
+                }
+            });
+        }
+
+        function createProgressChart() {
+            const galaData = {};
+            votes.forEach(vote => {
+                const gala = vote.galaNumber || 1;
+                galaData[gala] = (galaData[gala] || 0) + 1;
+            });
+
+            const ctx = document.getElementById('progress-chart').getContext('2d');
+            
+            if (charts.progress) charts.progress.destroy();
+            
+            charts.progress = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: Object.keys(galaData).sort(),
+                    datasets: [{
+                        label: 'Votos por Gala',
+                        data: Object.keys(galaData).sort().map(gala => galaData[gala]),
+                        borderColor: 'rgba(34, 197, 94, 1)',
+                        backgroundColor: 'rgba(34, 197, 94, 0.2)',
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        }
+
+        function createCriteriaChart() {
+            const criteriaAverages = {};
+            
+            CRITERIA.forEach(criteria => {
+                const criteriaScores = votes
+                    .filter(vote => vote.scores && vote.scores[criteria.id])
+                    .map(vote => RATING_VALUES[vote.scores[criteria.id]]);
+                
+                if (criteriaScores.length > 0) {
+                    criteriaAverages[criteria.name] = criteriaScores.reduce((sum, score) => sum + score, 0) / criteriaScores.length;
+                }
+            });
+
+            const ctx = document.getElementById('criteria-chart').getContext('2d');
+            
+            if (charts.criteria) charts.criteria.destroy();
+            
+            charts.criteria = new Chart(ctx, {
+                type: 'radar',
+                data: {
+                    labels: Object.keys(criteriaAverages),
+                    datasets: [{
+                        label: 'Promedio por Criterio',
+                        data: Object.values(criteriaAverages),
+                        borderColor: 'rgba(249, 115, 22, 1)',
+                        backgroundColor: 'rgba(249, 115, 22, 0.2)',
+                        pointBackgroundColor: 'rgba(249, 115, 22, 1)',
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        r: {
+                            beginAtZero: true,
+                            max: 100
+                        }
+                    }
+                }
+            });
+        }
+
+        function createParticipationChart() {
+            const jurorParticipation = {};
+            jurors.forEach(juror => {
+                const jurorVotes = votes.filter(vote => vote.jurorId === juror.id);
+                jurorParticipation[juror.name] = jurorVotes.length;
+            });
+
+            const ctx = document.getElementById('participation-chart').getContext('2d');
+            
+            if (charts.participation) charts.participation.destroy();
+            
+            charts.participation = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: Object.keys(jurorParticipation),
+                    datasets: [{
+                        data: Object.values(jurorParticipation),
+                        backgroundColor: [
+                            'rgba(59, 130, 246, 0.8)',
+                            'rgba(16, 185, 129, 0.8)',
+                            'rgba(249, 115, 22, 0.8)',
+                            'rgba(239, 68, 68, 0.8)',
+                            'rgba(139, 92, 246, 0.8)',
+                            'rgba(236, 72, 153, 0.8)'
+                        ]
+                    }]
+                },
+                options: {
+                    responsive: true
+                }
+            });
+        }
+
+        function generateResultsTable() {
+            const artistResults = artists.map(artist => {
+                const artistVotes = votes.filter(vote => vote.artistId === artist.id);
+                
+                if (artistVotes.length === 0) {
+                    return {
+                        ...artist,
+                        average: 0,
+                        criteriaAverages: {},
+                        voteCount: 0
+                    };
+                }
+
+                const criteriaAverages = {};
+                CRITERIA.forEach(criteria => {
+                    const criteriaScores = artistVotes
+                        .filter(vote => vote.scores && vote.scores[criteria.id])
+                        .map(vote => RATING_VALUES[vote.scores[criteria.id]]);
+                    
+                    criteriaAverages[criteria.id] = criteriaScores.length > 0 
+                        ? criteriaScores.reduce((sum, score) => sum + score, 0) / criteriaScores.length
+                        : 0;
+                });
+
+                const average = artistVotes.reduce((sum, vote) => sum + vote.averageScore, 0) / artistVotes.length;
+
+                return {
+                    ...artist,
+                    average,
+                    criteriaAverages,
+                    voteCount: artistVotes.length
+                };
+            });
+
+            artistResults.sort((a, b) => b.average - a.average);
+
+            ui.resultsTableBody.innerHTML = artistResults.map((artist, index) => `
+                <tr>
+                    <td class="font-bold">${index + 1}</td>
+                    <td class="font-semibold">${artist.name}</td>
+                    <td class="font-bold text-green-400">${artist.average.toFixed(1)}</td>
+                    <td>${(artist.criteriaAverages['afinacion'] || 0).toFixed(1)}</td>
+                    <td>${(artist.criteriaAverages['ritmo-tempo'] || 0).toFixed(1)}</td>
+                    <td>${(artist.criteriaAverages['tecnica-vocal'] || 0).toFixed(1)}</td>
+                    <td>${(artist.criteriaAverages['expresion-interpretacion'] || 0).toFixed(1)}</td>
+                    <td>${(artist.criteriaAverages['presencia-escenica'] || 0).toFixed(1)}</td>
+                    <td>${(artist.criteriaAverages['originalidad-estilo'] || 0).toFixed(1)}</td>
+                    <td>${(artist.criteriaAverages['diccion-claridad'] || 0).toFixed(1)}</td>
+                    <td>${(artist.criteriaAverages['conexion-publico'] || 0).toFixed(1)}</td>
+                    <td>${(artist.criteriaAverages['actitud-compromiso'] || 0).toFixed(1)}</td>
+                    <td>${(artist.criteriaAverages['evolucion-certamen'] || 0).toFixed(1)}</td>
+                    <td>${artist.voteCount}</td>
+                    <td>Todas</td>
+                </tr>
+            `).join('');
+        }
+
+        function generateJurorsTable() {
+            const jurorAnalysis = jurors.map(juror => {
+                const jurorVotes = votes.filter(vote => vote.jurorId === juror.id);
+                const avgGiven = jurorVotes.length > 0 
+                    ? jurorVotes.reduce((sum, vote) => sum + vote.averageScore, 0) / jurorVotes.length
+                    : 0;
+                
+                const lastActivity = jurorVotes.length > 0 
+                    ? new Date(Math.max(...jurorVotes.map(vote => new Date(vote.timestamp)))).toLocaleDateString()
+                    : 'Sin actividad';
+                
+                const completionRate = (jurorVotes.length / artists.length) * 100;
+
+                return {
+                    ...juror,
+                    votesCount: jurorVotes.length,
+                    avgGiven,
+                    lastActivity,
+                    completionRate
+                };
+            });
+
+            ui.jurorsTableBody.innerHTML = jurorAnalysis.map(juror => `
+                <tr>
+                    <td class="font-semibold">${juror.name}</td>
+                    <td>
+                        <span class="px-2 py-1 rounded text-xs ${juror.isSecret ? 'bg-yellow-600' : 'bg-green-600'}">
+                            ${juror.isSecret ? 'Secreto' : 'Público'}
+                        </span>
+                    </td>
+                    <td>${juror.votesCount}</td>
+                    <td>${juror.avgGiven.toFixed(1)}</td>
+                    <td>${juror.lastActivity}</td>
+                    <td>
+                        <div class="flex items-center gap-2">
+                            <div class="flex-1 bg-gray-600 h-2 rounded">
+                                <div class="h-2 bg-green-500 rounded" style="width: ${juror.completionRate}%"></div>
+                            </div>
+                            <span class="text-sm">${juror.completionRate.toFixed(0)}%</span>
+                        </div>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        // Export functions
+        function exportToCSV() {
+            // Implementation for CSV export
+            alert('Función de exportación CSV en desarrollo');
+        }
+
+        function exportToPDF() {
+            // Implementation for PDF export
+            alert('Función de exportación PDF en desarrollo');
+        }
+
+        function printReport() {
+            window.print();
+        }
+
+        // Event listeners
+        ui.exportCsvBtn.addEventListener('click', exportToCSV);
+        ui.exportPdfBtn.addEventListener('click', exportToPDF);
+        ui.printReportBtn.addEventListener('click', printReport);
+
+        ui.galaFilter.addEventListener('change', () => {
+            // Implement filtering by gala
+            generateReport();
+        });
+
+        // Initialize
+        loadAllData();
+    </script>
+</body>
+</html>

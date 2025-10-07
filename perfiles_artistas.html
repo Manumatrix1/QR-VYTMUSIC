@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestión de Perfiles de Artistas - VYTMUSIC</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #111827; color: #f9fafb; }
+        .hidden { display: none !important; }
+        .loading-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.8); display: flex; justify-content: center; align-items: center; z-index: 1000; }
+        .spinner { border: 4px solid rgba(255,255,255,0.3); border-top: 4px solid #38bdf8; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .modal-backdrop { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.7); z-index: 900; display: flex; justify-content: center; align-items: center; }
+        .modal-content { background-color: #1f2937; padding: 1.5rem; border-radius: 0.5rem; max-width: 90%; width: 600px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); max-height: 90vh; overflow-y: auto; }
+        .artist-card { background-color: #1f2937; padding: 1rem; border-radius: 0.5rem; border: 1px solid #374151; transition: all 0.2s; margin-bottom: 1rem; }
+        .artist-card:hover { border-color: #38bdf8; }
+        .artist-preview { display: flex; align-items: center; gap: 1rem; }
+        .artist-preview img { width: 60px; height: 60px; border-radius: 50%; object-fit: cover; border: 2px solid #38bdf8; }
+    </style>
+</head>
+<body class="antialiased">
+    <div id="loading-overlay" class="loading-overlay hidden"><div class="spinner"></div></div>
+
+    <!-- Modal para confirmar eliminación de artista -->
+    <div id="delete-artist-modal" class="modal-backdrop hidden">
+        <div class="modal-content">
+            <h3 class="text-xl font-bold mb-4 text-red-400">¿Eliminar Artista?</h3>
+            <div id="delete-artist-info" class="mb-4">
+                <p class="text-gray-300 mb-2">¿Estás seguro de que quieres eliminar a este artista?</p>
+                <div class="bg-gray-700 p-3 rounded flex items-center gap-3">
+                    <img id="delete-artist-photo" src="" class="w-12 h-12 rounded-full object-cover border-2 border-red-400">
+                    <div>
+                        <p id="delete-artist-name" class="font-semibold text-red-300"></p>
+                        <p class="text-sm text-gray-400">Esta acción no se puede deshacer</p>
+                    </div>
+                </div>
+            </div>
+            <div class="bg-red-900 p-3 rounded mb-4">
+                <p class="text-red-200 text-sm">
+                    <strong>⚠️ Advertencia:</strong> Se eliminarán también:
+                </p>
+                <ul class="text-red-200 text-sm mt-1 ml-4">
+                    <li>• Todos los votos de jurados para este artista</li>
+                    <li>• Su foto del almacenamiento</li>
+                    <li>• Su perfil completo</li>
+                </ul>
+            </div>
+            <div class="flex justify-end space-x-4">
+                <button id="cancel-delete-artist-btn" class="px-4 py-2 bg-gray-600 text-white font-semibold rounded-lg hover:bg-gray-700">Cancelar</button>
+                <button id="confirm-delete-artist-btn" class="px-4 py-2 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700">Eliminar Definitivamente</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para editar perfil de artista -->
+    <div id="artist-profile-modal" class="modal-backdrop hidden">
+        <div class="modal-content">
+            <h3 id="modal-title" class="text-xl font-bold mb-4">Editar Perfil de Artista</h3>
+            <form id="artist-profile-form" class="space-y-4">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label for="artist-name-edit" class="block mb-1 font-semibold text-gray-300">Nombre del Artista</label>
+                        <input type="text" id="artist-name-edit" required class="w-full p-3 rounded-md border border-gray-600 bg-gray-900 text-white" readonly>
+                    </div>
+                    <div>
+                        <label for="artist-age" class="block mb-1 font-semibold text-gray-300">Edad</label>
+                        <input type="number" id="artist-age" min="10" max="100" class="w-full p-3 rounded-md border border-gray-600 bg-gray-900 text-white">
+                    </div>
+                    <div>
+                        <label for="artist-city" class="block mb-1 font-semibold text-gray-300">Ciudad de Origen</label>
+                        <input type="text" id="artist-city" class="w-full p-3 rounded-md border border-gray-600 bg-gray-900 text-white">
+                    </div>
+                    <div>
+                        <label for="artist-style" class="block mb-1 font-semibold text-gray-300">Estilo Musical</label>
+                        <select id="artist-style" class="w-full p-3 rounded-md border border-gray-600 bg-gray-900 text-white">
+                            <option value="">Seleccionar estilo...</option>
+                            <option value="Pop">Pop</option>
+                            <option value="Rock">Rock</option>
+                            <option value="Balada">Balada</option>
+                            <option value="Folk">Folk</option>
+                            <option value="R&B">R&B</option>
+                            <option value="Jazz">Jazz</option>
+                            <option value="Blues">Blues</option>
+                            <option value="Country">Country</option>
+                            <option value="Reggaeton">Reggaeton</option>
+                            <option value="Cumbia">Cumbia</option>
+                            <option value="Tango">Tango</option>
+                            <option value="Otro">Otro</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div>
+                    <label for="current-song" class="block mb-1 font-semibold text-gray-300">Canción Actual</label>
+                    <input type="text" id="current-song" placeholder="Canción para esta gala" class="w-full p-3 rounded-md border border-gray-600 bg-gray-900 text-white">
+                </div>
+                
+                <div>
+                    <label for="artist-experience" class="block mb-1 font-semibold text-gray-300">Experiencia Musical</label>
+                    <input type="text" id="artist-experience" placeholder="Ej: 3 años cantando profesionalmente" class="w-full p-3 rounded-md border border-gray-600 bg-gray-900 text-white">
+                </div>
+                
+                <div>
+                    <label for="artist-bio" class="block mb-1 font-semibold text-gray-300">Biografía Breve</label>
+                    <textarea id="artist-bio" rows="3" placeholder="Breve descripción del artista..." class="w-full p-3 rounded-md border border-gray-600 bg-gray-900 text-white"></textarea>
+                </div>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label for="artist-instagram" class="block mb-1 font-semibold text-gray-300">Instagram</label>
+                        <input type="text" id="artist-instagram" placeholder="@usuario" class="w-full p-3 rounded-md border border-gray-600 bg-gray-900 text-white">
+                    </div>
+                    <div>
+                        <label for="artist-youtube" class="block mb-1 font-semibold text-gray-300">YouTube</label>
+                        <input type="text" id="artist-youtube" placeholder="Canal de YouTube" class="w-full p-3 rounded-md border border-gray-600 bg-gray-900 text-white">
+                    </div>
+                </div>
+                
+                <div class="flex justify-end space-x-4">
+                    <button type="button" id="cancel-profile-btn" class="px-4 py-2 bg-gray-600 text-white font-semibold rounded-lg hover:bg-gray-700">Cancelar</button>
+                    <button type="submit" class="px-4 py-2 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700">Guardar Perfil</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="container mx-auto max-w-6xl p-4 sm:p-6">
+        <header class="text-center mb-6">
+            <a id="back-to-panel-link" href="#" class="text-sky-400 hover:underline mb-4 inline-block">&larr; Volver al Panel del Evento</a>
+            <h1 class="text-3xl sm:text-4xl font-bold text-sky-400">Gestión de Perfiles de Artistas</h1>
+            <p id="event-name-display" class="text-xl text-gray-300 mt-2"></p>
+            <p class="text-gray-400 mt-1">Completa la información de los artistas para mejorar la experiencia de votación</p>
+        </header>
+
+        <div id="message-container" class="mb-4"></div>
+
+        <!-- Sección de carga masiva de fotos -->
+        <section class="bg-gray-800 p-6 rounded-lg shadow-xl mb-6">
+            <h2 class="text-2xl font-bold mb-4">Carga Masiva de Fotos</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                    <h3 class="font-semibold text-sky-300 mb-2">Subir Fotos desde tu PC</h3>
+                    <div class="space-y-4">
+                        <div>
+                            <label for="mass-photo-upload" class="block mb-2 font-semibold text-gray-300">
+                                Seleccionar Múltiples Fotos
+                            </label>
+                            <input type="file" id="mass-photo-upload" accept="image/*" multiple 
+                                   class="w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-sky-600 file:text-white hover:file:bg-sky-700">
+                            <p class="text-xs text-gray-400 mt-1">
+                                Selecciona todas las fotos que quieras subir de una vez
+                            </p>
+                        </div>
+                        <button id="process-photos-btn" disabled 
+                                class="w-full px-4 py-3 bg-green-600 text-white font-bold rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-green-700">
+                            📸 Procesar Fotos
+                        </button>
+                    </div>
+                </div>
+                <div>
+                    <h3 class="font-semibold text-sky-300 mb-2">Convención de Nombres</h3>
+                    <div class="bg-gray-700 p-4 rounded text-sm">
+                        <p class="text-gray-300 mb-2">Cada foto creará un artista nuevo:</p>
+                        <div class="font-mono text-green-400">
+                            <p>✅ Maria_Gonzalez.jpg → Artista: "Maria Gonzalez"</p>
+                            <p>✅ Juan_Perez.png → Artista: "Juan Perez"</p>
+                            <p>✅ Ana_Rodriguez.jpeg → Artista: "Ana Rodriguez"</p>
+                        </div>
+                        <p class="text-gray-400 mt-2 text-xs">
+                            • Usa guión bajo (_) en lugar de espacios<br>
+                            • Formatos: JPG, PNG, JPEG<br>
+                            • El nombre del archivo será el nombre del artista
+                        </p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Vista previa de nuevos artistas -->
+            <div id="photo-preview-section" class="hidden mt-6">
+                <h3 class="font-semibold text-sky-300 mb-4">Vista Previa - Nuevos Artistas</h3>
+                <div id="photo-associations" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <!-- Se llenarán dinámicamente -->
+                </div>
+                <div class="flex justify-end space-x-4 mt-6">
+                    <button id="cancel-upload-btn" class="px-4 py-2 bg-gray-600 text-white font-semibold rounded-lg hover:bg-gray-700">
+                        Cancelar
+                    </button>
+                    <button id="confirm-upload-btn" class="px-4 py-2 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700">
+                        🎤 Crear Artistas y Subir Fotos
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Información útil -->
+        <section class="bg-gray-800 p-6 rounded-lg shadow-xl mb-6">
+            <h2 class="text-2xl font-bold mb-4">Información Importante</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <h3 class="font-semibold text-sky-300 mb-2">¿Para qué sirve esta información?</h3>
+                    <ul class="text-gray-300 space-y-1 text-sm">
+                        <li>• Los jurados tendrán mejor contexto para evaluar</li>
+                        <li>• Especialmente útil para el criterio "Evolución en el Certamen"</li>
+                        <li>• Mejora la experiencia de votación</li>
+                        <li>• Crea perfiles más profesionales</li>
+                    </ul>
+                </div>
+                <div>
+                    <h3 class="font-semibold text-sky-300 mb-2">Recomendaciones:</h3>
+                    <ul class="text-gray-300 space-y-1 text-sm">
+                        <li>• Completa al menos nombre, edad y estilo musical</li>
+                        <li>• Actualiza "Canción Actual" para cada gala</li>
+                        <li>• La biografía puede ser breve (1-2 líneas)</li>
+                        <li>• Las redes sociales son opcionales</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- Lista de artistas -->
+        <section class="bg-gray-800 p-6 rounded-lg shadow-xl">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-2xl font-bold">Artistas del Evento</h2>
+                <div class="text-sm text-gray-400">
+                    <span id="completed-profiles">0</span> de <span id="total-artists">0</span> perfiles completados
+                </div>
+            </div>
+            
+            <div id="artists-list" class="space-y-4">
+                <p class="text-center text-gray-400">Cargando artistas...</p>
+            </div>
+        </section>
+
+        <!-- Instrucciones -->
+        <section class="bg-gray-700 p-4 rounded-lg mt-6">
+            <h3 class="font-semibold text-yellow-300 mb-2">💡 Consejo:</h3>
+            <p class="text-gray-300 text-sm">
+                Esta información es <strong>opcional</strong> pero muy recomendada. Si no la completas ahora, 
+                el sistema seguirá funcionando perfectamente para el domingo. Puedes completarla después del evento también.
+            </p>
+        </section>
+    </div>
+
+    <script type="module">
+        import { db, storage } from './firebase_config.js';
+        import { collection, getDocs, doc, updateDoc, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const eventId = urlParams.get('eventId');
+        const eventName = urlParams.get('eventName');
+
+        if (!eventId || !eventName) {
+            document.body.innerHTML = '<p class="text-center text-red-500">Error: No se ha especificado un evento.</p>';
+            throw new Error('Event ID or name missing');
+        }
+
+        // UI Elements
+        const ui = {
+            eventNameDisplay: document.getElementById('event-name-display'),
+            backToPanelLink: document.getElementById('back-to-panel-link'),
+            messageContainer: document.getElementById('message-container'),
+            loadingOverlay: document.getElementById('loading-overlay'),
+            
+            artistProfileModal: document.getElementById('artist-profile-modal'),
+            artistProfileForm: document.getElementById('artist-profile-form'),
+            
+            // Modal de eliminación
+            deleteArtistModal: document.getElementById('delete-artist-modal'),
+            deleteArtistPhoto: document.getElementById('delete-artist-photo'),
+            deleteArtistName: document.getElementById('delete-artist-name'),
+            cancelDeleteArtistBtn: document.getElementById('cancel-delete-artist-btn'),
+            confirmDeleteArtistBtn: document.getElementById('confirm-delete-artist-btn'),
+            
+            artistsList: document.getElementById('artists-list'),
+            completedProfiles: document.getElementById('completed-profiles'),
+            totalArtists: document.getElementById('total-artists'),
+            
+            cancelProfileBtn: document.getElementById('cancel-profile-btn'),
+            
+            // Elementos para carga masiva
+            massPhotoUpload: document.getElementById('mass-photo-upload'),
+            processPhotosBtn: document.getElementById('process-photos-btn'),
+            photoPreviewSection: document.getElementById('photo-preview-section'),
+            photoAssociations: document.getElementById('photo-associations'),
+            cancelUploadBtn: document.getElementById('cancel-upload-btn'),
+            confirmUploadBtn: document.getElementById('confirm-upload-btn')
+        };
+
+        let artists = [];
+        let currentArtistId = null;
+        let selectedPhotos = [];
+        let photoAssociations = [];
+        let artistToDelete = null; // Para manejar la eliminación
+
+        // Initialize
+        ui.eventNameDisplay.textContent = eventName;
+        ui.backToPanelLink.href = `panel_evento.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`;
+
+        // Functions
+        function showMessage(message, type = 'success') {
+            const colors = { success: 'bg-green-500', error: 'bg-red-500', info: 'bg-blue-500' };
+            ui.messageContainer.innerHTML = `<div class="p-4 rounded-md mb-4 text-white ${colors[type]}">${message}</div>`;
+            setTimeout(() => { ui.messageContainer.innerHTML = ''; }, 5000);
+        }
+
+        function showLoading(show) {
+            ui.loadingOverlay.classList.toggle('hidden', !show);
+        }
+
+        // Función para convertir nombre de archivo en nombre de artista
+        function cleanFilenameToArtistName(filename) {
+            // Remover extensión
+            const nameWithoutExtension = filename.replace(/\.(jpg|jpeg|png|gif)$/i, '');
+            
+            // Reemplazar guiones bajos con espacios
+            const nameWithSpaces = nameWithoutExtension.replace(/_/g, ' ');
+            
+            // Capitalizar primera letra de cada palabra
+            const capitalizedName = nameWithSpaces
+                .split(' ')
+                .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+                .join(' ');
+            
+            return capitalizedName;
+        }
+
+        // Manejar selección de archivos
+        ui.massPhotoUpload.addEventListener('change', (e) => {
+            const files = Array.from(e.target.files);
+            if (files.length === 0) {
+                ui.processPhotosBtn.disabled = true;
+                return;
+            }
+            
+            selectedPhotos = files;
+            ui.processPhotosBtn.disabled = false;
+            ui.processPhotosBtn.textContent = `📸 Procesar ${files.length} foto(s)`;
+        });
+
+        // Procesar fotos y mostrar vista previa
+        ui.processPhotosBtn.addEventListener('click', () => {
+            if (selectedPhotos.length === 0) {
+                showMessage('Selecciona al menos una foto', 'error');
+                return;
+            }
+            
+            photoAssociations = [];
+            
+            selectedPhotos.forEach(file => {
+                // Crear nombre del artista desde el nombre del archivo
+                const artistName = cleanFilenameToArtistName(file.name);
+                
+                photoAssociations.push({
+                    file: file,
+                    filename: file.name,
+                    artistName: artistName,
+                    confirmed: true,
+                    preview: URL.createObjectURL(file)
+                });
+            });
+            
+            renderPhotoPreview();
+            ui.photoPreviewSection.classList.remove('hidden');
+        });
+
+        function renderPhotoPreview() {
+            ui.photoAssociations.innerHTML = photoAssociations.map((association, index) => `
+                <div class="bg-gray-700 p-4 rounded-lg">
+                    <div class="text-center mb-3">
+                        <img src="${association.preview}" alt="${association.filename}" 
+                             class="w-20 h-20 object-cover rounded-full mx-auto border-2 border-sky-400">
+                        <p class="text-sm text-gray-400 mt-2">${association.filename}</p>
+                    </div>
+                    
+                    <div class="space-y-2">
+                        <label class="block text-sm font-semibold text-gray-300">Nombre del artista:</label>
+                        <input type="text" value="${association.artistName}" 
+                               onchange="updateArtistName(${index}, this.value)"
+                               class="w-full p-2 bg-gray-800 text-white rounded border border-gray-600 text-sm">
+                        
+                        <div class="text-xs text-green-400">
+                            ✅ Se creará un nuevo artista con este nombre
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // Función global para actualizar nombres de artistas
+        window.updateArtistName = (index, newName) => {
+            photoAssociations[index].artistName = newName.trim();
+        };
+
+        // Cancelar carga
+        ui.cancelUploadBtn.addEventListener('click', () => {
+            photoAssociations.forEach(association => {
+                URL.revokeObjectURL(association.preview);
+            });
+            photoAssociations = [];
+            selectedPhotos = [];
+            ui.photoPreviewSection.classList.add('hidden');
+            ui.massPhotoUpload.value = '';
+            ui.processPhotosBtn.disabled = true;
+            ui.processPhotosBtn.textContent = '📸 Procesar Fotos';
+        });
+
+        // Confirmar y subir todas las fotos
+        ui.confirmUploadBtn.addEventListener('click', async () => {
+            const validAssociations = photoAssociations.filter(a => a.artistName && a.artistName.trim() !== '');
+            
+            if (validAssociations.length === 0) {
+                showMessage('Debes especificar nombres para todos los artistas', 'error');
+                return;
+            }
+            
+            try {
+                showLoading(true);
+                showMessage(`Creando ${validAssociations.length} artistas y subiendo fotos...`, 'info');
+                
+                const uploadPromises = validAssociations.map(async (association) => {
+                    try {
+                        // Generar ID único para el artista
+                        const artistId = `artist_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                        
+                        // Subir imagen a Firebase Storage
+                        const imageRef = ref(storage, `events/${eventId}/artists/${artistId}_${Date.now()}.jpg`);
+                        const snapshot = await uploadBytes(imageRef, association.file);
+                        const photoURL = await getDownloadURL(snapshot.ref);
+                        
+                        // Crear documento del artista
+                        const artistData = {
+                            name: association.artistName,
+                            photoURL: photoURL,
+                            totalScore: 0,
+                            createdAt: new Date().toISOString(),
+                            createdFrom: 'mass-upload'
+                        };
+                        
+                        await setDoc(doc(db, `events/${eventId}/artists`, artistId), artistData);
+                        
+                        return { success: true, artistName: association.artistName };
+                    } catch (error) {
+                        console.error(`Error creating artist ${association.artistName}:`, error);
+                        return { success: false, artistName: association.artistName, error };
+                    }
+                });
+                
+                const results = await Promise.all(uploadPromises);
+                const successful = results.filter(r => r.success);
+                const failed = results.filter(r => !r.success);
+                
+                if (successful.length > 0) {
+                    showMessage(`✅ ${successful.length} artista(s) creado(s) correctamente: ${successful.map(r => r.artistName).join(', ')}`);
+                }
+                
+                if (failed.length > 0) {
+                    showMessage(`❌ Error al crear ${failed.length} artista(s): ${failed.map(r => r.artistName).join(', ')}`, 'error');
+                }
+                
+                // Limpiar y recargar
+                ui.cancelUploadBtn.click();
+                await loadArtists();
+                
+            } catch (error) {
+                console.error('Error en carga masiva:', error);
+                showMessage('Error general en la carga masiva', 'error');
+            } finally {
+                showLoading(false);
+            }
+        });
+
+        async function loadArtists() {
+            try {
+                showLoading(true);
+                const artistsSnapshot = await getDocs(collection(db, `events/${eventId}/artists`));
+                artists = artistsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                renderArtists();
+                updateStats();
+            } catch (error) {
+                console.error('Error loading artists:', error);
+                showMessage('Error al cargar artistas', 'error');
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        function renderArtists() {
+            if (artists.length === 0) {
+                ui.artistsList.innerHTML = '<p class="text-center text-gray-400">No hay artistas registrados en este evento</p>';
+                return;
+            }
+
+            ui.artistsList.innerHTML = artists.map(artist => {
+                const isCompleted = artist.age || artist.city || artist.musicalStyle || artist.currentSong;
+                const completionPercentage = calculateCompletionPercentage(artist);
+                
+                return `
+                    <div class="artist-card">
+                        <div class="artist-preview">
+                            <img src="${artist.photoURL || 'https://placehold.co/60x60/1f2937/f9fafb?text=' + (artist.name ? artist.name.charAt(0) : 'A')}" 
+                                 alt="${artist.name}">
+                            <div class="flex-1">
+                                <h3 class="font-semibold text-lg">${artist.name}</h3>
+                                <p class="text-gray-400 text-sm">
+                                    ${artist.musicalStyle ? `🎵 ${artist.musicalStyle}` : '🎵 Estilo no especificado'} • 
+                                    ${artist.currentSong ? `♪ ${artist.currentSong}` : 'Canción no especificada'}
+                                </p>
+                                <div class="mt-2">
+                                    <div class="flex items-center gap-2">
+                                        <div class="flex-1 bg-gray-600 h-2 rounded">
+                                            <div class="h-2 bg-${completionPercentage >= 70 ? 'green' : completionPercentage >= 40 ? 'yellow' : 'red'}-500 rounded" 
+                                                 style="width: ${completionPercentage}%"></div>
+                                        </div>
+                                        <span class="text-sm text-gray-400">${completionPercentage}%</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="text-right flex flex-col gap-2">
+                                <button onclick="editArtistProfile('${artist.id}')" 
+                                        class="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700">
+                                    ${isCompleted ? 'Editar' : 'Completar'}
+                                </button>
+                                <button onclick="deleteArtist('${artist.id}')" 
+                                        class="px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700">
+                                    🗑️ Eliminar
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function calculateCompletionPercentage(artist) {
+            const fields = ['age', 'city', 'musicalStyle', 'currentSong', 'experience', 'bio'];
+            const completed = fields.filter(field => artist[field] && artist[field].trim() !== '').length;
+            return Math.round((completed / fields.length) * 100);
+        }
+
+        function updateStats() {
+            const completed = artists.filter(artist => 
+                artist.age || artist.city || artist.musicalStyle || artist.currentSong
+            ).length;
+            
+            ui.totalArtists.textContent = artists.length;
+            ui.completedProfiles.textContent = completed;
+        }
+
+        function openArtistProfileModal(artist) {
+            currentArtistId = artist.id;
+            
+            // Llenar el formulario
+            document.getElementById('artist-name-edit').value = artist.name || '';
+            document.getElementById('artist-age').value = artist.age || '';
+            document.getElementById('artist-city').value = artist.city || '';
+            document.getElementById('artist-style').value = artist.musicalStyle || '';
+            document.getElementById('current-song').value = artist.currentSong || '';
+            document.getElementById('artist-experience').value = artist.experience || '';
+            document.getElementById('artist-bio').value = artist.bio || '';
+            document.getElementById('artist-instagram').value = artist.socialMedia?.instagram || '';
+            document.getElementById('artist-youtube').value = artist.socialMedia?.youtube || '';
+            
+            ui.artistProfileModal.classList.remove('hidden');
+        }
+
+        function closeArtistProfileModal() {
+            ui.artistProfileModal.classList.add('hidden');
+            currentArtistId = null;
+        }
+
+        async function saveArtistProfile(e) {
+            e.preventDefault();
+            
+            if (!currentArtistId) return;
+            
+            const profileData = {
+                age: parseInt(document.getElementById('artist-age').value) || null,
+                city: document.getElementById('artist-city').value.trim(),
+                musicalStyle: document.getElementById('artist-style').value,
+                currentSong: document.getElementById('current-song').value.trim(),
+                experience: document.getElementById('artist-experience').value.trim(),
+                bio: document.getElementById('artist-bio').value.trim(),
+                socialMedia: {
+                    instagram: document.getElementById('artist-instagram').value.trim(),
+                    youtube: document.getElementById('artist-youtube').value.trim()
+                },
+                profileUpdatedAt: new Date().toISOString()
+            };
+
+            try {
+                showLoading(true);
+                
+                await updateDoc(doc(db, `events/${eventId}/artists`, currentArtistId), profileData);
+                
+                showMessage('Perfil actualizado correctamente');
+                closeArtistProfileModal();
+                loadArtists(); // Recargar para mostrar cambios
+                
+            } catch (error) {
+                console.error('Error saving profile:', error);
+                showMessage('Error al guardar el perfil', 'error');
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        // Global function for button
+        window.editArtistProfile = (artistId) => {
+            const artist = artists.find(a => a.id === artistId);
+            if (artist) openArtistProfileModal(artist);
+        };
+
+        // Función global para eliminar artista
+        window.deleteArtist = (artistId) => {
+            const artist = artists.find(a => a.id === artistId);
+            if (!artist) return;
+            
+            artistToDelete = artist;
+            ui.deleteArtistPhoto.src = artist.photoURL || 'https://placehold.co/48x48/1f2937/f9fafb?text=' + (artist.name ? artist.name.charAt(0) : 'A');
+            ui.deleteArtistName.textContent = artist.name;
+            ui.deleteArtistModal.classList.remove('hidden');
+        };
+
+        function closeDeleteModal() {
+            ui.deleteArtistModal.classList.add('hidden');
+            artistToDelete = null;
+        }
+
+        async function confirmDeleteArtist() {
+            if (!artistToDelete) return;
+            
+            try {
+                showLoading(true);
+                showMessage(`Eliminando artista ${artistToDelete.name}...`, 'info');
+                
+                // Eliminar todos los votos de jurados para este artista
+                const votesSnapshot = await getDocs(collection(db, `events/${eventId}/jury-votes`));
+                const deleteVotesPromises = [];
+                
+                votesSnapshot.docs.forEach(voteDoc => {
+                    const voteData = voteDoc.data();
+                    if (voteData.artistId === artistToDelete.id) {
+                        deleteVotesPromises.push(deleteDoc(doc(db, `events/${eventId}/jury-votes`, voteDoc.id)));
+                    }
+                });
+                
+                await Promise.all(deleteVotesPromises);
+                
+                // Eliminar el documento del artista
+                await deleteDoc(doc(db, `events/${eventId}/artists`, artistToDelete.id));
+                
+                showMessage(`✅ Artista "${artistToDelete.name}" eliminado correctamente`);
+                closeDeleteModal();
+                await loadArtists(); // Recargar lista
+                
+            } catch (error) {
+                console.error('Error deleting artist:', error);
+                showMessage(`Error al eliminar artista: ${error.message}`, 'error');
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        // Event listeners
+        ui.cancelProfileBtn.addEventListener('click', closeArtistProfileModal);
+        ui.artistProfileForm.addEventListener('submit', saveArtistProfile);
+        
+        // Event listeners para eliminación
+        ui.cancelDeleteArtistBtn.addEventListener('click', closeDeleteModal);
+        ui.confirmDeleteArtistBtn.addEventListener('click', confirmDeleteArtist);
+        
+        // Event listeners para eliminación
+        ui.cancelDeleteArtistBtn.addEventListener('click', closeDeleteModal);
+        ui.confirmDeleteArtistBtn.addEventListener('click', confirmDeleteArtist);
+
+        // Initialize
+        loadArtists();
+    </script>
+</body>
+</html>
