@@ -372,10 +372,21 @@
             const card = document.createElement('div');
             card.className = `juror-card p-4 rounded-lg ${isSecret ? 'secret-juror' : ''}`;
             
+            // Determinar tipo de voto
+            let voteType = '';
+            if (score.isCollaborative) {
+                voteType = '🤝 Colaborativo';
+            } else if (isSecret) {
+                voteType = '🔒 Secreto';
+            } else {
+                voteType = '👤 Individual';
+            }
+            
             card.innerHTML = `
                 <div class="flex justify-between items-center mb-3">
                     <h3 class="font-semibold ${isSecret ? 'text-yellow-300' : 'text-sky-300'}">
-                        ${score.jurorName} ${isSecret ? '(Secreto)' : ''}
+                        ${score.jurorName} 
+                        <span class="text-xs px-2 py-1 rounded ${score.isCollaborative ? 'bg-green-700' : isSecret ? 'bg-yellow-700' : 'bg-blue-700'}">${voteType}</span>
                     </h3>
                     <div class="text-xl font-bold text-green-400">${totalScore}/1000</div>
                 </div>
@@ -398,39 +409,56 @@
         }
 
         function calculateAverages() {
-            const mainJurors = currentScores.filter(score => !score.isSecret);
-            const allJurors = currentScores;
+            // Separar votos individuales de colaborativos
+            const individualVotes = currentScores.filter(score => !score.isCollaborative && !score.isSecret);
+            const collaborativeVotes = currentScores.filter(score => score.isCollaborative && !score.isSecret);
+            const secretVotes = currentScores.filter(score => score.isSecret);
 
-            // Promedio de jurados principales
-            if (mainJurors.length > 0) {
-                const mainSum = mainJurors.reduce((sum, score) => {
+            let mainVotes = [];
+            let displayText = '';
+
+            // Determinar qué votos usar para el promedio principal
+            if (collaborativeVotes.length > 0) {
+                // Si hay votos colaborativos, usar esos
+                mainVotes = collaborativeVotes;
+                displayText = 'Consenso Colaborativo';
+            } else if (individualVotes.length > 0) {
+                // Si no hay colaborativos, usar individuales
+                mainVotes = individualVotes;
+                displayText = `${individualVotes.length} jurados individuales`;
+            }
+
+            // Promedio principal (colaborativo o individual)
+            if (mainVotes.length > 0) {
+                const mainSum = mainVotes.reduce((sum, score) => {
                     return sum + Object.values(score.scores).reduce((s, v) => s + v, 0);
                 }, 0);
-                const mainAverage = Math.round(mainSum / mainJurors.length);
+                const mainAverage = Math.round(mainSum / mainVotes.length);
                 
                 ui.mainAverage.textContent = mainAverage;
-                ui.mainJurorsCount.textContent = `${mainJurors.length} jurados principales`;
+                ui.mainJurorsCount.textContent = displayText;
             } else {
                 ui.mainAverage.textContent = '0';
-                ui.mainJurorsCount.textContent = '0 jurados principales';
+                ui.mainJurorsCount.textContent = 'Sin votos principales';
             }
 
-            // Promedio total
-            if (allJurors.length > 0) {
-                const totalSum = allJurors.reduce((sum, score) => {
+            // Promedio total (incluyendo secretos)
+            const allMainVotes = [...mainVotes, ...secretVotes];
+            if (allMainVotes.length > 0) {
+                const totalSum = allMainVotes.reduce((sum, score) => {
                     return sum + Object.values(score.scores).reduce((s, v) => s + v, 0);
                 }, 0);
-                const totalAverage = Math.round(totalSum / allJurors.length);
+                const totalAverage = Math.round(totalSum / allMainVotes.length);
                 
                 ui.totalAverage.textContent = totalAverage;
-                ui.totalJurorsCount.textContent = `${allJurors.length} jurados total`;
+                ui.totalJurorsCount.textContent = `${allMainVotes.length} votos total (+ ${secretVotes.length} secretos)`;
             } else {
                 ui.totalAverage.textContent = '0';
-                ui.totalJurorsCount.textContent = '0 jurados total';
+                ui.totalJurorsCount.textContent = '0 votos total';
             }
 
-            // Desglose por criterios (solo jurados principales)
-            displayCriteriaBreakdown(mainJurors);
+            // Desglose por criterios (usar votos principales)
+            displayCriteriaBreakdown(mainVotes);
         }
 
         function displayCriteriaBreakdown(jurors) {

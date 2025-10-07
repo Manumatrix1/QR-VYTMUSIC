@@ -74,6 +74,55 @@
         <div id="message-container" class="mb-4"></div>
 
         <main class="space-y-8">
+            <!-- Configuración de Modo de Votación -->
+            <section class="bg-gray-800 p-6 rounded-lg shadow-xl">
+                <h2 class="text-2xl font-bold mb-4">⚙️ Modo de Votación</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <label class="block mb-3 font-semibold text-gray-300">Seleccionar Modo:</label>
+                        <div class="space-y-3">
+                            <label class="flex items-center space-x-3 cursor-pointer">
+                                <input type="radio" name="voting-mode" value="individual" id="mode-individual" 
+                                       class="text-sky-600 focus:ring-sky-600">
+                                <div>
+                                    <span class="font-semibold text-sky-300">🔹 Individual</span>
+                                    <p class="text-sm text-gray-400">Cada jurado vota por separado desde su cuenta</p>
+                                </div>
+                            </label>
+                            <label class="flex items-center space-x-3 cursor-pointer">
+                                <input type="radio" name="voting-mode" value="collaborative" id="mode-collaborative" 
+                                       class="text-sky-600 focus:ring-sky-600">
+                                <div>
+                                    <span class="font-semibold text-sky-300">🤝 Colaborativo</span>
+                                    <p class="text-sm text-gray-400">Los jurados dialogan y votan desde una sola cuenta</p>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+                    <div>
+                        <label for="collaborative-account" class="block mb-2 font-semibold text-gray-300">
+                            Cuenta para Modo Colaborativo:
+                        </label>
+                        <select id="collaborative-account" class="w-full p-3 border border-gray-600 rounded-lg bg-gray-700 text-white">
+                            <option value="">Seleccionar jurado...</option>
+                        </select>
+                        <p class="text-xs text-gray-400 mt-2">
+                            Solo esta cuenta podrá votar en modo colaborativo
+                        </p>
+                        <button id="save-voting-config-btn" class="mt-3 w-full px-4 py-2 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700">
+                            💾 Aplicar Configuración
+                        </button>
+                    </div>
+                </div>
+                <div class="mt-4 p-4 bg-gray-700 rounded-lg">
+                    <h3 class="font-semibold text-yellow-300 mb-2">💡 Cómo Funciona:</h3>
+                    <ul class="text-sm text-gray-300 space-y-1">
+                        <li><strong>Individual:</strong> Cada jurado tiene su cuenta y vota independientemente (ideal para finales)</li>
+                        <li><strong>Colaborativo:</strong> Los 3 jurados discuten juntos y uno carga la puntuación consensuada (más práctico)</li>
+                    </ul>
+                </div>
+            </section>
+
             <!-- Sección de configuración general -->
             <section class="bg-gray-800 p-6 rounded-lg shadow-xl">
                 <h2 class="text-2xl font-bold mb-4">Configuración de Votación de Jurados</h2>
@@ -192,6 +241,12 @@
             votingEnabled: document.getElementById('voting-enabled'),
             saveConfigBtn: document.getElementById('save-config-btn'),
             
+            // Voting Mode
+            modeIndividual: document.getElementById('mode-individual'),
+            modeCollaborative: document.getElementById('mode-collaborative'),
+            collaborativeAccount: document.getElementById('collaborative-account'),
+            saveVotingConfigBtn: document.getElementById('save-voting-config-btn'),
+            
             // Lists
             jurorsList: document.getElementById('jurors-list'),
             
@@ -215,6 +270,7 @@
 
         let currentJurorId = null;
         let jurors = [];
+        let votingConfig = null;
 
         // Initialize
         ui.eventNameDisplay.textContent = eventName;
@@ -291,14 +347,39 @@
 
         async function loadConfig() {
             try {
-                const configDoc = await getDoc(doc(db, `events/${eventId}/config/jury-voting`));
+                const configDoc = await getDoc(doc(db, `events/${eventId}/config/jury_voting`));
                 if (configDoc.exists()) {
-                    const config = configDoc.data();
-                    ui.galaNumber.value = config.galaNumber || 1;
-                    ui.votingEnabled.checked = config.votingEnabled || false;
+                    votingConfig = configDoc.data();
+                    ui.galaNumber.value = votingConfig.currentGala || votingConfig.galaNumber || 1;
+                    ui.votingEnabled.checked = votingConfig.enabled || votingConfig.votingEnabled || false;
+                    
+                    // Cargar configuración de modo de votación
+                    if (votingConfig.votingMode) {
+                        if (votingConfig.votingMode === 'individual') {
+                            ui.modeIndividual.checked = true;
+                        } else if (votingConfig.votingMode === 'collaborative') {
+                            ui.modeCollaborative.checked = true;
+                        }
+                    } else {
+                        // Modo individual por defecto
+                        ui.modeIndividual.checked = true;
+                    }
+                    
+                    // Cargar cuenta colaborativa
+                    if (votingConfig.collaborativeAccount) {
+                        ui.collaborativeAccount.value = votingConfig.collaborativeAccount;
+                    }
+                } else {
+                    // Configuración por defecto
+                    ui.modeIndividual.checked = true;
+                    ui.galaNumber.value = 1;
+                    ui.votingEnabled.checked = false;
                 }
+                
+                await loadCollaborativeAccountOptions();
             } catch (error) {
                 console.error('Error loading config:', error);
+                showMessage('Error al cargar configuración', 'error');
             }
         }
 
@@ -426,10 +507,24 @@
         ui.cancelJurorBtn.addEventListener('click', closeJurorModal);
         ui.jurorForm.addEventListener('submit', saveJuror);
         ui.saveConfigBtn.addEventListener('click', saveConfig);
+        ui.saveVotingConfigBtn.addEventListener('click', saveVotingConfiguration);
         ui.cancelDeleteBtn.addEventListener('click', () => ui.deleteModal.classList.add('hidden'));
         ui.confirmDeleteBtn.addEventListener('click', confirmDelete);
         ui.copyJuryLinkBtn.addEventListener('click', () => copyToClipboard(ui.juryVotingLink.value));
         ui.copyResultsLinkBtn.addEventListener('click', () => copyToClipboard(ui.juryResultsLink.value));
+        
+        // Event listener para cambio de modo de votación
+        ui.modeIndividual.addEventListener('change', () => {
+            if (ui.modeIndividual.checked) {
+                ui.collaborativeAccount.disabled = true;
+            }
+        });
+        
+        ui.modeCollaborative.addEventListener('change', () => {
+            if (ui.modeCollaborative.checked) {
+                ui.collaborativeAccount.disabled = false;
+            }
+        });
 
         // Initialize data
         loadConfig();

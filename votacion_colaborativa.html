@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Panel Colaborativo - Jurado VYTMUSIC</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { 
+            font-family: 'Inter', sans-serif; 
+            background-color: #111827; 
+            color: #f9fafb; 
+        }
+        .hidden { display: none !important; }
+        .loading-overlay { 
+            position: fixed; 
+            top: 0; left: 0; width: 100%; height: 100%; 
+            background-color: rgba(0,0,0,0.8); 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            z-index: 1000; 
+        }
+        .spinner { 
+            border: 4px solid rgba(255,255,255,0.3); 
+            border-top: 4px solid #38bdf8; 
+            border-radius: 50%; 
+            width: 40px; height: 40px; 
+            animation: spin 1s linear infinite; 
+        }
+        @keyframes spin { 
+            0% { transform: rotate(0deg); } 
+            100% { transform: rotate(360deg); } 
+        }
+        
+        .artist-card { 
+            background-color: #1f2937; 
+            border: 2px solid #374151; 
+            border-radius: 0.5rem; 
+            padding: 1rem; 
+            transition: all 0.3s; 
+            margin-bottom: 1rem; 
+        }
+        .artist-card.voted { 
+            border-color: #10b981; 
+            background-color: #065f46; 
+        }
+        .artist-card:hover {
+            border-color: #38bdf8;
+            transform: translateY(-2px);
+        }
+        
+        .criteria-voting { 
+            margin-bottom: 1rem; 
+            padding: 1rem; 
+            background-color: #374151; 
+            border-radius: 0.5rem; 
+        }
+        .criteria-voting h4 { 
+            font-size: 1.1rem; 
+            margin-bottom: 0.75rem; 
+            text-align: center; 
+            color: #38bdf8;
+        }
+        .rating-buttons { 
+            display: grid; 
+            grid-template-columns: repeat(5, 1fr); 
+            gap: 0.5rem; 
+        }
+        .rating-btn { 
+            padding: 0.75rem 0.5rem; 
+            border-radius: 0.5rem; 
+            font-weight: 600; 
+            text-align: center; 
+            cursor: pointer; 
+            transition: all 0.2s; 
+            border: 2px solid transparent; 
+            font-size: 0.9rem; 
+        }
+        .rating-btn:hover { 
+            transform: scale(1.05); 
+        }
+        .rating-btn.selected { 
+            border-color: #ffffff; 
+            box-shadow: 0 0 8px rgba(59, 130, 246, 0.5); 
+        }
+        
+        .rating-malo { background-color: #dc2626; color: white; }
+        .rating-mediocre { background-color: #ea580c; color: white; }
+        .rating-bueno { background-color: #eab308; color: white; }
+        .rating-muy-bueno { background-color: #16a34a; color: white; }
+        .rating-excelente { background-color: #059669; color: white; }
+        
+        @media (max-width: 768px) {
+            .rating-buttons { 
+                grid-template-columns: repeat(2, 1fr); 
+                gap: 0.75rem; 
+            }
+            .rating-btn { 
+                padding: 1rem; 
+                font-size: 0.85rem; 
+            }
+        }
+        
+        .consensus-indicator {
+            background: linear-gradient(45deg, #059669, #10b981);
+            padding: 1rem;
+            border-radius: 0.5rem;
+            text-align: center;
+            margin: 1rem 0;
+        }
+        
+        .modal-backdrop { 
+            position: fixed; 
+            top: 0; left: 0; width: 100%; height: 100%; 
+            background-color: rgba(0,0,0,0.7); 
+            z-index: 900; 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+        }
+        .modal-content { 
+            background-color: #1f2937; 
+            padding: 2rem; 
+            border-radius: 0.5rem; 
+            max-width: 90%; 
+            width: 500px; 
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5); 
+        }
+    </style>
+</head>
+<body class="antialiased">
+    <div id="loading-overlay" class="loading-overlay hidden">
+        <div class="spinner"></div>
+    </div>
+
+    <!-- Modal de confirmación -->
+    <div id="confirm-modal" class="modal-backdrop hidden">
+        <div class="modal-content">
+            <h3 class="text-xl font-bold mb-4 text-yellow-400">Confirmar Votación Colaborativa</h3>
+            <p id="confirm-message" class="mb-4 text-gray-300"></p>
+            <div class="flex justify-end space-x-4">
+                <button id="cancel-vote-btn" class="px-4 py-2 bg-gray-600 text-white font-semibold rounded-lg hover:bg-gray-700">
+                    Cancelar
+                </button>
+                <button id="confirm-vote-btn" class="px-4 py-2 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700">
+                    Confirmar Consenso
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="container mx-auto max-w-6xl p-4 sm:p-6">
+        <header class="text-center mb-6">
+            <a href="gestion_jurados.html" class="text-sky-400 hover:underline mb-4 inline-block">&larr; Volver a Gestión</a>
+            <img src="https://i.imgur.com/rqkZi9P.png" alt="VYTMUSIC Logo" class="mx-auto mb-4 bg-white rounded-full" style="max-width: 100px;">
+            <h1 class="text-3xl sm:text-4xl font-bold text-sky-400">Panel Colaborativo de Jurado</h1>
+            <p id="event-name-display" class="text-xl text-gray-300 mt-2"></p>
+            <div class="consensus-indicator">
+                <h2 class="text-xl font-bold">🤝 Modo Colaborativo Activo</h2>
+                <p class="text-sm mt-1">Los 3 jurados dialogan y consensúan una sola puntuación</p>
+            </div>
+        </header>
+
+        <div id="message-container" class="mb-4"></div>
+
+        <!-- Información de la gala actual -->
+        <section class="bg-gray-800 p-6 rounded-lg shadow-xl mb-6">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <h3 class="font-bold text-sky-300 mb-2">Información de la Gala</h3>
+                    <p id="gala-info" class="text-gray-300"></p>
+                </div>
+                <div>
+                    <h3 class="font-bold text-sky-300 mb-2">Cuenta Autorizada</h3>
+                    <p id="authorized-account" class="text-gray-300"></p>
+                    <p class="text-sm text-gray-400">Solo esta cuenta puede votar en modo colaborativo</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Criterios de evaluación -->
+        <section class="bg-gray-800 p-6 rounded-lg shadow-xl mb-6">
+            <h2 class="text-2xl font-bold mb-4 text-center">Criterios de Evaluación Profesional</h2>
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-2 text-center text-sm">
+                <div class="bg-gray-700 p-3 rounded">
+                    <h3 class="font-bold text-sky-300 text-xs">Afinación</h3>
+                    <p class="text-xs text-gray-400">Precisión tonal</p>
+                </div>
+                <div class="bg-gray-700 p-3 rounded">
+                    <h3 class="font-bold text-sky-300 text-xs">Ritmo</h3>
+                    <p class="text-xs text-gray-400">Pulso musical</p>
+                </div>
+                <div class="bg-gray-700 p-3 rounded">
+                    <h3 class="font-bold text-sky-300 text-xs">Técnica</h3>
+                    <p class="text-xs text-gray-400">Control vocal</p>
+                </div>
+                <div class="bg-gray-700 p-3 rounded">
+                    <h3 class="font-bold text-sky-300 text-xs">Expresión</h3>
+                    <p class="text-xs text-gray-400">Transmisión</p>
+                </div>
+                <div class="bg-gray-700 p-3 rounded">
+                    <h3 class="font-bold text-sky-300 text-xs">Presencia</h3>
+                    <p class="text-xs text-gray-400">Escenario</p>
+                </div>
+                <div class="bg-gray-700 p-3 rounded">
+                    <h3 class="font-bold text-sky-300 text-xs">Original.</h3>
+                    <p class="text-xs text-gray-400">Estilo propio</p>
+                </div>
+                <div class="bg-gray-700 p-3 rounded">
+                    <h3 class="font-bold text-sky-300 text-xs">Dicción</h3>
+                    <p class="text-xs text-gray-400">Claridad</p>
+                </div>
+                <div class="bg-gray-700 p-3 rounded">
+                    <h3 class="font-bold text-sky-300 text-xs">Conexión</h3>
+                    <p class="text-xs text-gray-400">Con público</p>
+                </div>
+                <div class="bg-gray-700 p-3 rounded">
+                    <h3 class="font-bold text-sky-300 text-xs">Actitud</h3>
+                    <p class="text-xs text-gray-400">Compromiso</p>
+                </div>
+                <div class="bg-gray-700 p-3 rounded">
+                    <h3 class="font-bold text-sky-300 text-xs">Evolución</h3>
+                    <p class="text-xs text-gray-400">Crecimiento</p>
+                </div>
+            </div>
+            <div class="mt-4 text-center">
+                <h3 class="font-bold text-lg text-yellow-300 mb-2">Escala de Calificación:</h3>
+                <div class="grid grid-cols-2 md:grid-cols-5 gap-1 max-w-2xl mx-auto text-xs">
+                    <div class="rating-btn rating-malo">Malo (20pts)</div>
+                    <div class="rating-btn rating-mediocre">Mediocre (40pts)</div>
+                    <div class="rating-btn rating-bueno">Bueno (60pts)</div>
+                    <div class="rating-btn rating-muy-bueno">Muy Bueno (80pts)</div>
+                    <div class="rating-btn rating-excelente">Excelente (100pts)</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Lista de artistas -->
+        <section id="voting-section">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-2xl font-bold">Artistas Participantes</h2>
+                <button id="logout-btn" class="px-4 py-2 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700">
+                    Finalizar Sesión
+                </button>
+            </div>
+            
+            <div id="artists-list" class="space-y-6">
+                <p class="text-center text-gray-400">Cargando artistas...</p>
+            </div>
+            
+            <div id="voting-disabled-message" class="hidden text-center py-8">
+                <p class="text-xl text-yellow-400">El modo colaborativo no está activo</p>
+                <p class="text-gray-400">Contacta al administrador para configurar la votación</p>
+            </div>
+        </section>
+
+        <!-- Resumen de votos colaborativos -->
+        <section class="bg-gray-800 p-6 rounded-lg shadow-xl mt-8">
+            <h2 class="text-2xl font-bold mb-4">Resumen de Votaciones Colaborativas</h2>
+            <div id="voting-summary" class="space-y-2">
+                <p class="text-center text-gray-400">No hay votos registrados aún</p>
+            </div>
+        </section>
+    </div>
+
+    <script type="module">
+        import { db } from './firebase_config.js';
+        import { collection, getDocs, doc, getDoc, setDoc, onSnapshot, query, where, orderBy } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const eventId = urlParams.get('eventId');
+        
+        if (!eventId) {
+            document.body.innerHTML = '<p class="text-center text-red-500">Error: No se ha especificado un evento.</p>';
+            throw new Error('Event ID missing');
+        }
+
+        // Variables globales
+        let currentConfig = null;
+        let currentGala = null;
+        let artists = [];
+        let currentVote = null;
+
+        // Criterios de evaluación
+        const CRITERIA = {
+            afinacion: 'Afinación',
+            ritmo: 'Ritmo y Tempo',
+            tecnica: 'Técnica Vocal',
+            expresion: 'Expresión',
+            presencia: 'Presencia Escénica',
+            originalidad: 'Originalidad',
+            diccion: 'Dicción',
+            conexion: 'Conexión con Público',
+            actitud: 'Actitud',
+            evolucion: 'Evolución'
+        };
+
+        // Elementos del DOM
+        const ui = {
+            messageContainer: document.getElementById('message-container'),
+            loadingOverlay: document.getElementById('loading-overlay'),
+            eventNameDisplay: document.getElementById('event-name-display'),
+            galaInfo: document.getElementById('gala-info'),
+            authorizedAccount: document.getElementById('authorized-account'),
+            artistsList: document.getElementById('artists-list'),
+            votingDisabledMessage: document.getElementById('voting-disabled-message'),
+            votingSummary: document.getElementById('voting-summary'),
+            confirmModal: document.getElementById('confirm-modal'),
+            confirmMessage: document.getElementById('confirm-message'),
+            cancelVoteBtn: document.getElementById('cancel-vote-btn'),
+            confirmVoteBtn: document.getElementById('confirm-vote-btn'),
+            logoutBtn: document.getElementById('logout-btn')
+        };
+
+        // Inicialización
+        async function initialize() {
+            try {
+                showLoading(true);
+                await loadEventData();
+                await loadConfiguration();
+                await checkAccess();
+                await loadArtists();
+                await loadVotingSummary();
+                setupEventListeners();
+                showMessage('Panel colaborativo cargado correctamente', 'success');
+            } catch (error) {
+                console.error('Error inicializando:', error);
+                showMessage('Error al cargar el panel: ' + error.message, 'error');
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        async function loadEventData() {
+            const eventDoc = await getDoc(doc(db, 'events', eventId));
+            if (eventDoc.exists()) {
+                const eventData = eventDoc.data();
+                ui.eventNameDisplay.textContent = eventData.name;
+            }
+        }
+
+        async function loadConfiguration() {
+            try {
+                const configDoc = await getDoc(doc(db, 'events', eventId, 'config', 'jury_voting'));
+                if (configDoc.exists()) {
+                    currentConfig = configDoc.data();
+                    
+                    if (currentConfig.votingMode !== 'collaborative') {
+                        throw new Error('El modo colaborativo no está activo');
+                    }
+                    
+                    ui.galaInfo.textContent = `Gala ${currentConfig.currentGala} - Votación en curso`;
+                    ui.authorizedAccount.textContent = currentConfig.collaborativeAccount || 'No configurada';
+                    currentGala = currentConfig.currentGala;
+                } else {
+                    throw new Error('Configuración de votación no encontrada');
+                }
+            } catch (error) {
+                ui.votingDisabledMessage.classList.remove('hidden');
+                throw error;
+            }
+        }
+
+        async function checkAccess() {
+            // En modo colaborativo, solo verificamos que esté configurado
+            // La autenticación real se haría en el sistema completo
+            if (!currentConfig.collaborativeAccount) {
+                throw new Error('Cuenta colaborativa no configurada');
+            }
+        }
+
+        async function loadArtists() {
+            try {
+                const artistsQuery = query(collection(db, 'events', eventId, 'artists'), orderBy('name'));
+                const artistsSnapshot = await getDocs(artistsQuery);
+                
+                artists = [];
+                artistsSnapshot.forEach(doc => {
+                    artists.push({ id: doc.id, ...doc.data() });
+                });
+
+                await displayArtists();
+            } catch (error) {
+                console.error('Error cargando artistas:', error);
+                showMessage('Error al cargar la lista de artistas', 'error');
+            }
+        }
+
+        async function displayArtists() {
+            if (artists.length === 0) {
+                ui.artistsList.innerHTML = '<p class="text-center text-gray-400">No hay artistas registrados</p>';
+                return;
+            }
+
+            // Cargar votos existentes para esta gala
+            const votesQuery = query(
+                collection(db, 'events', eventId, 'jury_votes'),
+                where('galaId', '==', currentGala.toString()),
+                where('isCollaborative', '==', true)
+            );
+            const votesSnapshot = await getDocs(votesQuery);
+            const existingVotes = new Set();
+            votesSnapshot.forEach(doc => {
+                existingVotes.add(doc.data().artistId);
+            });
+
+            ui.artistsList.innerHTML = '';
+            
+            artists.forEach(artist => {
+                const hasVoted = existingVotes.has(artist.id);
+                const card = createArtistCard(artist, hasVoted);
+                ui.artistsList.appendChild(card);
+            });
+        }
+
+        function createArtistCard(artist, hasVoted) {
+            const card = document.createElement('div');
+            card.className = `artist-card ${hasVoted ? 'voted' : ''}`;
+            card.innerHTML = `
+                <div class="flex items-center gap-4 mb-4">
+                    ${artist.photoUrl ? `
+                        <img src="${artist.photoUrl}" alt="${artist.name}" 
+                             class="w-16 h-16 object-cover rounded-full border-2 border-sky-300">
+                    ` : `
+                        <div class="w-16 h-16 bg-gray-600 rounded-full flex items-center justify-center border-2 border-sky-300">
+                            <span class="text-2xl">🎤</span>
+                        </div>
+                    `}
+                    <div class="flex-1">
+                        <h3 class="text-xl font-bold text-sky-400">${artist.name}</h3>
+                        <p class="text-gray-300">${artist.currentSong || 'Sin canción especificada'}</p>
+                        <p class="text-sm text-gray-400">${artist.city || ''}</p>
+                        ${hasVoted ? '<span class="inline-block px-2 py-1 bg-green-600 text-white text-xs rounded-full mt-1">✅ Ya votado</span>' : ''}
+                    </div>
+                </div>
+                
+                ${!hasVoted ? `
+                    <div class="voting-form" data-artist-id="${artist.id}">
+                        <div class="space-y-4">
+                            ${Object.entries(CRITERIA).map(([key, name]) => `
+                                <div class="criteria-voting">
+                                    <h4>${name}</h4>
+                                    <div class="rating-buttons">
+                                        <div class="rating-btn rating-malo" data-criteria="${key}" data-value="20">
+                                            Malo<br><small>(20)</small>
+                                        </div>
+                                        <div class="rating-btn rating-mediocre" data-criteria="${key}" data-value="40">
+                                            Mediocre<br><small>(40)</small>
+                                        </div>
+                                        <div class="rating-btn rating-bueno" data-criteria="${key}" data-value="60">
+                                            Bueno<br><small>(60)</small>
+                                        </div>
+                                        <div class="rating-btn rating-muy-bueno" data-criteria="${key}" data-value="80">
+                                            Muy Bueno<br><small>(80)</small>
+                                        </div>
+                                        <div class="rating-btn rating-excelente" data-criteria="${key}" data-value="100">
+                                            Excelente<br><small>(100)</small>
+                                        </div>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                        
+                        <div class="mt-6">
+                            <label class="block text-sm font-medium text-gray-300 mb-2">
+                                Consenso del Jurado (Comentarios):
+                            </label>
+                            <textarea class="w-full p-3 border border-gray-600 rounded-lg bg-gray-700 text-white" 
+                                      rows="3" placeholder="Comentarios consensuados entre los 3 jurados..."></textarea>
+                        </div>
+                        
+                        <div class="bg-gray-700 p-4 rounded-lg mt-4 text-center">
+                            <h3 class="text-lg font-bold text-yellow-300 mb-2">Puntaje Total</h3>
+                            <div class="total-score text-3xl font-bold text-green-400">0 / 1000 pts</div>
+                            <p class="text-gray-400 text-sm mt-1">Se actualiza automáticamente</p>
+                        </div>
+                        
+                        <div class="flex gap-4 mt-6">
+                            <button class="vote-btn flex-1 py-3 px-6 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700">
+                                ✅ Enviar Consenso
+                            </button>
+                            <button class="clear-btn flex-1 py-3 px-6 bg-gray-600 text-white font-bold rounded-lg hover:bg-gray-700">
+                                🔄 Limpiar
+                            </button>
+                        </div>
+                    </div>
+                ` : ''}
+            `;
+
+            // Configurar eventos para los botones de calificación
+            if (!hasVoted) {
+                setupVotingEvents(card, artist);
+            }
+
+            return card;
+        }
+
+        function setupVotingEvents(card, artist) {
+            const ratingBtns = card.querySelectorAll('.rating-btn');
+            const totalScoreEl = card.querySelector('.total-score');
+            const voteBtn = card.querySelector('.vote-btn');
+            const clearBtn = card.querySelector('.clear-btn');
+            const commentTextarea = card.querySelector('textarea');
+
+            let scores = {};
+
+            // Eventos para botones de calificación
+            ratingBtns.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const criteria = btn.dataset.criteria;
+                    const value = parseInt(btn.dataset.value);
+                    
+                    // Remover selección previa del mismo criterio
+                    card.querySelectorAll(`[data-criteria="${criteria}"]`).forEach(b => {
+                        b.classList.remove('selected');
+                    });
+                    
+                    // Seleccionar este botón
+                    btn.classList.add('selected');
+                    scores[criteria] = value;
+                    
+                    updateTotalScore(totalScoreEl, scores);
+                });
+            });
+
+            // Evento para enviar voto
+            voteBtn.addEventListener('click', () => {
+                if (Object.keys(scores).length === Object.keys(CRITERIA).length) {
+                    currentVote = {
+                        artistId: artist.id,
+                        artistName: artist.name,
+                        scores: scores,
+                        comentarios: commentTextarea.value.trim(),
+                        totalScore: Object.values(scores).reduce((sum, val) => sum + val, 0)
+                    };
+                    
+                    ui.confirmMessage.textContent = `¿Confirmar consenso para ${artist.name} con ${currentVote.totalScore} puntos?`;
+                    ui.confirmModal.classList.remove('hidden');
+                } else {
+                    showMessage('Por favor califica todos los criterios antes de enviar', 'error');
+                }
+            });
+
+            // Evento para limpiar
+            clearBtn.addEventListener('click', () => {
+                ratingBtns.forEach(btn => btn.classList.remove('selected'));
+                scores = {};
+                commentTextarea.value = '';
+                updateTotalScore(totalScoreEl, scores);
+            });
+        }
+
+        function updateTotalScore(totalScoreEl, scores) {
+            const total = Object.values(scores).reduce((sum, val) => sum + val, 0);
+            totalScoreEl.textContent = `${total} / 1000 pts`;
+        }
+
+        async function saveCollaborativeVote() {
+            if (!currentVote) return;
+
+            try {
+                showLoading(true);
+                
+                const voteData = {
+                    ...currentVote,
+                    eventId: eventId,
+                    galaId: currentGala.toString(),
+                    jurorName: 'Consenso Colaborativo',
+                    isCollaborative: true,
+                    isSecret: false,
+                    collaborativeAccount: currentConfig.collaborativeAccount,
+                    timestamp: new Date().toISOString()
+                };
+
+                const voteId = `${eventId}_${currentGala}_${currentVote.artistId}_collaborative`;
+                await setDoc(doc(db, 'events', eventId, 'jury_votes', voteId), voteData);
+
+                showMessage('Consenso guardado exitosamente', 'success');
+                await displayArtists(); // Recargar para mostrar como votado
+                await loadVotingSummary();
+                
+            } catch (error) {
+                console.error('Error guardando voto:', error);
+                showMessage('Error al guardar el consenso: ' + error.message, 'error');
+            } finally {
+                showLoading(false);
+                ui.confirmModal.classList.add('hidden');
+                currentVote = null;
+            }
+        }
+
+        async function loadVotingSummary() {
+            try {
+                const votesQuery = query(
+                    collection(db, 'events', eventId, 'jury_votes'),
+                    where('galaId', '==', currentGala.toString()),
+                    where('isCollaborative', '==', true)
+                );
+                const votesSnapshot = await getDocs(votesQuery);
+                
+                if (votesSnapshot.empty) {
+                    ui.votingSummary.innerHTML = '<p class="text-center text-gray-400">No hay consensos registrados aún</p>';
+                    return;
+                }
+
+                let summaryHTML = '';
+                votesSnapshot.forEach(doc => {
+                    const vote = doc.data();
+                    summaryHTML += `
+                        <div class="bg-gray-700 p-4 rounded-lg">
+                            <div class="flex justify-between items-center">
+                                <span class="font-semibold text-sky-300">${vote.artistName}</span>
+                                <span class="text-lg font-bold text-green-400">${vote.totalScore}/1000</span>
+                            </div>
+                            ${vote.comentarios ? `<p class="text-sm text-gray-400 mt-2">${vote.comentarios}</p>` : ''}
+                        </div>
+                    `;
+                });
+                
+                ui.votingSummary.innerHTML = summaryHTML;
+                
+            } catch (error) {
+                console.error('Error cargando resumen:', error);
+            }
+        }
+
+        function setupEventListeners() {
+            ui.cancelVoteBtn.addEventListener('click', () => {
+                ui.confirmModal.classList.add('hidden');
+                currentVote = null;
+            });
+
+            ui.confirmVoteBtn.addEventListener('click', saveCollaborativeVote);
+
+            ui.logoutBtn.addEventListener('click', () => {
+                window.location.href = 'gestion_jurados.html?eventId=' + eventId;
+            });
+        }
+
+        function showLoading(show) {
+            ui.loadingOverlay.classList.toggle('hidden', !show);
+        }
+
+        function showMessage(message, type = 'info') {
+            const bgColor = type === 'success' ? 'bg-green-600' : type === 'error' ? 'bg-red-600' : 'bg-blue-600';
+            
+            ui.messageContainer.innerHTML = `
+                <div class="${bgColor} text-white p-4 rounded-lg shadow-xl">
+                    ${message}
+                </div>
+            `;
+            
+            setTimeout(() => {
+                ui.messageContainer.innerHTML = '';
+            }, 5000);
+        }
+
+        // Inicializar la aplicación
+        initialize();
+    </script>
+</body>
+</html>
