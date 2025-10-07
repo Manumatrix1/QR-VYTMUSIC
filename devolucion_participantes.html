@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Devolución para Participantes - VYTMUSIC</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #111827; color: #f9fafb; }
+        .feedback-card { background-color: #1f2937; border-radius: 0.75rem; padding: 1.5rem; margin-bottom: 1rem; border-left: 4px solid #38bdf8; }
+        .score-circle { width: 80px; height: 80px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; font-weight: bold; margin: 0 auto; }
+        .score-excellent { background: linear-gradient(135deg, #059669, #10b981); color: white; }
+        .score-very-good { background: linear-gradient(135deg, #16a34a, #22c55e); color: white; }
+        .score-good { background: linear-gradient(135deg, #eab308, #fbbf24); color: #1f2937; }
+        .score-fair { background: linear-gradient(135deg, #ea580c, #fb923c); color: white; }
+        .score-poor { background: linear-gradient(135deg, #dc2626, #ef4444); color: white; }
+        .criteria-breakdown { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-top: 1rem; }
+        .criteria-item { background-color: #374151; padding: 1rem; border-radius: 0.5rem; text-align: center; }
+        .share-buttons { display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: center; margin-top: 1rem; }
+        .share-btn { padding: 0.5rem 1rem; border-radius: 0.5rem; font-weight: 600; text-decoration: none; display: inline-flex; align-items: center; gap: 0.5rem; }
+        .share-whatsapp { background-color: #25d366; color: white; }
+        .share-copy { background-color: #6b7280; color: white; }
+    </style>
+</head>
+<body class="antialiased">
+    <div class="container mx-auto max-w-4xl p-4 sm:p-6">
+        <header class="text-center mb-8">
+            <img src="https://i.imgur.com/rqkZi9P.png" alt="VYTMUSIC Logo" class="mx-auto mb-4 bg-white rounded-full" style="max-width: 120px;">
+            <h1 class="text-4xl sm:text-5xl font-bold text-sky-400">Devolución del Jurado</h1>
+            <p class="text-xl text-gray-300 mt-2">Feedback Profesional para Participantes</p>
+        </header>
+
+        <!-- Selector de artista -->
+        <section class="bg-gray-800 p-6 rounded-lg shadow-xl mb-6">
+            <h2 class="text-2xl font-bold mb-4">Generar Devolución</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label for="artist-select" class="block mb-2 font-semibold text-gray-300">Seleccionar Artista:</label>
+                    <select id="artist-select" class="w-full p-3 rounded-md bg-gray-900 text-white border border-gray-600">
+                        <option value="">Cargando artistas...</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="gala-select" class="block mb-2 font-semibold text-gray-300">Gala:</label>
+                    <select id="gala-select" class="w-full p-3 rounded-md bg-gray-900 text-white border border-gray-600">
+                        <option value="all">Todas las Galas (Acumulado)</option>
+                        <option value="1">Gala 1</option>
+                        <option value="2">Gala 2</option>
+                        <option value="3">Gala 3</option>
+                        <option value="4">Gala 4</option>
+                        <option value="5">Gala 5</option>
+                    </select>
+                </div>
+            </div>
+            <button id="generate-feedback-btn" class="mt-4 w-full px-4 py-3 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700" disabled>
+                Generar Devolución
+            </button>
+        </section>
+
+        <!-- Devolución generada -->
+        <div id="feedback-container" class="hidden">
+            <section class="feedback-card">
+                <div class="text-center mb-6">
+                    <img id="feedback-artist-photo" src="" class="w-24 h-24 rounded-full mx-auto border-4 border-sky-400 mb-4">
+                    <h2 id="feedback-artist-name" class="text-3xl font-bold text-sky-300"></h2>
+                    <p id="feedback-gala-info" class="text-gray-400"></p>
+                </div>
+
+                <!-- Puntuación General -->
+                <div class="text-center mb-6">
+                    <div id="score-circle" class="score-circle mx-auto mb-4">
+                        <span id="final-score">0</span>
+                    </div>
+                    <h3 class="text-xl font-semibold mb-2">Puntuación General del Jurado</h3>
+                    <p id="score-description" class="text-gray-300"></p>
+                    <p class="text-sm text-gray-400 mt-2">
+                        Basado en <span id="jury-count">0</span> evaluaciones profesionales
+                        <span id="secret-note" class="hidden">(excluye voto secreto)</span>
+                    </p>
+                </div>
+
+                <!-- Desglose por Criterios -->
+                <div class="mb-6">
+                    <h3 class="text-xl font-semibold mb-4 text-center">Evaluación por Criterios</h3>
+                    <div id="criteria-breakdown" class="criteria-breakdown">
+                        <!-- Se llena dinámicamente -->
+                    </div>
+                </div>
+
+                <!-- Puntos Fuertes y a Mejorar -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                    <div class="bg-green-900 p-4 rounded-lg">
+                        <h4 class="font-bold text-green-300 mb-2">🎯 Puntos Fuertes</h4>
+                        <ul id="strengths-list" class="text-green-200 space-y-1">
+                            <!-- Se llena dinámicamente -->
+                        </ul>
+                    </div>
+                    <div class="bg-yellow-900 p-4 rounded-lg">
+                        <h4 class="font-bold text-yellow-300 mb-2">💡 Oportunidades de Mejora</h4>
+                        <ul id="improvements-list" class="text-yellow-200 space-y-1">
+                            <!-- Se llena dinámicamente -->
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Mensaje del Jurado -->
+                <div class="bg-blue-900 p-4 rounded-lg mb-6">
+                    <h4 class="font-bold text-blue-300 mb-2">📝 Mensaje del Jurado</h4>
+                    <p id="jury-message" class="text-blue-200">
+                        <!-- Se llena dinámicamente -->
+                    </p>
+                </div>
+
+                <!-- Botones para compartir -->
+                <div class="text-center">
+                    <h4 class="font-semibold mb-3">Compartir Devolución:</h4>
+                    <div class="share-buttons">
+                        <a id="share-whatsapp" href="#" class="share-btn share-whatsapp">
+                            📱 WhatsApp
+                        </a>
+                        <button id="copy-feedback" class="share-btn share-copy">
+                            📋 Copiar Texto
+                        </button>
+                        <button id="download-pdf" class="share-btn" style="background-color: #dc2626;">
+                            📄 Descargar PDF
+                        </button>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <!-- Instrucciones -->
+        <section class="bg-gray-700 p-4 rounded-lg mt-6">
+            <h3 class="font-semibold text-yellow-300 mb-2">💡 Información:</h3>
+            <ul class="text-gray-300 text-sm space-y-1">
+                <li>• La puntuación se basa solo en votos de jurados públicos (no incluye voto secreto)</li>
+                <li>• Se promedian todas las evaluaciones para dar una puntuación justa</li>
+                <li>• El feedback es constructivo y busca el crecimiento artístico</li>
+                <li>• Puedes generar devoluciones por gala individual o acumulado total</li>
+            </ul>
+        </section>
+    </div>
+
+    <script type="module">
+        import { db } from './firebase_config.js';
+        import { collection, getDocs, query, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const eventId = urlParams.get('eventId');
+
+        if (!eventId) {
+            document.body.innerHTML = '<p class="text-center text-red-500">Error: No se ha especificado un evento.</p>';
+            throw new Error('Event ID missing');
+        }
+
+        // UI Elements
+        const ui = {
+            artistSelect: document.getElementById('artist-select'),
+            galaSelect: document.getElementById('gala-select'),
+            generateBtn: document.getElementById('generate-feedback-btn'),
+            feedbackContainer: document.getElementById('feedback-container'),
+            feedbackArtistPhoto: document.getElementById('feedback-artist-photo'),
+            feedbackArtistName: document.getElementById('feedback-artist-name'),
+            feedbackGalaInfo: document.getElementById('feedback-gala-info'),
+            scoreCircle: document.getElementById('score-circle'),
+            finalScore: document.getElementById('final-score'),
+            scoreDescription: document.getElementById('score-description'),
+            juryCount: document.getElementById('jury-count'),
+            secretNote: document.getElementById('secret-note'),
+            criteriaBreakdown: document.getElementById('criteria-breakdown'),
+            strengthsList: document.getElementById('strengths-list'),
+            improvementsList: document.getElementById('improvements-list'),
+            juryMessage: document.getElementById('jury-message'),
+            shareWhatsapp: document.getElementById('share-whatsapp'),
+            copyFeedback: document.getElementById('copy-feedback'),
+            downloadPdf: document.getElementById('download-pdf')
+        };
+
+        // Data stores
+        let artists = [];
+        let votes = [];
+
+        // Constants
+        const CRITERIA = [
+            { id: 'afinacion', name: 'Afinación', desc: 'precisión musical y entonación' },
+            { id: 'ritmo-tempo', name: 'Ritmo y Tempo', desc: 'seguimiento del pulso musical' },
+            { id: 'tecnica-vocal', name: 'Técnica Vocal', desc: 'control de respiración y proyección' },
+            { id: 'expresion-interpretacion', name: 'Expresión', desc: 'transmisión de emoción' },
+            { id: 'presencia-escenica', name: 'Presencia Escénica', desc: 'desenvolvimiento en escenario' },
+            { id: 'originalidad-estilo', name: 'Originalidad', desc: 'identidad artística personal' },
+            { id: 'diccion-claridad', name: 'Dicción', desc: 'pronunciación y claridad' },
+            { id: 'conexion-publico', name: 'Conexión', desc: 'carisma y comunicación' },
+            { id: 'actitud-compromiso', name: 'Actitud', desc: 'profesionalismo y respeto' },
+            { id: 'evolucion-certamen', name: 'Evolución', desc: 'crecimiento artístico' }
+        ];
+
+        const RATING_VALUES = {
+            malo: 20,
+            mediocre: 40,
+            bueno: 60,
+            'muy-bueno': 80,
+            excelente: 100
+        };
+
+        // Functions
+        async function loadData() {
+            try {
+                // Load artists
+                const artistsSnapshot = await getDocs(collection(db, `events/${eventId}/artists`));
+                artists = artistsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+                // Load votes (excluding secret ones for feedback)
+                const votesSnapshot = await getDocs(collection(db, `events/${eventId}/jury-votes`));
+                votes = votesSnapshot.docs
+                    .map(doc => ({ id: doc.id, ...doc.data() }))
+                    .filter(vote => !vote.isSecret); // Excluir votos secretos
+
+                populateArtistSelect();
+            } catch (error) {
+                console.error('Error loading data:', error);
+            }
+        }
+
+        function populateArtistSelect() {
+            ui.artistSelect.innerHTML = '<option value="">Seleccionar artista...</option>';
+            
+            artists.forEach(artist => {
+                const option = document.createElement('option');
+                option.value = artist.id;
+                option.textContent = artist.name;
+                ui.artistSelect.appendChild(option);
+            });
+
+            ui.artistSelect.addEventListener('change', () => {
+                ui.generateBtn.disabled = !ui.artistSelect.value;
+            });
+        }
+
+        function generateFeedback() {
+            const artistId = ui.artistSelect.value;
+            const galaFilter = ui.galaSelect.value;
+            
+            if (!artistId) return;
+
+            const artist = artists.find(a => a.id === artistId);
+            const artistVotes = filterVotesByGala(votes.filter(vote => vote.artistId === artistId), galaFilter);
+
+            if (artistVotes.length === 0) {
+                alert('Este artista aún no tiene evaluaciones de jurados para mostrar.');
+                return;
+            }
+
+            const feedback = calculateFeedback(artist, artistVotes, galaFilter);
+            renderFeedback(feedback);
+        }
+
+        function filterVotesByGala(votes, galaFilter) {
+            if (galaFilter === 'all') return votes;
+            return votes.filter(vote => vote.galaNumber === parseInt(galaFilter));
+        }
+
+        function calculateFeedback(artist, artistVotes, galaFilter) {
+            // Calcular promedio general
+            const totalScore = artistVotes.reduce((sum, vote) => sum + vote.averageScore, 0);
+            const averageScore = totalScore / artistVotes.length;
+
+            // Calcular promedios por criterio
+            const criteriaAverages = {};
+            CRITERIA.forEach(criteria => {
+                const criteriaScores = artistVotes
+                    .filter(vote => vote.scores && vote.scores[criteria.id])
+                    .map(vote => RATING_VALUES[vote.scores[criteria.id]]);
+                
+                criteriaAverages[criteria.id] = criteriaScores.length > 0 
+                    ? criteriaScores.reduce((sum, score) => sum + score, 0) / criteriaScores.length
+                    : 0;
+            });
+
+            // Identificar fortalezas y áreas de mejora
+            const sortedCriteria = CRITERIA.map(criteria => ({
+                ...criteria,
+                score: criteriaAverages[criteria.id]
+            })).sort((a, b) => b.score - a.score);
+
+            const strengths = sortedCriteria.slice(0, 3).filter(c => c.score >= 60);
+            const improvements = sortedCriteria.slice(-3).filter(c => c.score < 80);
+
+            // Generar mensaje personalizado
+            const message = generatePersonalizedMessage(averageScore, strengths, improvements, artist.name);
+
+            return {
+                artist,
+                averageScore,
+                criteriaAverages,
+                strengths,
+                improvements,
+                message,
+                juryCount: artistVotes.length,
+                galaInfo: galaFilter === 'all' ? 'Evaluación Acumulada' : `Gala ${galaFilter}`
+            };
+        }
+
+        function generatePersonalizedMessage(score, strengths, improvements, artistName) {
+            let message = `Estimado/a ${artistName},\n\n`;
+            
+            if (score >= 85) {
+                message += "¡Felicitaciones! Tu presentación ha sido excepcional. ";
+            } else if (score >= 70) {
+                message += "¡Excelente trabajo! Tu presentación muestra un gran nivel artístico. ";
+            } else if (score >= 60) {
+                message += "¡Buen trabajo! Tu presentación tiene bases sólidas. ";
+            } else {
+                message += "Gracias por tu participación. Vemos potencial en tu presentación. ";
+            }
+
+            if (strengths.length > 0) {
+                message += `Destacamos especialmente tu ${strengths[0].desc}`;
+                if (strengths.length > 1) {
+                    message += ` y tu ${strengths[1].desc}`;
+                }
+                message += ". ";
+            }
+
+            if (improvements.length > 0) {
+                message += `Para futuras presentaciones, te recomendamos trabajar en ${improvements[0].desc}`;
+                if (improvements.length > 1) {
+                    message += ` y ${improvements[1].desc}`;
+                }
+                message += ". ";
+            }
+
+            message += "¡Sigue adelante con tu pasión por la música!";
+            
+            return message;
+        }
+
+        function renderFeedback(feedback) {
+            // Artist info
+            ui.feedbackArtistPhoto.src = feedback.artist.photoURL || 'https://placehold.co/96x96/1f2937/f9fafb?text=' + feedback.artist.name.charAt(0);
+            ui.feedbackArtistName.textContent = feedback.artist.name;
+            ui.feedbackGalaInfo.textContent = feedback.galaInfo;
+
+            // Score
+            ui.finalScore.textContent = feedback.averageScore.toFixed(1);
+            
+            // Score circle color and description
+            let scoreClass, description;
+            if (feedback.averageScore >= 85) {
+                scoreClass = 'score-excellent';
+                description = 'Presentación Excepcional';
+            } else if (feedback.averageScore >= 75) {
+                scoreClass = 'score-very-good';
+                description = 'Muy Buen Desempeño';
+            } else if (feedback.averageScore >= 60) {
+                scoreClass = 'score-good';
+                description = 'Buen Desempeño';
+            } else if (feedback.averageScore >= 45) {
+                scoreClass = 'score-fair';
+                description = 'Desempeño Regular';
+            } else {
+                scoreClass = 'score-poor';
+                description = 'Necesita Mejoras';
+            }
+
+            ui.scoreCircle.className = `score-circle ${scoreClass}`;
+            ui.scoreDescription.textContent = description;
+            ui.juryCount.textContent = feedback.juryCount;
+
+            // Criteria breakdown
+            ui.criteriaBreakdown.innerHTML = CRITERIA.map(criteria => {
+                const score = feedback.criteriaAverages[criteria.id] || 0;
+                return `
+                    <div class="criteria-item">
+                        <h4 class="font-bold text-sky-300">${criteria.name}</h4>
+                        <p class="text-2xl font-bold text-white">${score.toFixed(1)}</p>
+                        <div class="w-full bg-gray-600 h-2 rounded mt-2">
+                            <div class="h-2 bg-sky-500 rounded" style="width: ${score}%"></div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            // Strengths
+            ui.strengthsList.innerHTML = feedback.strengths.map(strength => 
+                `<li>• Excelente ${strength.name.toLowerCase()} (${strength.score.toFixed(1)} pts)</li>`
+            ).join('');
+
+            // Improvements
+            ui.improvementsList.innerHTML = feedback.improvements.map(improvement => 
+                `<li>• Trabajar en ${improvement.name.toLowerCase()} (${improvement.score.toFixed(1)} pts)</li>`
+            ).join('');
+
+            // Message
+            ui.juryMessage.textContent = feedback.message;
+
+            // Setup sharing
+            setupSharing(feedback);
+
+            ui.feedbackContainer.classList.remove('hidden');
+        }
+
+        function setupSharing(feedback) {
+            const shareText = `🎤 Devolución VYTMUSIC - ${feedback.artist.name}
+            
+📊 Puntuación: ${feedback.averageScore.toFixed(1)}/100
+🎯 ${ui.scoreDescription.textContent}
+📅 ${feedback.galaInfo}
+
+${feedback.message}
+
+#VYTMUSIC #Certamen`;
+
+            // WhatsApp
+            ui.shareWhatsapp.href = `https://wa.me/?text=${encodeURIComponent(shareText)}`;
+
+            // Copy to clipboard
+            ui.copyFeedback.addEventListener('click', async () => {
+                try {
+                    await navigator.clipboard.writeText(shareText);
+                    ui.copyFeedback.textContent = '✅ Copiado';
+                    setTimeout(() => {
+                        ui.copyFeedback.innerHTML = '📋 Copiar Texto';
+                    }, 2000);
+                } catch (error) {
+                    alert('Error al copiar. Intenta manualmente.');
+                }
+            });
+        }
+
+        // Event listeners
+        ui.generateBtn.addEventListener('click', generateFeedback);
+
+        // Initialize
+        loadData();
+    </script>
+</body>
+</html>

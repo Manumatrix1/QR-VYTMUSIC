@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Feedback en Vivo - VYTMUSIC</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { 
+            font-family: 'Inter', sans-serif; 
+            background-color: #111827; 
+            color: #f9fafb; 
+        }
+        .hidden { display: none !important; }
+        .score-card {
+            background: linear-gradient(135deg, #1f2937 0%, #374151 100%);
+            border: 2px solid #4b5563;
+            transition: all 0.3s ease;
+        }
+        .score-card:hover {
+            border-color: #38bdf8;
+            transform: translateY(-2px);
+        }
+        .score-display {
+            font-size: 2.5rem;
+            font-weight: bold;
+            background: linear-gradient(45deg, #38bdf8, #10b981);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .juror-card {
+            background-color: #1f2937;
+            border-left: 4px solid #38bdf8;
+        }
+        .secret-juror {
+            border-left-color: #fbbf24;
+            background-color: #1c1917;
+        }
+    </style>
+</head>
+<body class="antialiased">
+    <div class="container mx-auto max-w-6xl p-4 sm:p-6">
+        <header class="text-center mb-6">
+            <a href="panel_evento.html" class="text-sky-400 hover:underline mb-4 inline-block">&larr; Volver al Panel del Evento</a>
+            <img src="https://i.imgur.com/rqkZi9P.png" alt="VYTMUSIC Logo" class="mx-auto mb-4 bg-white rounded-full" style="max-width: 100px;">
+            <h1 class="text-3xl sm:text-4xl font-bold text-sky-400">Panel de Feedback en Vivo</h1>
+            <p id="event-name-display" class="text-xl text-gray-300 mt-2"></p>
+            <p class="text-gray-400 mt-1">Herramienta para dar devoluciones inmediatas con puntajes exactos</p>
+        </header>
+
+        <div id="message-container" class="mb-4"></div>
+
+        <!-- Selector de artista -->
+        <section class="bg-gray-800 p-6 rounded-lg shadow-xl mb-6">
+            <h2 class="text-2xl font-bold mb-4">Seleccionar Artista para Feedback</h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                    <label for="gala-select" class="block text-sm font-medium text-gray-300 mb-2">Gala</label>
+                    <select id="gala-select" class="w-full p-3 border border-gray-600 rounded-lg bg-gray-700 text-white">
+                        <option value="">Seleccionar gala...</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="artist-select" class="block text-sm font-medium text-gray-300 mb-2">Artista</label>
+                    <select id="artist-select" class="w-full p-3 border border-gray-600 rounded-lg bg-gray-700 text-white">
+                        <option value="">Primero selecciona una gala...</option>
+                    </select>
+                </div>
+                <div class="flex items-end">
+                    <button id="load-scores-btn" class="w-full py-3 px-6 bg-sky-600 text-white font-bold rounded-lg hover:bg-sky-700 transition-colors">
+                        📊 Cargar Puntuaciones
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Panel de puntuaciones -->
+        <div id="scores-panel" class="hidden">
+            <!-- Información del artista -->
+            <section class="bg-gray-800 p-6 rounded-lg shadow-xl mb-6">
+                <div class="flex items-center gap-6">
+                    <img id="artist-photo" src="" alt="Foto del artista" class="w-20 h-20 object-cover rounded-full border-4 border-sky-300">
+                    <div>
+                        <h2 id="artist-name-display" class="text-2xl font-bold text-sky-400"></h2>
+                        <p id="artist-song" class="text-gray-300"></p>
+                        <p id="artist-city" class="text-sm text-gray-400"></p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Puntuaciones por jurado -->
+            <section class="bg-gray-800 p-6 rounded-lg shadow-xl mb-6">
+                <h2 class="text-2xl font-bold mb-6">Puntuaciones Individuales por Jurado</h2>
+                <div id="individual-scores" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <!-- Se llenarán dinámicamente -->
+                </div>
+            </section>
+
+            <!-- Resumen para feedback -->
+            <section class="bg-gray-800 p-6 rounded-lg shadow-xl mb-6">
+                <h2 class="text-2xl font-bold mb-6 text-center">Resumen para Feedback en Vivo</h2>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- Promedio de jurados principales -->
+                    <div class="score-card p-6 rounded-lg text-center">
+                        <h3 class="text-lg font-semibold text-sky-300 mb-2">Promedio Jurados Principales</h3>
+                        <div id="main-average" class="score-display">0</div>
+                        <p class="text-gray-400 mt-2">Puntos de 1000</p>
+                        <p id="main-jurors-count" class="text-sm text-gray-500 mt-1">0 jurados principales</p>
+                    </div>
+
+                    <!-- Promedio total incluyendo secreto -->
+                    <div class="score-card p-6 rounded-lg text-center">
+                        <h3 class="text-lg font-semibold text-yellow-300 mb-2">Promedio Total (+ Secreto)</h3>
+                        <div id="total-average" class="score-display">0</div>
+                        <p class="text-gray-400 mt-2">Puntos de 1000</p>
+                        <p id="total-jurors-count" class="text-sm text-gray-500 mt-1">0 jurados total</p>
+                    </div>
+                </div>
+
+                <!-- Desglose por criterios -->
+                <div class="mt-8">
+                    <h3 class="text-xl font-bold mb-4 text-center">Desglose por Criterios (Promedio Principal)</h3>
+                    <div id="criteria-breakdown" class="grid grid-cols-2 md:grid-cols-5 gap-3">
+                        <!-- Se llenarán dinámicamente -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- Herramienta de feedback -->
+            <section class="bg-gray-800 p-6 rounded-lg shadow-xl">
+                <h2 class="text-2xl font-bold mb-6">Herramienta de Feedback</h2>
+                
+                <!-- Script para el feedback -->
+                <div class="bg-gray-700 p-4 rounded-lg mb-4">
+                    <h3 class="font-semibold text-sky-300 mb-3">💬 Script Sugerido para Devolución:</h3>
+                    <div id="feedback-script" class="text-gray-200 leading-relaxed">
+                        <!-- Se generará automáticamente -->
+                    </div>
+                </div>
+
+                <!-- Notas adicionales del jurado -->
+                <div class="mb-4">
+                    <label for="additional-notes" class="block text-sm font-medium text-gray-300 mb-2">
+                        Notas Adicionales del Jurado
+                    </label>
+                    <textarea id="additional-notes" rows="3" 
+                              class="w-full p-3 border border-gray-600 rounded-lg bg-gray-700 text-white"
+                              placeholder="Comentarios adicionales, sugerencias específicas, observaciones especiales..."></textarea>
+                </div>
+
+                <!-- Acciones -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <button id="generate-feedback-btn" class="py-3 px-6 bg-purple-600 text-white font-bold rounded-lg hover:bg-purple-700 transition-colors">
+                        🔄 Regenerar Script
+                    </button>
+                    <button id="save-feedback-btn" class="py-3 px-6 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700 transition-colors">
+                        💾 Guardar Feedback
+                    </button>
+                    <button id="copy-script-btn" class="py-3 px-6 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 transition-colors">
+                        📋 Copiar Script
+                    </button>
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <script type="module">
+        import { db } from './firebase_config.js';
+        import { collection, getDocs, doc, getDoc, query, where, orderBy, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const eventId = urlParams.get('eventId');
+        
+        if (!eventId) {
+            document.body.innerHTML = '<p class="text-center text-red-500">Error: No se ha especificado un evento.</p>';
+            throw new Error('Event ID missing');
+        }
+
+        let currentArtist = null;
+        let currentScores = [];
+
+        // Elementos del DOM
+        const ui = {
+            galaSelect: document.getElementById('gala-select'),
+            artistSelect: document.getElementById('artist-select'),
+            loadScoresBtn: document.getElementById('load-scores-btn'),
+            scoresPanel: document.getElementById('scores-panel'),
+            artistPhoto: document.getElementById('artist-photo'),
+            artistNameDisplay: document.getElementById('artist-name-display'),
+            artistSong: document.getElementById('artist-song'),
+            artistCity: document.getElementById('artist-city'),
+            individualScores: document.getElementById('individual-scores'),
+            mainAverage: document.getElementById('main-average'),
+            totalAverage: document.getElementById('total-average'),
+            mainJurorsCount: document.getElementById('main-jurors-count'),
+            totalJurorsCount: document.getElementById('total-jurors-count'),
+            criteriaBreakdown: document.getElementById('criteria-breakdown'),
+            feedbackScript: document.getElementById('feedback-script'),
+            additionalNotes: document.getElementById('additional-notes'),
+            generateFeedbackBtn: document.getElementById('generate-feedback-btn'),
+            saveFeedbackBtn: document.getElementById('save-feedback-btn'),
+            copyScriptBtn: document.getElementById('copy-script-btn')
+        };
+
+        // Criterios de evaluación
+        const CRITERIA = {
+            afinacion: 'Afinación',
+            ritmo: 'Ritmo y Tempo',
+            tecnica: 'Técnica Vocal',
+            expresion: 'Expresión',
+            presencia: 'Presencia Escénica',
+            originalidad: 'Originalidad',
+            diccion: 'Dicción',
+            conexion: 'Conexión con Público',
+            actitud: 'Actitud',
+            evolucion: 'Evolución'
+        };
+
+        // Inicialización
+        async function initialize() {
+            try {
+                await loadEventData();
+                await loadGalas();
+                setupEventListeners();
+                showMessage('Panel de feedback cargado correctamente', 'success');
+            } catch (error) {
+                console.error('Error inicializando:', error);
+                showMessage('Error al cargar el panel: ' + error.message, 'error');
+            }
+        }
+
+        async function loadEventData() {
+            const eventDoc = await getDoc(doc(db, 'events', eventId));
+            if (eventDoc.exists()) {
+                const eventData = eventDoc.data();
+                document.getElementById('event-name-display').textContent = eventData.name;
+            }
+        }
+
+        async function loadGalas() {
+            const galasQuery = query(
+                collection(db, 'events', eventId, 'galas'),
+                orderBy('galaNumber', 'asc')
+            );
+            
+            const galasSnapshot = await getDocs(galasQuery);
+            
+            ui.galaSelect.innerHTML = '<option value="">Seleccionar gala...</option>';
+            
+            galasSnapshot.forEach(doc => {
+                const gala = doc.data();
+                const option = document.createElement('option');
+                option.value = doc.id;
+                option.textContent = `Gala ${gala.galaNumber} - ${gala.title}`;
+                ui.galaSelect.appendChild(option);
+            });
+        }
+
+        async function loadArtistsForGala(galaId) {
+            if (!galaId) {
+                ui.artistSelect.innerHTML = '<option value="">Primero selecciona una gala...</option>';
+                return;
+            }
+
+            const artistsQuery = query(collection(db, 'events', eventId, 'artists'));
+            const artistsSnapshot = await getDocs(artistsQuery);
+            
+            ui.artistSelect.innerHTML = '<option value="">Seleccionar artista...</option>';
+            
+            artistsSnapshot.forEach(doc => {
+                const artist = doc.data();
+                const option = document.createElement('option');
+                option.value = doc.id;
+                option.textContent = artist.name;
+                ui.artistSelect.appendChild(option);
+            });
+        }
+
+        async function loadScoresForArtist() {
+            const galaId = ui.galaSelect.value;
+            const artistId = ui.artistSelect.value;
+            
+            if (!galaId || !artistId) {
+                showMessage('Por favor selecciona una gala y un artista', 'error');
+                return;
+            }
+
+            try {
+                // Cargar datos del artista
+                const artistDoc = await getDoc(doc(db, 'events', eventId, 'artists', artistId));
+                if (!artistDoc.exists()) {
+                    showMessage('Artista no encontrado', 'error');
+                    return;
+                }
+                
+                currentArtist = { id: artistId, ...artistDoc.data() };
+                
+                // Cargar puntuaciones
+                const votesQuery = query(
+                    collection(db, 'events', eventId, 'jury_votes'),
+                    where('artistId', '==', artistId),
+                    where('galaId', '==', galaId)
+                );
+                
+                const votesSnapshot = await getDocs(votesQuery);
+                currentScores = [];
+                
+                votesSnapshot.forEach(doc => {
+                    currentScores.push({ id: doc.id, ...doc.data() });
+                });
+
+                // Mostrar datos
+                displayArtistInfo();
+                displayScores();
+                generateFeedbackScript();
+                
+                ui.scoresPanel.classList.remove('hidden');
+                showMessage('Puntuaciones cargadas correctamente', 'success');
+                
+            } catch (error) {
+                console.error('Error cargando puntuaciones:', error);
+                showMessage('Error al cargar las puntuaciones: ' + error.message, 'error');
+            }
+        }
+
+        function displayArtistInfo() {
+            ui.artistNameDisplay.textContent = currentArtist.name;
+            ui.artistSong.textContent = currentArtist.currentSong || 'Sin canción especificada';
+            ui.artistCity.textContent = currentArtist.city || '';
+            
+            if (currentArtist.photoUrl) {
+                ui.artistPhoto.src = currentArtist.photoUrl;
+                ui.artistPhoto.style.display = 'block';
+            } else {
+                ui.artistPhoto.style.display = 'none';
+            }
+        }
+
+        function displayScores() {
+            // Limpiar contenedor
+            ui.individualScores.innerHTML = '';
+            
+            if (currentScores.length === 0) {
+                ui.individualScores.innerHTML = '<div class="col-span-full text-center text-gray-400">No hay puntuaciones registradas para este artista en esta gala</div>';
+                return;
+            }
+
+            // Separar jurados principales y secretos
+            const mainJurors = currentScores.filter(score => !score.isSecret);
+            const secretJurors = currentScores.filter(score => score.isSecret);
+
+            // Mostrar jurados principales
+            mainJurors.forEach(score => {
+                createJurorCard(score, false);
+            });
+
+            // Mostrar jurados secretos
+            secretJurors.forEach(score => {
+                createJurorCard(score, true);
+            });
+
+            // Calcular y mostrar promedios
+            calculateAverages();
+        }
+
+        function createJurorCard(score, isSecret) {
+            const totalScore = Object.values(score.scores).reduce((sum, val) => sum + val, 0);
+            
+            const card = document.createElement('div');
+            card.className = `juror-card p-4 rounded-lg ${isSecret ? 'secret-juror' : ''}`;
+            
+            card.innerHTML = `
+                <div class="flex justify-between items-center mb-3">
+                    <h3 class="font-semibold ${isSecret ? 'text-yellow-300' : 'text-sky-300'}">
+                        ${score.jurorName} ${isSecret ? '(Secreto)' : ''}
+                    </h3>
+                    <div class="text-xl font-bold text-green-400">${totalScore}/1000</div>
+                </div>
+                <div class="grid grid-cols-2 gap-2 text-sm">
+                    ${Object.entries(score.scores).map(([criteria, value]) => `
+                        <div class="flex justify-between">
+                            <span class="text-gray-400">${CRITERIA[criteria] || criteria}:</span>
+                            <span class="text-gray-200">${value}</span>
+                        </div>
+                    `).join('')}
+                </div>
+                ${score.comentarios ? `
+                    <div class="mt-3 p-2 bg-gray-600 rounded text-sm">
+                        <strong>Comentarios:</strong> ${score.comentarios}
+                    </div>
+                ` : ''}
+            `;
+            
+            ui.individualScores.appendChild(card);
+        }
+
+        function calculateAverages() {
+            const mainJurors = currentScores.filter(score => !score.isSecret);
+            const allJurors = currentScores;
+
+            // Promedio de jurados principales
+            if (mainJurors.length > 0) {
+                const mainSum = mainJurors.reduce((sum, score) => {
+                    return sum + Object.values(score.scores).reduce((s, v) => s + v, 0);
+                }, 0);
+                const mainAverage = Math.round(mainSum / mainJurors.length);
+                
+                ui.mainAverage.textContent = mainAverage;
+                ui.mainJurorsCount.textContent = `${mainJurors.length} jurados principales`;
+            } else {
+                ui.mainAverage.textContent = '0';
+                ui.mainJurorsCount.textContent = '0 jurados principales';
+            }
+
+            // Promedio total
+            if (allJurors.length > 0) {
+                const totalSum = allJurors.reduce((sum, score) => {
+                    return sum + Object.values(score.scores).reduce((s, v) => s + v, 0);
+                }, 0);
+                const totalAverage = Math.round(totalSum / allJurors.length);
+                
+                ui.totalAverage.textContent = totalAverage;
+                ui.totalJurorsCount.textContent = `${allJurors.length} jurados total`;
+            } else {
+                ui.totalAverage.textContent = '0';
+                ui.totalJurorsCount.textContent = '0 jurados total';
+            }
+
+            // Desglose por criterios (solo jurados principales)
+            displayCriteriaBreakdown(mainJurors);
+        }
+
+        function displayCriteriaBreakdown(jurors) {
+            ui.criteriaBreakdown.innerHTML = '';
+            
+            if (jurors.length === 0) return;
+
+            Object.entries(CRITERIA).forEach(([key, name]) => {
+                const values = jurors.map(juror => juror.scores[key] || 0);
+                const average = Math.round(values.reduce((sum, val) => sum + val, 0) / values.length);
+                
+                const criteriaCard = document.createElement('div');
+                criteriaCard.className = 'bg-gray-700 p-3 rounded text-center';
+                criteriaCard.innerHTML = `
+                    <h4 class="font-semibold text-sky-300 text-sm mb-1">${name}</h4>
+                    <div class="text-lg font-bold text-green-400">${average}</div>
+                    <div class="text-xs text-gray-400">de 100</div>
+                `;
+                
+                ui.criteriaBreakdown.appendChild(criteriaCard);
+            });
+        }
+
+        function generateFeedbackScript() {
+            if (!currentArtist || currentScores.length === 0) return;
+
+            const mainJurors = currentScores.filter(score => !score.isSecret);
+            
+            if (mainJurors.length === 0) {
+                ui.feedbackScript.innerHTML = '<p class="text-gray-400">No hay puntuaciones de jurados principales para generar feedback.</p>';
+                return;
+            }
+
+            const mainSum = mainJurors.reduce((sum, score) => {
+                return sum + Object.values(score.scores).reduce((s, v) => s + v, 0);
+            }, 0);
+            const mainAverage = Math.round(mainSum / mainJurors.length);
+
+            // Determinar nivel de puntuación
+            let performanceLevel = '';
+            let encouragement = '';
+            
+            if (mainAverage >= 800) {
+                performanceLevel = 'excepcional';
+                encouragement = 'Tu presentación fue verdaderamente sobresaliente. Continúa con esa excelencia.';
+            } else if (mainAverage >= 650) {
+                performanceLevel = 'muy buena';
+                encouragement = 'Tienes un gran talento. Con pequeños ajustes puedes alcanzar la excelencia.';
+            } else if (mainAverage >= 500) {
+                performanceLevel = 'buena';
+                encouragement = 'Vas por buen camino. Sigue trabajando en los aspectos que te mencionaremos.';
+            } else if (mainAverage >= 350) {
+                performanceLevel = 'regular';
+                encouragement = 'Tienes potencial. Enfócate en mejorar los aspectos fundamentales.';
+            } else {
+                performanceLevel = 'mejorable';
+                encouragement = 'Todos empezamos desde algún lugar. Con práctica y dedicación verás grandes mejoras.';
+            }
+
+            // Encontrar fortalezas y áreas de mejora
+            const criteriaAverages = {};
+            Object.keys(CRITERIA).forEach(key => {
+                const values = mainJurors.map(juror => juror.scores[key] || 0);
+                criteriaAverages[key] = Math.round(values.reduce((sum, val) => sum + val, 0) / values.length);
+            });
+
+            const sortedCriteria = Object.entries(criteriaAverages).sort((a, b) => b[1] - a[1]);
+            const strengths = sortedCriteria.slice(0, 2);
+            const improvements = sortedCriteria.slice(-2).reverse();
+
+            const script = `
+                <p><strong>Hola ${currentArtist.name},</strong></p>
+                <p>El jurado ha evaluado tu presentación de "${currentArtist.currentSong || 'tu canción'}" y queremos darte una devolución inmediata.</p>
+                
+                <div class="bg-sky-600 p-3 rounded mt-3 mb-3">
+                    <p><strong>📊 Tu puntuación promedio es: ${mainAverage} puntos de 1000</strong></p>
+                    <p>Esto representa una presentación <strong>${performanceLevel}</strong>.</p>
+                </div>
+
+                <p><strong>💪 Tus fortalezas principales:</strong></p>
+                <ul class="list-disc list-inside ml-4 mb-3">
+                    ${strengths.map(([key, value]) => 
+                        `<li><strong>${CRITERIA[key]}:</strong> ${value} puntos - Muy bien logrado</li>`
+                    ).join('')}
+                </ul>
+
+                <p><strong>🎯 Áreas para seguir mejorando:</strong></p>
+                <ul class="list-disc list-inside ml-4 mb-3">
+                    ${improvements.map(([key, value]) => 
+                        `<li><strong>${CRITERIA[key]}:</strong> ${value} puntos - Enfócate en practicar este aspecto</li>`
+                    ).join('')}
+                </ul>
+
+                <p><strong>💡 Mensaje del jurado:</strong></p>
+                <p class="italic">${encouragement}</p>
+
+                <p class="mt-3">Sigue trabajando con pasión y dedicación. ¡El certamen continúa y esperamos verte crecer!</p>
+            `;
+
+            ui.feedbackScript.innerHTML = script;
+        }
+
+        async function saveFeedback() {
+            if (!currentArtist) return;
+
+            const galaId = ui.galaSelect.value;
+            const additionalNotes = ui.additionalNotes.value.trim();
+            
+            try {
+                const feedbackData = {
+                    artistId: currentArtist.id,
+                    artistName: currentArtist.name,
+                    galaId: galaId,
+                    scores: currentScores,
+                    mainAverage: parseInt(ui.mainAverage.textContent),
+                    totalAverage: parseInt(ui.totalAverage.textContent),
+                    feedbackScript: ui.feedbackScript.innerHTML,
+                    additionalNotes: additionalNotes,
+                    createdAt: new Date().toISOString(),
+                    createdBy: 'Sistema de Feedback'
+                };
+
+                await setDoc(doc(db, 'events', eventId, 'live_feedback', `${galaId}_${currentArtist.id}`), feedbackData);
+                showMessage('Feedback guardado correctamente', 'success');
+                
+            } catch (error) {
+                console.error('Error guardando feedback:', error);
+                showMessage('Error al guardar el feedback: ' + error.message, 'error');
+            }
+        }
+
+        function copyScriptToClipboard() {
+            const scriptText = ui.feedbackScript.textContent;
+            navigator.clipboard.writeText(scriptText).then(() => {
+                showMessage('Script copiado al portapapeles', 'success');
+            }).catch(err => {
+                console.error('Error copiando al portapapeles:', err);
+                showMessage('Error al copiar el script', 'error');
+            });
+        }
+
+        function setupEventListeners() {
+            ui.galaSelect.addEventListener('change', () => {
+                loadArtistsForGala(ui.galaSelect.value);
+                ui.scoresPanel.classList.add('hidden');
+            });
+
+            ui.loadScoresBtn.addEventListener('click', loadScoresForArtist);
+            ui.generateFeedbackBtn.addEventListener('click', generateFeedbackScript);
+            ui.saveFeedbackBtn.addEventListener('click', saveFeedback);
+            ui.copyScriptBtn.addEventListener('click', copyScriptToClipboard);
+        }
+
+        function showMessage(message, type = 'info') {
+            const messageContainer = document.getElementById('message-container');
+            const bgColor = type === 'success' ? 'bg-green-600' : type === 'error' ? 'bg-red-600' : 'bg-blue-600';
+            
+            messageContainer.innerHTML = `
+                <div class="${bgColor} text-white p-4 rounded-lg shadow-xl">
+                    ${message}
+                </div>
+            `;
+            
+            setTimeout(() => {
+                messageContainer.innerHTML = '';
+            }, 5000);
+        }
+
+        // Inicializar la aplicación
+        initialize();
+    </script>
+</body>
+</html>
