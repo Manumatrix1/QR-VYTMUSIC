@@ -616,44 +616,70 @@
         };
 
         async function confirmDelete() {
-            if (!currentJurorId) return;
+            if (!currentJurorId) {
+                console.log('Error: No hay jurado seleccionado para eliminar');
+                return;
+            }
             
             try {
+                console.log('Iniciando eliminación del jurado:', currentJurorId);
                 showLoading(true);
                 
-                // Primero eliminar todos los votos de este jurado
-                console.log('Eliminando votos del jurado:', currentJurorId);
-                const votesSnapshot = await getDocs(
+                // Buscar votos en ambas posibles ubicaciones para compatibilidad
+                console.log('Buscando votos del jurado en jury-votes...');
+                const votesSnapshot1 = await getDocs(
+                    query(
+                        collection(db, 'events', eventId, 'jury-votes'),
+                        where('jurorId', '==', currentJurorId)
+                    )
+                );
+                
+                console.log('Buscando votos del jurado en jury_votes...');
+                const votesSnapshot2 = await getDocs(
                     query(
                         collection(db, 'events', eventId, 'jury_votes'),
                         where('jurorId', '==', currentJurorId)
                     )
                 );
                 
+                // Combinar ambos resultados
+                const allVotesDocs = [...votesSnapshot1.docs, ...votesSnapshot2.docs];
+                console.log(`Encontrados ${allVotesDocs.length} votos para eliminar`);
+                
                 // Eliminar cada voto encontrado
-                const deletePromises = votesSnapshot.docs.map(voteDoc => 
-                    deleteDoc(doc(db, 'events', eventId, 'jury_votes', voteDoc.id))
-                );
+                const deletePromises = [];
+                
+                votesSnapshot1.docs.forEach(voteDoc => {
+                    deletePromises.push(deleteDoc(doc(db, 'events', eventId, 'jury-votes', voteDoc.id)));
+                });
+                
+                votesSnapshot2.docs.forEach(voteDoc => {
+                    deletePromises.push(deleteDoc(doc(db, 'events', eventId, 'jury_votes', voteDoc.id)));
+                });
                 
                 if (deletePromises.length > 0) {
                     await Promise.all(deletePromises);
-                    console.log(`Eliminados ${deletePromises.length} votos del jurado`);
+                    console.log(`✅ Eliminados ${deletePromises.length} votos del jurado`);
+                } else {
+                    console.log('ℹ️ No se encontraron votos para eliminar');
                 }
                 
                 // Luego eliminar el documento del jurado
+                console.log('Eliminando documento del jurado...');
                 await deleteDoc(doc(db, `events/${eventId}/jurors`, currentJurorId));
-                console.log('Jurado eliminado de la base de datos');
+                console.log('✅ Jurado eliminado de la base de datos');
                 
-                showMessage('✅ Jurado y sus votos eliminados correctamente');
+                showLoading(false);
                 ui.deleteModal.classList.add('hidden');
                 currentJurorId = null;
+                
+                showMessage('✅ Jurado y sus votos eliminados correctamente');
                 loadJurors();
                 
             } catch (error) {
-                console.error('Error deleting juror:', error);
-                showMessage('❌ Error al eliminar jurado: ' + error.message, 'error');
-            } finally {
+                console.error('❌ Error eliminando jurado:', error);
                 showLoading(false);
+                showMessage('❌ Error al eliminar jurado: ' + error.message, 'error');
             }
         }
 
