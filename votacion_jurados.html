@@ -14,7 +14,37 @@
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         
         .artist-card { background-color: #1f2937; border: 2px solid #374151; border-radius: 0.5rem; padding: 1rem; transition: all 0.2s; margin-bottom: 1rem; }
-        .artist-card.voted { border-color: #10b981; background-color: #065f46; }
+        .artist-card.voted { border-color: #10b981; background-color: #065f46; box-shadow: 0 0 15px rgba(16, 185, 129, 0.3); }
+        .artist-card.voted::before { content: '✅ VOTADO'; position: absolute; top: 10px; right: 10px; background-color: #10b981; color: white; padding: 0.25rem 0.5rem; border-radius: 0.25rem; font-size: 0.75rem; font-weight: bold; }
+        .artist-card { position: relative; }
+        
+        /* NAVEGACIÓN RÁPIDA */
+        .quick-nav-item { 
+            padding: 0.5rem 0.75rem; 
+            background-color: #374151; 
+            border: 2px solid #4b5563; 
+            border-radius: 0.5rem; 
+            text-align: center; 
+            cursor: pointer; 
+            transition: all 0.2s; 
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+        .quick-nav-item:hover { 
+            background-color: #4b5563; 
+            border-color: #38bdf8; 
+            transform: scale(1.02);
+        }
+        .quick-nav-item.voted { 
+            background-color: #065f46; 
+            border-color: #10b981; 
+            color: #d1fae5;
+        }
+        .quick-nav-item.voted::after { 
+            content: ' ✓'; 
+            color: #10b981; 
+            font-weight: bold;
+        }
         
         /* OPTIMIZACIÓN MÓVIL */
         .artist-header { display: flex; flex-direction: column; gap: 1rem; margin-bottom: 1rem; padding: 1rem; background-color: #374151; border-radius: 0.5rem; }
@@ -33,9 +63,29 @@
         .criteria-voting { margin-bottom: 1rem; padding: 0.75rem; background-color: #4b5563; border-radius: 0.5rem; }
         .criteria-voting h4 { font-size: 0.9rem; margin-bottom: 0.5rem; text-align: center; }
         .rating-buttons { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.5rem; }
-        .rating-btn { padding: 0.5rem 0.25rem; border-radius: 0.5rem; font-weight: 600; text-align: center; cursor: pointer; transition: all 0.2s; border: 2px solid transparent; font-size: 0.75rem; }
+        .rating-btn { padding: 0.5rem 0.25rem; border-radius: 0.5rem; font-weight: 600; text-align: center; cursor: pointer; transition: all 0.2s; border: 2px solid transparent; font-size: 0.75rem; position: relative; }
         .rating-btn:hover { transform: scale(1.02); }
-        .rating-btn.selected { border-color: #ffffff; box-shadow: 0 0 8px rgba(59, 130, 246, 0.5); }
+        .rating-btn.selected { 
+            border-color: #ffffff; 
+            box-shadow: 0 0 15px rgba(59, 130, 246, 0.8); 
+            transform: scale(1.05);
+        }
+        .rating-btn.selected::after {
+            content: '✓';
+            position: absolute;
+            top: -8px;
+            right: -8px;
+            background-color: #10b981;
+            color: white;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.7rem;
+            font-weight: bold;
+        }
         
         .rating-malo { background-color: #dc2626; color: white; }
         .rating-mediocre { background-color: #ea580c; color: white; }
@@ -167,6 +217,17 @@
                     </a>
                 </div>
             </div>
+        </section>
+
+        <!-- Lista de navegación rápida -->
+        <section class="bg-gray-800 p-4 rounded-lg shadow-xl mb-6">
+            <h2 class="text-lg font-bold mb-3 text-center">🎤 Navegación Rápida de Artistas</h2>
+            <div id="quick-nav-list" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+                <p class="text-center text-gray-400 col-span-full">Cargando lista...</p>
+            </div>
+            <p class="text-xs text-gray-400 text-center mt-2">
+                Haz clic en un nombre para ir directamente al artista
+            </p>
         </section>
 
         <!-- Lista de artistas para votar -->
@@ -389,6 +450,7 @@
                 const artistsSnapshot = await getDocs(collection(db, `events/${eventId}/artists`));
                 artists = artistsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                 
+                generateQuickNavigation();
                 renderArtists();
                 
             } catch (error) {
@@ -418,6 +480,7 @@
                 
                 renderArtists();
                 updateVotingSummary();
+                updateQuickNavigation();
                 
             } catch (error) {
                 console.error('Error loading juror votes:', error);
@@ -506,6 +569,59 @@
                     </div>
                 `;
             }).join('');
+        }
+
+        function generateQuickNavigation() {
+            const quickNavContainer = document.getElementById('quick-nav-list');
+            
+            if (artists.length === 0) {
+                quickNavContainer.innerHTML = '<p class="text-center text-gray-400 col-span-full">No hay artistas disponibles</p>';
+                return;
+            }
+            
+            quickNavContainer.innerHTML = artists.map(artist => {
+                const hasVoted = jurorVotes[artist.id];
+                
+                return `
+                    <div class="quick-nav-item ${hasVoted ? 'voted' : ''}" 
+                         onclick="scrollToArtist('${artist.id}')" 
+                         data-artist-id="${artist.id}">
+                        ${artist.name}
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function scrollToArtist(artistId) {
+            const artistCard = document.querySelector(`[data-artist-id="${artistId}"]`);
+            if (artistCard) {
+                artistCard.scrollIntoView({ 
+                    behavior: 'smooth', 
+                    block: 'start' 
+                });
+                
+                // Efecto visual temporal
+                artistCard.style.boxShadow = '0 0 20px rgba(56, 189, 248, 0.8)';
+                setTimeout(() => {
+                    artistCard.style.boxShadow = '';
+                }, 2000);
+            }
+        }
+
+        function updateQuickNavigation() {
+            // Actualizar estados de votación en la navegación rápida
+            artists.forEach(artist => {
+                const hasVoted = jurorVotes[artist.id];
+                const navItem = document.querySelector(`.quick-nav-item[data-artist-id="${artist.id}"]`);
+                
+                if (navItem) {
+                    if (hasVoted) {
+                        navItem.classList.add('voted');
+                    } else {
+                        navItem.classList.remove('voted');
+                    }
+                }
+            });
         }
 
         function calculateAverageScore(vote) {
@@ -604,6 +720,8 @@
                 
                 // Reload votes and update UI
                 await loadJurorVotes();
+                renderArtists();
+                updateQuickNavigation();
                 
             } catch (error) {
                 console.error('Error saving vote:', error);
