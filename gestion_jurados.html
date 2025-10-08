@@ -611,70 +611,41 @@
         };
 
         window.deleteJuror = (id) => {
+            console.log('🗑️ DELETEJUROR LLAMADA con ID:', id);
             currentJurorId = id;
+            console.log('✅ currentJurorId configurado como:', currentJurorId);
             ui.deleteModal.classList.remove('hidden');
+            console.log('📱 Modal de eliminación mostrado');
         };
 
         async function confirmDelete() {
+            console.log('🔥 CONFIRMDELETE LLAMADA - currentJurorId:', currentJurorId);
+            
             if (!currentJurorId) {
-                console.log('Error: No hay jurado seleccionado para eliminar');
+                console.log('❌ Error: No hay jurado seleccionado para eliminar');
+                showMessage('Error: No hay jurado seleccionado', 'error');
                 return;
             }
             
             try {
-                console.log('Iniciando eliminación del jurado:', currentJurorId);
+                console.log('🚀 Iniciando eliminación del jurado:', currentJurorId);
                 showLoading(true);
                 
-                // Buscar votos en ambas posibles ubicaciones para compatibilidad
-                console.log('Buscando votos del jurado en jury-votes...');
-                const votesSnapshot1 = await getDocs(
-                    query(
-                        collection(db, 'events', eventId, 'jury-votes'),
-                        where('jurorId', '==', currentJurorId)
-                    )
-                );
-                
-                console.log('Buscando votos del jurado en jury_votes...');
-                const votesSnapshot2 = await getDocs(
-                    query(
-                        collection(db, 'events', eventId, 'jury_votes'),
-                        where('jurorId', '==', currentJurorId)
-                    )
-                );
-                
-                // Combinar ambos resultados
-                const allVotesDocs = [...votesSnapshot1.docs, ...votesSnapshot2.docs];
-                console.log(`Encontrados ${allVotesDocs.length} votos para eliminar`);
-                
-                // Eliminar cada voto encontrado
-                const deletePromises = [];
-                
-                votesSnapshot1.docs.forEach(voteDoc => {
-                    deletePromises.push(deleteDoc(doc(db, 'events', eventId, 'jury-votes', voteDoc.id)));
-                });
-                
-                votesSnapshot2.docs.forEach(voteDoc => {
-                    deletePromises.push(deleteDoc(doc(db, 'events', eventId, 'jury_votes', voteDoc.id)));
-                });
-                
-                if (deletePromises.length > 0) {
-                    await Promise.all(deletePromises);
-                    console.log(`✅ Eliminados ${deletePromises.length} votos del jurado`);
-                } else {
-                    console.log('ℹ️ No se encontraron votos para eliminar');
-                }
-                
-                // Luego eliminar el documento del jurado
-                console.log('Eliminando documento del jurado...');
+                // Simplificar: Eliminar directamente el jurado sin buscar votos por ahora
+                console.log('🗑️ Eliminando documento del jurado directamente...');
                 await deleteDoc(doc(db, `events/${eventId}/jurors`, currentJurorId));
-                console.log('✅ Jurado eliminado de la base de datos');
+                console.log('✅ Jurado eliminado exitosamente');
                 
+                // Cerrar modal y limpiar
                 showLoading(false);
                 ui.deleteModal.classList.add('hidden');
                 currentJurorId = null;
                 
-                showMessage('✅ Jurado y sus votos eliminados correctamente');
-                loadJurors();
+                // Mostrar mensaje y recargar
+                showMessage('✅ Jurado eliminado correctamente');
+                await loadJurors();
+                
+                console.log('🎉 Proceso de eliminación completado');
                 
             } catch (error) {
                 console.error('❌ Error eliminando jurado:', error);
@@ -704,8 +675,14 @@
         ui.jurorForm.addEventListener('submit', saveJuror);
         ui.saveConfigBtn.addEventListener('click', saveConfig);
         ui.saveVotingConfigBtn.addEventListener('click', saveVotingConfiguration);
-        ui.cancelDeleteBtn.addEventListener('click', () => ui.deleteModal.classList.add('hidden'));
-        ui.confirmDeleteBtn.addEventListener('click', confirmDelete);
+        ui.cancelDeleteBtn.addEventListener('click', () => {
+            console.log('❌ Cancelar eliminación presionado');
+            ui.deleteModal.classList.add('hidden');
+        });
+        ui.confirmDeleteBtn.addEventListener('click', () => {
+            console.log('✅ CONFIRMAR ELIMINACIÓN PRESIONADO');
+            confirmDelete();
+        });
         ui.copyJuryLinkBtn.addEventListener('click', () => copyToClipboard(ui.juryVotingLink.value));
         ui.copyResultsLinkBtn.addEventListener('click', () => copyToClipboard(ui.juryResultsLink.value));
         
