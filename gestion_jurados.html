@@ -270,9 +270,14 @@
             <section class="bg-gray-800 p-6 rounded-lg shadow-xl">
                 <div class="flex justify-between items-center mb-4">
                     <h2 class="text-2xl font-bold">Jurados Registrados</h2>
-                    <button id="add-juror-btn" class="px-4 py-2 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700">
-                        + Agregar Jurado
-                    </button>
+                    <div class="flex gap-2">
+                        <button id="reload-jurors-btn" class="px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700">
+                            🔄 Recargar
+                        </button>
+                        <button id="add-juror-btn" class="px-4 py-2 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700">
+                            + Agregar Jurado
+                        </button>
+                    </div>
                 </div>
                 
                 <!-- Lista de jurados -->
@@ -389,6 +394,7 @@
             
             // Buttons
             addJurorBtn: document.getElementById('add-juror-btn'),
+            reloadJurorsBtn: document.getElementById('reload-jurors-btn'),
             cancelJurorBtn: document.getElementById('cancel-juror-btn'),
             cancelDeleteBtn: document.getElementById('cancel-delete-btn'),
             confirmDeleteBtn: document.getElementById('confirm-delete-btn')
@@ -427,13 +433,25 @@
 
         async function loadJurors() {
             try {
+                console.log('Cargando jurados para evento:', eventId);
+                ui.jurorsList.innerHTML = '<p class="text-center text-gray-400">Cargando jurados...</p>';
+                
                 const jurorsSnapshot = await getDocs(collection(db, `events/${eventId}/jurors`));
-                jurors = jurorsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                console.log('Documentos encontrados:', jurorsSnapshot.docs.length);
+                
+                jurors = jurorsSnapshot.docs.map(doc => {
+                    console.log('Jurado encontrado:', doc.id, doc.data());
+                    return { id: doc.id, ...doc.data() };
+                });
+                
+                console.log('Jurados cargados:', jurors.length);
                 renderJurors();
                 updateStats();
+                
             } catch (error) {
                 console.error('Error loading jurors:', error);
-                showMessage('Error al cargar jurados', 'error');
+                ui.jurorsList.innerHTML = '<p class="text-center text-red-400">Error al cargar jurados: ' + error.message + '</p>';
+                showMessage('Error al cargar jurados: ' + error.message, 'error');
             }
         }
 
@@ -651,6 +669,11 @@
 
         // Event listeners
         ui.addJurorBtn.addEventListener('click', () => openJurorModal());
+        ui.reloadJurorsBtn.addEventListener('click', () => {
+            console.log('Recargando jurados manualmente...');
+            showMessage('Recargando lista de jurados...', 'info');
+            loadJurors();
+        });
         ui.cancelJurorBtn.addEventListener('click', closeJurorModal);
         ui.jurorForm.addEventListener('submit', saveJuror);
         ui.saveConfigBtn.addEventListener('click', saveConfig);
