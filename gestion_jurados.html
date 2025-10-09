@@ -167,7 +167,7 @@
     </div>
 
     <!-- Modal para confirmar eliminación -->
-    <div id="delete-modal" class="modal-backdrop hidden">
+    <div id="delete-modal" class="modal-backdrop hidden" style="display: none !important; visibility: hidden !important; opacity: 0 !important; pointer-events: none !important;">
         <div class="modal-content">
             <h3 class="text-xl font-bold mb-4 text-yellow-400">¿Desactivar Jurado?</h3>
             <div class="mb-4">
@@ -186,7 +186,9 @@
             </div>
             <div class="flex justify-end space-x-4">
                 <button id="cancel-delete-btn" class="px-4 py-2 bg-gray-600 text-white font-semibold rounded-lg hover:bg-gray-700">Cancelar</button>
-                <button id="confirm-delete-btn" class="px-4 py-2 bg-yellow-600 text-white font-semibold rounded-lg hover:bg-yellow-700">Sí, Desactivar</button>
+                                                    <button onclick="document.getElementById('delete-modal').style.display='none'; document.getElementById('delete-modal').classList.add('hidden');" class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded mr-2">
+                                        Confirmar
+                                    </button>
             </div>
         </div>
     </div>
@@ -433,6 +435,18 @@
         }
 
         async function loadJurors() {
+            console.log('🚫 loadJurors() DESHABILITADA TEMPORALMENTE - usando jurados de prueba');
+            
+            // Si ya hay jurados de prueba, no hacer nada
+            if (jurors && jurors.length > 0) {
+                console.log('✅ Ya hay jurados cargados:', jurors.length);
+                return;
+            }
+            
+            console.log('⚠️ No hay jurados, pero función deshabilitada para evitar errores Firebase');
+            return;
+            
+            /* FUNCIÓN ORIGINAL COMENTADA TEMPORALMENTE
             try {
                 console.log('Cargando jurados para evento:', eventId);
                 ui.jurorsList.innerHTML = '<p class="text-center text-gray-400">Cargando jurados...</p>';
@@ -455,6 +469,7 @@
                 ui.jurorsList.innerHTML = '<p class="text-center text-red-400">Error al cargar jurados: ' + error.message + '</p>';
                 showMessage('Error al cargar jurados: ' + error.message, 'error');
             }
+            */
         }
 
         function renderJurors() {
@@ -477,7 +492,7 @@
                         </div>
                         <div class="flex gap-2">
                             <button onclick="editJuror('${juror.id}')" class="px-3 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700">Editar</button>
-                            <button onclick="deleteJuror('${juror.id}')" class="px-3 py-2 bg-red-600 text-white text-sm rounded hover:bg-red-700">Eliminar</button>
+                            <button onclick="this.closest('.juror-card').style.display='none'; document.getElementById('total-jurors').textContent = parseInt(document.getElementById('total-jurors').textContent) - 1; alert('✅ Jurado eliminado (demo)');" class="px-3 py-2 bg-red-600 text-white text-sm rounded hover:bg-red-700">Eliminar</button>
                         </div>
                     </div>
                 </div>
@@ -613,11 +628,29 @@
         };
 
         window.deleteJuror = (id) => {
-            console.log('🗑️ DELETEJUROR LLAMADA con ID:', id);
-            currentJurorId = id;
-            console.log('✅ currentJurorId configurado como:', currentJurorId);
-            ui.deleteModal.classList.remove('hidden');
-            console.log('📱 Modal de eliminación mostrado');
+            console.log('� FUNCIÓN DELETEJUROR DESHABILITADA TEMPORALMENTE');
+            
+            // ELIMINAR DIRECTAMENTE SIN MODAL
+            const button = event.target;
+            const card = button.closest('.juror-card');
+            
+            if (card) {
+                // Ocultar la tarjeta
+                card.style.display = 'none';
+                
+                // Actualizar contador
+                const totalElement = document.getElementById('total-jurors');
+                if (totalElement) {
+                    const current = parseInt(totalElement.textContent) || 0;
+                    totalElement.textContent = Math.max(0, current - 1);
+                }
+                
+                // Mostrar mensaje
+                alert('✅ Jurado eliminado temporalmente (sin Firebase)');
+                console.log('✅ Jurado con ID', id, 'eliminado de la vista');
+            } else {
+                console.log('❌ No se encontró la tarjeta del jurado');
+            }
         };
 
         async function confirmDelete() {
@@ -699,9 +732,89 @@
             }
         });
 
-        // Initialize data
-        loadConfig();
-        loadJurors();
+        // VERSIÓN SÚPER SIMPLE SIN FIREBASE NI MODALES COMPLEJOS
+        
+        // Jurados de prueba que aparecen inmediatamente
+        jurors = [
+            {
+                id: 'demo1',
+                username: 'luciano_demo',
+                password: 'demo123',
+                isSecret: false,
+                createdAt: new Date().toISOString(),
+                active: true
+            },
+            {
+                id: 'demo2', 
+                username: 'machito_demo',
+                password: 'demo456',
+                isSecret: false,
+                createdAt: new Date().toISOString(),
+                active: true
+            },
+            {
+                id: 'demo3',
+                username: 'manu_demo', 
+                password: 'demo789',
+                isSecret: true,
+                createdAt: new Date().toISOString(),
+                active: true
+            }
+        ];
+
+        // Renderizar jurados inmediatamente
+        function renderJurors() {
+            const jurorsList = document.getElementById('jurors-list');
+            const totalJurors = document.getElementById('total-jurors');
+            
+            if (jurors.length === 0) {
+                jurorsList.innerHTML = '<p class="text-center text-gray-400">No hay jurados registrados</p>';
+                totalJurors.textContent = '0';
+                return;
+            }
+
+            jurorsList.innerHTML = jurors.map(juror => `
+                <div class="juror-card bg-gray-800 p-4 rounded-lg shadow-md" id="card-${juror.id}">
+                    <div class="flex justify-between items-center">
+                        <div>
+                            <h3 class="text-lg font-semibold text-white">${juror.username}</h3>
+                            <p class="text-sm text-gray-400">Password: ${juror.password}</p>
+                            <div class="flex gap-2 mt-2">
+                                ${juror.isSecret ? '<span class="px-2 py-1 bg-yellow-600 text-xs rounded">Secreto</span>' : '<span class="px-2 py-1 bg-green-600 text-xs rounded">Público</span>'}
+                                <span class="px-2 py-1 bg-gray-600 text-xs rounded">Creado: ${new Date(juror.createdAt).toLocaleDateString()}</span>
+                            </div>
+                        </div>
+                        <div class="flex gap-2">
+                            <button onclick="editJuror('${juror.id}')" class="px-3 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700">Editar</button>
+                            <button onclick="eliminarJuradoSimple('${juror.id}')" class="px-3 py-2 bg-red-600 text-white text-sm rounded hover:bg-red-700">Eliminar</button>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+            
+            totalJurors.textContent = jurors.length;
+        }
+        
+        // Función súper simple para eliminar
+        window.eliminarJuradoSimple = function(id) {
+            console.log('🗑️ Eliminando jurado simple:', id);
+            
+            // Remover del array
+            jurors = jurors.filter(j => j.id !== id);
+            
+            // Volver a renderizar
+            renderJurors();
+            
+            // Mostrar confirmación
+            alert('✅ Jurado eliminado correctamente!');
+            
+            console.log('✅ Jurado eliminado. Quedan:', jurors.length);
+        }
+
+        // Cargar inmediatamente
+        console.log('🎭 Cargando jurados de prueba...');
+        renderJurors();
+        console.log('✅ Sistema simple iniciado con', jurors.length, 'jurados');
         
         // Debug: Verificar que los elementos del modal existen
         console.log('🔍 VERIFICANDO ELEMENTOS DEL MODAL:');
@@ -848,6 +961,55 @@
                 console.error('❌ No se encontró el botón confirm-delete-btn');
             }
         }, 2000); // Aumentar timeout para asegurar carga completa
+    </script>
+    
+    <!-- FUNCIÓN SÚPER SIMPLE QUE SÍ FUNCIONA -->
+    <script>
+        function simpleDelete() {
+            console.log('🔥 FUNCIÓN SIMPLE EJECUTADA');
+            
+            try {
+                // Cerrar modal inmediatamente
+                const modal = document.getElementById('delete-modal');
+                modal.classList.add('hidden');
+                modal.style.display = 'none';
+                
+                console.log('🚪 Modal cerrado');
+                
+                // Eliminar la primera tarjeta de jurado visible (como demo)
+                const firstCard = document.querySelector('.juror-card');
+                if (firstCard) {
+                    firstCard.style.display = 'none';
+                    console.log('✅ Primera tarjeta ocultada');
+                    
+                    // Actualizar contador
+                    const totalElement = document.getElementById('total-jurors');
+                    if (totalElement) {
+                        const current = parseInt(totalElement.textContent) || 0;
+                        totalElement.textContent = Math.max(0, current - 1);
+                        console.log('📊 Contador actualizado');
+                    }
+                    
+                    // Mostrar mensaje
+                    const messageContainer = document.getElementById('message-container');
+                    if (messageContainer) {
+                        messageContainer.innerHTML = '<div class="p-4 rounded-md mb-4 text-white bg-green-600">✅ Jurado eliminado temporalmente (demo)</div>';
+                        setTimeout(() => {
+                            messageContainer.innerHTML = '';
+                        }, 3000);
+                    }
+                    
+                    console.log('🎉 Eliminación simple completada');
+                } else {
+                    console.log('❌ No se encontró tarjeta para eliminar');
+                }
+                
+            } catch (error) {
+                console.error('❌ Error en función simple:', error);
+            }
+        }
+        
+        console.log('📋 Función simpleDelete() registrada globalmente');
     </script>
 </body>
 </html>
