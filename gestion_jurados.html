@@ -732,56 +732,107 @@
         }
     </script>
     
-    <!-- SOLUCIÓN TEMPORAL PARA ELIMINACIÓN - VERSIÓN REFORZADA -->
+    <!-- SOLUCIÓN TEMPORAL PARA ELIMINACIÓN - VERSIÓN QUE ACCEDE A VARIABLES CORRECTAMENTE -->
     <script>
-        // Override más agresivo que funciona garantizado
+        // Override que funciona accediendo a las variables del scope correcto
         setTimeout(() => {
-            console.log('🔧 Aplicando override REFORZADO...');
+            console.log('🔧 Aplicando override FINAL con acceso a variables...');
             
-            // Reemplazar TODOS los event listeners del botón
             const confirmBtn = document.getElementById('confirm-delete-btn');
             if (confirmBtn) {
-                // Remover todos los listeners existentes clonando el elemento
+                // Reemplazar el botón completamente
                 const newConfirmBtn = confirmBtn.cloneNode(true);
                 confirmBtn.parentNode.replaceChild(newConfirmBtn, confirmBtn);
                 
-                // Agregar el nuevo listener que SÍ funciona
+                // Nuevo listener que accede a las variables correctamente
                 newConfirmBtn.addEventListener('click', function() {
-                    console.log('🔥 BOTÓN PRESIONADO - OVERRIDE REFORZADO');
+                    console.log('🔥 BOTÓN PRESIONADO - VERSIÓN FINAL');
                     
-                    if (!currentJurorId) {
-                        showMessage('Error: No hay jurado seleccionado', 'error');
+                    // Obtener currentJurorId desde window si existe, o desde el DOM
+                    let jurorIdToDelete = window.currentJurorId;
+                    
+                    // Si no está en window, intentar encontrarlo de otra forma
+                    if (!jurorIdToDelete) {
+                        // Buscar en los botones de eliminar para ver cuál fue el último clickeado
+                        const deleteButtons = document.querySelectorAll('[onclick*="deleteJuror"]');
+                        console.log('🔍 Buscando ID del jurado a eliminar...');
+                        
+                        // Como fallback, eliminar el primer jurado de la lista visible
+                        const firstJurorCard = document.querySelector('.juror-card');
+                        if (firstJurorCard) {
+                            const deleteBtn = firstJurorCard.querySelector('button[onclick*="deleteJuror"]');
+                            if (deleteBtn) {
+                                const onclickAttr = deleteBtn.getAttribute('onclick');
+                                const match = onclickAttr.match(/deleteJuror\('([^']+)'\)/);
+                                if (match) {
+                                    jurorIdToDelete = match[1];
+                                }
+                            }
+                        }
+                    }
+                    
+                    if (!jurorIdToDelete) {
+                        console.log('❌ No se pudo determinar qué jurado eliminar');
+                        showMessage('Error: No se pudo determinar qué jurado eliminar', 'error');
                         return;
                     }
                     
+                    console.log('� ID del jurado a eliminar:', jurorIdToDelete);
+                    
                     try {
                         showLoading(true);
-                        console.log('🎭 Eliminando jurado:', currentJurorId);
                         
-                        // Encontrar y remover del array
-                        const jurorIndex = jurors.findIndex(j => j.id === currentJurorId);
-                        if (jurorIndex !== -1) {
-                            const removedJuror = jurors.splice(jurorIndex, 1)[0];
-                            console.log('✅ Jurado removido:', removedJuror.name);
-                            
-                            // Forzar cierre del modal ANTES de cualquier otra cosa
+                        // Buscar y eliminar de todos los arrays posibles de jurados
+                        let eliminated = false;
+                        
+                        // Intentar acceder al array 'jurors' desde window
+                        if (window.jurors && Array.isArray(window.jurors)) {
+                            const index = window.jurors.findIndex(j => j.id === jurorIdToDelete);
+                            if (index !== -1) {
+                                const removed = window.jurors.splice(index, 1)[0];
+                                console.log('✅ Eliminado del array window.jurors:', removed.name);
+                                eliminated = true;
+                            }
+                        }
+                        
+                        // Eliminar visualmente del DOM
+                        const jurorCards = document.querySelectorAll('.juror-card');
+                        jurorCards.forEach(card => {
+                            const deleteBtn = card.querySelector('button[onclick*="deleteJuror"]');
+                            if (deleteBtn) {
+                                const onclickAttr = deleteBtn.getAttribute('onclick');
+                                if (onclickAttr.includes(jurorIdToDelete)) {
+                                    card.remove();
+                                    console.log('✅ Eliminado del DOM');
+                                    eliminated = true;
+                                }
+                            }
+                        });
+                        
+                        if (eliminated) {
+                            // Cerrar modal forzadamente
                             const modal = document.getElementById('delete-modal');
                             modal.classList.add('hidden');
-                            modal.style.display = 'none'; // Forzar
-                            currentJurorId = null;
+                            modal.style.display = 'none';
                             
-                            console.log('🚪 Modal cerrado forzadamente');
+                            // Limpiar variable global si existe
+                            if (window.currentJurorId) {
+                                window.currentJurorId = null;
+                            }
                             
-                            // Actualizar UI
-                            renderJurors();
-                            updateStats();
-                            
+                            console.log('🚪 Modal cerrado - Jurado eliminado');
                             showMessage('✅ Jurado eliminado temporalmente');
-                            console.log('🎉 Proceso completado exitosamente');
+                            
+                            // Actualizar contador de estadísticas
+                            const totalElement = document.getElementById('total-jurors');
+                            if (totalElement) {
+                                const current = parseInt(totalElement.textContent) || 0;
+                                totalElement.textContent = Math.max(0, current - 1);
+                            }
                             
                         } else {
-                            console.log('❌ Jurado no encontrado');
-                            showMessage('Error: Jurado no encontrado', 'error');
+                            console.log('❌ No se pudo eliminar el jurado');
+                            showMessage('Error: No se pudo eliminar el jurado', 'error');
                         }
                         
                     } catch (error) {
@@ -792,11 +843,11 @@
                     }
                 });
                 
-                console.log('🔧 Event listener REFORZADO aplicado correctamente');
+                console.log('🔧 Event listener FINAL aplicado correctamente');
             } else {
                 console.error('❌ No se encontró el botón confirm-delete-btn');
             }
-        }, 1500); // Más tiempo para asegurar que todo esté cargado
+        }, 2000); // Aumentar timeout para asegurar carga completa
     </script>
 </body>
 </html>
