@@ -169,23 +169,24 @@
     <!-- Modal para confirmar eliminación -->
     <div id="delete-modal" class="modal-backdrop hidden">
         <div class="modal-content">
-            <h3 class="text-xl font-bold mb-4 text-red-400">¿Eliminar Jurado?</h3>
+            <h3 class="text-xl font-bold mb-4 text-yellow-400">¿Desactivar Jurado?</h3>
             <div class="mb-4">
-                <p class="text-gray-300 mb-3">Esta acción eliminará completamente:</p>
-                <div class="bg-red-900 bg-opacity-30 p-3 rounded border border-red-600">
-                    <ul class="text-red-200 space-y-1">
-                        <li>🗑️ El jurado y su información</li>
-                        <li>🗳️ Todos sus votos en todas las galas</li>
-                        <li>📊 Sus puntuaciones de todos los artistas</li>
+                <p class="text-gray-300 mb-3">Esta acción desactivará el jurado:</p>
+                <div class="bg-yellow-900 bg-opacity-30 p-3 rounded border border-yellow-600">
+                    <ul class="text-yellow-200 space-y-1">
+                        <li>� El jurado será ocultado de la lista</li>
+                        <li>� No podrá votar en futuras galas</li>
+                        <li>📊 Sus votos anteriores se mantienen</li>
+                        <li>🔄 Se puede reactivar si es necesario</li>
                     </ul>
                 </div>
                 <p class="text-gray-400 text-sm mt-3">
-                    ⚠️ Esta acción no se puede deshacer, pero no afectará a otros jurados ni sus votaciones.
+                    ⚠️ El jurado será marcado como inactivo pero sus datos se conservan.
                 </p>
             </div>
             <div class="flex justify-end space-x-4">
                 <button id="cancel-delete-btn" class="px-4 py-2 bg-gray-600 text-white font-semibold rounded-lg hover:bg-gray-700">Cancelar</button>
-                <button id="confirm-delete-btn" class="px-4 py-2 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700">Sí, Eliminar Definitivamente</button>
+                <button id="confirm-delete-btn" class="px-4 py-2 bg-yellow-600 text-white font-semibold rounded-lg hover:bg-yellow-700">Sí, Desactivar</button>
             </div>
         </div>
     </div>
@@ -440,11 +441,12 @@
                 console.log('Documentos encontrados:', jurorsSnapshot.docs.length);
                 
                 jurors = jurorsSnapshot.docs.map(doc => {
-                    console.log('Jurado encontrado:', doc.id, doc.data());
-                    return { id: doc.id, ...doc.data() };
-                });
+                    const data = { id: doc.id, ...doc.data() };
+                    console.log('Jurado encontrado:', doc.id, data);
+                    return data;
+                }).filter(juror => juror.active !== false); // Filtrar jurados inactivos
                 
-                console.log('Jurados cargados:', jurors.length);
+                console.log('Jurados activos cargados:', jurors.length);
                 renderJurors();
                 updateStats();
                 
@@ -631,10 +633,14 @@
                 console.log('🚀 Iniciando eliminación del jurado:', currentJurorId);
                 showLoading(true);
                 
-                // Simplificar: Eliminar directamente el jurado sin buscar votos por ahora
-                console.log('🗑️ Eliminando documento del jurado directamente...');
-                await deleteDoc(doc(db, `events/${eventId}/jurors`, currentJurorId));
-                console.log('✅ Jurado eliminado exitosamente');
+                // NUEVO: En lugar de eliminar, marcar como inactivo
+                console.log('� Marcando jurado como inactivo en lugar de eliminarlo...');
+                await updateDoc(doc(db, `events/${eventId}/jurors`, currentJurorId), {
+                    active: false,
+                    deletedAt: new Date().toISOString(),
+                    deletedBy: 'admin'
+                });
+                console.log('✅ Jurado marcado como inactivo exitosamente');
                 
                 // Cerrar modal y limpiar
                 showLoading(false);
@@ -642,15 +648,15 @@
                 currentJurorId = null;
                 
                 // Mostrar mensaje y recargar
-                showMessage('✅ Jurado eliminado correctamente');
+                showMessage('✅ Jurado desactivado correctamente');
                 await loadJurors();
                 
-                console.log('🎉 Proceso de eliminación completado');
+                console.log('🎉 Proceso de desactivación completado');
                 
             } catch (error) {
-                console.error('❌ Error eliminando jurado:', error);
+                console.error('❌ Error desactivando jurado:', error);
                 showLoading(false);
-                showMessage('❌ Error al eliminar jurado: ' + error.message, 'error');
+                showMessage('❌ Error al desactivar jurado: ' + error.message, 'error');
             }
         }
 
