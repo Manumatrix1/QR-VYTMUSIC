@@ -754,9 +754,37 @@
                 console.log('Guardando perfil para artista:', currentArtistId);
                 showLoading(true);
                 
+                // Manejar cambio de foto
+                const newPhotoFile = ui.newArtistPhoto.files[0];
+                const shouldRemovePhoto = ui.currentArtistPhoto.dataset.removePhoto === 'true';
+                
+                console.log('🖼️ Estado de foto:', {
+                    newPhotoFile: newPhotoFile ? newPhotoFile.name : 'ninguno',
+                    shouldRemovePhoto: shouldRemovePhoto
+                });
+                
+                if (newPhotoFile) {
+                    // Subir nueva foto
+                    console.log('📤 Subiendo nueva foto...');
+                    showMessage('Subiendo nueva foto...', 'info');
+                    const photoRef = ref(storage, `artist-photos/${eventId}/${currentArtistId}`);
+                    await uploadBytes(photoRef, newPhotoFile);
+                    const newPhotoURL = await getDownloadURL(photoRef);
+                    profileData.photoURL = newPhotoURL;
+                    console.log('✅ Nueva foto subida:', newPhotoURL);
+                } else if (shouldRemovePhoto) {
+                    // Quitar foto (establecer como null)
+                    profileData.photoURL = null;
+                    console.log('🗑️ Foto removida del perfil');
+                }
+                
+                console.log('💾 Guardando datos del perfil:', profileData);
                 await updateDoc(doc(db, `events/${eventId}/artists`, currentArtistId), profileData);
                 
-                console.log('Perfil guardado exitosamente');
+                console.log('✅ Perfil guardado exitosamente');
+                
+                // Limpiar dataset después de guardar
+                ui.currentArtistPhoto.dataset.removePhoto = 'false';
                 
                 // Cerrar modal ANTES de otros procesos
                 showLoading(false);
