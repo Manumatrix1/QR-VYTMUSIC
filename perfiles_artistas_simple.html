@@ -49,21 +49,37 @@
                 <!-- Sección de foto simplificada (URL directa) -->
                 <div class="bg-gray-700 p-4 rounded-lg">
                     <h4 class="font-semibold text-gray-300 mb-3">📸 Foto del Artista</h4>
-                    <div class="flex items-center gap-4">
+                    <div class="flex items-center gap-4 mb-3">
                         <div class="flex-shrink-0">
                             <img id="photo-preview" src="" alt="Foto" 
-                                 class="w-16 h-16 rounded-full object-cover border-2 border-sky-400">
+                                 class="w-16 h-16 rounded-full object-cover border-2 border-sky-400 hidden">
+                            <div id="photo-placeholder" class="w-16 h-16 bg-sky-600 rounded-full flex items-center justify-center text-xl font-bold text-white">
+                                A
+                            </div>
                         </div>
                         <div class="flex-1">
-                            <label for="photo-url" class="block mb-2 font-semibold text-gray-300">URL de la Foto</label>
-                            <input type="url" id="photo-url" placeholder="https://ejemplo.com/foto.jpg" 
+                            <label for="photo-file" class="block mb-2 font-semibold text-gray-300">📁 Subir desde tu PC</label>
+                            <input type="file" id="photo-file" accept="image/*" 
                                    class="w-full p-2 rounded-md border border-gray-600 bg-gray-800 text-white text-sm">
-                            <p class="text-xs text-gray-400 mt-1">Pega el enlace de una imagen desde internet</p>
+                            <p class="text-xs text-gray-400 mt-1">Selecciona una imagen desde tu computadora (recomendado)</p>
                         </div>
-                        <button type="button" id="test-photo-btn" 
-                                class="px-3 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700">
-                            👁️ Ver
+                        <button type="button" id="remove-photo-btn" 
+                                class="px-3 py-2 bg-red-600 text-white text-sm rounded hover:bg-red-700">
+                            🗑️ Quitar
                         </button>
+                    </div>
+                    
+                    <div class="border-t border-gray-600 pt-3">
+                        <label for="photo-url" class="block mb-2 font-semibold text-gray-300">🌐 O pegar enlace de internet</label>
+                        <div class="flex gap-2">
+                            <input type="url" id="photo-url" placeholder="https://ejemplo.com/foto.jpg" 
+                                   class="flex-1 p-2 rounded-md border border-gray-600 bg-gray-800 text-white text-sm">
+                            <button type="button" id="test-photo-btn" 
+                                    class="px-3 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700">
+                                👁️ Ver
+                            </button>
+                        </div>
+                        <p class="text-xs text-gray-400 mt-1">Alternativa: pega el enlace de una imagen desde internet</p>
                     </div>
                 </div>
                 
@@ -254,17 +270,52 @@
             currentArtistId = artist ? artist.id : null;
             
             if (artist) {
+                console.log('✏️ Editando artista:', artist.name);
+                
+                // Llenar campos básicos
                 ui.artistName.value = artist.name || '';
                 ui.artistAge.value = artist.age || '';
                 ui.artistCity.value = artist.city || '';
                 ui.artistStyle.value = artist.musicalStyle || '';
                 ui.artistSong.value = artist.currentSong || '';
-                ui.photoUrl.value = artist.photoURL || '';
                 ui.artistNotes.value = artist.juryNotes || '';
-                updatePhotoPreview();
+                
+                // Manejar foto existente
+                if (artist.photoURL) {
+                    console.log('📸 Cargando foto existente');
+                    document.getElementById('photo-preview').src = artist.photoURL;
+                    document.getElementById('photo-preview').classList.remove('hidden');
+                    document.getElementById('photo-placeholder').style.display = 'none';
+                    
+                    // Si es URL, ponerla en el campo URL
+                    if (artist.photoURL.startsWith('http')) {
+                        document.getElementById('photo-url').value = artist.photoURL;
+                    }
+                    
+                    window.currentPhotoData = artist.photoURL;
+                } else {
+                    // Sin foto - mostrar placeholder
+                    document.getElementById('photo-preview').classList.add('hidden');
+                    document.getElementById('photo-placeholder').style.display = 'flex';
+                    document.getElementById('photo-placeholder').textContent = artist.name ? artist.name.charAt(0).toUpperCase() : 'A';
+                    document.getElementById('photo-url').value = '';
+                    window.currentPhotoData = null;
+                }
+                
+                // Limpiar selector de archivo
+                document.getElementById('photo-file').value = '';
+                
             } else {
+                console.log('➕ Creando nuevo artista');
                 ui.artistForm.reset();
-                ui.photoPreview.src = 'https://placehold.co/64x64/1f2937/f9fafb?text=?';
+                
+                // Limpiar foto
+                document.getElementById('photo-preview').classList.add('hidden');
+                document.getElementById('photo-placeholder').style.display = 'flex';
+                document.getElementById('photo-placeholder').textContent = 'A';
+                document.getElementById('photo-file').value = '';
+                document.getElementById('photo-url').value = '';
+                window.currentPhotoData = null;
             }
             
             ui.artistModal.classList.remove('hidden');
@@ -287,13 +338,20 @@
         async function saveArtist(e) {
             e.preventDefault();
             
+            // Obtener foto actual (Base64 o URL)
+            let photoData = null;
+            if (window.currentPhotoData) {
+                photoData = window.currentPhotoData;
+                console.log('📸 Guardando foto:', photoData.substring(0, 50) + '...');
+            }
+            
             const artistData = {
                 name: ui.artistName.value.trim(),
                 age: ui.artistAge.value ? parseInt(ui.artistAge.value) : null,
                 city: ui.artistCity.value.trim(),
                 musicalStyle: ui.artistStyle.value.trim(),
                 currentSong: ui.artistSong.value.trim(),
-                photoURL: ui.photoUrl.value.trim() || null,
+                photoURL: photoData,  // Aquí guardamos Base64 o URL
                 juryNotes: ui.artistNotes.value.trim(),
                 updatedAt: new Date().toISOString()
             };
@@ -304,13 +362,16 @@
             }
 
             try {
+                console.log('💾 Guardando artista...', artistData.name);
+                showMessage('Guardando...', 'info');
+                
                 if (currentArtistId) {
                     await updateDoc(doc(db, `events/${eventId}/artists`, currentArtistId), artistData);
-                    showMessage('✅ Artista actualizado');
+                    showMessage('✅ Artista y foto actualizados correctamente');
                 } else {
                     artistData.createdAt = new Date().toISOString();
                     await addDoc(collection(db, `events/${eventId}/artists`), artistData);
-                    showMessage('✅ Artista creado');
+                    showMessage('✅ Artista y foto creados correctamente');
                 }
                 
                 closeModal();
@@ -319,6 +380,87 @@
             } catch (error) {
                 console.error('Error saving artist:', error);
                 showMessage('❌ Error al guardar: ' + error.message, 'error');
+            }
+        }
+
+        // Funciones para manejo de fotos
+        function handlePhotoFile(event) {
+            const file = event.target.files[0];
+            if (file) {
+                console.log('📁 Archivo seleccionado:', file.name);
+                
+                // Verificar tamaño (máximo 2MB)
+                if (file.size > 2 * 1024 * 1024) {
+                    showMessage('❌ La imagen es muy grande. Máximo 2MB.', 'error');
+                    event.target.value = '';
+                    return;
+                }
+                
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const base64 = e.target.result;
+                    console.log('✅ Imagen convertida a Base64');
+                    
+                    // Mostrar preview
+                    document.getElementById('photo-preview').src = base64;
+                    document.getElementById('photo-preview').classList.remove('hidden');
+                    document.getElementById('photo-placeholder').style.display = 'none';
+                    
+                    // Limpiar URL si había algo
+                    document.getElementById('photo-url').value = '';
+                    
+                    // Guardar en variable global para cuando se guarde
+                    window.currentPhotoData = base64;
+                    
+                    showMessage('✅ Foto cargada correctamente', 'success');
+                };
+                reader.readAsDataURL(file);
+            }
+        }
+        
+        function removePhoto() {
+            console.log('🗑️ Removiendo foto');
+            
+            // Limpiar preview
+            document.getElementById('photo-preview').classList.add('hidden');
+            document.getElementById('photo-placeholder').style.display = 'flex';
+            
+            // Limpiar inputs
+            document.getElementById('photo-file').value = '';
+            document.getElementById('photo-url').value = '';
+            
+            // Limpiar variable global
+            window.currentPhotoData = null;
+            
+            showMessage('🗑️ Foto removida', 'info');
+        }
+        
+        function updatePhotoPreview() {
+            const url = document.getElementById('photo-url').value.trim();
+            if (url) {
+                console.log('🌐 Probando URL:', url);
+                
+                // Crear imagen temporal para validar
+                const img = new Image();
+                img.onload = function() {
+                    console.log('✅ URL válida');
+                    document.getElementById('photo-preview').src = url;
+                    document.getElementById('photo-preview').classList.remove('hidden');
+                    document.getElementById('photo-placeholder').style.display = 'none';
+                    
+                    // Limpiar archivo si había algo
+                    document.getElementById('photo-file').value = '';
+                    
+                    // Guardar URL para cuando se guarde
+                    window.currentPhotoData = url;
+                    
+                    showMessage('✅ Foto desde URL cargada', 'success');
+                };
+                img.onerror = function() {
+                    console.log('❌ URL no válida');
+                    showMessage('❌ URL de imagen no válida', 'error');
+                };
+                img.src = url;
             }
         }
 
@@ -349,6 +491,10 @@
         ui.artistForm.addEventListener('submit', saveArtist);
         ui.testPhotoBtn.addEventListener('click', updatePhotoPreview);
         ui.photoUrl.addEventListener('input', updatePhotoPreview);
+        
+        // Event listeners para nuevas funciones de foto
+        document.getElementById('photo-file').addEventListener('change', handlePhotoFile);
+        document.getElementById('remove-photo-btn').addEventListener('click', removePhoto);
 
         // Initialize
         loadArtists();
