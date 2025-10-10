@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Gestión de Jurados - VYTMUSIC</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            background-color: #111827; 
+            color: #f9fafb; 
+            padding: 20px;
+        }
+        .juror-card { 
+            background-color: #1f2937; 
+            padding: 1rem; 
+            border-radius: 0.5rem; 
+            border: 1px solid #374151; 
+            margin-bottom: 1rem;
+        }
+        .juror-card:hover { 
+            border-color: #38bdf8; 
+        }
+        button {
+            padding: 8px 16px;
+            margin: 4px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .btn-edit { background-color: #3b82f6; color: white; }
+        .btn-delete { background-color: #ef4444; color: white; }
+        .btn-add { background-color: #10b981; color: white; }
+        .counter { 
+            font-size: 2rem; 
+            font-weight: bold; 
+            color: #38bdf8; 
+            text-align: center;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="max-w-4xl mx-auto">
+        <header class="text-center mb-8">
+            <h1 class="text-4xl font-bold text-sky-400 mb-4">🎭 Test Gestión de Jurados</h1>
+            <p class="text-xl text-gray-300">Versión simplificada para testing</p>
+        </header>
+
+        <div class="counter">
+            Total Jurados: <span id="total-count">3</span>
+        </div>
+
+        <div class="mb-6 text-center">
+            <button class="btn-add" onclick="addJuror()">➕ Agregar Jurado de Prueba</button>
+            <button class="btn-edit" onclick="location.reload()">🔄 Recargar</button>
+        </div>
+
+        <div id="jurors-container">
+            <!-- Los jurados se cargan automáticamente aquí -->
+        </div>
+
+        <div class="mt-8 p-4 bg-gray-800 rounded-lg">
+            <h3 class="text-lg font-bold text-yellow-300 mb-2">✅ Status del Test:</h3>
+            <ul class="text-sm text-gray-300 space-y-1">
+                <li id="status-load">❓ Cargando jurados...</li>
+                <li id="status-render">❓ Renderizando lista...</li>
+                <li id="status-events">❓ Configurando eventos...</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        // Jurados de prueba
+        let jurors = [
+            {
+                id: 'test1',
+                name: 'Luciano Demo',
+                password: 'ABC123',
+                email: 'luciano@test.com',
+                isSecret: false,
+                created: new Date().toLocaleDateString()
+            },
+            {
+                id: 'test2',
+                name: 'Machito Demo',
+                password: 'XYZ789',
+                email: 'machito@test.com',
+                isSecret: false,
+                created: new Date().toLocaleDateString()
+            },
+            {
+                id: 'test3',
+                name: 'Manu Demo',
+                password: 'QWE456',
+                email: 'manu@test.com',
+                isSecret: true,
+                created: new Date().toLocaleDateString()
+            }
+        ];
+
+        // Función para renderizar jurados
+        function renderJurors() {
+            console.log('🎨 Renderizando', jurors.length, 'jurados');
+            
+            const container = document.getElementById('jurors-container');
+            const counter = document.getElementById('total-count');
+            
+            if (jurors.length === 0) {
+                container.innerHTML = '<p class="text-center text-gray-400">No hay jurados registrados</p>';
+                counter.textContent = '0';
+                return;
+            }
+
+            container.innerHTML = jurors.map((juror, index) => `
+                <div class="juror-card" id="juror-${juror.id}">
+                    <div class="flex justify-between items-center">
+                        <div class="flex-1">
+                            <h3 class="text-lg font-semibold text-white">${juror.name}</h3>
+                            <p class="text-gray-400">🔑 Password: <span class="bg-gray-700 px-2 py-1 rounded font-mono">${juror.password}</span></p>
+                            ${juror.email ? `<p class="text-gray-400">📧 Email: ${juror.email}</p>` : ''}
+                            <div class="flex gap-2 mt-2">
+                                ${juror.isSecret ? 
+                                    '<span class="px-2 py-1 bg-yellow-600 text-xs rounded">🤐 Secreto</span>' : 
+                                    '<span class="px-2 py-1 bg-green-600 text-xs rounded">👁️ Público</span>'
+                                }
+                                <span class="px-2 py-1 bg-gray-600 text-xs rounded">📅 ${juror.created}</span>
+                            </div>
+                        </div>
+                        <div class="flex flex-col gap-2">
+                            <button class="btn-edit" onclick="editJuror('${juror.id}')">✏️ Editar</button>
+                            <button class="btn-delete" onclick="deleteJuror('${juror.id}')">🗑️ Eliminar</button>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+            
+            counter.textContent = jurors.length;
+            updateStatus('render', '✅ Lista renderizada correctamente');
+        }
+
+        // Función para eliminar jurado
+        function deleteJuror(id) {
+            console.log('🗑️ Eliminando jurado:', id);
+            
+            if (confirm('🤔 ¿Estás seguro de eliminar este jurado?')) {
+                // Buscar y eliminar del array
+                const index = jurors.findIndex(j => j.id === id);
+                if (index !== -1) {
+                    const removed = jurors.splice(index, 1)[0];
+                    console.log('✅ Jurado eliminado:', removed.name);
+                    
+                    // Volver a renderizar
+                    renderJurors();
+                    
+                    // Mostrar confirmación
+                    alert('✅ Jurado "' + removed.name + '" eliminado correctamente!');
+                } else {
+                    alert('❌ Error: No se encontró el jurado');
+                }
+            }
+        }
+
+        // Función para editar jurado
+        function editJuror(id) {
+            const juror = jurors.find(j => j.id === id);
+            if (juror) {
+                const newName = prompt('📝 Nuevo nombre:', juror.name);
+                if (newName && newName.trim()) {
+                    juror.name = newName.trim();
+                    renderJurors();
+                    alert('✅ Jurado actualizado correctamente!');
+                }
+            }
+        }
+
+        // Función para agregar jurado
+        function addJuror() {
+            const name = prompt('📝 Nombre del nuevo jurado:');
+            if (name && name.trim()) {
+                const newJuror = {
+                    id: 'new' + Date.now(),
+                    name: name.trim(),
+                    password: generatePassword(),
+                    email: '',
+                    isSecret: false,
+                    created: new Date().toLocaleDateString()
+                };
+                
+                jurors.push(newJuror);
+                renderJurors();
+                alert('✅ Jurado "' + newJuror.name + '" agregado con password: ' + newJuror.password);
+            }
+        }
+
+        // Generar password aleatorio
+        function generatePassword() {
+            const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+            return Array.from({length: 6}, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+        }
+
+        // Actualizar status
+        function updateStatus(type, message) {
+            const element = document.getElementById('status-' + type);
+            if (element) {
+                element.textContent = message;
+            }
+        }
+
+        // Inicialización
+        console.log('🚀 Iniciando test de gestión de jurados...');
+        updateStatus('load', '✅ Jurados cargados desde array');
+        updateStatus('events', '✅ Eventos configurados');
+
+        // Renderizar inmediatamente
+        renderJurors();
+
+        console.log('🎉 Test inicializado correctamente con', jurors.length, 'jurados');
+    </script>
+</body>
+</html>

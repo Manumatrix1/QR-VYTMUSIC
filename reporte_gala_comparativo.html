@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reporte por Gala - Jurados vs Público | VYTMUSIC</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { 
+            font-family: 'Inter', sans-serif; 
+            background: linear-gradient(135deg, #1e3a8a 0%, #3730a3 50%, #581c87 100%);
+            min-height: 100vh;
+            color: #f9fafb; 
+        }
+        .report-card {
+            background: rgba(30, 41, 59, 0.95);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(148, 163, 184, 0.2);
+            border-radius: 1rem;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+        .artist-comparison {
+            background: rgba(55, 65, 81, 0.8);
+            border-left: 4px solid #3b82f6;
+            margin-bottom: 1.5rem;
+        }
+        .feedback-positive { border-left-color: #10b981; }
+        .feedback-negative { border-left-color: #ef4444; }
+        .feedback-neutral { border-left-color: #f59e0b; }
+        
+        .score-bar {
+            height: 8px;
+            border-radius: 4px;
+            overflow: hidden;
+            background-color: rgba(55, 65, 81, 0.8);
+        }
+        .score-fill-jury { background: linear-gradient(90deg, #3b82f6, #1d4ed8); }
+        .score-fill-public { background: linear-gradient(90deg, #10b981, #059669); }
+        
+        @media print {
+            body { background: white !important; color: black !important; }
+            .report-card { background: white !important; border: 1px solid #ccc !important; }
+            .no-print { display: none !important; }
+        }
+    </style>
+</head>
+<body class="p-4">
+    <div class="max-w-7xl mx-auto">
+        <!-- Header del Reporte -->
+        <header class="text-center mb-8">
+            <div class="report-card p-8 mb-6">
+                <img src="https://i.imgur.com/rqkZi9P.png" alt="VYTMUSIC Logo" class="mx-auto mb-4 bg-white rounded-full w-20 h-20">
+                <h1 class="text-4xl font-bold text-white mb-2">📊 Reporte Comparativo por Gala</h1>
+                <p id="event-title" class="text-2xl text-blue-300 font-semibold"></p>
+                <p id="gala-title" class="text-xl text-purple-300 mt-2"></p>
+                <p class="text-gray-300 mt-4">Análisis comparativo: Evaluación de Jurados vs Votación del Público</p>
+                
+                <!-- Controles de Gala -->
+                <div class="flex justify-center gap-4 mt-6">
+                    <select id="gala-selector" class="bg-gray-800 border border-gray-600 rounded-lg px-4 py-2 text-white">
+                        <option value="1">Gala 1</option>
+                        <option value="2">Gala 2</option>
+                        <option value="3">Gala 3</option>
+                        <option value="4">Gala 4</option>
+                        <option value="5">Gala 5</option>
+                    </select>
+                    <button id="load-gala" class="bg-blue-600 hover:bg-blue-700 px-6 py-2 rounded-lg font-semibold transition">
+                        📈 Cargar Gala
+                    </button>
+                    <button id="print-report" class="no-print bg-green-600 hover:bg-green-700 px-6 py-2 rounded-lg font-semibold transition">
+                        🖨️ Imprimir
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Resumen Ejecutivo -->
+        <section class="report-card p-6 mb-8">
+            <h2 class="text-2xl font-bold text-white mb-6 text-center">📋 Resumen Ejecutivo</h2>
+            
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
+                <div class="text-center p-4 bg-blue-600 bg-opacity-20 rounded-lg border border-blue-500">
+                    <div class="text-3xl font-bold text-blue-400" id="total-artists">0</div>
+                    <div class="text-blue-300">Artistas Participantes</div>
+                </div>
+                <div class="text-center p-4 bg-green-600 bg-opacity-20 rounded-lg border border-green-500">
+                    <div class="text-3xl font-bold text-green-400" id="jury-votes">0</div>
+                    <div class="text-green-300">Votos de Jurados</div>
+                </div>
+                <div class="text-center p-4 bg-purple-600 bg-opacity-20 rounded-lg border border-purple-500">
+                    <div class="text-3xl font-bold text-purple-400" id="public-votes">0</div>
+                    <div class="text-purple-300">Votos del Público</div>
+                </div>
+                <div class="text-center p-4 bg-yellow-600 bg-opacity-20 rounded-lg border border-yellow-500">
+                    <div class="text-3xl font-bold text-yellow-400" id="correlation">0%</div>
+                    <div class="text-yellow-300">Correlación J vs P</div>
+                </div>
+            </div>
+
+            <!-- Gráfico Comparativo General -->
+            <div class="bg-gray-800 p-4 rounded-lg">
+                <h3 class="text-lg font-bold text-white mb-4 text-center">📊 Comparativa General: Jurados vs Público</h3>
+                <canvas id="general-comparison-chart" width="400" height="200"></canvas>
+            </div>
+        </section>
+
+        <!-- Análisis Individual por Artista -->
+        <section class="report-card p-6 mb-8">
+            <h2 class="text-2xl font-bold text-white mb-6 text-center">🎭 Análisis Individual por Artista</h2>
+            <div id="artists-analysis" class="space-y-6">
+                <!-- Se llena dinámicamente -->
+            </div>
+        </section>
+
+        <!-- Insights y Recomendaciones -->
+        <section class="report-card p-6 mb-8">
+            <h2 class="text-2xl font-bold text-white mb-6 text-center">💡 Insights y Feedback para Artistas</h2>
+            <div id="insights-container" class="space-y-4">
+                <!-- Se llena dinámicamente -->
+            </div>
+        </section>
+
+        <!-- Ranking Comparativo -->
+        <section class="report-card p-6 mb-8">
+            <h2 class="text-2xl font-bold text-white mb-6 text-center">🏆 Ranking Comparativo</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- Ranking Jurados -->
+                <div class="bg-blue-600 bg-opacity-20 p-4 rounded-lg border border-blue-500">
+                    <h3 class="text-lg font-bold text-blue-300 mb-4 text-center">👨‍💼 Ranking de Jurados</h3>
+                    <div id="jury-ranking" class="space-y-2">
+                        <!-- Se llena dinámicamente -->
+                    </div>
+                </div>
+                
+                <!-- Ranking Público -->
+                <div class="bg-green-600 bg-opacity-20 p-4 rounded-lg border border-green-500">
+                    <h3 class="text-lg font-bold text-green-300 mb-4 text-center">👥 Ranking del Público</h3>
+                    <div id="public-ranking" class="space-y-2">
+                        <!-- Se llena dinámicamente -->
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Footer del Reporte -->
+        <footer class="report-card p-4 text-center text-gray-400">
+            <p>📅 Generado el: <span id="report-date"></span></p>
+            <p class="text-sm mt-2">VYTMUSIC - Sistema de Gestión de Certámenes Musicales</p>
+        </footer>
+    </div>
+
+    <script>
+        // Variables globales
+        let currentGala = 1;
+        let eventId = new URLSearchParams(window.location.search).get('eventId') || 'demo';
+        let eventName = new URLSearchParams(window.location.search).get('eventName') || 'Certamen Demo';
+        
+        // Datos de demostración
+        const demoData = {
+            1: {
+                artists: [
+                    {
+                        id: 'artist1',
+                        name: 'Ana García',
+                        genre: 'Pop',
+                        song: 'Someone Like You - Adele',
+                        juryScore: 87.5,
+                        publicScore: 85.2,
+                        juryVotes: 3,
+                        publicVotes: 247,
+                        juryDetails: {
+                            afinacion: 9.2,
+                            ritmo: 8.8,
+                            tecnica: 9.0,
+                            interpretacion: 9.5,
+                            presencia: 8.7,
+                            creatividad: 8.3,
+                            repertorio: 9.1,
+                            vestuario: 8.5,
+                            evolucion: 8.2,
+                            profesionalismo: 8.2
+                        }
+                    },
+                    {
+                        id: 'artist2',
+                        name: 'Carlos Méndez',
+                        genre: 'Rock',
+                        song: 'Bohemian Rhapsody - Queen',
+                        juryScore: 92.3,
+                        publicScore: 78.9,
+                        juryVotes: 3,
+                        publicVotes: 189,
+                        juryDetails: {
+                            afinacion: 9.5,
+                            ritmo: 9.8,
+                            tecnica: 9.3,
+                            interpretacion: 9.7,
+                            presencia: 9.2,
+                            creatividad: 9.5,
+                            repertorio: 9.0,
+                            vestuario: 8.8,
+                            evolucion: 9.1,
+                            profesionalismo: 9.4
+                        }
+                    },
+                    {
+                        id: 'artist3',
+                        name: 'María López',
+                        genre: 'Balada',
+                        song: 'My Heart Will Go On - Céline Dion',
+                        juryScore: 79.8,
+                        publicScore: 91.3,
+                        juryVotes: 3,
+                        publicVotes: 312,
+                        juryDetails: {
+                            afinacion: 8.5,
+                            ritmo: 7.8,
+                            tecnica: 8.2,
+                            interpretacion: 8.8,
+                            presencia: 8.9,
+                            creatividad: 7.5,
+                            repertorio: 8.0,
+                            vestuario: 8.3,
+                            evolucion: 7.9,
+                            profesionalismo: 7.9
+                        }
+                    }
+                ]
+            }
+        };
+
+        // Inicialización
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeReport();
+            loadGalaData(currentGala);
+        });
+
+        function initializeReport() {
+            document.getElementById('event-title').textContent = eventName;
+            document.getElementById('gala-title').textContent = `Gala ${currentGala}`;
+            document.getElementById('report-date').textContent = new Date().toLocaleDateString('es-ES', {
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+            
+            // Event listeners
+            document.getElementById('load-gala').addEventListener('click', function() {
+                const selectedGala = document.getElementById('gala-selector').value;
+                loadGalaData(parseInt(selectedGala));
+            });
+            
+            document.getElementById('print-report').addEventListener('click', function() {
+                window.print();
+            });
+        }
+
+        function loadGalaData(galaNumber) {
+            currentGala = galaNumber;
+            document.getElementById('gala-title').textContent = `Gala ${galaNumber}`;
+            
+            // Usar datos de demo para la gala 1, generar variaciones para otras galas
+            const galaData = demoData[1] || generateVariationData(galaNumber);
+            
+            updateSummaryStats(galaData);
+            renderGeneralChart(galaData);
+            renderArtistsAnalysis(galaData);
+            renderInsights(galaData);
+            renderRankings(galaData);
+        }
+
+        function generateVariationData(galaNumber) {
+            // Generar variaciones de los datos base para otras galas
+            const baseData = demoData[1];
+            const variation = (galaNumber - 1) * 0.1;
+            
+            return {
+                artists: baseData.artists.map(artist => ({
+                    ...artist,
+                    juryScore: Math.max(60, Math.min(100, artist.juryScore + (Math.random() - 0.5) * 20)),
+                    publicScore: Math.max(60, Math.min(100, artist.publicScore + (Math.random() - 0.5) * 20)),
+                    publicVotes: Math.floor(artist.publicVotes * (0.8 + Math.random() * 0.4))
+                }))
+            };
+        }
+
+        function updateSummaryStats(data) {
+            const totalArtists = data.artists.length;
+            const juryVotes = data.artists.reduce((sum, artist) => sum + artist.juryVotes, 0);
+            const publicVotes = data.artists.reduce((sum, artist) => sum + artist.publicVotes, 0);
+            
+            // Calcular correlación simple
+            const correlation = calculateCorrelation(data.artists);
+            
+            document.getElementById('total-artists').textContent = totalArtists;
+            document.getElementById('jury-votes').textContent = juryVotes;
+            document.getElementById('public-votes').textContent = publicVotes.toLocaleString();
+            document.getElementById('correlation').textContent = `${Math.round(correlation * 100)}%`;
+        }
+
+        function calculateCorrelation(artists) {
+            // Correlación simple entre rankings de jurados y público
+            const juryRank = artists.map(a => a.juryScore).sort((a, b) => b - a);
+            const publicRank = artists.map(a => a.publicScore).sort((a, b) => b - a);
+            
+            // Simplificado para demo
+            return 0.65 + (Math.random() * 0.3);
+        }
+
+        function renderGeneralChart(data) {
+            const ctx = document.getElementById('general-comparison-chart').getContext('2d');
+            
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: data.artists.map(artist => artist.name),
+                    datasets: [
+                        {
+                            label: 'Evaluación Jurados',
+                            data: data.artists.map(artist => artist.juryScore),
+                            backgroundColor: 'rgba(59, 130, 246, 0.8)',
+                            borderColor: 'rgba(59, 130, 246, 1)',
+                            borderWidth: 2
+                        },
+                        {
+                            label: 'Votación Público',
+                            data: data.artists.map(artist => artist.publicScore),
+                            backgroundColor: 'rgba(16, 185, 129, 0.8)',
+                            borderColor: 'rgba(16, 185, 129, 1)',
+                            borderWidth: 2
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 100,
+                            ticks: { color: '#e5e7eb' },
+                            grid: { color: 'rgba(75, 85, 99, 0.3)' }
+                        },
+                        x: {
+                            ticks: { color: '#e5e7eb' },
+                            grid: { color: 'rgba(75, 85, 99, 0.3)' }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            labels: { color: '#e5e7eb' }
+                        }
+                    }
+                }
+            });
+        }
+
+        function renderArtistsAnalysis(data) {
+            const container = document.getElementById('artists-analysis');
+            
+            container.innerHTML = data.artists.map(artist => {
+                const difference = artist.juryScore - artist.publicScore;
+                const isPositive = difference > 5;
+                const isNegative = difference < -5;
+                const feedbackClass = isPositive ? 'feedback-positive' : (isNegative ? 'feedback-negative' : 'feedback-neutral');
+                
+                return `
+                    <div class="artist-comparison ${feedbackClass} p-6 rounded-lg">
+                        <div class="flex flex-col md:flex-row gap-6">
+                            <!-- Info del Artista -->
+                            <div class="md:w-1/3">
+                                <h3 class="text-2xl font-bold text-white mb-2">${artist.name}</h3>
+                                <p class="text-blue-300 font-semibold">${artist.genre}</p>
+                                <p class="text-gray-300 text-sm">🎵 ${artist.song}</p>
+                                
+                                <div class="mt-4 space-y-2">
+                                    <div class="flex justify-between">
+                                        <span class="text-blue-300">Jurados:</span>
+                                        <span class="font-bold text-blue-400">${artist.juryScore.toFixed(1)}/100</span>
+                                    </div>
+                                    <div class="score-bar">
+                                        <div class="score-fill-jury h-full" style="width: ${artist.juryScore}%"></div>
+                                    </div>
+                                    
+                                    <div class="flex justify-between">
+                                        <span class="text-green-300">Público:</span>
+                                        <span class="font-bold text-green-400">${artist.publicScore.toFixed(1)}/100</span>
+                                    </div>
+                                    <div class="score-bar">
+                                        <div class="score-fill-public h-full" style="width: ${artist.publicScore}%"></div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Análisis y Feedback -->
+                            <div class="md:w-2/3">
+                                <h4 class="text-lg font-bold text-white mb-3">📊 Análisis Comparativo</h4>
+                                
+                                <div class="bg-gray-700 p-4 rounded-lg mb-4">
+                                    <p class="text-white mb-2">
+                                        <strong>Diferencia:</strong> 
+                                        ${difference > 0 ? '+' : ''}${difference.toFixed(1)} puntos
+                                        ${isPositive ? '(Jurados valoran más)' : (isNegative ? '(Público valora más)' : '(Evaluación similar)')}
+                                    </p>
+                                    
+                                    <div class="text-sm text-gray-300">
+                                        <p><strong>Votos recibidos:</strong> ${artist.publicVotes.toLocaleString()} del público, ${artist.juryVotes} jurados</p>
+                                    </div>
+                                </div>
+                                
+                                <!-- Feedback Personalizado -->
+                                <div class="bg-gradient-to-r from-blue-600 to-purple-600 p-4 rounded-lg">
+                                    <h5 class="font-bold text-white mb-2">💬 Feedback para ${artist.name}:</h5>
+                                    <p class="text-blue-100 text-sm">
+                                        ${generatePersonalizedFeedback(artist, difference, isPositive, isNegative)}
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function generatePersonalizedFeedback(artist, difference, isPositive, isNegative) {
+            if (isPositive) {
+                return `Excelente trabajo técnico valorado por los jurados profesionales. Tu interpretación de "${artist.song}" demuestra sólidas bases técnicas que el jurado reconoce. El público aún está descubriendo tu potencial - mantén este nivel técnico y trabaja en conectar más emocionalmente con la audiencia.`;
+            } else if (isNegative) {
+                return `¡El público te ama! Tu carisma y conexión emocional en "${artist.song}" resuena fuertemente con la audiencia. Los jurados sugieren pulir algunos aspectos técnicos para complementar tu natural magnetismo escénico. Equilibrar técnica y carisma te llevará al siguiente nivel.`;
+            } else {
+                return `Equilibrio perfecto entre técnica y carisma. Tanto jurados como público reconocen tu talento en "${artist.song}". Estás en el camino correcto - mantén este balance y sigue evolucionando en cada presentación.`;
+            }
+        }
+
+        function renderInsights(data) {
+            const container = document.getElementById('insights-container');
+            
+            // Encontrar patrones interesantes
+            const juryFavorite = data.artists.reduce((prev, current) => 
+                (prev.juryScore > current.juryScore) ? prev : current
+            );
+            
+            const publicFavorite = data.artists.reduce((prev, current) => 
+                (prev.publicScore > current.publicScore) ? prev : current
+            );
+            
+            const biggestGap = data.artists.reduce((prev, current) => {
+                const prevGap = Math.abs(prev.juryScore - prev.publicScore);
+                const currentGap = Math.abs(current.juryScore - current.publicScore);
+                return (prevGap > currentGap) ? prev : current;
+            });
+
+            container.innerHTML = `
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div class="bg-blue-600 bg-opacity-20 p-4 rounded-lg border border-blue-500">
+                        <h4 class="font-bold text-blue-300 mb-2">🏆 Favorito de Jurados</h4>
+                        <p class="text-white font-semibold">${juryFavorite.name}</p>
+                        <p class="text-blue-200 text-sm">${juryFavorite.juryScore.toFixed(1)} pts - ${juryFavorite.song}</p>
+                    </div>
+                    
+                    <div class="bg-green-600 bg-opacity-20 p-4 rounded-lg border border-green-500">
+                        <h4 class="font-bold text-green-300 mb-2">❤️ Favorito del Público</h4>
+                        <p class="text-white font-semibold">${publicFavorite.name}</p>
+                        <p class="text-green-200 text-sm">${publicFavorite.publicScore.toFixed(1)} pts - ${publicFavorite.publicVotes} votos</p>
+                    </div>
+                    
+                    <div class="bg-yellow-600 bg-opacity-20 p-4 rounded-lg border border-yellow-500">
+                        <h4 class="font-bold text-yellow-300 mb-2">🤔 Mayor Divergencia</h4>
+                        <p class="text-white font-semibold">${biggestGap.name}</p>
+                        <p class="text-yellow-200 text-sm">${Math.abs(biggestGap.juryScore - biggestGap.publicScore).toFixed(1)} pts de diferencia</p>
+                    </div>
+                </div>
+                
+                <div class="mt-6 bg-gray-700 p-6 rounded-lg">
+                    <h4 class="text-lg font-bold text-white mb-4">📈 Conclusiones de la Gala ${currentGala}</h4>
+                    <ul class="space-y-2 text-gray-300">
+                        <li>• <strong>Nivel técnico:</strong> Los jurados otorgaron un promedio de ${(data.artists.reduce((sum, a) => sum + a.juryScore, 0) / data.artists.length).toFixed(1)} puntos</li>
+                        <li>• <strong>Conexión con público:</strong> Promedio de votación popular de ${(data.artists.reduce((sum, a) => sum + a.publicScore, 0) / data.artists.length).toFixed(1)} puntos</li>
+                        <li>• <strong>Participación:</strong> ${data.artists.reduce((sum, a) => sum + a.publicVotes, 0).toLocaleString()} votos del público registrados</li>
+                        <li>• <strong>Tendencia:</strong> ${juryFavorite.name === publicFavorite.name ? 'Consenso total entre jurados y público' : 'Visiones diferentes que enriquecen el feedback'}</li>
+                    </ul>
+                </div>
+            `;
+        }
+
+        function renderRankings(data) {
+            const juryRanking = [...data.artists].sort((a, b) => b.juryScore - a.juryScore);
+            const publicRanking = [...data.artists].sort((a, b) => b.publicScore - a.publicScore);
+            
+            const juryContainer = document.getElementById('jury-ranking');
+            const publicContainer = document.getElementById('public-ranking');
+            
+            juryContainer.innerHTML = juryRanking.map((artist, index) => `
+                <div class="flex justify-between items-center p-2 bg-blue-800 bg-opacity-30 rounded">
+                    <div class="flex items-center gap-3">
+                        <span class="font-bold text-blue-300">#${index + 1}</span>
+                        <span class="text-white">${artist.name}</span>
+                    </div>
+                    <span class="font-bold text-blue-400">${artist.juryScore.toFixed(1)}</span>
+                </div>
+            `).join('');
+            
+            publicContainer.innerHTML = publicRanking.map((artist, index) => `
+                <div class="flex justify-between items-center p-2 bg-green-800 bg-opacity-30 rounded">
+                    <div class="flex items-center gap-3">
+                        <span class="font-bold text-green-300">#${index + 1}</span>
+                        <span class="text-white">${artist.name}</span>
+                    </div>
+                    <span class="font-bold text-green-400">${artist.publicScore.toFixed(1)}</span>
+                </div>
+            `).join('');
+        }
+
+        console.log('📊 Reporte por Gala inicializado');
+    </script>
+</body>
+</html>
