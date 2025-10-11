@@ -6,18 +6,101 @@ class GalaDataManager {
         this.eventId = eventId;
     }
 
-    // Obtener artistas REALES de una gala específica
-    getArtistsForGala(galaNumber) {
-        const key = `artists_${this.eventId}_gala${galaNumber}`;
+    // ===============================
+    // LISTA GLOBAL DE ARTISTAS
+    // ===============================
+    
+    // Obtener TODOS los artistas registrados en el evento (la lista maestra)
+    getAllArtists() {
+        const key = `all_artists_${this.eventId}`;
         const stored = localStorage.getItem(key);
         return stored ? JSON.parse(stored) : [];
     }
 
-    // Guardar artistas para una gala específica
-    saveArtistsForGala(galaNumber, artists) {
-        const key = `artists_${this.eventId}_gala${galaNumber}`;
+    // Guardar/actualizar la lista global de artistas
+    saveAllArtists(artists) {
+        const key = `all_artists_${this.eventId}`;
         localStorage.setItem(key, JSON.stringify(artists));
-        console.log(`💾 Guardados ${artists.length} artistas para Gala ${galaNumber}`);
+        console.log(`📝 Lista global actualizada: ${artists.length} artistas totales`);
+    }
+
+    // Agregar un nuevo artista a la lista global
+    addArtistToGlobal(artist) {
+        const allArtists = this.getAllArtists();
+        // Verificar si ya existe
+        const existingIndex = allArtists.findIndex(a => a.id === artist.id);
+        if (existingIndex >= 0) {
+            allArtists[existingIndex] = artist; // Actualizar
+        } else {
+            allArtists.push(artist); // Agregar nuevo
+        }
+        this.saveAllArtists(allArtists);
+        return artist;
+    }
+
+    // ===============================
+    // ASIGNACIÓN POR GALA
+    // ===============================
+
+    // Obtener IDs de artistas asignados a una gala específica
+    getAssignedArtistIds(galaNumber) {
+        const key = `assigned_artists_${this.eventId}_gala${galaNumber}`;
+        const stored = localStorage.getItem(key);
+        return stored ? JSON.parse(stored) : [];
+    }
+
+    // Obtener artistas COMPLETOS de una gala específica (datos desde lista global)
+    getArtistsForGala(galaNumber) {
+        const assignedIds = this.getAssignedArtistIds(galaNumber);
+        const allArtists = this.getAllArtists();
+        
+        // Filtrar solo los artistas asignados a esta gala
+        return allArtists.filter(artist => assignedIds.includes(artist.id));
+    }
+
+    // Asignar artistas específicos a una gala
+    assignArtistsToGala(galaNumber, artistIds) {
+        const key = `assigned_artists_${this.eventId}_gala${galaNumber}`;
+        localStorage.setItem(key, JSON.stringify(artistIds));
+        console.log(`🎭 Asignados ${artistIds.length} artistas a Gala ${galaNumber}`);
+    }
+
+    // Agregar un artista a una gala específica
+    addArtistToGala(galaNumber, artistId) {
+        const assignedIds = this.getAssignedArtistIds(galaNumber);
+        if (!assignedIds.includes(artistId)) {
+            assignedIds.push(artistId);
+            this.assignArtistsToGala(galaNumber, assignedIds);
+            console.log(`➕ Artista ${artistId} agregado a Gala ${galaNumber}`);
+            return true;
+        }
+        console.log(`⚠️ Artista ${artistId} ya está en Gala ${galaNumber}`);
+        return false;
+    }
+
+    // Remover un artista de una gala específica
+    removeArtistFromGala(galaNumber, artistId) {
+        const assignedIds = this.getAssignedArtistIds(galaNumber);
+        const filteredIds = assignedIds.filter(id => id !== artistId);
+        this.assignArtistsToGala(galaNumber, filteredIds);
+        console.log(`➖ Artista ${artistId} removido de Gala ${galaNumber}`);
+    }
+
+    // Mover artista de una gala a otra
+    moveArtistBetweenGalas(artistId, fromGala, toGala) {
+        this.removeArtistFromGala(fromGala, artistId);
+        this.addArtistToGala(toGala, artistId);
+        console.log(`🔄 Artista ${artistId} movido de Gala ${fromGala} a Gala ${toGala}`);
+    }
+
+    // Guardar artistas para una gala específica (OBSOLETO - usar assignArtistsToGala)
+    saveArtistsForGala(galaNumber, artists) {
+        // Agregar artistas a lista global si no existen
+        artists.forEach(artist => this.addArtistToGlobal(artist));
+        
+        // Asignar a la gala
+        const artistIds = artists.map(artist => artist.id);
+        this.assignArtistsToGala(galaNumber, artistIds);
     }
 
     // Obtener votos de jurados para una gala específica
@@ -48,61 +131,76 @@ class GalaDataManager {
         console.log(`👥 Guardados votos del público para Gala ${galaNumber}`);
     }
 
-    // Crear datos de ejemplo para probar el sistema
+    // Crear datos de ejemplo para probar el sistema (con lista global)
     createSampleDataForGala(galaNumber) {
-        const sampleArtists = [
-            {
-                id: `artist_g${galaNumber}_1`,
-                name: `Artista ${galaNumber}.1`,
-                genre: 'Pop',
-                currentSong: `Canción Gala ${galaNumber} - Artista 1`,
-                createdAt: new Date().toISOString()
-            },
-            {
-                id: `artist_g${galaNumber}_2`, 
-                name: `Artista ${galaNumber}.2`,
-                genre: 'Rock',
-                currentSong: `Canción Gala ${galaNumber} - Artista 2`,
-                createdAt: new Date().toISOString()
-            },
-            {
-                id: `artist_g${galaNumber}_3`,
-                name: `Artista ${galaNumber}.3`,
-                genre: 'Balada',
-                currentSong: `Canción Gala ${galaNumber} - Artista 3`,
-                createdAt: new Date().toISOString()
-            }
-        ];
+        // Crear o obtener lista global de artistas
+        let allArtists = this.getAllArtists();
+        
+        // Si no hay artistas globales, crear algunos de ejemplo
+        if (allArtists.length === 0) {
+            const globalSampleArtists = [
+                { id: 'global_artist_1', name: 'Ana María Vocal', genre: 'Pop', createdAt: new Date().toISOString() },
+                { id: 'global_artist_2', name: 'Carlos Rock', genre: 'Rock', createdAt: new Date().toISOString() },
+                { id: 'global_artist_3', name: 'Elena Balada', genre: 'Balada', createdAt: new Date().toISOString() },
+                { id: 'global_artist_4', name: 'Miguel Jazz', genre: 'Jazz', createdAt: new Date().toISOString() },
+                { id: 'global_artist_5', name: 'Sofia Folk', genre: 'Folk', createdAt: new Date().toISOString() },
+                { id: 'global_artist_6', name: 'Roberto Blues', genre: 'Blues', createdAt: new Date().toISOString() },
+                { id: 'global_artist_7', name: 'Lucia R&B', genre: 'R&B', createdAt: new Date().toISOString() },
+                { id: 'global_artist_8', name: 'Fernando Country', genre: 'Country', createdAt: new Date().toISOString() }
+            ];
+            this.saveAllArtists(globalSampleArtists);
+            allArtists = globalSampleArtists;
+        }
 
-        this.saveArtistsForGala(galaNumber, sampleArtists);
+        // Asignar algunos artistas aleatorios a esta gala
+        const numberOfArtists = Math.min(3 + galaNumber, allArtists.length);
+        const shuffled = [...allArtists].sort(() => 0.5 - Math.random());
+        const selectedArtists = shuffled.slice(0, numberOfArtists);
+        
+        // Asignar artistas a la gala
+        const artistIds = selectedArtists.map(artist => artist.id);
+        this.assignArtistsToGala(galaNumber, artistIds);
+
+        // Actualizar canciones específicas para esta gala
+        selectedArtists.forEach(artist => {
+            artist.currentSong = `Canción Gala ${galaNumber} - ${artist.name}`;
+        });
 
         // Crear votos de ejemplo para jurados
         const sampleJuryVotes = {
-            'luciano': {
-                [`artist_g${galaNumber}_1`]: { afinacion: 8.5, ritmo: 9.0, tecnica: 8.8 },
-                [`artist_g${galaNumber}_2`]: { afinacion: 9.2, ritmo: 9.5, tecnica: 9.0 },
-                [`artist_g${galaNumber}_3`]: { afinacion: 7.8, ritmo: 8.2, tecnica: 8.5 }
-            },
-            'machito': {
-                [`artist_g${galaNumber}_1`]: { afinacion: 8.8, ritmo: 8.5, tecnica: 9.0 },
-                [`artist_g${galaNumber}_2`]: { afinacion: 9.0, ritmo: 9.3, tecnica: 8.8 },
-                [`artist_g${galaNumber}_3`]: { afinacion: 8.0, ritmo: 8.8, tecnica: 8.2 }
-            }
+            'luciano': {},
+            'machito': {}
         };
+
+        selectedArtists.forEach(artist => {
+            sampleJuryVotes.luciano[artist.id] = { 
+                afinacion: 7 + Math.random() * 3, 
+                ritmo: 7 + Math.random() * 3, 
+                tecnica: 7 + Math.random() * 3 
+            };
+            sampleJuryVotes.machito[artist.id] = { 
+                afinacion: 7 + Math.random() * 3, 
+                ritmo: 7 + Math.random() * 3, 
+                tecnica: 7 + Math.random() * 3 
+            };
+        });
 
         this.saveJuryVotesForGala(galaNumber, sampleJuryVotes);
 
         // Crear votos de ejemplo para el público
-        const samplePublicVotes = {
-            [`artist_g${galaNumber}_1`]: { votes: 45, total: 180 },
-            [`artist_g${galaNumber}_2`]: { votes: 62, total: 248 },
-            [`artist_g${galaNumber}_3`]: { votes: 38, total: 152 }
-        };
+        const samplePublicVotes = {};
+        selectedArtists.forEach(artist => {
+            const votes = Math.floor(20 + Math.random() * 80);
+            samplePublicVotes[artist.id] = { 
+                votes: votes, 
+                total: votes * (3 + Math.random() * 2) 
+            };
+        });
 
         this.savePublicVotesForGala(galaNumber, samplePublicVotes);
 
-        console.log(`✅ Datos de ejemplo creados para Gala ${galaNumber}`);
-        return sampleArtists;
+        console.log(`✅ Datos de ejemplo creados para Gala ${galaNumber} con ${selectedArtists.length} artistas`);
+        return selectedArtists;
     }
 
     // Verificar si una gala tiene datos
