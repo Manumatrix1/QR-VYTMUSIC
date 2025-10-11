@@ -60,14 +60,13 @@
                 <!-- Controles de Gala -->
                 <div class="flex justify-center gap-4 mt-6">
                     <select id="gala-selector" class="bg-gray-800 border border-gray-600 rounded-lg px-4 py-2 text-white">
-                        <option value="1">Gala 1</option>
-                        <option value="2">Gala 2</option>
-                        <option value="3">Gala 3</option>
-                        <option value="4">Gala 4</option>
-                        <option value="5">Gala 5</option>
+                        <!-- Se llena dinámicamente con las galas que tienen datos -->
                     </select>
                     <button id="load-gala" class="bg-blue-600 hover:bg-blue-700 px-6 py-2 rounded-lg font-semibold transition">
                         📈 Cargar Gala
+                    </button>
+                    <button id="create-sample-data" class="bg-green-600 hover:bg-green-700 px-6 py-2 rounded-lg font-semibold transition">
+                        ➕ Crear Datos de Ejemplo
                     </button>
                     <button id="print-report" class="no-print bg-green-600 hover:bg-green-700 px-6 py-2 rounded-lg font-semibold transition">
                         🖨️ Imprimir
@@ -151,89 +150,91 @@
         </footer>
     </div>
 
+    <script src="gala-data-manager.js"></script>
     <script>
         // Variables globales
-        let currentGala = 1;
+        let currentGala = parseInt(new URLSearchParams(window.location.search).get('gala')) || 1;
         let eventId = new URLSearchParams(window.location.search).get('eventId') || 'demo';
         let eventName = new URLSearchParams(window.location.search).get('eventName') || 'Certamen Demo';
+        let galaManager = new GalaDataManager(eventId);
         
-        // Datos de demostración
-        const demoData = {
-            1: {
-                artists: [
-                    {
-                        id: 'artist1',
-                        name: 'Ana García',
-                        genre: 'Pop',
-                        song: 'Someone Like You - Adele',
-                        juryScore: 87.5,
-                        publicScore: 85.2,
-                        juryVotes: 3,
-                        publicVotes: 247,
-                        juryDetails: {
-                            afinacion: 9.2,
-                            ritmo: 8.8,
-                            tecnica: 9.0,
-                            interpretacion: 9.5,
-                            presencia: 8.7,
-                            creatividad: 8.3,
-                            repertorio: 9.1,
-                            vestuario: 8.5,
-                            evolucion: 8.2,
-                            profesionalismo: 8.2
-                        }
-                    },
-                    {
-                        id: 'artist2',
-                        name: 'Carlos Méndez',
-                        genre: 'Rock',
-                        song: 'Bohemian Rhapsody - Queen',
-                        juryScore: 92.3,
-                        publicScore: 78.9,
-                        juryVotes: 3,
-                        publicVotes: 189,
-                        juryDetails: {
-                            afinacion: 9.5,
-                            ritmo: 9.8,
-                            tecnica: 9.3,
-                            interpretacion: 9.7,
-                            presencia: 9.2,
-                            creatividad: 9.5,
-                            repertorio: 9.0,
-                            vestuario: 8.8,
-                            evolucion: 9.1,
-                            profesionalismo: 9.4
-                        }
-                    },
-                    {
-                        id: 'artist3',
-                        name: 'María López',
-                        genre: 'Balada',
-                        song: 'My Heart Will Go On - Céline Dion',
-                        juryScore: 79.8,
-                        publicScore: 91.3,
-                        juryVotes: 3,
-                        publicVotes: 312,
-                        juryDetails: {
-                            afinacion: 8.5,
-                            ritmo: 7.8,
-                            tecnica: 8.2,
-                            interpretacion: 8.8,
-                            presencia: 8.9,
-                            creatividad: 7.5,
-                            repertorio: 8.0,
-                            vestuario: 8.3,
-                            evolucion: 7.9,
-                            profesionalismo: 7.9
-                        }
-                    }
-                ]
+        // Cargar datos reales de la gala específica
+        async function loadRealGalaData(galaNumber) {
+            console.log(`📊 Cargando datos REALES de Gala ${galaNumber} para evento ${eventId}`);
+            
+            try {
+                // Verificar si hay datos para esta gala
+                if (!galaManager.hasDataForGala(galaNumber)) {
+                    console.log(`⚠️ No hay datos para Gala ${galaNumber}, creando datos de ejemplo...`);
+                    galaManager.createSampleDataForGala(galaNumber);
+                }
+                
+                // Cargar artistas reales
+                const galaArtists = galaManager.getArtistsForGala(galaNumber);
+                console.log(`✅ Encontrados ${galaArtists.length} artistas para Gala ${galaNumber}`);
+                
+                // Cargar votos de jurados
+                const juryVotes = galaManager.getJuryVotesForGala(galaNumber);
+                console.log(`📋 Votos de jurados:`, Object.keys(juryVotes).length, 'jurados');
+                
+                // Cargar votos del público
+                const publicVotes = galaManager.getPublicVotesForGala(galaNumber);
+                console.log(`👥 Votos del público:`, Object.keys(publicVotes).length, 'artistas');
+                
+                // Crear estructura de datos para el reporte
+                const galaData = {
+                    galaNumber: galaNumber,
+                    artists: galaArtists.map(artist => {
+                        // Calcular puntuación promedio de jurados
+                        const artistJuryVotes = {};
+                        Object.keys(juryVotes).forEach(jurorName => {
+                            if (juryVotes[jurorName][artist.id]) {
+                                artistJuryVotes[jurorName] = juryVotes[jurorName][artist.id];
+                            }
+                        });
+                        
+                        // Promedio de todos los criterios de todos los jurados
+                        let totalJuryScore = 0;
+                        let criteriaCount = 0;
+                        Object.values(artistJuryVotes).forEach(jurorVotes => {
+                            Object.values(jurorVotes).forEach(score => {
+                                totalJuryScore += score;
+                                criteriaCount++;
+                            });
+                        });
+                        const avgJuryScore = criteriaCount > 0 ? (totalJuryScore / criteriaCount) * 10 : 0; // Escala a 100
+                        
+                        // Calcular puntuación del público
+                        const artistPublicVotes = publicVotes[artist.id] || { votes: 0, total: 0 };
+                        const publicScore = artistPublicVotes.votes > 0 ? 
+                            (artistPublicVotes.total / artistPublicVotes.votes) * 20 : 0; // Convertir a escala 100
+                        
+                        return {
+                            id: artist.id,
+                            name: artist.name,
+                            genre: artist.genre || 'No especificado',
+                            song: artist.currentSong || 'Sin canción',
+                            juryScore: avgJuryScore,
+                            publicScore: publicScore,
+                            juryVotes: Object.keys(artistJuryVotes).length,
+                            publicVotes: artistPublicVotes.votes || 0
+                        };
+                    })
+                };
+                
+                return galaData;
+                
+            } catch (error) {
+                console.error('❌ Error cargando datos de la gala:', error);
+                return { galaNumber: galaNumber, artists: [] };
             }
-        };
+        }
 
         // Inicialización
         document.addEventListener('DOMContentLoaded', function() {
             initializeReport();
+            
+            // Cargar la gala especificada en la URL o Gala 1 por defecto
             loadGalaData(currentGala);
         });
 
@@ -248,10 +249,30 @@
                 minute: '2-digit'
             });
             
+            // Llenar selector con galas que tienen datos
+            populateGalaSelector();
+            
             // Event listeners
             document.getElementById('load-gala').addEventListener('click', function() {
-                const selectedGala = document.getElementById('gala-selector').value;
-                loadGalaData(parseInt(selectedGala));
+                const selectedGala = parseInt(document.getElementById('gala-selector').value);
+                console.log(`🎯 Usuario seleccionó Gala ${selectedGala}`);
+                
+                // Actualizar URL con la nueva gala
+                const url = new URL(window.location);
+                url.searchParams.set('gala', selectedGala);
+                window.history.pushState({}, '', url);
+                
+                loadGalaData(selectedGala);
+            });
+            
+            document.getElementById('create-sample-data').addEventListener('click', function() {
+                const galaNumber = parseInt(prompt('¿Para qué gala quieres crear datos de ejemplo? (1-10)', currentGala));
+                if (galaNumber && galaNumber >= 1 && galaNumber <= 10) {
+                    galaManager.createSampleDataForGala(galaNumber);
+                    populateGalaSelector();
+                    loadGalaData(galaNumber);
+                    alert(`✅ Datos de ejemplo creados para Gala ${galaNumber}`);
+                }
             });
             
             document.getElementById('print-report').addEventListener('click', function() {
@@ -259,18 +280,74 @@
             });
         }
 
+        function populateGalaSelector() {
+            const selector = document.getElementById('gala-selector');
+            const galasWithData = galaManager.getGalasWithData();
+            
+            selector.innerHTML = '';
+            
+            if (galasWithData.length === 0) {
+                selector.innerHTML = '<option value="1">No hay galas con datos</option>';
+                return;
+            }
+            
+            galasWithData.forEach(galaNumber => {
+                const option = document.createElement('option');
+                option.value = galaNumber;
+                option.textContent = `Gala ${galaNumber}`;
+                if (galaNumber === currentGala) {
+                    option.selected = true;
+                }
+                selector.appendChild(option);
+            });
+            
+            // Si la gala actual no tiene datos, seleccionar la primera disponible
+            if (!galasWithData.includes(currentGala) && galasWithData.length > 0) {
+                currentGala = galasWithData[0];
+                selector.value = currentGala;
+            }
+        }
+
         function loadGalaData(galaNumber) {
             currentGala = galaNumber;
             document.getElementById('gala-title').textContent = `Gala ${galaNumber}`;
             
-            // Usar datos de demo para la gala 1, generar variaciones para otras galas
-            const galaData = demoData[1] || generateVariationData(galaNumber);
+            console.log(`🔄 Cambiando a Gala ${galaNumber}`);
             
-            updateSummaryStats(galaData);
-            renderGeneralChart(galaData);
-            renderArtistsAnalysis(galaData);
-            renderInsights(galaData);
-            renderRankings(galaData);
+            // Cargar datos REALES de la gala específica
+            loadRealGalaData(galaNumber).then(galaData => {
+                console.log(`📊 Datos cargados para Gala ${galaNumber}:`, galaData);
+                
+                if (galaData.artists.length === 0) {
+                    // Mostrar mensaje si no hay datos
+                    document.getElementById('artists-analysis').innerHTML = `
+                        <div class="text-center p-8 bg-yellow-900 bg-opacity-30 rounded-lg border border-yellow-600">
+                            <h3 class="text-xl font-bold text-yellow-300 mb-4">⚠️ Sin Datos para Gala ${galaNumber}</h3>
+                            <p class="text-yellow-200 mb-4">No hay artistas registrados o votaciones para esta gala.</p>
+                            <p class="text-yellow-100 text-sm">Asegúrate de:</p>
+                            <ul class="text-yellow-100 text-sm mt-2 space-y-1">
+                                <li>• Haber agregado artistas a esta gala</li>
+                                <li>• Que los jurados hayan votado</li>
+                                <li>• Que haya votación del público</li>
+                            </ul>
+                        </div>
+                    `;
+                    
+                    // Limpiar otros contenedores
+                    document.getElementById('insights-container').innerHTML = '<p class="text-gray-400">Sin datos para mostrar insights</p>';
+                    document.getElementById('jury-ranking').innerHTML = '<p class="text-gray-400">Sin datos</p>';
+                    document.getElementById('public-ranking').innerHTML = '<p class="text-gray-400">Sin datos</p>';
+                    
+                    updateSummaryStats({ artists: [] });
+                    return;
+                }
+                
+                updateSummaryStats(galaData);
+                renderGeneralChart(galaData);
+                renderArtistsAnalysis(galaData);
+                renderInsights(galaData);
+                renderRankings(galaData);
+            });
         }
 
         function generateVariationData(galaNumber) {
