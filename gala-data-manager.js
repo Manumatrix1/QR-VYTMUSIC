@@ -157,6 +157,22 @@ class GalaDataManager {
         const shuffled = [...allArtists].sort(() => 0.5 - Math.random());
         const selectedArtists = shuffled.slice(0, numberOfArtists);
         
+    // Obtener jurados reales del sistema
+    getRealJurors() {
+        const jurorsKey = `jurors_${this.eventId}`;
+        const storedJurors = localStorage.getItem(jurorsKey);
+        if (storedJurors) {
+            try {
+                const jurors = JSON.parse(storedJurors);
+                return jurors.filter(juror => juror.active).map(juror => juror.name);
+            } catch (error) {
+                console.error('Error al obtener jurados reales:', error);
+                return [];
+            }
+        }
+        return [];
+    }
+
         // Asignar artistas a la gala
         const artistIds = selectedArtists.map(artist => artist.id);
         this.assignArtistsToGala(galaNumber, artistIds);
@@ -166,26 +182,28 @@ class GalaDataManager {
             artist.currentSong = `Canción Gala ${galaNumber} - ${artist.name}`;
         });
 
-        // Crear votos de ejemplo para jurados
-        const sampleJuryVotes = {
-            'luciano': {},
-            'machito': {}
-        };
+        // Crear votos de ejemplo SOLO si hay jurados reales registrados
+        const realJurors = this.getRealJurors();
+        if (realJurors.length > 0) {
+            console.log(`📋 Usando ${realJurors.length} jurados reales:`, realJurors);
+            
+            const sampleJuryVotes = {};
+            realJurors.forEach(jurorName => {
+                sampleJuryVotes[jurorName] = {};
+                selectedArtists.forEach(artist => {
+                    sampleJuryVotes[jurorName][artist.id] = { 
+                        afinacion: 7 + Math.random() * 3, 
+                        ritmo: 7 + Math.random() * 3, 
+                        tecnica: 7 + Math.random() * 3 
+                    };
+                });
+            });
 
-        selectedArtists.forEach(artist => {
-            sampleJuryVotes.luciano[artist.id] = { 
-                afinacion: 7 + Math.random() * 3, 
-                ritmo: 7 + Math.random() * 3, 
-                tecnica: 7 + Math.random() * 3 
-            };
-            sampleJuryVotes.machito[artist.id] = { 
-                afinacion: 7 + Math.random() * 3, 
-                ritmo: 7 + Math.random() * 3, 
-                tecnica: 7 + Math.random() * 3 
-            };
-        });
-
-        this.saveJuryVotesForGala(galaNumber, sampleJuryVotes);
+            this.saveJuryVotesForGala(galaNumber, sampleJuryVotes);
+        } else {
+            console.log('⚠️ No hay jurados registrados - no se crean votos de ejemplo');
+            this.saveJuryVotesForGala(galaNumber, {});
+        }
 
         // Crear votos de ejemplo para el público
         const samplePublicVotes = {};
