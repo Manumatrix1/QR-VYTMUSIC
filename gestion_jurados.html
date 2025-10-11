@@ -292,6 +292,9 @@
                         <button id="add-juror-btn" class="px-4 py-2 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700">
                             + Agregar Jurado
                         </button>
+                        <button id="reset-jurors-btn" class="px-4 py-2 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700">
+                            🗑️ Resetear Todo
+                        </button>
                     </div>
                 </div>
                 
@@ -600,6 +603,7 @@
             e.preventDefault();
             
             const jurorData = {
+                id: currentJurorId || 'juror_' + Date.now(),
                 name: ui.jurorName.value.trim(),
                 password: ui.jurorPassword.value.trim(),
                 email: ui.jurorEmail.value.trim(),
@@ -615,19 +619,26 @@
                 showLoading(true);
                 
                 if (currentJurorId) {
-                    await updateDoc(doc(db, `events/${eventId}/jurors`, currentJurorId), jurorData);
-                    showMessage('Jurado actualizado correctamente');
+                    // Actualizar jurado existente
+                    const jurorIndex = jurors.findIndex(j => j.id === currentJurorId);
+                    if (jurorIndex !== -1) {
+                        jurors[jurorIndex] = { ...jurors[jurorIndex], ...jurorData };
+                        showMessage('✅ Jurado actualizado correctamente');
+                    }
                 } else {
-                    await addDoc(collection(db, `events/${eventId}/jurors`), jurorData);
-                    showMessage('Jurado creado correctamente');
+                    // Agregar nuevo jurado
+                    jurors.push(jurorData);
+                    showMessage('✅ Jurado creado correctamente');
                 }
                 
+                // Guardar en localStorage y re-renderizar
+                saveJurorsToStorage();
+                renderJurors();
                 closeJurorModal();
-                loadJurors();
                 
             } catch (error) {
                 console.error('Error saving juror:', error);
-                showMessage('Error al guardar jurado', 'error');
+                showMessage('❌ Error al guardar jurado', 'error');
             } finally {
                 showLoading(false);
             }
@@ -635,8 +646,13 @@
 
         // Global functions for buttons
         window.editJuror = (id) => {
+            console.log('✏️ Editando jurado:', id);
             const juror = jurors.find(j => j.id === id);
-            if (juror) openJurorModal(juror);
+            if (juror) {
+                openJurorModal(juror);
+            } else {
+                showMessage('❌ No se encontró el jurado', 'error');
+            }
         };
 
         window.deleteJuror = (id) => {
@@ -718,9 +734,23 @@
         // Event listeners
         ui.addJurorBtn.addEventListener('click', () => openJurorModal());
         ui.reloadJurorsBtn.addEventListener('click', () => {
-            console.log('Recargando jurados manualmente...');
-            showMessage('Recargando lista de jurados...', 'info');
-            loadJurors();
+            console.log('🔄 Recargando jurados desde localStorage...');
+            showMessage('🔄 Recargando lista de jurados...', 'info');
+            loadJurorsFromStorage();
+            renderJurors();
+            showMessage('✅ Lista de jurados actualizada', 'success');
+        });
+        
+        // Botón para resetear todos los jurados
+        document.getElementById('reset-jurors-btn').addEventListener('click', () => {
+            if (confirm('⚠️ ¿Estás seguro de eliminar TODOS los jurados? Esta acción no se puede deshacer.')) {
+                const eventKey = `jurors_${eventId}`;
+                localStorage.removeItem(eventKey);
+                jurors = [];
+                renderJurors();
+                showMessage('🗑️ Todos los jurados han sido eliminados', 'info');
+                console.log('🗑️ Todos los jurados eliminados del localStorage');
+            }
         });
         ui.cancelJurorBtn.addEventListener('click', closeJurorModal);
         ui.jurorForm.addEventListener('submit', saveJuror);
@@ -744,37 +774,69 @@
             }
         });
 
-        // VERSIÓN SÚPER SIMPLE SIN FIREBASE NI MODALES COMPLEJOS
+        // SISTEMA SIMPLE CON PERSISTENCIA EN LOCALSTORAGE
         
-        // Jurados de prueba que aparecen inmediatamente
-        jurors = [
-            {
-                id: 'demo1',
-                username: 'luciano_demo',
-                password: 'demo123',
-                isSecret: false,
-                createdAt: new Date().toISOString(),
-                active: true
-            },
-            {
-                id: 'demo2', 
-                username: 'machito_demo',
-                password: 'demo456',
-                isSecret: false,
-                createdAt: new Date().toISOString(),
-                active: true
-            },
-            {
-                id: 'demo3',
-                username: 'manu_demo', 
-                password: 'demo789',
-                isSecret: true,
-                createdAt: new Date().toISOString(),
-                active: true
+        // Función para cargar jurados desde localStorage
+        function loadJurorsFromStorage() {
+            const eventKey = `jurors_${eventId}`;
+            const storedJurors = localStorage.getItem(eventKey);
+            
+            if (storedJurors) {
+                try {
+                    jurors = JSON.parse(storedJurors);
+                    console.log('✅ Jurados cargados desde localStorage:', jurors.length);
+                } catch (error) {
+                    console.error('Error parseando jurados:', error);
+                    createDefaultJurors();
+                }
+            } else {
+                createDefaultJurors();
             }
-        ];
+        }
 
-        // Renderizar jurados inmediatamente
+        // Función para crear jurados por defecto solo la primera vez
+        function createDefaultJurors() {
+            jurors = [
+                {
+                    id: 'demo1',
+                    name: 'luciano',
+                    password: 'ABC123',
+                    email: '',
+                    isSecret: false,
+                    createdAt: new Date().toISOString(),
+                    active: true
+                },
+                {
+                    id: 'demo2', 
+                    name: 'machito',
+                    password: 'DEF456',
+                    email: '',
+                    isSecret: false,
+                    createdAt: new Date().toISOString(),
+                    active: true
+                },
+                {
+                    id: 'demo3',
+                    name: 'manu', 
+                    password: 'GHI789',
+                    email: '',
+                    isSecret: true,
+                    createdAt: new Date().toISOString(),
+                    active: true
+                }
+            ];
+            saveJurorsToStorage();
+            console.log('✅ Jurados por defecto creados');
+        }
+
+        // Función para guardar jurados en localStorage
+        function saveJurorsToStorage() {
+            const eventKey = `jurors_${eventId}`;
+            localStorage.setItem(eventKey, JSON.stringify(jurors));
+            console.log('💾 Jurados guardados en localStorage');
+        }
+
+        // Renderizar jurados con datos actualizados
         function renderJurors() {
             const jurorsList = document.getElementById('jurors-list');
             const totalJurors = document.getElementById('total-jurors');
@@ -789,8 +851,9 @@
                 <div class="juror-card bg-gray-800 p-4 rounded-lg shadow-md" id="card-${juror.id}">
                     <div class="flex justify-between items-center">
                         <div>
-                            <h3 class="text-lg font-semibold text-white">${juror.username}</h3>
+                            <h3 class="text-lg font-semibold text-white">${juror.name}</h3>
                             <p class="text-sm text-gray-400">Password: ${juror.password}</p>
+                            ${juror.email ? `<p class="text-sm text-gray-400">Email: ${juror.email}</p>` : ''}
                             <div class="flex gap-2 mt-2">
                                 ${juror.isSecret ? '<span class="px-2 py-1 bg-yellow-600 text-xs rounded">Secreto</span>' : '<span class="px-2 py-1 bg-green-600 text-xs rounded">Público</span>'}
                                 <span class="px-2 py-1 bg-gray-600 text-xs rounded">Creado: ${new Date(juror.createdAt).toLocaleDateString()}</span>
@@ -798,35 +861,44 @@
                         </div>
                         <div class="flex gap-2">
                             <button onclick="editJuror('${juror.id}')" class="px-3 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700">Editar</button>
-                            <button onclick="if(confirm('¿Eliminar este jurado?')) { this.closest('.juror-card').remove(); document.getElementById('total-jurors').textContent = parseInt(document.getElementById('total-jurors').textContent) - 1; }" class="px-3 py-2 bg-red-600 text-white text-sm rounded hover:bg-red-700">Eliminar</button>
+                            <button onclick="deleteJurorPermanent('${juror.id}')" class="px-3 py-2 bg-red-600 text-white text-sm rounded hover:bg-red-700">Eliminar</button>
                         </div>
                     </div>
                 </div>
             `).join('');
             
             totalJurors.textContent = jurors.length;
+            updateStats();
         }
         
-        // Función súper simple para eliminar
-        window.eliminarJuradoSimple = function(id) {
-            console.log('🗑️ Eliminando jurado simple:', id);
+        // Función mejorada para eliminar jurado permanentemente
+        window.deleteJurorPermanent = function(id) {
+            console.log('🗑️ Eliminando jurado permanente:', id);
             
-            // Remover del array
-            jurors = jurors.filter(j => j.id !== id);
-            
-            // Volver a renderizar
-            renderJurors();
-            
-            // Mostrar confirmación
-            alert('✅ Jurado eliminado correctamente!');
-            
-            console.log('✅ Jurado eliminado. Quedan:', jurors.length);
+            if (confirm('¿Estás seguro de eliminar este jurado? Esta acción no se puede deshacer.')) {
+                // Remover del array
+                const jurorIndex = jurors.findIndex(j => j.id === id);
+                if (jurorIndex !== -1) {
+                    const removedJuror = jurors.splice(jurorIndex, 1)[0];
+                    console.log('✅ Jurado eliminado:', removedJuror.name);
+                    
+                    // Guardar cambios y volver a renderizar
+                    saveJurorsToStorage();
+                    renderJurors();
+                    
+                    // Mostrar confirmación
+                    showMessage(`✅ Jurado "${removedJuror.name}" eliminado correctamente`, 'success');
+                } else {
+                    showMessage('❌ Error: No se encontró el jurado', 'error');
+                }
+            }
         }
 
-        // Cargar inmediatamente
-        console.log('🎭 Cargando jurados de prueba...');
+        // Cargar jurados al inicializar
+        console.log('🎭 Inicializando sistema de jurados...');
+        loadJurorsFromStorage();
         renderJurors();
-        console.log('✅ Sistema simple iniciado con', jurors.length, 'jurados');
+        console.log('✅ Sistema iniciado con', jurors.length, 'jurados');
         
         // Debug: Verificar que los elementos del modal existen
         console.log('🔍 VERIFICANDO ELEMENTOS DEL MODAL:');
