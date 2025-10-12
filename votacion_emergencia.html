@@ -35,6 +35,7 @@
         import { collection, getDocs, setDoc, doc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         const urlParams = new URLSearchParams(window.location.search);
+        // USAR EL EVENTID CORRECTO DONDE ESTÁN LOS ARTISTAS
         const eventId = urlParams.get('eventId') || 'gmxINHvzSJ18Zt3SNeW7';
         
         console.log('🔍 Event ID usado:', eventId);
@@ -42,6 +43,34 @@
         
         let currentJuror = null;
         let artists = [];
+
+        // FUNCIÓN DE EMERGENCIA PARA PROBAR MÚLTIPLES EVENTIDS
+        async function tryMultipleEventIds() {
+            const possibleEventIds = [
+                'gmxINHvzSJ18Zt3SNeW7',
+                '1GALA2024',
+                'primera-gala',
+                'gala1',
+                'default'
+            ];
+            
+            for (let testEventId of possibleEventIds) {
+                console.log(`🔍 Probando eventId: ${testEventId}`);
+                try {
+                    const snapshot = await getDocs(collection(db, `events/${testEventId}/artists`));
+                    console.log(`📊 En ${testEventId} encontrados: ${snapshot.docs.length} artistas`);
+                    
+                    if (snapshot.docs.length > 0) {
+                        console.log(`✅ ¡ENCONTRADOS! Usando eventId: ${testEventId}`);
+                        window.workingEventId = testEventId;
+                        return snapshot;
+                    }
+                } catch (error) {
+                    console.log(`❌ Error en ${testEventId}:`, error.message);
+                }
+            }
+            return null;
+        }
 
         window.quickLogin = function() {
             const name = document.getElementById('juror-name').value.trim();
@@ -64,46 +93,56 @@
         };
 
         async function loadArtists() {
-            console.log('🎤 Cargando artistas para eventId:', eventId);
-            try {
-                const snapshot = await getDocs(collection(db, `events/${eventId}/artists`));
-                console.log('📊 Documentos encontrados:', snapshot.docs.length);
-                
-                artists = snapshot.docs.map(doc => {
-                    const data = { id: doc.id, ...doc.data() };
-                    console.log('🎵 Artista encontrado:', data.name);
-                    return data;
-                });
-                
-                if (artists.length === 0) {
-                    console.log('❌ No hay artistas en la colección');
+            console.log('🎤 Cargando artistas - MÉTODO DE EMERGENCIA');
+            
+            // PRIMERO INTENTAR BUSCAR EN MÚLTIPLES EVENTIDS
+            let snapshot = await tryMultipleEventIds();
+            
+            if (!snapshot) {
+                console.log('🔍 No encontrado en eventIds comunes, probando el actual...');
+                try {
+                    snapshot = await getDocs(collection(db, `events/${eventId}/artists`));
+                } catch (error) {
+                    console.error('❌ Error total:', error);
                     document.getElementById('artists-container').innerHTML = `
-                        <div class="text-center text-gray-400 p-8">
-                            <p class="text-xl mb-4">No hay artistas cargados</p>
-                            <p class="text-sm">EventId: ${eventId}</p>
-                            <p class="text-sm">Ruta: events/${eventId}/artists</p>
-                            <button onclick="loadArtists()" class="mt-4 bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded">
-                                🔄 Reintentar
-                            </button>
+                        <div class="text-center text-red-400 p-8">
+                            <h3 class="text-xl mb-4">🚨 ERROR CRÍTICO</h3>
+                            <p class="mb-4">No se pueden cargar los artistas</p>
+                            <p class="text-sm mb-4">Error: ${error.message}</p>
+                            <p class="text-xs">Ve a "Gestión de Votaciones" y verifica que los artistas estén cargados</p>
                         </div>
                     `;
                     return;
                 }
-
-                console.log('✅ Artistas cargados exitosamente:', artists.length);
-                renderArtists();
-            } catch (error) {
-                console.error('❌ Error cargando artistas:', error);
+            }
+            
+            const useEventId = window.workingEventId || eventId;
+            console.log('📊 Usando eventId final:', useEventId);
+            console.log('📊 Documentos encontrados:', snapshot.docs.length);
+            
+            artists = snapshot.docs.map(doc => {
+                const data = { id: doc.id, ...doc.data() };
+                console.log('🎵 Artista encontrado:', data.name);
+                return data;
+            });
+            
+            if (artists.length === 0) {
                 document.getElementById('artists-container').innerHTML = `
-                    <div class="text-center text-red-400 p-8">
-                        <p class="text-xl mb-4">Error cargando artistas</p>
-                        <p class="text-sm">${error.message}</p>
-                        <button onclick="loadArtists()" class="mt-4 bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded">
-                            🔄 Reintentar
+                    <div class="text-center text-yellow-400 p-8">
+                        <h3 class="text-xl mb-4">⚠️ NO HAY ARTISTAS</h3>
+                        <p class="mb-4">La base de datos está vacía</p>
+                        <p class="text-sm">EventId probado: ${useEventId}</p>
+                        <p class="text-xs mt-4">🔧 Ve a "Gestión de Votaciones" y agrega artistas primero</p>
+                        <button onclick="loadArtists()" class="mt-4 bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded font-bold">
+                            🔄 REINTENTAR
                         </button>
                     </div>
                 `;
+                return;
             }
+
+            console.log('✅ Artistas cargados exitosamente:', artists.length);
+            renderArtists();
         }
 
         function renderArtists() {
