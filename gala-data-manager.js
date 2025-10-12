@@ -155,26 +155,10 @@ class GalaDataManager {
         // Asignar algunos artistas aleatorios a esta gala
         const numberOfArtists = Math.min(3 + galaNumber, allArtists.length);
         const shuffled = [...allArtists].sort(() => 0.5 - Math.random());
-        const selectedArtists = shuffled.slice(0, numberOfArtists);
-        
-    // Obtener jurados reales del sistema
-    getRealJurors() {
-        const jurorsKey = `jurors_${this.eventId}`;
-        const storedJurors = localStorage.getItem(jurorsKey);
-        if (storedJurors) {
-            try {
-                const jurors = JSON.parse(storedJurors);
-                return jurors.filter(juror => juror.active).map(juror => juror.name);
-            } catch (error) {
-                console.error('Error al obtener jurados reales:', error);
-                return [];
-            }
-        }
-        return [];
-    }
-
-        // Asignar artistas a la gala
-        const artistIds = selectedArtists.map(artist => artist.id);
+    const selectedArtists = shuffled.slice(0, numberOfArtists);
+    
+    // Asignar artistas a la gala
+    const artistIds = selectedArtists.map(artist => artist.id);
         this.assignArtistsToGala(galaNumber, artistIds);
 
         // Actualizar canciones específicas para esta gala
@@ -237,9 +221,25 @@ class GalaDataManager {
         }
         return galas;
     }
-}
+    // Obtener jurados reales del sistema
+    getRealJurors() {
+        const jurorsKey = `jurors_${this.eventId}`;
+        const storedJurors = localStorage.getItem(jurorsKey);
+        if (storedJurors) {
+            try {
+                const jurors = JSON.parse(storedJurors);
+                return jurors.filter(juror => juror.active).map(juror => juror.name);
+            } catch (error) {
+                console.error('Error al obtener jurados reales:', error);
+                return [];
+            }
+        }
+        return [];
+    }
 
-// Hacer disponible globalmente
-window.GalaDataManager = GalaDataManager;
-
+    // Verificar si una gala tiene datos
+    hasDataForGala(galaNumber) {
+        const artists = this.getArtistsForGala(galaNumber);
+        return artists.length > 0;
+    }
 console.log('📊 GalaDataManager cargado y listo para usar');
