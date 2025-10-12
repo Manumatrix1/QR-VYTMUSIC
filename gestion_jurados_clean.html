@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestión de Jurados - VYT Music</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-white min-h-screen">
+    <div class="container mx-auto px-4 py-8 max-w-6xl">
+        
+        <!-- Header -->
+        <div class="text-center mb-8">
+            <h1 class="text-4xl font-bold mb-4">🎭 Gestión de Jurados</h1>
+            <p id="event-title" class="text-xl text-gray-300 mb-4">Cargando evento...</p>
+            <a href="#" id="back-link" class="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-500">
+                ← Volver al Panel
+            </a>
+        </div>
+
+        <!-- Crear Jurado -->
+        <div class="bg-gray-800 rounded-lg p-6 mb-8">
+            <h2 class="text-2xl font-bold mb-4">➕ Crear Nuevo Jurado</h2>
+            <form id="jury-form">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    <div>
+                        <label class="block text-sm font-bold mb-2">👤 Nombre del Jurado</label>
+                        <input type="text" id="jury-name" required 
+                               class="w-full p-3 bg-gray-700 text-white rounded border border-gray-600">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-bold mb-2">🔐 Contraseña</label>
+                        <input type="password" id="jury-password" required 
+                               class="w-full p-3 bg-gray-700 text-white rounded border border-gray-600">
+                    </div>
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-bold mb-2">🎯 Tipo de Jurado</label>
+                    <select id="jury-type" required 
+                            class="w-full p-3 bg-gray-700 text-white rounded border border-gray-600">
+                        <option value="individual">🧑 Individual</option>
+                        <option value="grupal">👥 Grupal</option>
+                        <option value="secreto">🤐 Secreto</option>
+                    </select>
+                </div>
+                <button type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded font-bold">
+                    ✅ Crear Jurado
+                </button>
+            </form>
+        </div>
+
+        <!-- Lista de Jurados -->
+        <div class="bg-gray-800 rounded-lg p-6 mb-8">
+            <h2 class="text-2xl font-bold mb-4">📋 Jurados Registrados</h2>
+            <div id="loading" class="text-center py-8">
+                <p class="text-gray-400">Cargando jurados...</p>
+            </div>
+            <div id="jury-list"></div>
+        </div>
+
+        <!-- Acciones -->
+        <div class="bg-gray-800 rounded-lg p-6">
+            <h2 class="text-2xl font-bold mb-4">🚀 Acciones</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <button id="test-voting-btn" class="bg-purple-600 hover:bg-purple-700 text-white px-6 py-3 rounded font-bold">
+                    🧪 Probar Sistema de Votación
+                </button>
+                <button id="view-results-btn" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded font-bold">
+                    📊 Ver Resultados
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { db } from './firebase_config.js';
+        import { collection, addDoc, getDocs, deleteDoc, doc, query, orderBy } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const eventId = urlParams.get('eventId');
+        const eventName = urlParams.get('eventName');
+
+        if (!eventId || !eventName) {
+            alert('Error: Falta información del evento');
+            window.location.href = 'eventos.html';
+        }
+
+        document.getElementById('event-title').textContent = eventName;
+        document.getElementById('back-link').href = `panel_evento.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`;
+
+        let currentJuries = [];
+
+        loadJuries();
+
+        document.getElementById('jury-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const name = document.getElementById('jury-name').value.trim();
+            const password = document.getElementById('jury-password').value;
+            const type = document.getElementById('jury-type').value;
+
+            if (!name || !password) {
+                alert('❌ Faltan datos obligatorios');
+                return;
+            }
+
+            if (currentJuries.some(jury => jury.username.toLowerCase() === name.toLowerCase())) {
+                alert('❌ Ya existe un jurado con ese nombre');
+                return;
+            }
+
+            try {
+                await addDoc(collection(db, `events/${eventId}/juries`), {
+                    username: name.toLowerCase(),
+                    displayName: name,
+                    password: password,
+                    type: type,
+                    active: true,
+                    createdAt: new Date()
+                });
+                
+                alert(`✅ Jurado "${name}" creado`);
+                document.getElementById('jury-form').reset();
+                loadJuries();
+
+            } catch (error) {
+                alert('❌ Error: ' + error.message);
+            }
+        });
+
+        async function loadJuries() {
+            const loading = document.getElementById('loading');
+            const juryList = document.getElementById('jury-list');
+            
+            try {
+                const snapshot = await getDocs(collection(db, `events/${eventId}/juries`));
+                currentJuries = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+                loading.style.display = 'none';
+
+                if (currentJuries.length === 0) {
+                    juryList.innerHTML = '<p class="text-center text-gray-400 py-8">No hay jurados registrados</p>';
+                    return;
+                }
+
+                juryList.innerHTML = '';
+                currentJuries.forEach(jury => {
+                    const typeEmoji = { individual: '🧑', grupal: '👥', secreto: '🤐' }[jury.type] || '🎭';
+                    
+                    const juryDiv = document.createElement('div');
+                    juryDiv.className = 'bg-gray-700 rounded p-4 mb-3 flex justify-between items-center';
+                    juryDiv.innerHTML = `
+                        <div class="flex items-center space-x-3">
+                            <span class="text-2xl">${typeEmoji}</span>
+                            <div>
+                                <h3 class="font-bold">${jury.displayName}</h3>
+                                <p class="text-sm text-gray-300">Usuario: ${jury.username}</p>
+                                <p class="text-sm text-gray-400">Tipo: ${jury.type}</p>
+                            </div>
+                        </div>
+                        <button onclick="deleteJury('${jury.id}', '${jury.displayName}')" 
+                                class="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded">
+                            🗑️ Eliminar
+                        </button>
+                    `;
+                    juryList.appendChild(juryDiv);
+                });
+
+            } catch (error) {
+                loading.style.display = 'none';
+                juryList.innerHTML = `<p class="text-center text-red-400 py-8">Error: ${error.message}</p>`;
+            }
+        }
+
+        window.deleteJury = async (juryId, juryName) => {
+            if (confirm(`¿Eliminar jurado "${juryName}"?`)) {
+                try {
+                    await deleteDoc(doc(db, `events/${eventId}/juries`, juryId));
+                    loadJuries();
+                } catch (error) {
+                    alert('Error al eliminar: ' + error.message);
+                }
+            }
+        };
+
+        document.getElementById('test-voting-btn').addEventListener('click', () => {
+            window.open(`votacion_jurados_FINAL.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`, '_blank');
+        });
+
+        document.getElementById('view-results-btn').addEventListener('click', () => {
+            window.open(`resultados_votacion.html?eventId=${eventId}`, '_blank');
+        });
+    </script>
+</body>
+</html>
