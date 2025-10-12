@@ -222,17 +222,32 @@
 
         async function loadCertamenData() {
             try {
-                console.log('Cargando datos del certamen...');
+                console.log('🔍 Iniciando carga de datos del certamen...');
                 
                 // Cargar todas las galas
                 const eventsSnapshot = await getDocs(query(collection(db, 'events')));
+                console.log(`📊 Galas encontradas: ${eventsSnapshot.size}`);
+                
+                if (eventsSnapshot.empty) {
+                    console.log('❌ No se encontraron galas');
+                    document.getElementById('total-galas').textContent = '0';
+                    document.getElementById('total-unique-artists').textContent = '0';
+                    document.getElementById('total-all-votes').textContent = '0';
+                    document.getElementById('total-jurors').textContent = '0';
+                    
+                    // Mostrar mensaje de no hay datos
+                    const championCard = document.getElementById('champion-card');
+                    championCard.innerHTML = '<div class="text-center p-8"><h3 class="text-2xl text-red-400">❌ No hay datos del certamen</h3><p class="text-gray-400">Aún no se han registrado galas o participantes</p></div>';
+                    return;
+                }
+                
                 certamenData.stats.totalGalas = eventsSnapshot.size;
 
                 for (const eventDoc of eventsSnapshot.docs) {
                     const eventData = eventDoc.data();
                     const eventId = eventDoc.id;
                     
-                    console.log(`Procesando gala: ${eventData.name}`);
+                    console.log(`🎪 Procesando gala: ${eventData.name} (ID: ${eventId})`);
                     
                     const galaInfo = {
                         id: eventId,
@@ -246,12 +261,23 @@
 
                     // Cargar artistas de esta gala
                     const artistsSnapshot = await getDocs(query(collection(db, `events/${eventId}/artists`), orderBy('name')));
-                    galaInfo.artists = artistsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    console.log(`🎤 Artistas en ${eventData.name}: ${artistsSnapshot.size}`);
+                    
+                    galaInfo.artists = artistsSnapshot.docs.map(doc => {
+                        const artist = { id: doc.id, ...doc.data() };
+                        console.log(`   - ${artist.name}`);
+                        return artist;
+                    });
 
                     // Cargar votos del público
+                    console.log(`🗳️ Cargando votos públicos para ${eventData.name}...`);
                     const ticketVotesSnapshot = await getDocs(collection(db, `events/${eventId}/ticket_votes`));
+                    console.log(`   Tickets que votaron: ${ticketVotesSnapshot.size}`);
+                    
                     for (const ticketDoc of ticketVotesSnapshot.docs) {
                         const votesSnapshot = await getDocs(collection(db, `events/${eventId}/ticket_votes/${ticketDoc.id}/votes`));
+                        console.log(`   Votos en ticket ${ticketDoc.id}: ${votesSnapshot.size}`);
+                        
                         votesSnapshot.docs.forEach(voteDoc => {
                             const artistId = voteDoc.id;
                             const voteData = voteDoc.data();
@@ -262,23 +288,42 @@
                     }
 
                     // Cargar votos de jurados
+                    console.log(`⚖️ Cargando votos de jurados para ${eventData.name}...`);
                     const jurorsSnapshot = await getDocs(collection(db, `events/${eventId}/jurors`));
-                    const jurors = jurorsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    console.log(`   Jurados: ${jurorsSnapshot.size}`);
+                    
+                    const jurors = jurorsSnapshot.docs.map(doc => {
+                        const juror = { id: doc.id, ...doc.data() };
+                        console.log(`   - Jurado: ${juror.name}`);
+                        return juror;
+                    });
+                    
                     certamenData.stats.totalJurors = Math.max(certamenData.stats.totalJurors, jurors.length);
 
-                    for (const juror of jurors) {
-                        const juryVotesSnapshot = await getDocs(collection(db, `events/${eventId}/jury_votes/${juror.id}/votes`));
-                        juryVotesSnapshot.docs.forEach(voteDoc => {
-                            const artistId = voteDoc.id;
-                            const voteData = voteDoc.data();
+                    // Cargar votos de jurados usando la estructura correcta
+                    const allJuryVotesSnapshot = await getDocs(collection(db, `events/${eventId}/jury_votes`));
+                    console.log(`   Total votos de jurados encontrados: ${allJuryVotesSnapshot.size}`);
+                    
+                    allJuryVotesSnapshot.docs.forEach(voteDoc => {
+                        const voteData = voteDoc.data();
+                        console.log(`   Voto encontrado:`, voteData);
+                        
+                        const artistId = voteData.artistId;
+                        const jurorName = voteData.jurorName || voteData.juror || 'Jurado Anónimo';
+                        const score = voteData.score || voteData.rating || 0;
+                        
+                        if (artistId) {
                             if (!galaInfo.juryVotes[artistId]) galaInfo.juryVotes[artistId] = [];
                             galaInfo.juryVotes[artistId].push({
-                                jurorName: juror.name,
-                                score: voteData.score || 0
+                                jurorName: jurorName,
+                                score: score
                             });
                             galaInfo.totalVotes++;
-                        });
-                    }
+                        }
+                    });
+
+                    console.log(`📊 Votos públicos en ${eventData.name}:`, galaInfo.publicVotes);
+                    console.log(`⚖️ Votos jurados en ${eventData.name}:`, galaInfo.juryVotes);
 
                     // Calcular puntajes finales para esta gala
                     galaInfo.artists.forEach(artist => {
@@ -291,12 +336,15 @@
                         artist.finalScore = (publicScore * 0.4) + (avgJuryScore * 0.6);
                         artist.publicScore = publicScore;
                         artist.juryScore = avgJuryScore;
+                        
+                        console.log(`🎵 ${artist.name}: Público=${publicScore}, Jurado=${avgJuryScore.toFixed(2)}, Final=${artist.finalScore.toFixed(2)}`);
                     });
 
                     // Ordenar artistas por puntaje final para determinar posiciones
                     galaInfo.artists.sort((a, b) => b.finalScore - a.finalScore);
                     galaInfo.artists.forEach((artist, index) => {
                         artist.position = index + 1;
+                        console.log(`🏆 Posición ${artist.position}: ${artist.name} (${artist.finalScore.toFixed(2)} pts)`);
                     });
 
                     // Agregar datos al mapa global de artistas
@@ -331,16 +379,20 @@
                 certamenData.stats.totalArtists = certamenData.allArtists.size;
                 certamenData.stats.totalVotes = certamenData.galas.reduce((sum, gala) => sum + gala.totalVotes, 0);
 
-                console.log('Datos cargados exitosamente');
+                console.log('✅ Datos cargados exitosamente');
+                console.log('📈 Estadísticas finales:', certamenData.stats);
+                console.log('🎤 Artistas únicos:', certamenData.allArtists.size);
+                
                 updateUI();
 
             } catch (error) {
-                console.error('Error cargando datos del certamen:', error);
-                alert('Error al cargar los datos del certamen');
+                console.error('❌ Error cargando datos del certamen:', error);
+                alert('Error al cargar los datos del certamen: ' + error.message);
             }
         }
 
         function updateUI() {
+            console.log('🎨 Actualizando interfaz con datos:', certamenData);
             updateGlobalStats();
             updateChampionAndFinalists();
             updateFinalRanking();
@@ -350,46 +402,76 @@
         }
 
         function updateGlobalStats() {
+            console.log('📊 Actualizando estadísticas globales...');
             document.getElementById('total-galas').textContent = certamenData.stats.totalGalas;
             document.getElementById('total-unique-artists').textContent = certamenData.stats.totalArtists;
             document.getElementById('total-all-votes').textContent = certamenData.stats.totalVotes;
             document.getElementById('total-jurors').textContent = certamenData.stats.totalJurors;
+            console.log('✅ Estadísticas actualizadas:', certamenData.stats);
         }
 
         function updateChampionAndFinalists() {
+            console.log('👑 Actualizando campeón y finalistas...');
+            
             // Crear ranking final basado en puntaje total
             const finalRanking = Array.from(certamenData.allArtists.entries())
                 .map(([id, data]) => ({ id, ...data }))
                 .sort((a, b) => b.totalScore - a.totalScore);
 
+            console.log('🏆 Ranking final:', finalRanking);
+
             if (finalRanking.length > 0) {
                 const champion = finalRanking[0];
+                console.log('👑 Campeón:', champion);
                 document.getElementById('champion-name').textContent = champion.name;
                 document.getElementById('champion-score').textContent = champion.totalScore.toFixed(2);
                 document.getElementById('champion-wins').textContent = champion.wins;
                 document.getElementById('champion-participations').textContent = champion.participations;
+            } else {
+                console.log('❌ No hay campeón disponible');
+                document.getElementById('champion-name').textContent = 'Sin datos';
+                document.getElementById('champion-score').textContent = '0';
+                document.getElementById('champion-wins').textContent = '0';
+                document.getElementById('champion-participations').textContent = '0';
             }
 
             if (finalRanking.length > 1) {
                 const second = finalRanking[1];
+                console.log('🥈 Segundo lugar:', second);
                 document.getElementById('second-place-name').textContent = second.name;
                 document.getElementById('second-place-score').textContent = second.totalScore.toFixed(2);
+            } else {
+                document.getElementById('second-place-name').textContent = 'Sin datos';
+                document.getElementById('second-place-score').textContent = '0';
             }
 
             if (finalRanking.length > 2) {
                 const third = finalRanking[2];
+                console.log('🥉 Tercer lugar:', third);
                 document.getElementById('third-place-name').textContent = third.name;
                 document.getElementById('third-place-score').textContent = third.totalScore.toFixed(2);
+            } else {
+                document.getElementById('third-place-name').textContent = 'Sin datos';
+                document.getElementById('third-place-score').textContent = '0';
             }
         }
 
         function updateFinalRanking() {
+            console.log('📋 Actualizando ranking final...');
+            
             const finalRanking = Array.from(certamenData.allArtists.entries())
                 .map(([id, data]) => ({ id, ...data }))
                 .sort((a, b) => b.totalScore - a.totalScore);
 
+            console.log('🏆 Ranking final calculado:', finalRanking);
+
             const tbody = document.getElementById('final-ranking-table');
             tbody.innerHTML = '';
+
+            if (finalRanking.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center py-8 text-gray-400">❌ No hay datos de artistas disponibles</td></tr>';
+                return;
+            }
 
             finalRanking.forEach((artist, index) => {
                 const row = document.createElement('tr');
@@ -413,6 +495,8 @@
                 `;
                 tbody.appendChild(row);
             });
+            
+            console.log('✅ Ranking final actualizado en UI');
         }
 
         function updateArtistEvolution() {
