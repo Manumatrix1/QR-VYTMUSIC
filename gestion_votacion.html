@@ -214,6 +214,58 @@
             ui.addArtistsBtn.disabled = false;
         }
 
+        async function calculateRealTimeScores(artists) {
+            console.log('🔥 Calculando puntajes en tiempo real...');
+            
+            // Calcular votos del público
+            const publicVotes = {};
+            const ticketVotesSnapshot = await getDocs(collection(db, `events/${eventId}/ticket_votes`));
+            for (const ticketDoc of ticketVotesSnapshot.docs) {
+                const votesSnapshot = await getDocs(collection(db, `events/${eventId}/ticket_votes/${ticketDoc.id}/votes`));
+                votesSnapshot.docs.forEach(voteDoc => {
+                    const artistId = voteDoc.id;
+                    const voteData = voteDoc.data();
+                    if (!publicVotes[artistId]) publicVotes[artistId] = 0;
+                    publicVotes[artistId] += voteData.score || 1;
+                });
+            }
+
+            // Calcular votos de jurados
+            const juryVotes = {};
+            const allJuryVotesSnapshot = await getDocs(collection(db, `events/${eventId}/jury_votes`));
+            allJuryVotesSnapshot.docs.forEach(voteDoc => {
+                const voteData = voteDoc.data();
+                const artistId = voteData.artistId;
+                const score = voteData.score || voteData.rating || 0;
+                
+                if (artistId) {
+                    if (!juryVotes[artistId]) juryVotes[artistId] = [];
+                    juryVotes[artistId].push(score);
+                }
+            });
+
+            // Actualizar scores de artistas
+            return artists.map(artist => {
+                const publicScore = publicVotes[artist.id] || 0;
+                const juryScores = juryVotes[artist.id] || [];
+                const avgJuryScore = juryScores.length > 0 
+                    ? juryScores.reduce((sum, score) => sum + score, 0) / juryScores.length 
+                    : 0;
+                
+                const finalScore = (publicScore * 0.4) + (avgJuryScore * 0.6);
+                
+                console.log(`🎵 ${artist.name}: Público=${publicScore}, Jurado=${avgJuryScore.toFixed(2)}, Final=${finalScore.toFixed(2)}`);
+                
+                return {
+                    ...artist,
+                    totalScore: finalScore,
+                    publicScore,
+                    juryScore: avgJuryScore,
+                    totalRatingsCount: publicScore + juryScores.length
+                };
+            });
+        }
+
         function renderFullVotingResults(artists) {
             ui.votesStats.innerHTML = '';
             if (!artists || artists.length === 0) {
@@ -228,10 +280,13 @@
                     <div class="artist-image-container-small"><img src="${artist.photoURL || 'https://placehold.co/60x60/1f2937/f9fafb?text=ART'}" alt="${artist.name}" class="artist-image"></div>
                     <div class="flex-grow">
                         <p class="font-semibold text-lg text-sky-300">${index + 1}. ${artist.name}</p>
-                        <p class="text-sm text-gray-400">Votos: ${artist.totalRatingsCount || 0}</p>
+                        <div class="text-sm text-gray-400">
+                            <span>👥 Público: ${artist.publicScore || 0}</span> | 
+                            <span>⚖️ Jurado: ${artist.juryScore ? artist.juryScore.toFixed(1) : '0.0'}</span>
+                        </div>
                     </div>
                     <div class="text-right flex-shrink-0">
-                        <span class="text-2xl font-bold text-green-400">${artist.totalScore || 0}</span><span class="text-gray-400 text-sm"> puntos</span>
+                        <span class="text-2xl font-bold text-green-400">${artist.totalScore ? artist.totalScore.toFixed(2) : '0.00'}</span><span class="text-gray-400 text-sm"> pts</span>
                     </div>
                     <button data-id="${artist.id}" class="delete-artist-btn p-2 bg-red-600 hover:bg-red-800 rounded-full leading-none" title="Eliminar Artista">🗑️</button>`;
                 ui.votesStats.appendChild(card);
@@ -424,11 +479,14 @@
         cacheUIElements();
         setupEventListeners();
 
-        const artistsQuery = query(collection(db, `events/${eventId}/artists`), orderBy('totalScore', 'desc'));
+        const artistsQuery = query(collection(db, `events/${eventId}/artists`), orderBy('name'));
         onSnapshot(artistsQuery, async (snapshot) => {
             const artists = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             allArtists = artists.sort((a,b) => a.name.localeCompare(b.name));
-            renderFullVotingResults(artists);
+            
+            // Calcular scores reales desde votos
+            const artistsWithRealScores = await calculateRealTimeScores(artists);
+            renderFullVotingResults(artistsWithRealScores);
 
             const eventDoc = await getDoc(doc(db, 'events', eventId));
             if (eventDoc.exists()) {
