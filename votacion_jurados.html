@@ -331,7 +331,8 @@
         }
 
         function showAuthError(message) {
-            ui.authError.textContent = message;
+            // Permitir texto multilinea convirtiendo \n a <br>
+            ui.authError.innerHTML = message.replace(/\n/g, '<br>');
             ui.authError.classList.remove('hidden');
         }
 
@@ -380,25 +381,61 @@
             const name = ui.jurorNameInput.value.trim();
             const password = ui.jurorPasswordInput.value.trim();
             
+            console.log('🔐 Intentando autenticar:', { name, password });
+            
             try {
                 showLoading(true);
                 
-                // Get all jurors for the event
-                const jurorsSnapshot = await getDocs(collection(db, `events/${eventId}/jurors`));
-                const jurors = jurorsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                // Cargar jurados desde localStorage (donde están realmente guardados)
+                const jurorsKey = `jurados_${eventId}`;
+                const storedJurors = localStorage.getItem(jurorsKey);
                 
-                // Find matching juror
+                console.log('📋 Clave de búsqueda:', jurorsKey);
+                console.log('💾 Datos en localStorage:', storedJurors);
+                
+                let jurors = [];
+                if (storedJurors) {
+                    try {
+                        jurors = JSON.parse(storedJurors);
+                        console.log('✅ Jurados encontrados:', jurors);
+                    } catch (error) {
+                        console.error('❌ Error parseando jurados:', error);
+                    }
+                } else {
+                    console.log('⚠️ No hay jurados en localStorage');
+                }
+
+                // Buscar jurado que coincida
                 const juror = jurors.find(j => 
                     j.name.toLowerCase() === name.toLowerCase() && 
-                    j.password === password
+                    j.password === password &&
+                    j.active !== false
                 );
                 
+                console.log('🔍 Jurado encontrado:', juror);
+                
                 if (!juror) {
-                    showAuthError('Nombre o contraseña incorrectos');
+                    console.log('❌ Credenciales incorrectas');
+                    
+                    // Mostrar jurados disponibles para ayudar con debug
+                    let errorMessage = 'Nombre o contraseña incorrectos.\n\n';
+                    if (jurors.length > 0) {
+                        errorMessage += '🔍 Jurados registrados:\n';
+                        jurors.forEach(j => {
+                            errorMessage += `• ${j.name} (contraseña: ${j.password})\n`;
+                        });
+                        errorMessage += '\n⚠️ Verifica que escribas exactamente como aparece arriba.';
+                    } else {
+                        errorMessage += '❌ No hay jurados registrados en el sistema.\nVe a "Gestión de Jurados" primero.';
+                    }
+                    
+                    showAuthError(errorMessage);
+                    showLoading(false);
                     return;
                 }
                 
                 currentJuror = juror;
+                console.log('✅ Autenticación exitosa:', currentJuror);
                 
                 // Load event data and check if voting is enabled
                 await loadEventData();

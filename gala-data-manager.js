@@ -242,4 +242,6 @@ class GalaDataManager {
         const artists = this.getArtistsForGala(galaNumber);
         return artists.length > 0;
     }
+} // <-- cierre de la clase GalaDataManager
+
 console.log('📊 GalaDataManager cargado y listo para usar');
