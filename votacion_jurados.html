@@ -66,9 +66,26 @@
         .rating-btn { padding: 0.5rem 0.25rem; border-radius: 0.5rem; font-weight: 600; text-align: center; cursor: pointer; transition: all 0.2s; border: 2px solid transparent; font-size: 0.75rem; position: relative; }
         .rating-btn:hover { transform: scale(1.02); }
         .rating-btn.selected { 
-            border-color: #ffffff; 
-            box-shadow: 0 0 15px rgba(59, 130, 246, 0.8); 
-            transform: scale(1.05);
+            border-color: #ffffff !important; 
+            box-shadow: 0 0 15px rgba(59, 130, 246, 0.8) !important; 
+            transform: scale(1.05) !important;
+            background-color: #6b7280 !important; /* Gris más visible */
+            position: relative;
+        }
+        .rating-btn.selected::before {
+            content: '✓ SELECCIONADO';
+            position: absolute;
+            top: -25px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: #10b981;
+            color: white;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.6rem;
+            font-weight: bold;
+            white-space: nowrap;
+            z-index: 10;
         }
         .rating-btn.selected::after {
             content: '✓';
@@ -85,6 +102,7 @@
             justify-content: center;
             font-size: 0.7rem;
             font-weight: bold;
+            z-index: 10;
         }
         
         .rating-malo { background-color: #dc2626; color: white; }
@@ -698,23 +716,57 @@
         }
 
         function selectRating(artistId, criteriaId, rating) {
-            // Remove previous selection for this criteria
+            console.log(`🔘 Seleccionando: ${rating} para criterio ${criteriaId} del artista ${artistId}`);
+            
+            // Encontrar la tarjeta del artista y el div del criterio
             const artistCard = document.querySelector(`[data-artist-id="${artistId}"]`);
             const criteriaDiv = artistCard.querySelector(`[data-criteria="${criteriaId}"]`);
-            criteriaDiv.querySelectorAll('.rating-btn').forEach(btn => btn.classList.remove('selected'));
             
-            // Add selection to clicked button
-            event.target.classList.add('selected');
-            
-            // Check if all criteria are selected
-            const allSelected = CRITERIA.every(criteria => {
-                const criteriaDiv = artistCard.querySelector(`[data-criteria="${criteria.id}"]`);
-                return criteriaDiv.querySelector('.rating-btn.selected') !== null;
+            // Remover selección previa de TODOS los botones de este criterio
+            criteriaDiv.querySelectorAll('.rating-btn').forEach(btn => {
+                btn.classList.remove('selected');
+                console.log(`🔄 Removida clase 'selected' de botón:`, btn.textContent);
             });
             
-            // Enable/disable submit button
+            // Encontrar y seleccionar el botón correcto
+            const targetButton = criteriaDiv.querySelector(`[onclick*="'${rating}'"]`);
+            if (targetButton) {
+                targetButton.classList.add('selected');
+                console.log(`✅ Agregada clase 'selected' a botón:`, targetButton.textContent);
+                
+                // Aplicar estilo visual inmediato adicional
+                targetButton.style.backgroundColor = '#6b7280'; // Gris más visible
+                targetButton.style.border = '2px solid #ffffff';
+                targetButton.style.boxShadow = '0 0 15px rgba(59, 130, 246, 0.8)';
+                
+                // Remover estilos de otros botones del mismo criterio
+                criteriaDiv.querySelectorAll('.rating-btn:not(.selected)').forEach(btn => {
+                    btn.style.backgroundColor = ''; // Resetear al original
+                    btn.style.border = '2px solid transparent';
+                    btn.style.boxShadow = '';
+                });
+                
+            } else {
+                console.error(`❌ No se encontró el botón para rating: ${rating}`);
+            }
+            
+            // Verificar si todos los criterios están seleccionados
+            const allSelected = CRITERIA.every(criteria => {
+                const criteriaDiv = artistCard.querySelector(`[data-criteria="${criteria.id}"]`);
+                const selected = criteriaDiv.querySelector('.rating-btn.selected');
+                console.log(`🔍 Criterio ${criteria.id} tiene selección:`, !!selected);
+                return selected !== null;
+            });
+            
+            console.log(`📊 Todos los criterios seleccionados: ${allSelected}`);
+            
+            // Habilitar/deshabilitar botón de envío
             const submitBtn = document.getElementById(`submit-vote-${artistId}`);
-            submitBtn.disabled = !allSelected;
+            if (submitBtn) {
+                submitBtn.disabled = !allSelected;
+                submitBtn.style.opacity = allSelected ? '1' : '0.5';
+                console.log(`🔘 Botón de envío ${allSelected ? 'habilitado' : 'deshabilitado'}`);
+            }
         }
 
         function submitVote(artistId) {
