@@ -46,7 +46,7 @@
             </div>
             <div class="mt-4 text-sm text-center opacity-75">
                 <p>📝 Solo ingresa tu nombre</p>
-                <p>🎭 Los jurados están registrados en el sistema</p>
+                <p>🎭 <span id="available-jurors">Cargando jurados disponibles...</span></p>
             </div>
         </div>
 
@@ -121,12 +121,37 @@
         let artists = [];
         let votes = {}; // {artistId: {criteriaId: value}}
 
+        // === CARGAR JURADOS DISPONIBLES ===
+        async function loadAvailableJurors() {
+            try {
+                const juriesSnapshot = await getDocs(collection(db, `events/${eventId}/juries`));
+                const activeJurors = juriesSnapshot.docs
+                    .filter(doc => doc.data().active)
+                    .map(doc => doc.data().displayName);
+                
+                const jurorsText = activeJurors.length > 0 
+                    ? `Jurados disponibles: ${activeJurors.join(', ')}`
+                    : 'No hay jurados registrados';
+                
+                document.getElementById('available-jurors').textContent = jurorsText;
+                console.log('🎭 Jurados disponibles:', activeJurors);
+            } catch (error) {
+                console.error('Error cargando jurados:', error);
+                document.getElementById('available-jurors').textContent = 'Error cargando jurados';
+            }
+        }
+
+        // Cargar jurados al iniciar la página
+        loadAvailableJurors();
+
         // === FUNCIONES PRINCIPALES ===
 
         window.login = async function() {
-            const name = document.getElementById('juror-name').value.trim().toLowerCase();
+            const name = document.getElementById('juror-name').value.trim();
+            const nameLower = name.toLowerCase();
             
-            console.log('🔐 Intentando login:', name);
+            console.log('🔐 Intentando login con:', `"${name}"`);
+            console.log('🔐 Nombre en minúsculas:', `"${nameLower}"`);
 
             if (!name) {
                 alert('❌ Por favor ingresa tu nombre');
@@ -136,9 +161,21 @@
             try {
                 // Buscar jurado en Firebase
                 const juriesSnapshot = await getDocs(collection(db, `events/${eventId}/juries`));
-                const validJury = juriesSnapshot.docs.find(doc => 
-                    doc.data().username.toLowerCase() === name && doc.data().active
-                );
+                console.log('📊 Total jurados en Firebase:', juriesSnapshot.docs.length);
+                
+                // Debug: mostrar todos los jurados
+                juriesSnapshot.docs.forEach(doc => {
+                    const data = doc.data();
+                    console.log(`🎭 Jurado encontrado: "${data.displayName}" (username: "${data.username}", activo: ${data.active})`);
+                });
+                
+                const validJury = juriesSnapshot.docs.find(doc => {
+                    const data = doc.data();
+                    const usernameMatch = data.username.toLowerCase() === nameLower;
+                    const displayNameMatch = data.displayName.toLowerCase() === nameLower;
+                    console.log(`🔍 Comparando "${nameLower}" con username:"${data.username.toLowerCase()}" (${usernameMatch}) y displayName:"${data.displayName.toLowerCase()}" (${displayNameMatch})`);
+                    return (usernameMatch || displayNameMatch) && data.active;
+                });
 
                 if (validJury) {
                     currentJuror = {
@@ -153,13 +190,14 @@
                     loadArtists();
                     console.log('✅ Login exitoso:', currentJuror);
                 } else {
-                    alert('❌ Jurado no encontrado o inactivo. Contacta al administrador.');
+                    console.log('❌ No se encontró jurado válido');
+                    alert('❌ Jurado no encontrado o inactivo. Verifica el nombre exacto.');
                 }
             } catch (error) {
                 console.error('Error en login:', error);
                 alert('❌ Error de conexión: ' + error.message);
             }
-            }
+        };
         };
 
         window.logout = function() {
