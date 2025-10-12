@@ -39,19 +39,14 @@
             <h2 class="text-2xl font-bold mb-6 text-center">Ingreso de Jurado</h2>
             <div class="space-y-4">
                 <div>
-                    <label class="block mb-2 font-bold">Nombre:</label>
+                    <label class="block mb-2 font-bold">Nombre del Jurado:</label>
                     <input type="text" id="juror-name" class="w-full p-3 rounded bg-white text-black" placeholder="Escribe tu nombre">
-                </div>
-                <div>
-                    <label class="block mb-2 font-bold">Contraseña:</label>
-                    <input type="password" id="juror-password" class="w-full p-3 rounded bg-white text-black" placeholder="Tu contraseña">
                 </div>
                 <button onclick="login()" class="btn btn-primary w-full">INGRESAR</button>
             </div>
             <div class="mt-4 text-sm text-center opacity-75">
-                <p>Usa: <strong>luciano</strong> / <strong>ABC123</strong></p>
-                <p>O: <strong>machito</strong> / <strong>DEF456</strong></p>
-                <p>O: <strong>manu</strong> / <strong>GHI789</strong></p>
+                <p>📝 Solo ingresa tu nombre</p>
+                <p>🎭 Los jurados están registrados en el sistema</p>
             </div>
         </div>
 
@@ -104,13 +99,6 @@
         console.log('📋 EventId desde URL:', urlParams.get('eventId'));
         console.log('📋 Usando fallback?', !urlParams.get('eventId'));
 
-        // JURADOS VÁLIDOS (sin Firebase para simplicidad)
-        const VALID_JURORS = {
-            'luciano': 'ABC123',
-            'machito': 'DEF456', 
-            'manu': 'GHI789'
-        };
-
         // CRITERIOS DE VOTACIÓN
         const CRITERIA = [
             { id: 'afinacion', name: '🎵 Afinación' },
@@ -135,26 +123,42 @@
 
         // === FUNCIONES PRINCIPALES ===
 
-        window.login = function() {
+        window.login = async function() {
             const name = document.getElementById('juror-name').value.trim().toLowerCase();
-            const password = document.getElementById('juror-password').value.trim();
-
+            
             console.log('🔐 Intentando login:', name);
 
-            if (!name || !password) {
-                alert('❌ Completa nombre y contraseña');
+            if (!name) {
+                alert('❌ Por favor ingresa tu nombre');
                 return;
             }
 
-            if (VALID_JURORS[name] === password) {
-                currentJuror = name;
-                document.getElementById('juror-display').textContent = name.charAt(0).toUpperCase() + name.slice(1);
-                document.getElementById('auth-section').style.display = 'none';
-                document.getElementById('main-content').style.display = 'block';
-                loadArtists();
-                console.log('✅ Login exitoso');
-            } else {
-                alert('❌ Credenciales incorrectas');
+            try {
+                // Buscar jurado en Firebase
+                const juriesSnapshot = await getDocs(collection(db, `events/${eventId}/juries`));
+                const validJury = juriesSnapshot.docs.find(doc => 
+                    doc.data().username.toLowerCase() === name && doc.data().active
+                );
+
+                if (validJury) {
+                    currentJuror = {
+                        id: validJury.id,
+                        name: validJury.data().displayName,
+                        type: validJury.data().type
+                    };
+                    
+                    document.getElementById('juror-display').textContent = currentJuror.name;
+                    document.getElementById('auth-section').style.display = 'none';
+                    document.getElementById('main-content').style.display = 'block';
+                    loadArtists();
+                    console.log('✅ Login exitoso:', currentJuror);
+                } else {
+                    alert('❌ Jurado no encontrado o inactivo. Contacta al administrador.');
+                }
+            } catch (error) {
+                console.error('Error en login:', error);
+                alert('❌ Error de conexión: ' + error.message);
+            }
             }
         };
 
@@ -165,7 +169,6 @@
                 document.getElementById('auth-section').style.display = 'block';
                 document.getElementById('main-content').style.display = 'none';
                 document.getElementById('juror-name').value = '';
-                document.getElementById('juror-password').value = '';
             }
         };
 
