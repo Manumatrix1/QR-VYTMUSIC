@@ -94,7 +94,15 @@
         import { db } from './firebase_config.js';
         import { collection, getDocs, query, orderBy, doc, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        const eventId = 'gmxINHvzSJ18Zt3SNeW7'; // ID fijo del evento
+        // OBTENER EVENT ID DESDE URL (como en gestión de votaciones)
+        const urlParams = new URLSearchParams(window.location.search);
+        const eventId = urlParams.get('eventId') || 'gmxINHvzSJ18Zt3SNeW7'; // Fallback al ID correcto
+        
+        console.log('🌐 URL completa:', window.location.href);
+        console.log('🔍 Parámetros URL:', window.location.search);
+        console.log('📋 EventId obtenido:', eventId);
+        console.log('📋 EventId desde URL:', urlParams.get('eventId'));
+        console.log('📋 Usando fallback?', !urlParams.get('eventId'));
 
         // JURADOS VÁLIDOS (sin Firebase para simplicidad)
         const VALID_JURORS = {
@@ -164,9 +172,30 @@
         async function loadArtists() {
             document.getElementById('status').textContent = 'Cargando artistas desde Firebase...';
             console.log('🎤 Cargando artistas...');
+            console.log('🔍 Event ID usado:', eventId);
+            console.log('🔍 Ruta Firebase:', `events/${eventId}/artists`);
 
             try {
                 const artistsSnapshot = await getDocs(query(collection(db, `events/${eventId}/artists`), orderBy('name')));
+                console.log('📊 Documentos encontrados:', artistsSnapshot.docs.length);
+                
+                // Debug: mostrar todos los documentos
+                if (artistsSnapshot.docs.length === 0) {
+                    console.log('❌ No se encontraron documentos en la colección');
+                    console.log('🔍 Verificando si la colección existe...');
+                    
+                    // Intentar sin orderBy por si hay problema
+                    const simpleSnapshot = await getDocs(collection(db, `events/${eventId}/artists`));
+                    console.log('📊 Sin orderBy:', simpleSnapshot.docs.length);
+                    
+                    // Listar todas las colecciones del evento
+                    console.log('🔍 Intentando listar estructura del evento...');
+                } else {
+                    artistsSnapshot.docs.forEach(doc => {
+                        console.log('📄 Documento encontrado:', doc.id, doc.data());
+                    });
+                }
+                
                 artists = artistsSnapshot.docs.map(doc => ({
                     id: doc.id,
                     ...doc.data()
@@ -176,11 +205,15 @@
                 document.getElementById('status').textContent = `${artists.length} artistas cargados`;
 
                 if (artists.length === 0) {
+                    console.log('❌ Lista de artistas vacía');
                     document.getElementById('artists-list').innerHTML = `
                         <div class="card p-8 text-center">
                             <div class="text-4xl mb-4">❌</div>
-                            <h3 class="text-xl font-bold mb-2">No hay artistas</h3>
-                            <p>Ve a "Gestión de Votaciones" para agregar artistas primero.</p>
+                            <h3 class="text-xl font-bold mb-2">No hay artistas en Firebase</h3>
+                            <p>Event ID: <code>${eventId}</code></p>
+                            <p>Ruta: <code>events/${eventId}/artists</code></p>
+                            <p class="mt-4">Ve a "Gestión de Votaciones" para agregar artistas.</p>
+                            <button onclick="loadArtists()" class="btn btn-primary mt-4">🔄 Reintentar</button>
                         </div>
                     `;
                     return;
@@ -195,10 +228,10 @@
                 document.getElementById('artists-list').innerHTML = `
                     <div class="card p-8 text-center">
                         <div class="text-4xl mb-4">⚠️</div>
-                        <h3 class="text-xl font-bold mb-2">Error de Conexión</h3>
-                        <p>No se pudieron cargar los artistas.</p>
-                        <p class="text-sm mt-2 opacity-75">${error.message}</p>
-                        <button onclick="loadArtists()" class="btn btn-primary mt-4">Reintentar</button>
+                        <h3 class="text-xl font-bold mb-2">Error de Firebase</h3>
+                        <p class="mb-2">Event ID: <code>${eventId}</code></p>
+                        <p class="text-sm opacity-75">${error.message}</p>
+                        <button onclick="loadArtists()" class="btn btn-primary mt-4">🔄 Reintentar</button>
                     </div>
                 `;
             }
