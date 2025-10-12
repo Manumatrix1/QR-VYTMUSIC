@@ -36,6 +36,33 @@
         let votes = {};
         let artists = [];
 
+        // FUNCIÓN PARA PROBAR MÚLTIPLES EVENTIDS
+        async function tryMultipleEventIds() {
+            const possibleEventIds = [
+                'gmxINHvzSJ18Zt3SNeW7',
+                '1GALA2024',
+                'primera-gala',
+                'gala1',
+                'default'
+            ];
+            
+            for (let testEventId of possibleEventIds) {
+                console.log(`🔍 Probando eventId: ${testEventId}`);
+                try {
+                    const snapshot = await getDocs(collection(db, `events/${testEventId}/artists`));
+                    console.log(`📊 En ${testEventId} encontrados: ${snapshot.docs.length} artistas`);
+                    
+                    if (snapshot.docs.length > 0) {
+                        console.log(`✅ ¡ENCONTRADOS! Usando eventId: ${testEventId}`);
+                        return { snapshot, eventId: testEventId };
+                    }
+                } catch (error) {
+                    console.log(`❌ Error en ${testEventId}:`, error.message);
+                }
+            }
+            return null;
+        }
+
         // CRITERIOS DE VOTACIÓN
         const RATINGS = [
             { id: 'malo', name: 'Malo', value: 20, color: 'bg-red-500' },
@@ -55,18 +82,32 @@
 
         // CARGAR ARTISTAS
         async function loadArtists() {
+            console.log('🎤 Buscando artistas en múltiples eventIds...');
+            
             try {
-                const snapshot = await getDocs(collection(db, `events/${eventId}/artists`));
-                artists = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                // Primero intentar encontrar donde están los artistas
+                const result = await tryMultipleEventIds();
                 
-                if (artists.length === 0) {
-                    document.getElementById('artists-container').innerHTML = 
-                        '<p class="text-center text-red-400 text-xl">❌ No hay artistas cargados</p>';
+                if (result) {
+                    artists = result.snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    window.workingEventId = result.eventId; // Guardar el eventId que funciona
+                    console.log(`✅ ${artists.length} artistas encontrados en ${result.eventId}`);
+                } else {
+                    console.log('❌ No se encontraron artistas en ningún eventId');
+                    document.getElementById('artists-container').innerHTML = `
+                        <div class="text-center text-red-400 p-8">
+                            <h3 class="text-xl mb-4">❌ No hay artistas cargados</h3>
+                            <p class="mb-4">Ve a "Gestión de Votaciones" y agrega artistas primero.</p>
+                            <p class="text-sm text-gray-400">EventIds probados: gmxINHvzSJ18Zt3SNeW7, 1GALA2024, primera-gala, gala1, default</p>
+                        </div>
+                    `;
                     return;
                 }
 
                 renderArtists();
+                
             } catch (error) {
+                console.error('❌ Error cargando artistas:', error);
                 document.getElementById('artists-container').innerHTML = 
                     '<p class="text-center text-red-400 text-xl">❌ Error: ' + error.message + '</p>';
             }
@@ -136,11 +177,14 @@
         };
 
         window.submitVotes = async function() {
+            const finalEventId = window.workingEventId || eventId;
+            console.log('📊 Enviando votos a eventId:', finalEventId);
+            
             try {
                 const votePromises = Object.entries(votes).map(([artistId, artistVotes]) => {
                     const average = Object.values(artistVotes).reduce((a, b) => a + b, 0) / Object.values(artistVotes).length;
                     
-                    return setDoc(doc(db, `events/${eventId}/jury_votes`, `${jurorName}_${artistId}`), {
+                    return setDoc(doc(db, `events/${finalEventId}/jury_votes`, `${jurorName}_${artistId}`), {
                         jurorName: jurorName,
                         artistId: artistId,
                         scores: artistVotes,
