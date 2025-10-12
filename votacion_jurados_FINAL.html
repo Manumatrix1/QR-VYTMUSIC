@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Votación Jurados SIMPLE - VYTMUSIC</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: Arial, sans-serif; background: linear-gradient(135deg, #1e3a8a, #1e40af); color: white; min-height: 100vh; }
+        .card { background: rgba(255,255,255,0.1); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.2); border-radius: 15px; }
+        .btn { padding: 12px 24px; border-radius: 8px; font-weight: bold; cursor: pointer; transition: all 0.3s; border: none; }
+        .btn-primary { background: #3b82f6; color: white; }
+        .btn-primary:hover { background: #2563eb; transform: scale(1.05); }
+        .btn-green { background: #16a34a; color: white; }
+        .btn-green:hover { background: #15803d; }
+        .btn-red { background: #dc2626; color: white; }
+        .btn-orange { background: #ea580c; color: white; }
+        .btn-yellow { background: #eab308; color: white; }
+        .btn-selected { 
+            border: 3px solid #ffffff !important; 
+            box-shadow: 0 0 20px rgba(255, 255, 255, 0.8) !important; 
+            transform: scale(1.1) !important;
+        }
+        .artist-card { margin: 20px 0; padding: 20px; }
+        .criteria { margin: 15px 0; }
+        .rating-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin-top: 10px; }
+    </style>
+</head>
+<body class="p-4">
+    <div class="max-w-4xl mx-auto">
+        <!-- HEADER -->
+        <div class="text-center mb-8">
+            <h1 class="text-4xl font-bold mb-4">🎤 VOTACIÓN DE JURADOS</h1>
+            <p id="status" class="text-xl">Iniciando sistema...</p>
+        </div>
+
+        <!-- AUTENTICACIÓN SIMPLE -->
+        <div id="auth-section" class="card p-8 max-w-md mx-auto mb-8">
+            <h2 class="text-2xl font-bold mb-6 text-center">Ingreso de Jurado</h2>
+            <div class="space-y-4">
+                <div>
+                    <label class="block mb-2 font-bold">Nombre:</label>
+                    <input type="text" id="juror-name" class="w-full p-3 rounded bg-white text-black" placeholder="Escribe tu nombre">
+                </div>
+                <div>
+                    <label class="block mb-2 font-bold">Contraseña:</label>
+                    <input type="password" id="juror-password" class="w-full p-3 rounded bg-white text-black" placeholder="Tu contraseña">
+                </div>
+                <button onclick="login()" class="btn btn-primary w-full">INGRESAR</button>
+            </div>
+            <div class="mt-4 text-sm text-center opacity-75">
+                <p>Usa: <strong>luciano</strong> / <strong>ABC123</strong></p>
+                <p>O: <strong>machito</strong> / <strong>DEF456</strong></p>
+                <p>O: <strong>manu</strong> / <strong>GHI789</strong></p>
+            </div>
+        </div>
+
+        <!-- CONTENIDO PRINCIPAL -->
+        <div id="main-content" style="display: none;">
+            <div class="card p-6 mb-6">
+                <h3 class="text-xl font-bold mb-4">👨‍⚖️ <span id="juror-display">Jurado</span></h3>
+                <div class="flex gap-4">
+                    <div class="text-center">
+                        <div class="text-2xl font-bold" id="total-artists">0</div>
+                        <div class="text-sm">Artistas</div>
+                    </div>
+                    <div class="text-center">
+                        <div class="text-2xl font-bold text-green-400" id="voted-count">0</div>
+                        <div class="text-sm">Votados</div>
+                    </div>
+                    <div class="text-center">
+                        <div class="text-2xl font-bold text-yellow-400" id="pending-count">0</div>
+                        <div class="text-sm">Pendientes</div>
+                    </div>
+                </div>
+                <button onclick="logout()" class="btn btn-red mt-4">Cerrar Sesión</button>
+            </div>
+
+            <!-- ARTISTAS -->
+            <div id="artists-container">
+                <h2 class="text-3xl font-bold mb-6 text-center">🎭 ARTISTAS PARTICIPANTES</h2>
+                <div id="artists-list">
+                    <div class="text-center">
+                        <div class="text-2xl">⏳</div>
+                        <p>Cargando artistas...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        // === CONFIGURACIÓN ===
+        import { db } from './firebase_config.js';
+        import { collection, getDocs, query, orderBy, doc, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        const eventId = 'gmxINHvzSJ18Zt3SNeW7'; // ID fijo del evento
+
+        // JURADOS VÁLIDOS (sin Firebase para simplicidad)
+        const VALID_JURORS = {
+            'luciano': 'ABC123',
+            'machito': 'DEF456', 
+            'manu': 'GHI789'
+        };
+
+        // CRITERIOS DE VOTACIÓN
+        const CRITERIA = [
+            { id: 'afinacion', name: '🎵 Afinación' },
+            { id: 'puesta_escena', name: '🎭 Puesta en Escena' },
+            { id: 'vestimenta', name: '👔 Vestimenta' },
+            { id: 'conexion_publico', name: '👥 Conexión Público' },
+            { id: 'eleccion_cancion', name: '🎶 Elección Canción' }
+        ];
+
+        const RATINGS = [
+            { id: 'malo', name: 'Malo', value: 20, class: 'btn-red' },
+            { id: 'mediocre', name: 'Mediocre', value: 40, class: 'btn-orange' },
+            { id: 'bueno', name: 'Bueno', value: 60, class: 'btn-yellow' },
+            { id: 'muy_bueno', name: 'Muy Bueno', value: 80, class: 'btn-green' },
+            { id: 'excelente', name: 'Excelente', value: 100, class: 'btn-primary' }
+        ];
+
+        // VARIABLES GLOBALES
+        let currentJuror = null;
+        let artists = [];
+        let votes = {}; // {artistId: {criteriaId: value}}
+
+        // === FUNCIONES PRINCIPALES ===
+
+        window.login = function() {
+            const name = document.getElementById('juror-name').value.trim().toLowerCase();
+            const password = document.getElementById('juror-password').value.trim();
+
+            console.log('🔐 Intentando login:', name);
+
+            if (!name || !password) {
+                alert('❌ Completa nombre y contraseña');
+                return;
+            }
+
+            if (VALID_JURORS[name] === password) {
+                currentJuror = name;
+                document.getElementById('juror-display').textContent = name.charAt(0).toUpperCase() + name.slice(1);
+                document.getElementById('auth-section').style.display = 'none';
+                document.getElementById('main-content').style.display = 'block';
+                loadArtists();
+                console.log('✅ Login exitoso');
+            } else {
+                alert('❌ Credenciales incorrectas');
+            }
+        };
+
+        window.logout = function() {
+            if (confirm('¿Cerrar sesión?')) {
+                currentJuror = null;
+                votes = {};
+                document.getElementById('auth-section').style.display = 'block';
+                document.getElementById('main-content').style.display = 'none';
+                document.getElementById('juror-name').value = '';
+                document.getElementById('juror-password').value = '';
+            }
+        };
+
+        async function loadArtists() {
+            document.getElementById('status').textContent = 'Cargando artistas desde Firebase...';
+            console.log('🎤 Cargando artistas...');
+
+            try {
+                const artistsSnapshot = await getDocs(query(collection(db, `events/${eventId}/artists`), orderBy('name')));
+                artists = artistsSnapshot.docs.map(doc => ({
+                    id: doc.id,
+                    ...doc.data()
+                }));
+
+                console.log(`✅ ${artists.length} artistas cargados:`, artists.map(a => a.name));
+                document.getElementById('status').textContent = `${artists.length} artistas cargados`;
+
+                if (artists.length === 0) {
+                    document.getElementById('artists-list').innerHTML = `
+                        <div class="card p-8 text-center">
+                            <div class="text-4xl mb-4">❌</div>
+                            <h3 class="text-xl font-bold mb-2">No hay artistas</h3>
+                            <p>Ve a "Gestión de Votaciones" para agregar artistas primero.</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                renderArtists();
+                updateStats();
+
+            } catch (error) {
+                console.error('❌ Error cargando artistas:', error);
+                document.getElementById('status').textContent = 'Error al cargar artistas';
+                document.getElementById('artists-list').innerHTML = `
+                    <div class="card p-8 text-center">
+                        <div class="text-4xl mb-4">⚠️</div>
+                        <h3 class="text-xl font-bold mb-2">Error de Conexión</h3>
+                        <p>No se pudieron cargar los artistas.</p>
+                        <p class="text-sm mt-2 opacity-75">${error.message}</p>
+                        <button onclick="loadArtists()" class="btn btn-primary mt-4">Reintentar</button>
+                    </div>
+                `;
+            }
+        }
+
+        function renderArtists() {
+            const html = artists.map(artist => {
+                const artistVotes = votes[artist.id] || {};
+                const isComplete = CRITERIA.every(c => artistVotes[c.id] !== undefined);
+                const average = isComplete ? 
+                    Object.values(artistVotes).reduce((sum, val) => sum + val, 0) / CRITERIA.length : 0;
+
+                return `
+                    <div class="card artist-card">
+                        <!-- HEADER DEL ARTISTA -->
+                        <div class="flex items-center mb-6 p-4 bg-black bg-opacity-30 rounded-lg">
+                            <img src="${artist.photoURL || 'https://placehold.co/80x80/4338ca/ffffff?text=' + artist.name.charAt(0)}" 
+                                 class="w-20 h-20 rounded-full object-cover border-4 border-white mr-4">
+                            <div class="flex-grow">
+                                <h3 class="text-2xl font-bold">${artist.name}</h3>
+                                <p class="opacity-75">🎵 Participante del certamen</p>
+                                ${isComplete ? `
+                                    <div class="mt-2 px-3 py-1 bg-green-600 rounded-full inline-block">
+                                        <span class="text-sm font-bold">✅ VOTADO - Promedio: ${average.toFixed(1)} pts</span>
+                                    </div>
+                                ` : `
+                                    <div class="mt-2 px-3 py-1 bg-yellow-600 rounded-full inline-block">
+                                        <span class="text-sm font-bold">⏳ PENDIENTE DE VOTAR</span>
+                                    </div>
+                                `}
+                            </div>
+                        </div>
+
+                        ${isComplete ? `
+                            <!-- VOTACIÓN COMPLETADA -->
+                            <div class="bg-green-800 bg-opacity-50 p-6 rounded-lg">
+                                <h4 class="text-xl font-bold mb-4 text-center">✅ Votación Completada</h4>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                    ${CRITERIA.map(criteria => `
+                                        <div class="bg-black bg-opacity-30 p-3 rounded text-center">
+                                            <div class="font-bold">${criteria.name}</div>
+                                            <div class="text-2xl font-bold text-green-300">${artistVotes[criteria.id]} pts</div>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                                <div class="text-center">
+                                    <div class="text-3xl font-bold text-green-300 mb-2">${average.toFixed(1)} puntos</div>
+                                    <button onclick="editVote('${artist.id}')" class="btn btn-primary">✏️ Editar Voto</button>
+                                </div>
+                            </div>
+                        ` : `
+                            <!-- FORMULARIO DE VOTACIÓN -->
+                            <div class="space-y-6">
+                                ${CRITERIA.map(criteria => `
+                                    <div class="criteria">
+                                        <h4 class="text-lg font-bold mb-3">${criteria.name}</h4>
+                                        <div class="rating-grid">
+                                            ${RATINGS.map(rating => `
+                                                <button class="btn ${rating.class} ${artistVotes[criteria.id] === rating.value ? 'btn-selected' : ''}"
+                                                        onclick="selectRating('${artist.id}', '${criteria.id}', ${rating.value})">
+                                                    ${rating.name}<br><small>(${rating.value} pts)</small>
+                                                </button>
+                                            `).join('')}
+                                        </div>
+                                    </div>
+                                `).join('')}
+                                
+                                <div class="text-center pt-4">
+                                    <button onclick="submitVote('${artist.id}')" 
+                                            class="btn btn-green text-xl px-8 py-4 ${isComplete ? '' : 'opacity-50 cursor-not-allowed'}"
+                                            ${isComplete ? '' : 'disabled'}>
+                                        🗳️ ENVIAR VOTACIÓN
+                                    </button>
+                                    <p class="text-sm mt-2 opacity-75">
+                                        ${isComplete ? '¡Listo para enviar!' : 'Completa todos los criterios para habilitar'}
+                                    </p>
+                                </div>
+                            </div>
+                        `}
+                    </div>
+                `;
+            }).join('');
+
+            document.getElementById('artists-list').innerHTML = html;
+        }
+
+        window.selectRating = function(artistId, criteriaId, value) {
+            console.log(`🔘 Selección: ${criteriaId} = ${value} para artista ${artistId}`);
+            
+            if (!votes[artistId]) votes[artistId] = {};
+            votes[artistId][criteriaId] = value;
+            
+            // Re-renderizar solo este artista para actualizar la UI
+            renderArtists();
+            updateStats();
+        };
+
+        window.editVote = function(artistId) {
+            if (confirm('¿Editar esta votación?')) {
+                delete votes[artistId];
+                renderArtists();
+                updateStats();
+            }
+        };
+
+        window.submitVote = async function(artistId) {
+            const artist = artists.find(a => a.id === artistId);
+            const artistVotes = votes[artistId];
+            
+            if (!artistVotes || Object.keys(artistVotes).length !== CRITERIA.length) {
+                alert('❌ Completa todos los criterios');
+                return;
+            }
+
+            const average = Object.values(artistVotes).reduce((sum, val) => sum + val, 0) / CRITERIA.length;
+
+            try {
+                console.log('💾 Guardando voto en Firebase...');
+                
+                const voteData = {
+                    artistId: artistId,
+                    artistName: artist.name,
+                    jurorName: currentJuror,
+                    scores: artistVotes,
+                    score: average, // Campo principal para compatibilidad
+                    average: average,
+                    timestamp: new Date().toISOString()
+                };
+
+                await setDoc(doc(db, `events/${eventId}/jury_votes`, `${currentJuror}_${artistId}`), voteData);
+                
+                console.log('✅ Voto guardado exitosamente');
+                alert(`✅ Voto enviado para ${artist.name}\nPromedio: ${average.toFixed(1)} puntos`);
+                
+                renderArtists();
+                updateStats();
+
+            } catch (error) {
+                console.error('❌ Error guardando voto:', error);
+                alert('❌ Error al guardar: ' + error.message);
+            }
+        };
+
+        function updateStats() {
+            const total = artists.length;
+            const voted = Object.keys(votes).filter(artistId => 
+                votes[artistId] && Object.keys(votes[artistId]).length === CRITERIA.length
+            ).length;
+            const pending = total - voted;
+
+            document.getElementById('total-artists').textContent = total;
+            document.getElementById('voted-count').textContent = voted;
+            document.getElementById('pending-count').textContent = pending;
+        }
+
+        // === INICIALIZACIÓN ===
+        console.log('🚀 Sistema iniciado');
+        document.getElementById('status').textContent = 'Sistema listo - Ingresa como jurado';
+    </script>
+</body>
+</html>
