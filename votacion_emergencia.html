@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VOTACIÓN EMERGENCIA - VYT Music</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-white min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <h1 class="text-4xl font-bold text-center mb-8">🚨 VOTACIÓN DE EMERGENCIA</h1>
+        
+        <div id="login-section" class="max-w-md mx-auto bg-gray-800 p-6 rounded-lg">
+            <h2 class="text-2xl mb-4">Acceso Directo</h2>
+            <input type="text" id="juror-name" placeholder="Tu nombre" 
+                   class="w-full p-3 mb-4 bg-gray-700 text-white rounded">
+            <button onclick="quickLogin()" class="w-full bg-green-600 hover:bg-green-700 p-3 rounded font-bold">
+                🚀 ENTRAR AHORA
+            </button>
+            <p class="text-sm text-gray-400 mt-4">✅ Sistema simplificado - cualquier nombre funciona</p>
+        </div>
+
+        <div id="voting-section" class="hidden">
+            <div class="text-center mb-6">
+                <h2 class="text-2xl">👋 Hola <span id="juror-name-display"></span></h2>
+                <button onclick="logout()" class="bg-red-600 hover:bg-red-700 px-4 py-2 rounded">Salir</button>
+            </div>
+            
+            <div id="artists-container" class="space-y-6"></div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { db } from './firebase_config.js';
+        import { collection, getDocs, setDoc, doc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const eventId = urlParams.get('eventId') || 'gmxINHvzSJ18Zt3SNeW7';
+        
+        let currentJuror = null;
+        let artists = [];
+
+        window.quickLogin = function() {
+            const name = document.getElementById('juror-name').value.trim();
+            if (!name) {
+                alert('Escribe tu nombre');
+                return;
+            }
+            
+            currentJuror = { name: name, id: Date.now() };
+            document.getElementById('juror-name-display').textContent = name;
+            document.getElementById('login-section').style.display = 'none';
+            document.getElementById('voting-section').classList.remove('hidden');
+            loadArtists();
+        };
+
+        window.logout = function() {
+            document.getElementById('login-section').style.display = 'block';
+            document.getElementById('voting-section').classList.add('hidden');
+            document.getElementById('juror-name').value = '';
+        };
+
+        async function loadArtists() {
+            try {
+                const snapshot = await getDocs(collection(db, `events/${eventId}/artists`));
+                artists = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                
+                if (artists.length === 0) {
+                    document.getElementById('artists-container').innerHTML = 
+                        '<p class="text-center text-gray-400">No hay artistas cargados</p>';
+                    return;
+                }
+
+                renderArtists();
+            } catch (error) {
+                console.error('Error:', error);
+                document.getElementById('artists-container').innerHTML = 
+                    '<p class="text-center text-red-400">Error cargando artistas</p>';
+            }
+        }
+
+        function renderArtists() {
+            const container = document.getElementById('artists-container');
+            container.innerHTML = '';
+
+            artists.forEach(artist => {
+                const artistDiv = document.createElement('div');
+                artistDiv.className = 'bg-gray-800 rounded-lg p-4';
+                artistDiv.innerHTML = `
+                    <div class="flex items-center space-x-4 mb-4">
+                        <img src="${artist.photoURL || 'https://via.placeholder.com/80'}" 
+                             alt="${artist.name}" class="w-20 h-20 rounded-full object-cover">
+                        <div>
+                            <h3 class="text-xl font-bold">${artist.name}</h3>
+                            <p class="text-gray-400">${artist.song || 'Sin canción'}</p>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-5 gap-2">
+                        ${[1,2,3,4,5].map(score => `
+                            <button onclick="vote('${artist.id}', ${score})" 
+                                    class="bg-blue-600 hover:bg-blue-700 text-white py-2 rounded font-bold">
+                                ${score}
+                            </button>
+                        `).join('')}
+                    </div>
+                `;
+                container.appendChild(artistDiv);
+            });
+        }
+
+        window.vote = async function(artistId, score) {
+            try {
+                const voteId = `${currentJuror.id}_${artistId}`;
+                await setDoc(doc(db, `events/${eventId}/jury_votes`, voteId), {
+                    jurorName: currentJuror.name,
+                    jurorId: currentJuror.id,
+                    artistId: artistId,
+                    score: score,
+                    timestamp: new Date()
+                });
+                
+                alert(`✅ Voto enviado: ${score} puntos`);
+            } catch (error) {
+                alert('❌ Error: ' + error.message);
+            }
+        };
+    </script>
+</body>
+</html>
