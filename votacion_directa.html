@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Votación Directa - VYT Music</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-white min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <div class="text-center mb-8">
+            <h1 class="text-4xl font-bold mb-4">🎭 VOTACIÓN DE JURADOS</h1>
+            <p id="juror-name" class="text-xl text-green-400">Cargando...</p>
+        </div>
+
+        <div id="artists-container" class="space-y-6"></div>
+        
+        <div class="text-center mt-8">
+            <button onclick="submitVotes()" class="bg-green-600 hover:bg-green-700 px-8 py-4 rounded-lg font-bold text-xl">
+                📊 ENVIAR VOTOS
+            </button>
+        </div>
+    </div>
+
+    <script type="module">
+        import { db } from './firebase_config.js';
+        import { collection, getDocs, setDoc, doc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // OBTENER JURADO DE LA URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const jurorName = urlParams.get('juror') || 'Jurado';
+        const eventId = 'gmxINHvzSJ18Zt3SNeW7';
+        
+        document.getElementById('juror-name').textContent = `Hola ${jurorName}`;
+        
+        let votes = {};
+        let artists = [];
+
+        // CRITERIOS DE VOTACIÓN
+        const RATINGS = [
+            { id: 'malo', name: 'Malo', value: 20, color: 'bg-red-500' },
+            { id: 'mediano', name: 'Mediano', value: 40, color: 'bg-orange-500' },
+            { id: 'bueno', name: 'Bueno', value: 60, color: 'bg-yellow-500' },
+            { id: 'muy_bueno', name: 'Muy Bueno', value: 80, color: 'bg-green-500' },
+            { id: 'excelente', name: 'Excelente', value: 100, color: 'bg-blue-500' }
+        ];
+
+        const CRITERIA = [
+            { id: 'afinacion', name: '🎵 Afinación' },
+            { id: 'puesta_escena', name: '🎭 Puesta en Escena' },
+            { id: 'vestimenta', name: '👔 Vestimenta' },
+            { id: 'conexion_publico', name: '👥 Conexión Público' },
+            { id: 'eleccion_cancion', name: '🎶 Elección Canción' }
+        ];
+
+        // CARGAR ARTISTAS
+        async function loadArtists() {
+            try {
+                const snapshot = await getDocs(collection(db, `events/${eventId}/artists`));
+                artists = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                
+                if (artists.length === 0) {
+                    document.getElementById('artists-container').innerHTML = 
+                        '<p class="text-center text-red-400 text-xl">❌ No hay artistas cargados</p>';
+                    return;
+                }
+
+                renderArtists();
+            } catch (error) {
+                document.getElementById('artists-container').innerHTML = 
+                    '<p class="text-center text-red-400 text-xl">❌ Error: ' + error.message + '</p>';
+            }
+        }
+
+        function renderArtists() {
+            const container = document.getElementById('artists-container');
+            container.innerHTML = '';
+
+            artists.forEach(artist => {
+                const artistDiv = document.createElement('div');
+                artistDiv.className = 'bg-gray-800 rounded-lg p-6';
+                artistDiv.innerHTML = `
+                    <div class="flex items-center space-x-4 mb-6">
+                        <img src="${artist.photoURL || 'https://via.placeholder.com/80'}" 
+                             alt="${artist.name}" class="w-20 h-20 rounded-full object-cover">
+                        <div>
+                            <h3 class="text-2xl font-bold">${artist.name}</h3>
+                            <p class="text-gray-400">${artist.song || 'Sin canción'}</p>
+                        </div>
+                    </div>
+                    
+                    <div class="space-y-4">
+                        ${CRITERIA.map(criterion => `
+                            <div>
+                                <h4 class="font-bold mb-2">${criterion.name}</h4>
+                                <div class="grid grid-cols-5 gap-2">
+                                    ${RATINGS.map(rating => `
+                                        <button onclick="vote('${artist.id}', '${criterion.id}', ${rating.value})" 
+                                                class="${rating.color} hover:opacity-80 text-white py-2 px-3 rounded text-sm font-bold"
+                                                id="btn-${artist.id}-${criterion.id}-${rating.value}">
+                                            ${rating.name}
+                                        </button>
+                                    `).join('')}
+                                </div>
+                                <p class="text-center mt-2 text-sm text-gray-400" id="score-${artist.id}-${criterion.id}">
+                                    Sin calificar
+                                </p>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+                container.appendChild(artistDiv);
+            });
+        }
+
+        window.vote = function(artistId, criterionId, score) {
+            if (!votes[artistId]) votes[artistId] = {};
+            votes[artistId][criterionId] = score;
+            
+            // Actualizar display
+            document.getElementById(`score-${artistId}-${criterionId}`).textContent = `${score} puntos`;
+            
+            // Limpiar botones anteriores
+            RATINGS.forEach(rating => {
+                const btn = document.getElementById(`btn-${artistId}-${criterionId}-${rating.value}`);
+                if (btn) {
+                    btn.classList.remove('ring-4', 'ring-white');
+                }
+            });
+            
+            // Marcar botón seleccionado
+            const selectedBtn = document.getElementById(`btn-${artistId}-${criterionId}-${score}`);
+            if (selectedBtn) {
+                selectedBtn.classList.add('ring-4', 'ring-white');
+            }
+        };
+
+        window.submitVotes = async function() {
+            try {
+                const votePromises = Object.entries(votes).map(([artistId, artistVotes]) => {
+                    const average = Object.values(artistVotes).reduce((a, b) => a + b, 0) / Object.values(artistVotes).length;
+                    
+                    return setDoc(doc(db, `events/${eventId}/jury_votes`, `${jurorName}_${artistId}`), {
+                        jurorName: jurorName,
+                        artistId: artistId,
+                        scores: artistVotes,
+                        average: average,
+                        timestamp: new Date()
+                    });
+                });
+
+                await Promise.all(votePromises);
+                alert('🎉 ¡Votos enviados exitosamente!\n\nGracias por participar.');
+            } catch (error) {
+                alert('❌ Error al enviar votos: ' + error.message);
+            }
+        };
+
+        // Iniciar
+        loadArtists();
+    </script>
+</body>
+</html>
