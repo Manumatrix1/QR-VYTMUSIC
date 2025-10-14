@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mi Reporte de Participación - VYTMUSIC</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        body { 
+            font-family: 'Inter', sans-serif; 
+            background: linear-gradient(135deg, #1e3a8a, #1e40af); 
+            color: #f9fafb; 
+            min-height: 100vh;
+        }
+        .glass-effect { 
+            background: rgba(255, 255, 255, 0.1); 
+            backdrop-filter: blur(10px); 
+            border: 1px solid rgba(255, 255, 255, 0.2); 
+        }
+        .progress-bar {
+            background: linear-gradient(90deg, #f59e0b, #10b981, #3b82f6);
+        }
+    </style>
+</head>
+<body class="antialiased">
+    <div class="container mx-auto max-w-4xl p-4 sm:p-6">
+        
+        <!-- HEADER -->
+        <header class="text-center mb-8">
+            <h1 class="text-4xl font-bold text-sky-400 mb-2">🎤 Mi Reporte de Participación</h1>
+            <p id="event-name-display" class="text-2xl text-gray-300 mb-2"></p>
+            <p id="artist-name-display" class="text-xl text-sky-200 mb-4"></p>
+            <div class="glass-effect p-4 rounded-lg max-w-2xl mx-auto">
+                <p class="text-sm text-gray-300">
+                    📊 Este reporte muestra tu desempeño según la evaluación del jurado y la opinión del público
+                </p>
+            </div>
+        </header>
+
+        <!-- LOADING -->
+        <div id="loading-container" class="text-center py-12">
+            <div class="text-6xl mb-4">⏳</div>
+            <h2 class="text-2xl font-bold mb-4">Cargando tu reporte...</h2>
+            <p class="text-gray-400">Obteniendo datos de tu participación</p>
+        </div>
+
+        <!-- ERROR -->
+        <div id="error-container" class="hidden text-center py-12">
+            <div class="text-6xl mb-4">❌</div>
+            <h2 class="text-2xl font-bold mb-4 text-red-400">Error al Cargar</h2>
+            <p id="error-message" class="text-red-300 mb-4"></p>
+            <button onclick="location.reload()" class="px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700">
+                🔄 Intentar de Nuevo
+            </button>
+        </div>
+
+        <!-- CONTENT -->
+        <div id="main-content" class="hidden space-y-8">
+            
+            <!-- EVALUACIÓN DEL JURADO -->
+            <section id="jury-section" class="glass-effect p-6 rounded-lg">
+                <h2 class="text-2xl font-bold mb-6 text-center text-yellow-400">
+                    <i class="fas fa-gavel mr-2"></i>
+                    Evaluación del Jurado
+                </h2>
+                <div id="jury-content">
+                    <!-- Se llenará dinámicamente -->
+                </div>
+            </section>
+
+            <!-- VOTO SECRETO -->
+            <section id="secret-vote-section" class="glass-effect p-6 rounded-lg hidden">
+                <h2 class="text-2xl font-bold mb-6 text-center text-purple-400">
+                    <i class="fas fa-eye-slash mr-2"></i>
+                    Voto Secreto
+                </h2>
+                <div class="text-center">
+                    <div class="text-6xl mb-4">🔒</div>
+                    <h3 class="text-xl font-bold text-purple-300 mb-3">VOTO SECRETO</h3>
+                    <p class="text-purple-200 mb-2">Los votos secretos están ocultos hasta la final del certamen</p>
+                    <div class="glass-effect p-4 rounded-lg mt-4 bg-purple-900 bg-opacity-30">
+                        <p class="text-sm text-purple-200">
+                            <i class="fas fa-info-circle mr-2"></i>
+                            Este voto se promediará con los demás al final del certamen para determinar los resultados oficiales
+                        </p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- OPINIÓN DEL PÚBLICO -->
+            <section class="glass-effect p-6 rounded-lg">
+                <h2 class="text-2xl font-bold mb-6 text-center text-blue-400">
+                    <i class="fas fa-users mr-2"></i>
+                    Lo que Vio el Público - Análisis Detallado
+                </h2>
+                <div id="public-content">
+                    <!-- Se llenará dinámicamente -->
+                </div>
+            </section>
+
+            <!-- PARTICIPACIÓN DEL PÚBLICO -->
+            <section class="glass-effect p-6 rounded-lg">
+                <h2 class="text-2xl font-bold mb-6 text-center text-green-400">
+                    <i class="fas fa-chart-pie mr-2"></i>
+                    Participación del Público en esta Gala
+                </h2>
+                <div id="participation-content">
+                    <!-- Se llenará dinámicamente -->
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <script type="module">
+        import { db } from './firebase_config.js';
+        import { collection, getDocs, doc, getDoc, query, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Obtener parámetros de la URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const eventId = urlParams.get('eventId');
+        const artistId = urlParams.get('artistId');
+        const eventName = urlParams.get('eventName');
+
+        let artistData = null;
+        let eventData = null;
+
+        // Inicializar
+        if (!eventId || !artistId) {
+            showError('Faltan parámetros necesarios en la URL');
+        } else {
+            loadArtistReport();
+        }
+
+        async function loadArtistReport() {
+            try {
+                console.log('🎯 Cargando reporte para:', { eventId, artistId, eventName });
+
+                // Cargar datos del evento
+                const eventDoc = await getDoc(doc(db, 'events', eventId));
+                if (!eventDoc.exists()) {
+                    throw new Error('Evento no encontrado');
+                }
+                eventData = { id: eventDoc.id, ...eventDoc.data() };
+
+                // Cargar datos del artista
+                const artistDoc = await getDoc(doc(db, `events/${eventId}/artists`, artistId));
+                if (!artistDoc.exists()) {
+                    throw new Error('Artista no encontrado');
+                }
+                artistData = { id: artistDoc.id, ...artistDoc.data() };
+
+                // Actualizar encabezados
+                document.getElementById('event-name-display').textContent = eventName || eventData.name || 'Evento';
+                document.getElementById('artist-name-display').textContent = artistData.name || 'Artista';
+
+                // Cargar evaluaciones del jurado
+                await loadJuryEvaluations();
+
+                // Cargar datos del público
+                await loadPublicData();
+
+                // Cargar estadísticas de participación
+                await loadParticipationStats();
+
+                // Mostrar contenido
+                document.getElementById('loading-container').style.display = 'none';
+                document.getElementById('main-content').classList.remove('hidden');
+
+            } catch (error) {
+                console.error('❌ Error cargando reporte:', error);
+                showError(error.message);
+            }
+        }
+
+        async function loadJuryEvaluations() {
+            const juryContainer = document.getElementById('jury-content');
+            
+            try {
+                // Buscar evaluaciones del jurado para este artista
+                const juryQuery = query(
+                    collection(db, 'jury_evaluations'),
+                    where('eventId', '==', eventId),
+                    where('artistId', '==', artistId)
+                );
+                
+                const jurySnapshot = await getDocs(juryQuery);
+                const evaluations = [];
+                
+                jurySnapshot.forEach(doc => {
+                    evaluations.push({ id: doc.id, ...doc.data() });
+                });
+
+                if (evaluations.length === 0) {
+                    juryContainer.innerHTML = `
+                        <div class="text-center text-yellow-200">
+                            <div class="text-4xl mb-3">⏳</div>
+                            <h3 class="text-lg font-bold mb-2">Sin Evaluación del Jurado</h3>
+                            <p>El jurado aún no ha evaluado tu participación en esta gala.</p>
+                            <div class="mt-4 text-sm text-yellow-300">
+                                <i class="fas fa-info-circle mr-1"></i>
+                                Las evaluaciones del jurado determinan los resultados oficiales
+                            </div>
+                        </div>
+                    `;
+                    return;
+                }
+
+                // Mostrar evaluaciones
+                const totalScore = evaluations.reduce((sum, evaluation) => sum + (evaluation.score || 0), 0);
+                const avgScore = totalScore / evaluations.length;
+
+                juryContainer.innerHTML = `
+                    <div class="space-y-6">
+                        <div class="text-center">
+                            <div class="text-5xl font-bold text-yellow-400 mb-2">${avgScore.toFixed(1)}/10</div>
+                            <h3 class="text-xl font-bold text-yellow-300 mb-2">Puntuación del Jurado</h3>
+                            <p class="text-yellow-200">Promedio de ${evaluations.length} evaluador(es)</p>
+                        </div>
+
+                        <div class="space-y-4">
+                            <h4 class="text-lg font-bold text-yellow-300 text-center">Evaluaciones Individuales:</h4>
+                            ${evaluations.map(evaluation => `
+                                <div class="bg-yellow-900 bg-opacity-30 p-4 rounded-lg border border-yellow-600">
+                                    <div class="flex justify-between items-center mb-2">
+                                        <span class="font-bold text-yellow-200">
+                                            <i class="fas fa-user-tie mr-2"></i>
+                                            ${evaluation.jurorName || 'Jurado'}
+                                        </span>
+                                        <span class="text-2xl font-bold text-yellow-400">${evaluation.score || 0}/10</span>
+                                    </div>
+                                    ${evaluation.comment ? `
+                                        <div class="mt-3 p-3 bg-yellow-800 bg-opacity-30 rounded border-l-4 border-yellow-500">
+                                            <div class="text-sm text-yellow-100">
+                                                <i class="fas fa-quote-left mr-1"></i>
+                                                <em>${evaluation.comment}</em>
+                                            </div>
+                                        </div>
+                                    ` : ''}
+                                </div>
+                            `).join('')}
+                        </div>
+
+                        <div class="bg-yellow-900 bg-opacity-20 p-4 rounded-lg text-center">
+                            <p class="text-sm text-yellow-200">
+                                <i class="fas fa-trophy mr-2"></i>
+                                <strong>Esta puntuación del jurado determina tu posición oficial en el certamen</strong>
+                            </p>
+                        </div>
+                    </div>
+                `;
+
+            } catch (error) {
+                console.error('Error cargando evaluaciones del jurado:', error);
+                juryContainer.innerHTML = `
+                    <div class="text-center text-red-300">
+                        <div class="text-4xl mb-3">❌</div>
+                        <p>Error al cargar las evaluaciones del jurado</p>
+                    </div>
+                `;
+            }
+        }
+
+        async function loadPublicData() {
+            const publicContainer = document.getElementById('public-content');
+            
+            const votes = artistData.totalRatingsCount || 0;
+            
+            if (votes === 0) {
+                publicContainer.innerHTML = `
+                    <div class="text-center text-blue-200">
+                        <div class="text-4xl mb-3">📊</div>
+                        <h3 class="text-lg font-bold mb-2">Sin Votos del Público</h3>
+                        <p>No se registraron votos públicos para tu participación en esta gala.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            // Calcular promedios por categoría
+            const categories = [
+                { key: 'Singing', name: 'Canto', icon: '🎤', total: artistData.totalSingingScore || 0 },
+                { key: 'Transmission', name: 'Transmisión', icon: '📡', total: artistData.totalTransmissionScore || 0 },
+                { key: 'Attitude', name: 'Actitud', icon: '😊', total: artistData.totalAttitudeScore || 0 },
+                { key: 'Originality', name: 'Originalidad', icon: '💡', total: artistData.totalOriginalityScore || 0 },
+                { key: 'Costume', name: 'Vestuario', icon: '👗', total: artistData.totalCostumeScore || 0 },
+                { key: 'Staging', name: 'Puesta en Escena', icon: '🎭', total: artistData.totalStagingScore || 0 }
+            ];
+
+            const bestCategory = categories.reduce((prev, current) => 
+                (current.total / votes) > (prev.total / votes) ? current : prev
+            );
+
+            publicContainer.innerHTML = `
+                <div class="space-y-6">
+                    <div class="text-center">
+                        <div class="text-5xl font-bold text-blue-400 mb-2">${votes}</div>
+                        <h3 class="text-xl font-bold text-blue-300 mb-2">Personas Votaron</h3>
+                        <p class="text-blue-200">Promedio general: ${votes > 0 ? (artistData.totalScore / votes).toFixed(1) : '0'}/10</p>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div class="space-y-4">
+                            <h4 class="text-lg font-bold text-blue-300 text-center">📊 Promedios por Categoría</h4>
+                            ${categories.map(cat => {
+                                const avg = votes > 0 ? (cat.total / votes) : 0;
+                                const percentage = (avg / 10) * 100;
+                                return `
+                                    <div>
+                                        <div class="flex justify-between items-center mb-1">
+                                            <span class="text-sm font-medium text-blue-200">${cat.icon} ${cat.name}</span>
+                                            <span class="text-sm font-bold text-blue-400">${avg.toFixed(1)}/10</span>
+                                        </div>
+                                        <div class="w-full bg-blue-900 bg-opacity-30 rounded-full h-3">
+                                            <div class="progress-bar h-3 rounded-full" style="width: ${percentage}%"></div>
+                                        </div>
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
+
+                        <div class="space-y-4">
+                            <h4 class="text-lg font-bold text-blue-300 text-center">✨ Análisis del Público</h4>
+                            <div class="bg-green-900 bg-opacity-30 p-4 rounded-lg border border-green-600">
+                                <h5 class="font-bold text-green-400 mb-2">🌟 Tu Mayor Fortaleza</h5>
+                                <p class="text-blue-200">${bestCategory.icon} <strong>${bestCategory.name}</strong></p>
+                                <p class="text-green-300 text-lg font-bold">${(bestCategory.total / votes).toFixed(1)}/10</p>
+                                <p class="text-xs text-green-200 mt-1">¡Esta fue tu categoría mejor valorada por el público!</p>
+                            </div>
+                            
+                            <div class="bg-blue-900 bg-opacity-30 p-4 rounded-lg border border-blue-600">
+                                <h5 class="font-bold text-blue-400 mb-2">📈 Resumen</h5>
+                                <ul class="text-sm text-blue-200 space-y-1">
+                                    <li>• Total de votos: ${votes}</li>
+                                    <li>• Puntaje total: ${artistData.totalScore || 0} pts</li>
+                                    <li>• Promedio: ${votes > 0 ? (artistData.totalScore / votes).toFixed(1) : '0'}/10</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-blue-900 bg-opacity-20 p-4 rounded-lg text-center">
+                        <p class="text-sm text-blue-200">
+                            <i class="fas fa-heart mr-2"></i>
+                            <strong>La opinión del público refleja tu conexión con la audiencia</strong>
+                        </p>
+                    </div>
+                </div>
+            `;
+        }
+
+        async function loadParticipationStats() {
+            const participationContainer = document.getElementById('participation-content');
+            
+            try {
+                // Cargar todos los artistas del evento para calcular estadísticas
+                const artistsSnapshot = await getDocs(collection(db, `events/${eventId}/artists`));
+                const allArtists = [];
+                let totalPublicVotes = 0;
+                
+                artistsSnapshot.forEach(doc => {
+                    const artist = { id: doc.id, ...doc.data() };
+                    allArtists.push(artist);
+                    totalPublicVotes += (artist.totalRatingsCount || 0);
+                });
+
+                const avgVotesPerArtist = totalPublicVotes / allArtists.length;
+                const myVotes = artistData.totalRatingsCount || 0;
+                const myPercentage = totalPublicVotes > 0 ? ((myVotes / totalPublicVotes) * 100) : 0;
+
+                participationContainer.innerHTML = `
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div class="text-center bg-green-900 bg-opacity-30 p-4 rounded-lg border border-green-600">
+                            <div class="text-3xl font-bold text-green-400 mb-2">${totalPublicVotes}</div>
+                            <h4 class="text-sm font-bold text-green-300">Total Votos en la Gala</h4>
+                            <p class="text-xs text-green-200">Entre todos los artistas</p>
+                        </div>
+                        
+                        <div class="text-center bg-blue-900 bg-opacity-30 p-4 rounded-lg border border-blue-600">
+                            <div class="text-3xl font-bold text-blue-400 mb-2">${myPercentage.toFixed(1)}%</div>
+                            <h4 class="text-sm font-bold text-blue-300">Tu Participación</h4>
+                            <p class="text-xs text-blue-200">${myVotes} de ${totalPublicVotes} votos</p>
+                        </div>
+                        
+                        <div class="text-center bg-purple-900 bg-opacity-30 p-4 rounded-lg border border-purple-600">
+                            <div class="text-3xl font-bold text-purple-400 mb-2">${avgVotesPerArtist.toFixed(0)}</div>
+                            <h4 class="text-sm font-bold text-purple-300">Promedio por Artista</h4>
+                            <p class="text-xs text-purple-200">En esta gala</p>
+                        </div>
+                    </div>
+
+                    <div class="mt-6 text-center">
+                        <div class="bg-gray-800 bg-opacity-50 p-4 rounded-lg">
+                            <p class="text-sm text-gray-300">
+                                <i class="fas fa-info-circle mr-2"></i>
+                                Participaste en <strong>${myPercentage.toFixed(1)}%</strong> de los votos públicos de esta gala
+                                ${myVotes > avgVotesPerArtist ? 
+                                    ' - <span class="text-green-400 font-bold">¡Por encima del promedio!</span>' : 
+                                    ' - <span class="text-yellow-400">Dentro del promedio</span>'
+                                }
+                            </p>
+                        </div>
+                    </div>
+                `;
+
+            } catch (error) {
+                console.error('Error cargando estadísticas de participación:', error);
+                participationContainer.innerHTML = `
+                    <div class="text-center text-red-300">
+                        <p>Error al cargar estadísticas de participación</p>
+                    </div>
+                `;
+            }
+        }
+
+        function showError(message) {
+            document.getElementById('loading-container').style.display = 'none';
+            document.getElementById('error-message').textContent = message;
+            document.getElementById('error-container').classList.remove('hidden');
+        }
+    </script>
+</body>
+</html>
