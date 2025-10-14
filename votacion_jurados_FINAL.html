@@ -310,10 +310,13 @@
                                 </div>
                                 <div class="text-center space-y-3">
                                     <div class="text-3xl font-bold text-green-300 mb-2">${average.toFixed(1)} puntos</div>
-                                    <div class="space-x-3">
+                                    <div class="space-x-2 space-y-2">
                                         <button onclick="editVote('${artist.id}')" class="btn btn-primary">✏️ Editar Voto</button>
                                         <button onclick="clearVote('${artist.id}')" class="btn btn-red">🗑️ Borrar Voto</button>
+                                        <br>
+                                        <button onclick="forceSubmitVote('${artist.id}')" class="btn btn-green">� GUARDAR VOTO</button>
                                     </div>
+                                    <p class="text-xs text-yellow-300">💡 Si no aparece en reportes, usa "GUARDAR VOTO"</p>
                                 </div>
                             </div>
                         ` : `
@@ -501,6 +504,61 @@
                 preserveFilter(); // Mantener el filtro
                 updateStats();
                 console.log(`🗑️ Votos borrados para artista: ${artistId}`);
+            }
+        };
+
+        // Función para forzar guardado cuando hay problemas de red
+        window.forceSubmitVote = async function(artistId) {
+            console.log('🚀 FORZANDO GUARDADO para:', artistId);
+            
+            const artist = artists.find(a => a.id === artistId);
+            const artistVotes = votes[artistId];
+            
+            if (!currentJuror || !currentJuror.id) {
+                alert('❌ Error: No hay jurado autenticado');
+                return;
+            }
+            
+            if (!artistVotes || Object.keys(artistVotes).length === 0) {
+                alert('❌ No hay votos para guardar');
+                return;
+            }
+
+            const average = Object.values(artistVotes).reduce((sum, val) => sum + val, 0) / Object.keys(artistVotes).length;
+
+            const voteData = {
+                eventId: eventId,
+                artistId: artistId,
+                artistName: artist.name,
+                jurorName: currentJuror.name,
+                jurorId: currentJuror.id,
+                scores: artistVotes,
+                score: average,
+                timestamp: new Date().toISOString(),
+                forceSubmitted: true // Marcar como forzado
+            };
+
+            // Intentar múltiples métodos de guardado
+            let success = false;
+            const attempts = [
+                () => setDoc(doc(db, 'jury_evaluations', `${currentJuror.id}_${artistId}`), voteData),
+                () => setDoc(doc(db, 'jury_evaluations', `${currentJuror.id}_${artistId}_${Date.now()}`), voteData),
+                () => setDoc(doc(db, `events/${eventId}/jury_votes`, `${currentJuror.id}_${artistId}`), voteData)
+            ];
+
+            for (let i = 0; i < attempts.length && !success; i++) {
+                try {
+                    console.log(`🔄 Intento ${i + 1} de guardado...`);
+                    await attempts[i]();
+                    success = true;
+                    console.log(`✅ Guardado exitoso en intento ${i + 1}`);
+                    alert(`✅ ¡VOTO FORZADO GUARDADO!\n${artist.name}: ${average.toFixed(1)} puntos\n\n🎯 Ahora debería aparecer en los reportes`);
+                } catch (error) {
+                    console.error(`❌ Intento ${i + 1} falló:`, error);
+                    if (i === attempts.length - 1) {
+                        alert(`❌ Error: No se pudo guardar después de ${attempts.length} intentos\n\n${error.message}`);
+                    }
+                }
             }
         };
 
