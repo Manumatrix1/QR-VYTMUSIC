@@ -358,13 +358,45 @@
                 }));
 
                 // Cargar votos de jurados desde jury_evaluations
+                console.log('🔍 Buscando evaluaciones de jurado para eventId:', eventId);
+                
+                // Primera consulta: con eventId
                 const juryEvaluationsQuery = query(
                     collection(db, 'jury_evaluations'),
                     where('eventId', '==', eventId)
                 );
                 const juryEvaluationsSnapshot = await getDocs(juryEvaluationsQuery);
                 
+                console.log('📊 Evaluaciones encontradas con eventId:', juryEvaluationsSnapshot.docs.length);
+                
+                // Segunda consulta: TODAS las evaluaciones (para casos sin eventId)
+                const allEvaluationsSnapshot = await getDocs(collection(db, 'jury_evaluations'));
+                console.log('📊 Total evaluaciones en la base:', allEvaluationsSnapshot.docs.length);
+                
+                // Combinar ambas consultas y filtrar duplicados
+                const allEvaluations = new Map();
+                
+                // Agregar las que tienen eventId correcto
                 juryEvaluationsSnapshot.docs.forEach(evalDoc => {
+                    allEvaluations.set(evalDoc.id, evalDoc);
+                });
+                
+                // Agregar las que no tienen eventId pero coinciden con artistas de este evento
+                allEvaluationsSnapshot.docs.forEach(evalDoc => {
+                    const evalData = evalDoc.data();
+                    const artistId = evalData.artistId;
+                    
+                    // Verificar si el artistId existe en este evento
+                    const artistExists = galaData.artists.some(artist => artist.id === artistId);
+                    if (artistExists && !allEvaluations.has(evalDoc.id)) {
+                        console.log('🎯 Encontrada evaluación sin eventId para artista:', evalData.artistName);
+                        allEvaluations.set(evalDoc.id, evalDoc);
+                    }
+                });
+                
+                console.log('📊 Total evaluaciones válidas:', allEvaluations.size);
+                
+                allEvaluations.forEach(evalDoc => {
                     const evalData = evalDoc.data();
                     const artistId = evalData.artistId;
                     const jurorName = evalData.jurorName || evalData.jurorId || 'Jurado Anónimo';
