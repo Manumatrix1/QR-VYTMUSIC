@@ -74,6 +74,25 @@
             <!-- ARTISTAS -->
             <div id="artists-container">
                 <h2 class="text-3xl font-bold mb-6 text-center">🎭 ARTISTAS PARTICIPANTES</h2>
+                
+                <!-- FILTRO DE BÚSQUEDA -->
+                <div class="card p-4 mb-6 max-w-lg mx-auto">
+                    <div class="flex items-center space-x-3">
+                        <div class="text-2xl">🔍</div>
+                        <div class="flex-1">
+                            <input 
+                                type="text" 
+                                id="artist-search" 
+                                placeholder="Buscar artista por nombre..." 
+                                class="w-full p-3 rounded bg-white text-black border-2 border-gray-300 focus:border-blue-500"
+                                oninput="filterArtists()"
+                            >
+                        </div>
+                        <button onclick="clearSearch()" class="btn btn-orange">Limpiar</button>
+                    </div>
+                    <p class="text-sm mt-2 opacity-75 text-center">💡 Escribe el nombre para encontrar rápidamente al artista</p>
+                </div>
+                
                 <div id="artists-list">
                     <div class="text-center">
                         <div class="text-2xl">⏳</div>
@@ -311,15 +330,26 @@
                                     </div>
                                 `).join('')}
                                 
-                                <div class="text-center pt-4">
+                                <div class="text-center pt-4 space-y-3">
+                                    <!-- Botón para votación completa -->
                                     <button onclick="submitVote('${artist.id}')" 
                                             class="btn btn-green text-xl px-8 py-4 ${isComplete ? '' : 'opacity-50 cursor-not-allowed'}"
                                             ${isComplete ? '' : 'disabled'}>
-                                        🗳️ ENVIAR VOTACIÓN
+                                        🗳️ ENVIAR VOTACIÓN COMPLETA
                                     </button>
-                                    <p class="text-sm mt-2 opacity-75">
-                                        ${isComplete ? '¡Listo para enviar!' : 'Completa todos los criterios para habilitar'}
-                                    </p>
+                                    
+                                    <!-- Botón para guardado parcial -->
+                                    <button onclick="savePartialVote('${artist.id}')" 
+                                            class="btn btn-primary px-6 py-3 ${Object.keys(artistVotes).length > 0 ? '' : 'opacity-50 cursor-not-allowed'}"
+                                            ${Object.keys(artistVotes).length > 0 ? '' : 'disabled'}>
+                                        💾 GUARDAR PARCIAL
+                                    </button>
+                                    
+                                    <div class="text-sm space-y-1 opacity-75">
+                                        <p class="font-bold">${isComplete ? '✅ ¡Listo para enviar!' : '⏳ Votación en progreso'}</p>
+                                        <p>Criterios completados: ${Object.keys(artistVotes).length}/${CRITERIA.length}</p>
+                                        <p class="text-xs">💡 Puedes guardar parcialmente y continuar después</p>
+                                    </div>
                                 </div>
                             </div>
                         `}
@@ -374,7 +404,12 @@
                     timestamp: new Date().toISOString()
                 };
 
-                await setDoc(doc(db, `events/${eventId}/jury_votes`, `${currentJuror.id}_${artistId}`), voteData);
+                // Guardar en jury_evaluations para consistencia con el resto del sistema
+                await setDoc(doc(db, 'jury_evaluations', `${currentJuror.id}_${artistId}`), {
+                    ...voteData,
+                    score: average, // Puntuación principal para compatibilidad
+                    comment: `Evaluación completa - Promedio: ${average.toFixed(1)} puntos`
+                });
                 
                 console.log('✅ Voto guardado exitosamente');
                 alert(`✅ Voto enviado para ${artist.name}\nPromedio: ${average.toFixed(1)} puntos`);
@@ -399,6 +434,77 @@
             document.getElementById('voted-count').textContent = voted;
             document.getElementById('pending-count').textContent = pending;
         }
+
+        // === NUEVAS FUNCIONES PARA MEJORAS ===
+
+        // Función para filtrar artistas por nombre
+        function filterArtists() {
+            const searchTerm = document.getElementById('artist-search').value.toLowerCase();
+            const artistCards = document.querySelectorAll('.artist-card');
+            
+            artistCards.forEach(card => {
+                const artistName = card.querySelector('h3').textContent.toLowerCase();
+                if (artistName.includes(searchTerm)) {
+                    card.style.display = 'block';
+                    card.style.order = '0'; // Los que coinciden aparecen primero
+                } else {
+                    card.style.display = searchTerm === '' ? 'block' : 'none';
+                    card.style.order = '1'; // Los que no coinciden van al final
+                }
+            });
+        }
+
+        // Función para limpiar búsqueda
+        function clearSearch() {
+            document.getElementById('artist-search').value = '';
+            filterArtists();
+        }
+
+        // Función para guardar votación parcial
+        window.savePartialVote = async function(artistId) {
+            if (!currentJuror.id) {
+                alert('❌ Error: No hay jurado autenticado');
+                return;
+            }
+
+            const artist = artists.find(a => a.id === artistId);
+            const artistVotes = votes[artistId] || {};
+            
+            if (Object.keys(artistVotes).length === 0) {
+                alert('❌ No hay puntuaciones para guardar');
+                return;
+            }
+
+            try {
+                // Usar la misma estructura que submitVote pero permitir parcial
+                const voteData = {
+                    eventId: eventId,
+                    artistId: artistId,
+                    artistName: artist.name,
+                    jurorName: currentJuror.name,
+                    jurorId: currentJuror.id,
+                    scores: artistVotes,
+                    isPartial: true, // Marcar como parcial
+                    completedCriteria: Object.keys(artistVotes).length,
+                    totalCriteria: CRITERIA.length,
+                    timestamp: new Date().toISOString()
+                };
+
+                // Usar colección jury_evaluations en lugar de jury_votes
+                await setDoc(doc(db, 'jury_evaluations', `${currentJuror.id}_${artistId}_partial`), voteData);
+                
+                console.log('💾 Votación parcial guardada exitosamente');
+                alert(`💾 Votación parcial guardada para ${artist.name}\nCriterios completados: ${Object.keys(artistVotes).length}/${CRITERIA.length}\n\n✨ Puedes continuar después desde donde lo dejaste`);
+                
+            } catch (error) {
+                console.error('❌ Error guardando votación parcial:', error);
+                alert('❌ Error al guardar votación parcial: ' + error.message);
+            }
+        };
+
+        // Hacer función global
+        window.filterArtists = filterArtists;
+        window.clearSearch = clearSearch;
 
         // === INICIALIZACIÓN ===
         console.log('🚀 Sistema iniciado');
