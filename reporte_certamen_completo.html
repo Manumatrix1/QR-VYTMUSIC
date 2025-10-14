@@ -106,8 +106,8 @@
             <!-- PODIUM FINAL DEL CERTAMEN -->
             <section class="mb-8">
                 <div class="glass-effect p-6 rounded-lg">
-                    <h2 class="text-2xl font-bold mb-6 text-center">🏆 PODIUM FINAL DEL CERTAMEN</h2>
-                    <p class="text-center text-gray-300 mb-6">¡Los ganadores oficiales del certamen!</p>
+                    <h2 id="podium-title" class="text-2xl font-bold mb-6 text-center">🏆 PODIUM FINAL DEL CERTAMEN</h2>
+                    <p id="podium-subtitle" class="text-center text-gray-300 mb-6">¡Los ganadores oficiales del certamen!</p>
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-6" id="final-podium-container">
                         <!-- El podium final se llenará aquí -->
                     </div>
@@ -117,7 +117,7 @@
             <!-- RANKING COMPLETO DEL CERTAMEN -->
             <section class="mb-8">
                 <div class="glass-effect p-6 rounded-lg">
-                    <h2 class="text-2xl font-bold mb-6 text-center">📊 Ranking Completo del Certamen</h2>
+                    <h2 id="ranking-title" class="text-2xl font-bold mb-6 text-center">📊 Ranking Completo del Certamen</h2>
                     <div id="final-ranking-container" class="space-y-4">
                         <!-- El ranking se llenará aquí -->
                     </div>
@@ -600,6 +600,21 @@
         }
 
         function renderFinalReport() {
+            // Detectar si es una sola gala o múltiples galas
+            const isSingleGala = reportData.galas.length === 1;
+            const galaName = isSingleGala ? reportData.galas[0].name : '';
+
+            // Actualizar títulos según el contexto
+            if (isSingleGala) {
+                document.getElementById('podium-title').textContent = `🏆 PODIUM DE LA GALA: ${galaName}`;
+                document.getElementById('podium-subtitle').textContent = '¡Los ganadores de esta gala específica!';
+                document.getElementById('ranking-title').textContent = `📊 Ranking Completo de: ${galaName}`;
+            } else {
+                document.getElementById('podium-title').textContent = '🏆 PODIUM FINAL DEL CERTAMEN';
+                document.getElementById('podium-subtitle').textContent = '¡Los ganadores oficiales del certamen!';
+                document.getElementById('ranking-title').textContent = '📊 Ranking Completo del Certamen';
+            }
+
             // Información general
             document.getElementById('included-galas-count').textContent = reportData.galas.length;
             document.getElementById('total-participants').textContent = reportData.allParticipants.size;
@@ -775,8 +790,55 @@
             });
         });
 
+        // Detectar si viene desde una gala específica
+        function detectSourceAndPreselect() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const eventId = urlParams.get('eventId');
+            const eventName = urlParams.get('eventName');
+            
+            if (eventId && eventName) {
+                // Viene desde una gala específica
+                console.log(`🎯 Acceso desde gala específica: ${eventName} (${eventId})`);
+                return { eventId, eventName };
+            }
+            
+            return null;
+        }
+
+        // Preseleccionar gala específica si viene desde una gala
+        function preselectSpecificGala(galaInfo) {
+            // Buscar la gala en la lista
+            const galaCheckbox = document.querySelector(`#gala-${galaInfo.eventId}`);
+            if (galaCheckbox) {
+                galaCheckbox.checked = true;
+                updateSelectedGalas();
+                
+                // Cambiar el título para mostrar que es para una gala específica
+                const titulo = document.querySelector('h1');
+                titulo.textContent = `🎯 Reporte de: ${galaInfo.eventName}`;
+                
+                const subtitulo = document.querySelector('header p');
+                subtitulo.textContent = 'Se ha preseleccionado esta gala. Puedes agregar más galas si deseas hacer un reporte conjunto.';
+                
+                console.log(`✅ Gala "${galaInfo.eventName}" preseleccionada automáticamente`);
+            }
+        }
+
+        // Inicializar con detección inteligente
+        async function initializeReport() {
+            const specificGala = detectSourceAndPreselect();
+            await loadAllGalas();
+            
+            if (specificGala) {
+                // Esperar un poco para que se rendericen los checkboxes
+                setTimeout(() => {
+                    preselectSpecificGala(specificGala);
+                }, 500);
+            }
+        }
+
         // Inicializar
-        loadAllGalas();
+        initializeReport();
     </script>
 </body>
 </html>
