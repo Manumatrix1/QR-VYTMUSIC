@@ -180,7 +180,7 @@
 
     <script type="module">
         import { db } from './firebase_config.js';
-        import { collection, getDocs, query, orderBy, doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { collection, getDocs, query, where, orderBy, doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         const urlParams = new URLSearchParams(window.location.search);
         let eventId = urlParams.get('eventId');
@@ -349,13 +349,18 @@
                     ...doc.data()
                 }));
 
-                // Cargar votos de jurados usando la estructura correcta
-                const allJuryVotesSnapshot = await getDocs(collection(db, `events/${eventId}/jury_votes`));
-                allJuryVotesSnapshot.docs.forEach(voteDoc => {
-                    const voteData = voteDoc.data();
-                    const artistId = voteData.artistId;
-                    const jurorName = voteData.jurorName || voteData.juror || 'Jurado Anónimo';
-                    const score = voteData.score || voteData.rating || 0;
+                // Cargar votos de jurados desde jury_evaluations
+                const juryEvaluationsQuery = query(
+                    collection(db, 'jury_evaluations'),
+                    where('eventId', '==', eventId)
+                );
+                const juryEvaluationsSnapshot = await getDocs(juryEvaluationsQuery);
+                
+                juryEvaluationsSnapshot.docs.forEach(evalDoc => {
+                    const evalData = evalDoc.data();
+                    const artistId = evalData.artistId;
+                    const jurorName = evalData.jurorName || evalData.jurorId || 'Jurado Anónimo';
+                    const score = evalData.score || 0;
                     
                     if (artistId) {
                         if (!galaData.juryVotes[artistId]) {
@@ -363,7 +368,8 @@
                         }
                         galaData.juryVotes[artistId].push({
                             jurorName: jurorName,
-                            score: score
+                            score: score,
+                            comment: evalData.comment || ''
                         });
                     }
                 });
