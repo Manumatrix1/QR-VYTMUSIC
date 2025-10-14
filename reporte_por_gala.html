@@ -166,12 +166,13 @@
 
     <!-- Modal para Compartir -->
     <div id="share-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-50">
-        <div class="bg-gray-800 p-6 rounded-lg max-w-md w-full mx-4">
-            <h3 class="text-xl font-bold mb-4">🔗 Compartir Reporte</h3>
-            <p class="mb-4 text-gray-300">Copia este enlace para compartir el reporte:</p>
-            <input type="text" id="share-url" class="w-full p-3 bg-gray-900 rounded-lg text-white" readonly>
-            <div class="flex justify-end gap-4 mt-4">
-                <button id="copy-url-btn" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">📋 Copiar</button>
+        <div class="bg-gray-800 p-6 rounded-lg max-w-2xl w-full mx-4">
+            <h3 class="text-xl font-bold mb-4">🔗 Compartir Reportes Individuales</h3>
+            <p class="mb-4 text-gray-300">Enlaces personalizados para cada artista (solo pueden ver su propio reporte):</p>
+            <div id="share-url-container" class="mb-4">
+                <!-- Se llenará dinámicamente con los enlaces por artista -->
+            </div>
+            <div class="flex justify-end gap-4">
                 <button id="close-share-modal" class="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700">Cerrar</button>
             </div>
         </div>
@@ -757,23 +758,47 @@
         });
 
         document.getElementById('share-report-btn').addEventListener('click', () => {
-            // Generar URL completa con parámetros
-            const currentUrl = window.location.origin + window.location.pathname;
-            const params = new URLSearchParams(window.location.search);
-            const shareUrl = `${currentUrl}?${params.toString()}`;
-            
-            document.getElementById('share-url').value = shareUrl;
+            generateArtistLinks();
             document.getElementById('share-modal').classList.remove('hidden');
         });
+
+        function generateArtistLinks() {
+            const baseUrl = window.location.origin + window.location.pathname.replace('reporte_por_gala.html', 'reporte_artista_publico.html');
+            const params = new URLSearchParams(window.location.search);
+            
+            let linksHtml = '<div class="space-y-3 max-h-60 overflow-y-auto">';
+            
+            galaData.artists.forEach(artist => {
+                const artistUrl = `${baseUrl}?eventId=${params.get('eventId')}&artistId=${artist.id}&eventName=${encodeURIComponent(params.get('eventName') || '')}`;
+                
+                linksHtml += `
+                    <div class="bg-gray-900 p-3 rounded-lg flex items-center justify-between">
+                        <div>
+                            <p class="font-bold text-white">${artist.name}</p>
+                            <p class="text-xs text-gray-400">Enlace personal del artista</p>
+                        </div>
+                        <button onclick="copyArtistLink('${artistUrl}')" class="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700">
+                            📋 Copiar
+                        </button>
+                    </div>
+                `;
+            });
+            
+            linksHtml += '</div>';
+            document.getElementById('share-url-container').innerHTML = linksHtml;
+        }
+
+        window.copyArtistLink = function(url) {
+            navigator.clipboard.writeText(url).then(() => {
+                alert('¡Enlace copiado! Comparte este enlace solo con ese artista.');
+            });
+        };
 
         document.getElementById('close-share-modal').addEventListener('click', () => {
             document.getElementById('share-modal').classList.add('hidden');
         });
 
-        document.getElementById('copy-url-btn').addEventListener('click', () => {
-            navigator.clipboard.writeText(document.getElementById('share-url').value);
-            alert('Enlace copiado al portapapeles');
-        });
+
 
         function exportToCSV() {
             const sortedArtists = [...galaData.artists].sort((a, b) => b.finalScore - a.finalScore);
