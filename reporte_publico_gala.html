@@ -10,13 +10,13 @@
     <style>
         body {
             font-family: 'Inter', sans-serif;
-            background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
             min-height: 100vh;
         }
         .glass-effect {
-            background: rgba(255, 255, 255, 0.1);
+            background: rgba(15, 23, 42, 0.7);
             backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.1);
         }
         .artist-card {
             transition: all 0.3s ease;
@@ -325,6 +325,51 @@
             const totalScore = evaluations.reduce((sum, evaluation) => sum + (evaluation.score || 0), 0);
             const avgScore = totalScore / evaluations.length;
 
+            // Calcular promedios por categoría del jurado
+            const juryCategories = [
+                { key: 'singing', name: 'Canto', icon: '🎤', color: 'blue' },
+                { key: 'transmission', name: 'Transmisión', icon: '📡', color: 'green' },
+                { key: 'attitude', name: 'Actitud', icon: '😊', color: 'yellow' },
+                { key: 'originality', name: 'Originalidad', icon: '💡', color: 'purple' },
+                { key: 'costume', name: 'Vestuario', icon: '👗', color: 'pink' },
+                { key: 'staging', name: 'Puesta en Escena', icon: '🎭', color: 'orange' }
+            ];
+
+            // Calcular promedios por categoría
+            const categoryAverages = juryCategories.map(cat => {
+                const total = evaluations.reduce((sum, evaluation) => {
+                    return sum + (evaluation.categories && evaluation.categories[cat.key] ? evaluation.categories[cat.key] : 0);
+                }, 0);
+                return {
+                    ...cat,
+                    average: evaluations.length > 0 ? total / evaluations.length : 0
+                };
+            });
+
+            const bestJuryCategory = categoryAverages.reduce((prev, current) => 
+                current.average > prev.average ? current : prev
+            );
+
+            const worstJuryCategory = categoryAverages.reduce((prev, current) => 
+                current.average < prev.average ? current : prev
+            );
+
+            // Generar barras de categorías del jurado
+            let categoriesHtml = categoryAverages.map(cat => {
+                const percentage = (cat.average / 10) * 100;
+                return `
+                    <div class="mb-3">
+                        <div class="flex justify-between items-center mb-1">
+                            <span class="text-sm font-medium text-${cat.color}-200">${cat.icon} ${cat.name}</span>
+                            <span class="text-sm font-bold text-${cat.color}-400">${cat.average.toFixed(1)}/10</span>
+                        </div>
+                        <div class="w-full bg-${cat.color}-900 bg-opacity-30 rounded-full h-2">
+                            <div class="bg-${cat.color}-500 h-2 rounded-full transition-all duration-1000" style="width: ${percentage}%"></div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
             let evaluationsHtml = evaluations.map(evaluation => `
                 <div class="bg-yellow-900 bg-opacity-30 p-3 rounded border-l-4 border-yellow-500 mb-2">
                     <div class="flex justify-between items-center">
@@ -338,11 +383,43 @@
             return `
                 <div>
                     <h4 class="text-lg font-bold text-yellow-300 mb-4 text-center">⚖️ Evaluación del Jurado</h4>
+                    
+                    <!-- Promedio general del jurado -->
                     <div class="text-center mb-4">
                         <div class="text-xl font-bold text-yellow-400">${avgScore.toFixed(1)}/10</div>
                         <div class="text-sm text-yellow-300">Promedio de ${evaluations.length} evaluador(es)</div>
                     </div>
+                    
+                    <!-- Categorías del jurado con barras -->
+                    <div class="mb-4">
+                        <h5 class="text-sm font-bold text-yellow-300 mb-3">📊 Categorías evaluadas por el jurado:</h5>
+                        <div class="space-y-3">
+                            ${categoriesHtml}
+                        </div>
+                    </div>
+                    
+                    <!-- Observaciones del jurado -->
+                    <div class="mb-4">
+                        <h5 class="text-sm font-bold text-yellow-300 mb-2">Observaciones del jurado:</h5>
+                        <div class="space-y-2">
+                            <div class="flex items-center space-x-2">
+                                <span class="inline-block w-3 h-3 bg-green-500 rounded-full"></span>
+                                <span class="text-sm text-green-400">
+                                    <strong>Fortaleza:</strong> ${bestJuryCategory.icon} ${bestJuryCategory.name} (${bestJuryCategory.average.toFixed(1)}/10)
+                                </span>
+                            </div>
+                            <div class="flex items-center space-x-2">
+                                <span class="inline-block w-3 h-3 bg-yellow-500 rounded-full"></span>
+                                <span class="text-sm text-yellow-400">
+                                    <strong>A mejorar:</strong> ${worstJuryCategory.icon} ${worstJuryCategory.name} (${worstJuryCategory.average.toFixed(1)}/10)
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Evaluaciones individuales -->
                     <div class="space-y-2">
+                        <h5 class="text-sm font-bold text-yellow-300">Comentarios individuales:</h5>
                         ${evaluationsHtml}
                     </div>
                 </div>
