@@ -308,9 +308,12 @@
                                         </div>
                                     `).join('')}
                                 </div>
-                                <div class="text-center">
+                                <div class="text-center space-y-3">
                                     <div class="text-3xl font-bold text-green-300 mb-2">${average.toFixed(1)} puntos</div>
-                                    <button onclick="editVote('${artist.id}')" class="btn btn-primary">✏️ Editar Voto</button>
+                                    <div class="space-x-3">
+                                        <button onclick="editVote('${artist.id}')" class="btn btn-primary">✏️ Editar Voto</button>
+                                        <button onclick="clearVote('${artist.id}')" class="btn btn-red">🗑️ Borrar Voto</button>
+                                    </div>
                                 </div>
                             </div>
                         ` : `
@@ -345,6 +348,13 @@
                                         💾 GUARDAR PARCIAL
                                     </button>
                                     
+                                    <!-- Botón para limpiar votación -->
+                                    ${Object.keys(artistVotes).length > 0 ? `
+                                        <button onclick="clearVote('${artist.id}')" class="btn btn-red px-4 py-2">
+                                            🗑️ LIMPIAR VOTOS
+                                        </button>
+                                    ` : ''}
+                                    
                                     <div class="text-sm space-y-1 opacity-75">
                                         <p class="font-bold">${isComplete ? '✅ ¡Listo para enviar!' : '⏳ Votación en progreso'}</p>
                                         <p>Criterios completados: ${Object.keys(artistVotes).length}/${CRITERIA.length}</p>
@@ -358,6 +368,9 @@
             }).join('');
 
             document.getElementById('artists-list').innerHTML = html;
+            
+            // Mantener el filtro después de renderizar
+            preserveFilter();
         }
 
         window.selectRating = function(artistId, criteriaId, value) {
@@ -375,16 +388,25 @@
             if (confirm('¿Editar esta votación?')) {
                 delete votes[artistId];
                 renderArtists();
+                preserveFilter(); // Mantener filtro
                 updateStats();
             }
         };
 
         window.submitVote = async function(artistId) {
+            console.log('🎯 Iniciando submitVote para:', artistId);
+            console.log('👤 Jurado actual:', currentJuror);
+            
             const artist = artists.find(a => a.id === artistId);
             const artistVotes = votes[artistId];
             
+            if (!currentJuror || !currentJuror.id) {
+                alert('❌ Error: No hay jurado autenticado. Por favor, vuelve a ingresar.');
+                return;
+            }
+            
             if (!artistVotes || Object.keys(artistVotes).length !== CRITERIA.length) {
-                alert('❌ Completa todos los criterios');
+                alert('❌ Completa todos los criterios para enviar la votación completa');
                 return;
             }
 
@@ -415,6 +437,7 @@
                 alert(`✅ Voto enviado para ${artist.name}\nPromedio: ${average.toFixed(1)} puntos`);
                 
                 renderArtists();
+                preserveFilter(); // Mantener filtro
                 updateStats();
 
             } catch (error) {
@@ -459,6 +482,27 @@
             document.getElementById('artist-search').value = '';
             filterArtists();
         }
+
+        // Función para mantener el filtro después de renderizar
+        function preserveFilter() {
+            const searchTerm = document.getElementById('artist-search').value;
+            if (searchTerm) {
+                setTimeout(() => {
+                    filterArtists();
+                }, 100);
+            }
+        }
+
+        // Función para limpiar votos de un artista
+        window.clearVote = function(artistId) {
+            if (confirm('¿Estás seguro de que quieres borrar todos los votos de este artista?')) {
+                delete votes[artistId];
+                renderArtists();
+                preserveFilter(); // Mantener el filtro
+                updateStats();
+                console.log(`🗑️ Votos borrados para artista: ${artistId}`);
+            }
+        };
 
         // Función para guardar votación parcial
         window.savePartialVote = async function(artistId) {
