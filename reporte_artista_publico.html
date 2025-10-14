@@ -11,6 +11,10 @@
         .glass-effect { background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.2); }
         @media print { body { background-color: white; color: black; } .no-print { display: none !important; } }
         .progress-bar { background: linear-gradient(90deg, #10b981, #34d399); height: 8px; border-radius: 4px; transition: width 0.3s ease; }
+        .tab-button { transition: all 0.3s ease; cursor: pointer; }
+        .tab-button.active { border-color: #0ea5e9 !important; color: #0ea5e9 !important; }
+        .tab-content { transition: opacity 0.3s ease; }
+        .secret-vote-overlay { background: linear-gradient(45deg, #1f2937, #374151); border: 2px dashed #6b7280; }
     </style>
 </head>
 <body class="antialiased">
@@ -62,12 +66,43 @@
             </div>
         </section>
 
-        <!-- Mi Análisis Detallado -->
+        <!-- Pestañas de Análisis -->
         <section class="mb-8">
             <div class="glass-effect p-6 rounded-lg">
-                <h2 class="text-2xl font-bold mb-6 text-center">📊 Mi Análisis Detallado</h2>
-                <div id="my-analysis-container">
-                    <!-- Se llenará dinámicamente -->
+                <h2 class="text-2xl font-bold mb-6 text-center">📊 Mi Análisis Completo</h2>
+                
+                <!-- Navegación de Pestañas -->
+                <div class="flex flex-wrap justify-center mb-6 border-b border-gray-600">
+                    <button id="tab-publico" class="tab-button px-6 py-3 font-bold border-b-2 border-sky-500 text-sky-400">
+                        🗳️ Voto del Público
+                    </button>
+                    <button id="tab-jurados" class="tab-button px-6 py-3 font-bold border-b-2 border-transparent text-gray-400 hover:text-white">
+                        ⚖️ Evaluación de Jurados
+                    </button>
+                    <button id="tab-secreto" class="tab-button px-6 py-3 font-bold border-b-2 border-transparent text-gray-400 hover:text-white">
+                        🤫 Voto Secreto
+                    </button>
+                </div>
+
+                <!-- Contenido del Voto Público -->
+                <div id="content-publico" class="tab-content">
+                    <div id="my-public-analysis-container">
+                        <!-- Se llenará dinámicamente -->
+                    </div>
+                </div>
+
+                <!-- Contenido de Jurados -->
+                <div id="content-jurados" class="tab-content hidden">
+                    <div id="my-jury-analysis-container">
+                        <!-- Se llenará dinámicamente -->
+                    </div>
+                </div>
+
+                <!-- Contenido Voto Secreto -->
+                <div id="content-secreto" class="tab-content hidden">
+                    <div id="my-secret-vote-container">
+                        <!-- Se llenará dinámicamente -->
+                    </div>
                 </div>
             </div>
         </section>
@@ -179,8 +214,9 @@
                 const artistPosition = sortedArtists.findIndex(a => a.id === artistId) + 1;
 
                 renderMyPosition(artistPosition, allArtists.length);
-                renderMyAnalysis();
+                await renderMyAnalysis();
                 renderTop5Context(sortedArtists);
+                setupTabs();
 
             } catch (error) {
                 console.error('Error cargando reporte:', error);
@@ -237,8 +273,14 @@
             `;
         }
 
-        function renderMyAnalysis() {
-            const container = document.getElementById('my-analysis-container');
+        async function renderMyAnalysis() {
+            await renderPublicAnalysis();
+            await renderJuryAnalysis();
+            renderSecretVote();
+        }
+
+        function renderPublicAnalysis() {
+            const container = document.getElementById('my-public-analysis-container');
             const votes = artistData.totalRatingsCount || 0;
 
             if (votes === 0) {
@@ -316,6 +358,151 @@
             `;
 
             container.innerHTML = analysisHtml;
+        }
+
+        async function renderJuryAnalysis() {
+            const container = document.getElementById('my-jury-analysis-container');
+            
+            try {
+                // Obtener evaluaciones de jurados para este artista
+                const juryQuery = query(
+                    collection(db, 'jury_evaluations'),
+                    where('eventId', '==', eventData.id),
+                    where('artistId', '==', selectedArtistId)
+                );
+                
+                const jurySnapshot = await getDocs(juryQuery);
+                const juryEvaluations = [];
+                
+                jurySnapshot.forEach(doc => {
+                    juryEvaluations.push({ id: doc.id, ...doc.data() });
+                });
+                
+                if (juryEvaluations.length === 0) {
+                    container.innerHTML = `
+                        <div class="bg-green-50 p-4 rounded-lg border border-green-200">
+                            <h3 class="text-lg font-semibold text-green-800 mb-4 flex items-center">
+                                <i class="fas fa-gavel mr-2"></i>
+                                Evaluación del Jurado
+                            </h3>
+                            <div class="text-center text-green-600">
+                                <i class="fas fa-clock text-2xl mb-2"></i>
+                                <p>Aún no hay evaluaciones del jurado disponibles</p>
+                            </div>
+                        </div>
+                    `;
+                    return;
+                }
+                
+                // Calcular estadísticas del jurado
+                const totalScore = juryEvaluations.reduce((sum, evaluation) => sum + (evaluation.score || 0), 0);
+                const avgScore = totalScore / juryEvaluations.length;
+                const juryCount = juryEvaluations.length;
+                
+                container.innerHTML = `
+                    <div class="bg-green-50 p-4 rounded-lg border border-green-200">
+                        <h3 class="text-lg font-semibold text-green-800 mb-4 flex items-center">
+                            <i class="fas fa-gavel mr-2"></i>
+                            Evaluación del Jurado
+                        </h3>
+                        
+                        <div class="grid md:grid-cols-2 gap-4 mb-4">
+                            <div class="bg-white p-3 rounded border-l-4 border-green-400">
+                                <div class="text-sm text-gray-600">Jurados que Evaluaron</div>
+                                <div class="text-xl font-bold text-green-600">${juryCount}</div>
+                            </div>
+                            
+                            <div class="bg-white p-3 rounded border-l-4 border-green-400">
+                                <div class="text-sm text-gray-600">Puntuación Promedio</div>
+                                <div class="text-xl font-bold text-green-600">${avgScore.toFixed(2)} / 10</div>
+                            </div>
+                        </div>
+                        
+                        <div class="bg-green-100 p-3 rounded mb-4">
+                            <div class="text-sm text-green-700">
+                                <i class="fas fa-info-circle mr-1"></i>
+                                Las evaluaciones del jurado determinan los resultados oficiales del certamen.
+                            </div>
+                        </div>
+                        
+                        <div class="space-y-2">
+                            <h4 class="font-semibold text-green-800">Evaluaciones Individuales:</h4>
+                            ${juryEvaluations.map(evaluation => `
+                                <div class="bg-white p-2 rounded border">
+                                    <div class="flex justify-between items-center">
+                                        <span class="text-sm text-gray-600">Jurado ${evaluation.jurorName || evaluation.jurorId}</span>
+                                        <span class="font-bold text-green-600">${evaluation.score || 0} / 10</span>
+                                    </div>
+                                    ${evaluation.comment ? `
+                                        <div class="mt-1 text-sm text-gray-500 italic">"${evaluation.comment}"</div>
+                                    ` : ''}
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+                
+            } catch (error) {
+                console.error('Error loading jury evaluations:', error);
+                container.innerHTML = `
+                    <div class="bg-green-50 p-4 rounded-lg border border-green-200">
+                        <h3 class="text-lg font-semibold text-green-800 mb-4 flex items-center">
+                            <i class="fas fa-gavel mr-2"></i>
+                            Evaluación del Jurado
+                        </h3>
+                        <div class="text-center text-red-600">
+                            <i class="fas fa-exclamation-triangle text-2xl mb-2"></i>
+                            <p>Error al cargar las evaluaciones del jurado</p>
+                        </div>
+                    </div>
+                `;
+            }
+        }
+
+        function renderSecretVote() {
+            const container = document.getElementById('my-secret-vote-container');
+            
+            // Por ahora mostrar como secreto - esto se puede expandir más tarde
+            container.innerHTML = `
+                <div class="bg-purple-50 p-4 rounded-lg border border-purple-200 relative">
+                    <div class="secret-vote-overlay">
+                        <div class="text-center">
+                            <i class="fas fa-lock text-4xl text-purple-600 mb-3"></i>
+                            <h3 class="text-lg font-bold text-purple-800 mb-2">Voto Secreto</h3>
+                            <p class="text-purple-600 text-sm">Los votos secretos se revelarán al final del certamen</p>
+                            <div class="mt-3 text-2xl font-bold text-purple-800">SECRETO</div>
+                        </div>
+                    </div>
+                    
+                    <h3 class="text-lg font-semibold text-purple-800 mb-4 flex items-center">
+                        <i class="fas fa-eye-slash mr-2"></i>
+                        Voto Secreto Final
+                    </h3>
+                    
+                    <div class="bg-white p-3 rounded border-l-4 border-purple-400">
+                        <div class="text-sm text-gray-600">Estado</div>
+                        <div class="text-xl font-bold text-purple-600">Pendiente de Revelación</div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function showTab(tabName) {
+            // Ocultar todas las pestañas
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.style.display = 'none';
+            });
+            
+            // Remover clase activa de todos los botones
+            document.querySelectorAll('.tab-button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            // Mostrar la pestaña seleccionada
+            document.getElementById(tabName).style.display = 'block';
+            
+            // Marcar el botón como activo
+            document.querySelector(`[onclick="showTab('${tabName}')"]`).classList.add('active');
         }
 
         function renderTop5Context(sortedArtists) {
