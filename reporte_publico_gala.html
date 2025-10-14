@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Resultados de la Gala - VYTMUSIC</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+            min-height: 100vh;
+        }
+        .glass-effect {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        .artist-card {
+            transition: all 0.3s ease;
+        }
+        .artist-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+        }
+        @media print {
+            body { background-color: white; color: black; }
+            .no-print { display: none !important; }
+            .print-title { font-size: 24px; text-align: center; margin-bottom: 20px; }
+        }
+    </style>
+</head>
+<body class="text-white">
+    <div class="container mx-auto max-w-6xl p-4 sm:p-6">
+        
+        <!-- HEADER -->
+        <header class="text-center mb-8">
+            <h1 class="text-4xl font-bold text-sky-400 mb-4">📊 Resultados de la Gala</h1>
+            <p id="event-name-display" class="text-2xl text-white mb-6"></p>
+            <div class="glass-effect p-4 rounded-lg max-w-2xl mx-auto">
+                <p class="text-sm text-gray-300">
+                    🎭 Resultados completos de la gala con evaluaciones del jurado y votación del público
+                </p>
+            </div>
+        </header>
+
+        <!-- LOADING -->
+        <div id="loading-container" class="text-center py-12">
+            <div class="text-6xl mb-4">⏳</div>
+            <h2 class="text-2xl font-bold mb-4">Cargando resultados...</h2>
+            <p class="text-gray-400">Obteniendo datos de la gala</p>
+        </div>
+
+        <!-- ERROR -->
+        <div id="error-container" class="hidden text-center py-12">
+            <div class="text-6xl mb-4">❌</div>
+            <h2 class="text-2xl font-bold mb-4 text-red-400">Error al Cargar</h2>
+            <p id="error-message" class="text-red-300 mb-4"></p>
+            <button onclick="location.reload()" class="px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700">
+                🔄 Intentar de Nuevo
+            </button>
+        </div>
+
+        <!-- ESTADÍSTICAS GENERALES -->
+        <section id="stats-section" class="mb-8 hidden">
+            <div class="glass-effect p-6 rounded-lg">
+                <h2 class="text-2xl font-bold mb-6 text-center">📈 Estadísticas de Participación</h2>
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+                    <div class="text-center">
+                        <div class="bg-blue-500 bg-opacity-20 p-4 rounded-lg border border-blue-500">
+                            <div class="text-3xl mb-2">🎤</div>
+                            <div class="text-2xl font-bold text-blue-400" id="total-artists">0</div>
+                            <p class="text-sm text-blue-300">Total Artistas</p>
+                        </div>
+                    </div>
+                    <div class="text-center">
+                        <div class="bg-green-500 bg-opacity-20 p-4 rounded-lg border border-green-500">
+                            <div class="text-3xl mb-2">📦</div>
+                            <div class="text-2xl font-bold text-green-400" id="total-votes">0</div>
+                            <p class="text-sm text-green-300">Votos Público</p>
+                        </div>
+                    </div>
+                    <div class="text-center">
+                        <div class="bg-purple-500 bg-opacity-20 p-4 rounded-lg border border-purple-500">
+                            <div class="text-3xl mb-2">⚖️</div>
+                            <div class="text-2xl font-bold text-purple-400" id="total-jury-votes">0</div>
+                            <p class="text-sm text-purple-300">Votos Jurados</p>
+                        </div>
+                    </div>
+                    <div class="text-center">
+                        <div class="bg-orange-500 bg-opacity-20 p-4 rounded-lg border border-orange-500">
+                            <div class="text-3xl mb-2">🎯</div>
+                            <div class="text-2xl font-bold text-orange-400" id="participation-rate">0%</div>
+                            <p class="text-sm text-orange-300">Participación</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- RESULTADOS DE ARTISTAS -->
+        <section id="artists-section" class="hidden">
+            <div class="mb-6">
+                <h2 class="text-3xl font-bold text-center mb-6">🏆 Promedios de calificación por categoría (escala 1-10)</h2>
+            </div>
+            <div id="artists-container" class="space-y-6">
+                <!-- Se llenará dinámicamente -->
+            </div>
+        </section>
+
+        <!-- FOOTER -->
+        <footer class="text-center mt-12 no-print">
+            <div class="glass-effect p-4 rounded-lg">
+                <p class="text-gray-400">
+                    🎵 Powered by <strong class="text-sky-400">VYTMUSIC</strong>
+                </p>
+                <p class="text-sm text-gray-500 mt-2">
+                    Sistema de gestión de eventos musicales
+                </p>
+            </div>
+        </footer>
+    </div>
+
+    <script type="module">
+        import { db } from './firebase_config.js';
+        import { collection, getDocs, doc, getDoc, query, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        let eventData = null;
+
+        // Obtener parámetros de URL
+        function getUrlParams() {
+            const params = new URLSearchParams(window.location.search);
+            return {
+                eventId: params.get('eventId'),
+                eventName: params.get('eventName')
+            };
+        }
+
+        async function loadGalaData() {
+            const { eventId, eventName } = getUrlParams();
+
+            if (!eventId) {
+                showError('Enlace inválido. Este enlace no contiene la información necesaria.');
+                return;
+            }
+
+            try {
+                console.log(`Cargando datos de la gala ${eventId}`);
+
+                // Cargar información del evento
+                const eventDoc = await getDoc(doc(db, 'events', eventId));
+                if (!eventDoc.exists()) {
+                    throw new Error('Evento no encontrado');
+                }
+
+                eventData = { id: eventId, ...eventDoc.data() };
+                document.getElementById('event-name-display').textContent = eventData.name;
+
+                // Cargar todos los artistas
+                const artistsSnapshot = await getDocs(collection(db, `events/${eventId}/artists`));
+                const allArtists = artistsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+                if (allArtists.length === 0) {
+                    showError('No hay participantes registrados en esta gala.');
+                    return;
+                }
+
+                // Cargar evaluaciones del jurado
+                const juryEvaluations = await loadJuryEvaluations(eventId);
+
+                // Calcular estadísticas
+                const totalVotes = allArtists.reduce((sum, artist) => sum + (artist.totalRatingsCount || 0), 0);
+                const totalJuryVotes = Object.values(juryEvaluations).reduce((sum, evals) => sum + evals.length, 0);
+                const participationRate = allArtists.length > 0 ? (totalVotes / allArtists.length) : 0;
+
+                // Mostrar estadísticas
+                document.getElementById('total-artists').textContent = allArtists.length;
+                document.getElementById('total-votes').textContent = totalVotes + ' votos';
+                document.getElementById('total-jury-votes').textContent = totalJuryVotes;
+                document.getElementById('participation-rate').textContent = participationRate.toFixed(0) + '%';
+
+                // Ordenar artistas por puntuación total (votación pública)
+                allArtists.sort((a, b) => (b.totalScore || 0) - (a.totalScore || 0));
+
+                // Renderizar artistas
+                renderArtists(allArtists, juryEvaluations);
+
+                // Mostrar contenido
+                document.getElementById('loading-container').style.display = 'none';
+                document.getElementById('stats-section').classList.remove('hidden');
+                document.getElementById('artists-section').classList.remove('hidden');
+
+            } catch (error) {
+                console.error('Error cargando datos de la gala:', error);
+                showError('Error al cargar los datos: ' + error.message);
+            }
+        }
+
+        async function loadJuryEvaluations(eventId) {
+            try {
+                const evaluationsSnapshot = await getDocs(collection(db, 'jury_evaluations'));
+                const evaluationsByArtist = {};
+                
+                evaluationsSnapshot.docs.forEach(doc => {
+                    const data = doc.data();
+                    if (data.eventId === eventId || data.galaId === eventId) {
+                        if (!evaluationsByArtist[data.artistId]) {
+                            evaluationsByArtist[data.artistId] = [];
+                        }
+                        evaluationsByArtist[data.artistId].push(data);
+                    }
+                });
+
+                return evaluationsByArtist;
+            } catch (error) {
+                console.error('Error cargando evaluaciones del jurado:', error);
+                return {};
+            }
+        }
+
+        function renderArtists(artists, juryEvaluations) {
+            const container = document.getElementById('artists-container');
+            let html = '';
+
+            artists.forEach((artist, index) => {
+                const position = index + 1;
+                const votes = artist.totalRatingsCount || 0;
+                const artistJuryEvals = juryEvaluations[artist.id] || [];
+
+                // Análisis del público
+                const publicAnalysis = generatePublicAnalysis(artist, votes);
+                
+                // Análisis del jurado
+                const juryAnalysis = generateJuryAnalysis(artistJuryEvals);
+
+                html += `
+                    <div class="artist-card glass-effect p-6 rounded-lg">
+                        <div class="text-center mb-6">
+                            <h3 class="text-2xl font-bold text-white mb-2">${artist.name}</h3>
+                            <div class="text-lg text-gray-400">${votes} personas calificaron • Posición: #${position}</div>
+                            <div class="text-3xl font-bold text-green-400 mt-2">${artist.totalScore || 0} pts</div>
+                        </div>
+
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            ${publicAnalysis}
+                            ${juryAnalysis}
+                        </div>
+
+                        <!-- Observaciones del público -->
+                        ${votes > 0 ? generatePublicObservations(artist, votes) : ''}
+                    </div>
+                `;
+            });
+
+            container.innerHTML = html;
+        }
+
+        function generatePublicAnalysis(artist, votes) {
+            if (votes === 0) {
+                return `
+                    <div>
+                        <h4 class="text-lg font-bold text-blue-300 mb-4 text-center">👥 Votación del Público</h4>
+                        <div class="text-center text-gray-400">
+                            <div class="text-4xl mb-2">📭</div>
+                            <p>Sin votos del público</p>
+                        </div>
+                    </div>
+                `;
+            }
+
+            const categories = [
+                { name: 'Canto', icon: '🎤', score: artist.totalSingingScore || 0, color: 'blue' },
+                { name: 'Transmisión', icon: '📡', score: artist.totalTransmissionScore || 0, color: 'green' },
+                { name: 'Actitud', icon: '😊', score: artist.totalAttitudeScore || 0, color: 'yellow' },
+                { name: 'Originalidad', icon: '💡', score: artist.totalOriginalityScore || 0, color: 'purple' },
+                { name: 'Vestuario', icon: '👗', score: artist.totalCostumeScore || 0, color: 'pink' },
+                { name: 'Puesta en Escena', icon: '🎭', score: artist.totalStagingScore || 0, color: 'orange' }
+            ];
+
+            let categoriesHtml = categories.map(cat => {
+                const avg = cat.score / votes;
+                const percentage = (avg / 10) * 100;
+                return `
+                    <div class="mb-3">
+                        <div class="flex justify-between items-center mb-1">
+                            <span class="text-sm font-medium text-${cat.color}-200">${cat.icon} ${cat.name}</span>
+                            <span class="text-sm font-bold text-${cat.color}-400">${avg.toFixed(1)}/10</span>
+                        </div>
+                        <div class="w-full bg-${cat.color}-900 bg-opacity-30 rounded-full h-2">
+                            <div class="bg-${cat.color}-500 h-2 rounded-full transition-all duration-1000" style="width: ${percentage}%"></div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            return `
+                <div>
+                    <h4 class="text-lg font-bold text-blue-300 mb-4 text-center">👥 Votación del Público</h4>
+                    <div class="space-y-3">
+                        ${categoriesHtml}
+                    </div>
+                    <div class="text-center mt-4">
+                        <div class="text-xl font-bold text-blue-400">${(artist.totalScore / votes).toFixed(1)}/10</div>
+                        <div class="text-sm text-blue-300">Promedio General</div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function generateJuryAnalysis(evaluations) {
+            if (evaluations.length === 0) {
+                return `
+                    <div>
+                        <h4 class="text-lg font-bold text-yellow-300 mb-4 text-center">⚖️ Evaluación del Jurado</h4>
+                        <div class="text-center text-gray-400">
+                            <div class="text-4xl mb-2">⏳</div>
+                            <p>Sin evaluación del jurado</p>
+                        </div>
+                    </div>
+                `;
+            }
+
+            const totalScore = evaluations.reduce((sum, evaluation) => sum + (evaluation.score || 0), 0);
+            const avgScore = totalScore / evaluations.length;
+
+            let evaluationsHtml = evaluations.map(evaluation => `
+                <div class="bg-yellow-900 bg-opacity-30 p-3 rounded border-l-4 border-yellow-500 mb-2">
+                    <div class="flex justify-between items-center">
+                        <span class="font-medium text-yellow-200">${evaluation.jurorName || 'Jurado'}</span>
+                        <span class="font-bold text-yellow-400">${evaluation.score || 0}/10</span>
+                    </div>
+                    ${evaluation.comment ? `<p class="text-sm text-yellow-100 mt-1 italic">"${evaluation.comment}"</p>` : ''}
+                </div>
+            `).join('');
+
+            return `
+                <div>
+                    <h4 class="text-lg font-bold text-yellow-300 mb-4 text-center">⚖️ Evaluación del Jurado</h4>
+                    <div class="text-center mb-4">
+                        <div class="text-xl font-bold text-yellow-400">${avgScore.toFixed(1)}/10</div>
+                        <div class="text-sm text-yellow-300">Promedio de ${evaluations.length} evaluador(es)</div>
+                    </div>
+                    <div class="space-y-2">
+                        ${evaluationsHtml}
+                    </div>
+                </div>
+            `;
+        }
+
+        function generatePublicObservations(artist, votes) {
+            const categories = [
+                { name: 'Canto', icon: '🎤', score: artist.totalSingingScore || 0 },
+                { name: 'Transmisión', icon: '📡', score: artist.totalTransmissionScore || 0 },
+                { name: 'Actitud', icon: '😊', score: artist.totalAttitudeScore || 0 },
+                { name: 'Originalidad', icon: '💡', score: artist.totalOriginalityScore || 0 },
+                { name: 'Vestuario', icon: '👗', score: artist.totalCostumeScore || 0 },
+                { name: 'Puesta en Escena', icon: '🎭', score: artist.totalStagingScore || 0 }
+            ];
+
+            const bestCategory = categories.reduce((prev, current) => 
+                (current.score / votes) > (prev.score / votes) ? current : prev
+            );
+
+            const worstCategory = categories.reduce((prev, current) => 
+                (current.score / votes) < (prev.score / votes) ? current : prev
+            );
+
+            return `
+                <div class="mt-6 pt-4 border-t border-gray-700">
+                    <h5 class="text-sm font-bold text-gray-300 mb-3">Observaciones del público:</h5>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="flex items-center space-x-2">
+                            <span class="inline-block w-3 h-3 bg-green-500 rounded-full"></span>
+                            <span class="text-sm text-green-400">
+                                <strong>Fortaleza:</strong> ${bestCategory.icon} ${bestCategory.name} (${(bestCategory.score / votes).toFixed(1)}/10)
+                            </span>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <span class="inline-block w-3 h-3 bg-yellow-500 rounded-full"></span>
+                            <span class="text-sm text-yellow-400">
+                                <strong>A mejorar:</strong> ${worstCategory.icon} ${worstCategory.name} (${(worstCategory.score / votes).toFixed(1)}/10)
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function showError(message) {
+            document.getElementById('loading-container').style.display = 'none';
+            document.getElementById('error-message').textContent = message;
+            document.getElementById('error-container').classList.remove('hidden');
+        }
+
+        // Cargar datos al cargar la página
+        window.addEventListener('load', loadGalaData);
+    </script>
+</body>
+</html>
