@@ -185,7 +185,7 @@
                 allArtists.sort((a, b) => (b.totalScore || 0) - (a.totalScore || 0));
 
                 // Renderizar artistas
-                renderArtists(allArtists, juryEvaluations);
+                await renderArtists(allArtists, juryEvaluations, eventId);
 
                 // Mostrar contenido
                 document.getElementById('loading-container').style.display = 'none';
@@ -220,20 +220,79 @@
             }
         }
 
-        function renderArtists(artists, juryEvaluations) {
+        // Cargar feedback en vivo para un artista específico
+        async function loadArtistFeedback(eventId, artistId) {
+            try {
+                // Cargar votos del jurado para este artista
+                const juryVotesQuery = query(
+                    collection(db, 'events', eventId, 'jury_votes'),
+                    where('artistId', '==', artistId)
+                );
+                const juryVotesSnapshot = await getDocs(juryVotesQuery);
+                
+                if (juryVotesSnapshot.empty) {
+                    return null;
+                }
+
+                let totalScore = 0;
+                let totalVotes = 0;
+                const categoryTotals = {};
+                const feedbackData = [];
+
+                juryVotesSnapshot.docs.forEach(doc => {
+                    const voteData = doc.data();
+                    
+                    // Sumar puntuaciones por categoría
+                    Object.keys(voteData.scores || {}).forEach(category => {
+                        if (!categoryTotals[category]) categoryTotals[category] = { total: 0, count: 0 };
+                        categoryTotals[category].total += voteData.scores[category];
+                        categoryTotals[category].count += 1;
+                    });
+
+                    // Calcular score total de este voto
+                    const voteTotal = Object.values(voteData.scores || {}).reduce((sum, score) => sum + score, 0);
+                    totalScore += voteTotal;
+                    totalVotes += 1;
+
+                    feedbackData.push({
+                        jurorName: voteData.jurorName || 'Jurado',
+                        scores: voteData.scores || {},
+                        totalScore: voteTotal,
+                        timestamp: voteData.timestamp
+                    });
+                });
+
+                return {
+                    averageScore: totalVotes > 0 ? totalScore / totalVotes : 0,
+                    categoryAverages: categoryTotals,
+                    totalVotes: totalVotes,
+                    feedbackData: feedbackData
+                };
+
+            } catch (error) {
+                console.error('Error cargando feedback:', error);
+                return null;
+            }
+        }
+
+        async function renderArtists(artists, juryEvaluations, eventId) {
             const container = document.getElementById('artists-container');
             let html = '';
 
-            artists.forEach((artist, index) => {
-                const position = index + 1;
+            for (let i = 0; i < artists.length; i++) {
+                const artist = artists[i];
+                const position = i + 1;
                 const votes = artist.totalRatingsCount || 0;
                 const artistJuryEvals = juryEvaluations[artist.id] || [];
+
+                // Cargar feedback en vivo para este artista
+                const feedbackData = await loadArtistFeedback(eventId, artist.id);
 
                 // Análisis del público
                 const publicAnalysis = generatePublicAnalysis(artist, votes);
                 
-                // Análisis del jurado
-                const juryAnalysis = generateJuryAnalysis(artistJuryEvals);
+                // Análisis del jurado (ahora incluye feedback)
+                const juryAnalysis = generateJuryAnalysis(artistJuryEvals, feedbackData);
 
                 html += `
                     <div class="artist-card glass-effect p-6 rounded-lg">
@@ -258,7 +317,7 @@
                         ${votes > 0 ? generatePublicObservations(artist, votes) : ''}
                     </div>
                 `;
-            });
+            }
 
             container.innerHTML = html;
         }
@@ -316,6 +375,8 @@
         }
 
         function generateJuryAnalysis(evaluations) {
+            console.log('🔍 DEBUG Evaluaciones del jurado:', evaluations);
+            
             if (evaluations.length === 0) {
                 return `
                     <div>
@@ -328,27 +389,69 @@
                 `;
             }
 
+            // Debuggear primera evaluación para ver estructura
+            if (evaluations.length > 0) {
+                console.log('📊 Estructura de evaluación:', evaluations[0]);
+                console.log('📊 Tiene scores?:', evaluations[0].scores);
+                console.log('📊 Tiene categories?:', evaluations[0].categories);
+            }
+
             const totalScore = evaluations.reduce((sum, evaluation) => sum + (evaluation.score || 0), 0);
             const avgScore = totalScore / evaluations.length;
 
             // Calcular promedios por categoría del jurado
             const juryCategories = [
-                { key: 'singing', name: 'Canto', icon: '🎤', color: 'blue' },
-                { key: 'transmission', name: 'Transmisión', icon: '📡', color: 'green' },
-                { key: 'attitude', name: 'Actitud', icon: '😊', color: 'yellow' },
-                { key: 'originality', name: 'Originalidad', icon: '💡', color: 'purple' },
-                { key: 'costume', name: 'Vestuario', icon: '👗', color: 'pink' },
-                { key: 'staging', name: 'Puesta en Escena', icon: '🎭', color: 'orange' }
+                { key: 'singing', name: 'Canto', icon: '🎤', color: 'blue', altKeys: ['canto', 'afinacion'] },
+                { key: 'transmission', name: 'Transmisión', icon: '📡', color: 'green', altKeys: ['transmision'] },
+                { key: 'attitude', name: 'Actitud', icon: '😊', color: 'yellow', altKeys: ['actitud'] },
+                { key: 'originality', name: 'Originalidad', icon: '💡', color: 'purple', altKeys: ['originalidad'] },
+                { key: 'costume', name: 'Vestuario', icon: '👗', color: 'pink', altKeys: ['vestuario', 'vestimenta'] },
+                { key: 'staging', name: 'Puesta en Escena', icon: '🎭', color: 'orange', altKeys: ['puesta', 'puesta_escena'] }
             ];
 
-            // Calcular promedios por categoría
+            // Calcular promedios por categoría con soporte para múltiples formatos
             const categoryAverages = juryCategories.map(cat => {
                 const total = evaluations.reduce((sum, evaluation) => {
-                    return sum + (evaluation.categories && evaluation.categories[cat.key] ? evaluation.categories[cat.key] : 0);
+                    let value = 0;
+                    
+                    // Intentar con categories
+                    if (evaluation.categories) {
+                        value = evaluation.categories[cat.key] || 0;
+                        // Si no encuentra, intentar con nombres alternativos
+                        if (value === 0) {
+                            for (let altKey of cat.altKeys) {
+                                if (evaluation.categories[altKey]) {
+                                    value = evaluation.categories[altKey];
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Intentar con scores
+                    if (value === 0 && evaluation.scores) {
+                        value = evaluation.scores[cat.key] || 0;
+                        // Si no encuentra, intentar con nombres alternativos
+                        if (value === 0) {
+                            for (let altKey of cat.altKeys) {
+                                if (evaluation.scores[altKey]) {
+                                    value = evaluation.scores[altKey];
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    
+                    console.log(`📊 ${cat.name}: ${value} puntos`);
+                    return sum + value;
                 }, 0);
+                
+                const average = evaluations.length > 0 ? total / evaluations.length : 0;
+                console.log(`🎯 ${cat.name} promedio: ${average.toFixed(1)}`);
+                
                 return {
                     ...cat,
-                    average: evaluations.length > 0 ? total / evaluations.length : 0
+                    average: average
                 };
             });
 
