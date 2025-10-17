@@ -16,10 +16,22 @@
         #close-scanner-btn { top: 1.5rem; right: 1.5rem; }
         #scanned-ticket-info-fullscreen { position: absolute; bottom: 6rem; left: 50%; transform: translateX(-50%); width: 90%; max-width: 400px; z-index: 60; }
         .artist-card { background-color: #1f2937; border: 1px solid #374151; display: flex; justify-content: space-between; align-items: center; padding: 0.75rem 1rem; border-radius: 0.5rem; }
-        .scan-flash { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 1100; pointer-events: none; opacity: 0; transition: opacity 0.5s ease-out; }
-        .scan-flash.valid { background-color: rgba(74, 222, 128, 0.5); }
-        .scan-flash.invalid { background-color: rgba(248, 113, 113, 0.5); }
-        .scan-flash.used { background-color: rgba(250, 204, 21, 0.5); }
+        .scan-flash { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 1100; pointer-events: none; opacity: 0; transition: opacity 0.3s ease-out; }
+        .scan-flash.valid { background-color: rgba(34, 197, 94, 0.4); }
+        .scan-flash.invalid { background-color: rgba(239, 68, 68, 0.4); }
+        .scan-flash.used { background-color: rgba(245, 158, 11, 0.4); }
+        
+        /* 🎯 ANIMACIONES PARA MEJOR UX */
+        @keyframes scanPulse { 0%, 100% { opacity: 0.6; } 50% { opacity: 1; } }
+        .animate-pulse { animation: scanPulse 2s ease-in-out infinite; }
+        
+        /* 📱 MEJORAS PARA MÓVILES */
+        #qr-code-reader video { 
+            width: 100% !important; 
+            height: 100% !important; 
+            object-fit: cover; 
+            transform: scaleX(-1); /* Efecto espejo para mejor UX */
+        }
     </style>
 </head>
 <body>
@@ -56,10 +68,32 @@
     <div id="fullscreen-scanner-container" class="hidden">
         <div id="qr-code-reader"></div>
         <button id="close-scanner-btn" class="scanner-button"><svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg></button>
-        <div id="scanned-ticket-info-fullscreen" class="hidden bg-gray-800 bg-opacity-90 p-4 rounded-lg shadow-xl text-center"></div>
+        
+        <!-- 📊 INDICADOR DE ESTADO DEL SCANNER -->
+        <div id="scanner-status" class="absolute top-4 left-1/2 transform -translate-x-1/2 bg-green-600 bg-opacity-90 text-white px-4 py-2 rounded-lg text-sm font-medium z-60">
+            📷 Escaneando... Apunta al código QR
+        </div>
+        
+        <!-- 🎯 GUÍA VISUAL DE ESCANEO -->
+        <div class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-50 pointer-events-none">
+            <div class="w-64 h-64 border-4 border-white border-opacity-50 rounded-lg animate-pulse"></div>
+            <div class="absolute top-2 left-2 w-8 h-8 border-l-4 border-t-4 border-white"></div>
+            <div class="absolute top-2 right-2 w-8 h-8 border-r-4 border-t-4 border-white"></div>
+            <div class="absolute bottom-2 left-2 w-8 h-8 border-l-4 border-b-4 border-white"></div>
+            <div class="absolute bottom-2 right-2 w-8 h-8 border-r-4 border-b-4 border-white"></div>
+        </div>
+
+        <div id="scanned-ticket-info-fullscreen" class="hidden bg-gray-800 bg-opacity-95 p-4 rounded-lg shadow-xl text-center backdrop-blur-sm"></div>
     </div>
     
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+    <!-- 🚀 IMPORTACIÓN ADICIONAL PARA MEJORAR DETECCIÓN -->
+    <script>
+        // Configuración global para mejorar rendimiento
+        if (typeof Html5QrcodeScanType === 'undefined') {
+            window.Html5QrcodeScanType = { SCAN_TYPE_CAMERA: 0, SCAN_TYPE_FILE: 1 };
+        }
+    </script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
 
     <script type="module">
@@ -212,86 +246,157 @@
             }
 
             function resumeScanner() {
+                // 🚀 MODO CONTINUO: Solo ocultar info, scanner ya está activo
                 const infoContainer = document.getElementById('scanned-ticket-info-fullscreen');
                 infoContainer.classList.add('hidden');
-                infoContainer.innerHTML = ''; 
-                if (html5QrCode && isScannerActive) {
-                    try {
-                        html5QrCode.resume();
-                    } catch (e) {
-                        console.error("Error al reanudar el escáner.", e);
-                    }
-                }
+                infoContainer.innerHTML = '';
+                
+                // Resetear cooldown para permitir nuevo escaneo inmediato
+                lastScannedCode = null;
+                lastScanTime = 0;
+                
+                console.log("✅ Scanner en modo continuo - listo para próximo código");
             }
 
             async function processScan(decodedText) {
-                const infoContainer = document.getElementById('scanned-ticket-info-fullscreen');
-                const ticketRef = doc(db, `events/${eventId}/tickets`, decodedText);
-                const ticketDoc = await getDoc(ticketRef);
-                
-                let status, colorClass, ticketData, sound;
+                try {
+                    const infoContainer = document.getElementById('scanned-ticket-info-fullscreen');
+                    const ticketRef = doc(db, `events/${eventId}/tickets`, decodedText);
+                    const ticketDoc = await getDoc(ticketRef);
+                    
+                    let status, colorClass, ticketData, sound;
 
-                if (!ticketDoc.exists()) {
-                    status = 'ENTRADA INVÁLIDA';
-                    colorClass = 'text-red-400';
-                    sound = "C3";
-                    ticketData = { name: 'Desconocido' };
-                } else {
-                    ticketData = { id: ticketDoc.id, ...ticketDoc.data() };
-                    if (ticketData.used) {
-                        status = 'YA UTILIZADA';
-                        colorClass = 'text-yellow-400';
-                        sound = "G3";
+                    if (!ticketDoc.exists()) {
+                        status = 'ENTRADA INVÁLIDA';
+                        colorClass = 'text-red-400';
+                        sound = "C3";
+                        ticketData = { name: 'Desconocido' };
                     } else {
-                        status = 'ENTRADA VÁLIDA';
-                        colorClass = 'text-green-400';
-                        sound = "C5";
+                        ticketData = { id: ticketDoc.id, ...ticketDoc.data() };
+                        if (ticketData.used) {
+                            status = 'YA UTILIZADA';
+                            colorClass = 'text-yellow-400';
+                            sound = "G3";
+                        } else {
+                            status = 'ENTRADA VÁLIDA';
+                            colorClass = 'text-green-400';
+                            sound = "C5";
+                        }
                     }
-                }
-                
-                html5QrCode.pause(true); // Pausar el escáner
-                playSound(sound);
+                    
+                    // 🚀 NO PAUSAR AUTOMÁTICAMENTE - Lectura continua como MercadoPago
+                    playSound(sound);
 
-                const flashOverlay = document.getElementById('scan-flash-overlay');
-                const statusType = status.split(' ')[1].toLowerCase(); 
-                flashOverlay.className = `scan-flash ${statusType === 'inválida' ? 'invalid' : (statusType === 'utilizada' ? 'used' : 'valid')}`;
-                flashOverlay.style.opacity = '1';
-                setTimeout(() => { flashOverlay.style.opacity = '0'; }, 600);
+                    const flashOverlay = document.getElementById('scan-flash-overlay');
+                    const statusType = status.split(' ')[1].toLowerCase(); 
+                    flashOverlay.className = `scan-flash ${statusType === 'inválida' ? 'invalid' : (statusType === 'utilizada' ? 'used' : 'valid')}`;
+                    flashOverlay.style.opacity = '1';
+                    setTimeout(() => { flashOverlay.style.opacity = '0'; }, 300); // Reducir tiempo de flash
 
-                const paymentStatus = ticketData.paymentStatus || 'Paga';
-                const paymentClass = paymentStatus === 'Paga' ? 'text-green-400' : 'text-red-400';
-                
-                let buttonHTML = '';
-                if (!ticketData.used && status === 'ENTRADA VÁLIDA') {
-                     buttonHTML = `<button id="check-in-btn-internal" data-ticket-id="${ticketData.id}" class="w-full mt-6 px-4 py-3 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700 text-lg">Ingresar</button>`;
-                } else {
-                    buttonHTML = `<button id="scan-again-btn-internal" class="w-full mt-6 px-4 py-3 bg-sky-600 text-white font-bold rounded-lg hover:bg-sky-700 text-lg">Escanear Siguiente</button>`;
-                }
+                    const paymentStatus = ticketData.paymentStatus || 'Paga';
+                    const paymentClass = paymentStatus === 'Paga' ? 'text-green-400' : 'text-red-400';
+                    
+                    let buttonHTML = '';
+                    if (!ticketData.used && status === 'ENTRADA VÁLIDA') {
+                         buttonHTML = `<button id="check-in-btn-internal" data-ticket-id="${ticketData.id}" class="w-full mt-4 px-4 py-2 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700 text-sm">✅ Ingresar</button>`;
+                    } else {
+                        buttonHTML = `<div class="mt-4 text-center text-gray-400 text-sm">Continúa escaneando...</div>`;
+                    }
 
-                infoContainer.innerHTML = `
-                    <h3 class="text-4xl font-bold ${colorClass}">${status}</h3>
-                    <div class="mt-4 text-left text-lg">
-                        <p><strong>Nombre:</strong> <span class="text-sky-300 font-semibold">${ticketData.name}</span></p>
-                        <p><strong>Grupo:</strong> <span class="text-gray-300 font-semibold">${ticketData.prefix || 'N/A'}</span></p>
-                        <p><strong>Pago:</strong> <span class="font-bold ${paymentClass}">${paymentStatus.toUpperCase()}</span></p>
-                    </div>
-                    ${buttonHTML}`;
-                
-                infoContainer.classList.remove('hidden');
-                
-                const checkInButton = document.getElementById('check-in-btn-internal');
-                if (checkInButton) {
-                    checkInButton.addEventListener('click', () => handleManualCheckIn(checkInButton.dataset.ticketId));
-                    checkInButton.focus();
-                } else {
-                    document.getElementById('scan-again-btn-internal').addEventListener('click', resumeScanner);
-                    document.getElementById('scan-again-btn-internal').focus();
+                    infoContainer.innerHTML = `
+                        <h3 class="text-3xl font-bold ${colorClass} mb-2">${status}</h3>
+                        <div class="bg-gray-900 bg-opacity-70 rounded-lg p-3 mb-3">
+                            <p class="text-lg"><strong class="text-gray-400">Nombre:</strong> <span class="text-sky-300 font-semibold">${ticketData.name}</span></p>
+                            <p class="text-sm"><strong class="text-gray-400">Grupo:</strong> <span class="text-gray-300">${ticketData.prefix || 'N/A'}</span></p>
+                            <p class="text-sm"><strong class="text-gray-400">Pago:</strong> <span class="font-bold ${paymentClass}">${paymentStatus.toUpperCase()}</span></p>
+                        </div>
+                        ${buttonHTML}`;
+                    
+                    infoContainer.classList.remove('hidden');
+                    
+                    // Actualizar estado del scanner
+                    const statusIndicator = document.getElementById('scanner-status');
+                    if (status === 'ENTRADA VÁLIDA') {
+                        statusIndicator.textContent = '✅ Código válido - Continúa escaneando';
+                        statusIndicator.className = 'absolute top-4 left-1/2 transform -translate-x-1/2 bg-green-600 bg-opacity-90 text-white px-4 py-2 rounded-lg text-sm font-medium z-60';
+                    } else if (status === 'YA UTILIZADA') {
+                        statusIndicator.textContent = '⚠️ Ya utilizada - Continúa escaneando';
+                        statusIndicator.className = 'absolute top-4 left-1/2 transform -translate-x-1/2 bg-yellow-600 bg-opacity-90 text-white px-4 py-2 rounded-lg text-sm font-medium z-60';
+                    } else {
+                        statusIndicator.textContent = '❌ Código inválido - Continúa escaneando';
+                        statusIndicator.className = 'absolute top-4 left-1/2 transform -translate-x-1/2 bg-red-600 bg-opacity-90 text-white px-4 py-2 rounded-lg text-sm font-medium z-60';
+                    }
+                    
+                    const checkInButton = document.getElementById('check-in-btn-internal');
+                    if (checkInButton) {
+                        checkInButton.addEventListener('click', () => handleManualCheckIn(checkInButton.dataset.ticketId));
+                    }
+                    
+                    // 🚀 AUTO-OCULTAR INFO DESPUÉS DE 3 SEGUNDOS (excepto si hay botón de ingreso)
+                    if (!checkInButton) {
+                        setTimeout(() => {
+                            resumeScanner();
+                        }, 3000);
+                    }
+                    
+                } catch (error) {
+                // ✅ MANEJO DE ERRORES DE CONEXIÓN
+                console.error('❌ Error procesando código QR:', error);
+                    
+                    const statusIndicator = document.getElementById('scanner-status');
+                    statusIndicator.textContent = '❌ Error de conexión';
+                    statusIndicator.className = 'absolute top-20 left-1/2 transform -translate-x-1/2 bg-red-600 bg-opacity-90 text-white px-4 py-2 rounded-lg text-sm font-medium z-60';
+                    
+                    playSound("C3"); // Sonido de error
+                    
+                    const infoContainer = document.getElementById('scanned-ticket-info-fullscreen');
+                    infoContainer.innerHTML = `
+                        <h3 class="text-4xl font-bold text-red-400">ERROR DE CONEXIÓN</h3>
+                        <div class="mt-4 text-left text-lg">
+                            <p><strong>Código escaneado:</strong> <span class="text-sky-300 font-semibold">${decodedText}</span></p>
+                            <p><strong>Error:</strong> <span class="text-red-300">${error.message}</span></p>
+                            <p class="text-yellow-300 text-sm mt-2">⚠️ Verifica tu conexión a internet</p>
+                        </div>
+                        <button id="retry-scan-btn-internal" class="w-full mt-6 px-4 py-3 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 text-lg">🔄 Reintentar</button>`;
+                    
+                    infoContainer.classList.remove('hidden');
+                    
+                    document.getElementById('retry-scan-btn-internal').addEventListener('click', () => {
+                        // Reintentar procesando el mismo código
+                        processScan(decodedText);
+                    });
+                    document.getElementById('retry-scan-btn-internal').focus();
                 }
             }
 
+            let lastScannedCode = null;
+            let lastScanTime = 0;
+            let scanCooldown = 2000; // 2 segundos de cooldown entre escaneos del mismo código
+            let scanAttempts = 0;
+            let maxRetries = 3;
+
             function onScanSuccess(decodedText) {
-                if (isScannerActive) {
-                    processScan(decodedText);
+                if (!isScannerActive) return;
+                
+                const currentTime = Date.now();
+                
+                // 🚀 PREVENIR ESCANEOS DUPLICADOS RÁPIDOS (como MercadoPago)
+                if (lastScannedCode === decodedText && (currentTime - lastScanTime) < scanCooldown) {
+                    console.log("🔄 Escaneo duplicado ignorado");
+                    return;
+                }
+                
+                lastScannedCode = decodedText;
+                lastScanTime = currentTime;
+                
+                processScan(decodedText);
+            }
+
+            function onScanError(errorMessage) {
+                // 🔇 Silenciar errores de escaneo para mejor UX (como MercadoPago)
+                // Solo logear errores críticos
+                if (errorMessage.includes("NotFoundException") === false) {
+                    console.warn("Scanner error:", errorMessage);
                 }
             }
             
@@ -303,24 +408,60 @@
                 
                 html5QrCode = new Html5Qrcode("qr-code-reader");
 
-                const config = { fps: 25 };
+                // 🚀 CONFIGURACIÓN OPTIMIZADA TIPO MERCADOPAGO
+                const config = { 
+                    fps: 60, // Aumentar FPS para mejor detección
+                    qrbox: { width: 280, height: 280 }, // Área de escaneo optimizada
+                    aspectRatio: 1.777778, // Ratio 16:9 para mejor rendimiento
+                    disableFlip: false, // Permitir voltear imagen
+                    supportedScanTypes: [Html5QrcodeScanType.SCAN_TYPE_CAMERA],
+                    experimentalFeatures: {
+                        useBarCodeDetectorIfSupported: true // Usar detector nativo si está disponible
+                    }
+                };
 
+                // 📱 CONFIGURACIÓN DE CÁMARA OPTIMIZADA
                 const videoConstraints = {
-                    width: { ideal: 1280 },
-                    height: { ideal: 720 },
-                    advanced: [{ focusMode: 'continuous' }]
+                    width: { min: 640, ideal: 1920, max: 1920 },
+                    height: { min: 480, ideal: 1080, max: 1080 },
+                    frameRate: { ideal: 60, max: 60 },
+                    focusMode: { ideal: "continuous" },
+                    exposureMode: { ideal: "continuous" },
+                    whiteBalanceMode: { ideal: "continuous" },
+                    zoom: { ideal: 1.0 }
                 };
                 
                 try {
-                    await html5QrCode.start({ facingMode: "environment", videoConstraints }, config, onScanSuccess, (e) => {});
+                    // Intentar con configuración premium primero
+                    await html5QrCode.start(
+                        { facingMode: { ideal: "environment" }, advanced: [videoConstraints] }, 
+                        config, 
+                        onScanSuccess, 
+                        onScanError
+                    );
+                    console.log("✅ Scanner iniciado con configuración premium");
                 } catch (err) {
-                    console.warn("Ajustes avanzados fallaron. Reintentando con configuración básica.", err);
+                    console.warn("⚠️ Configuración premium falló. Probando configuración estándar...", err);
                     html5QrCode = new Html5Qrcode("qr-code-reader");
+                    
+                    // Configuración de respaldo mejorada
+                    const fallbackConfig = { 
+                        fps: 30, 
+                        qrbox: { width: 250, height: 250 },
+                        aspectRatio: 1.0
+                    };
+                    
                     try {
-                        await html5QrCode.start({ facingMode: "environment" }, config, onScanSuccess, (e) => {});
+                        await html5QrCode.start(
+                            { facingMode: "environment" }, 
+                            fallbackConfig, 
+                            onScanSuccess, 
+                            onScanError
+                        );
+                        console.log("✅ Scanner iniciado con configuración estándar");
                     } catch (finalErr) {
-                        alert("No se pudo iniciar la cámara. Asegúrate de dar permisos y refresca la página.");
-                        console.error("Error final al iniciar escáner:", finalErr);
+                        console.error("❌ Error crítico al iniciar scanner:", finalErr);
+                        alert("No se pudo iniciar la cámara. Verifica los permisos y refresca la página.");
                         await stopScanner();
                     }
                 }
