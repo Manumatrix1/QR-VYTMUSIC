@@ -269,6 +269,65 @@
             { id: 'excelente', name: 'Excelente', value: 100, class: 'btn-primary' }
         ];
 
+        // SISTEMA DE FEEDBACK AUTOMÁTICO
+        const FEEDBACK_TEMPLATES = {
+            'afinacion': {
+                100: ['Tu afinación fue impecable', 'Excelente precisión vocal', 'Dominio total de la técnica vocal'],
+                80: ['Muy buena afinación en general', 'Buen control vocal', 'Afinación sólida y confiable'],
+                60: ['Afinación correcta con pequeños detalles', 'Mantén el trabajo en técnica vocal', 'Buena base, sigue practicando'],
+                40: ['Trabaja más en afinación y técnica vocal', 'Necesitas mayor precisión en las notas', 'Dedica tiempo a ejercicios de entonación'],
+                20: ['Requiere trabajo intenso en afinación', 'Fundamental mejorar la técnica vocal', 'Considera clases de canto para mejorar']
+            },
+            'puesta_escena': {
+                100: ['Presencia escénica excepcional', 'Dominio total del escenario', 'Movimiento y expresión perfectos'],
+                80: ['Muy buena presencia en el escenario', 'Buen manejo del espacio escénico', 'Expresión corporal efectiva'],
+                60: ['Presencia escénica correcta', 'Sigue trabajando en tu movimiento', 'Buena base de expresión'],
+                40: ['Necesitas mayor seguridad en escena', 'Trabaja en tu presencia y movimiento', 'Desarrolla más confianza escénica'],
+                20: ['Requiere trabajo en presencia escénica', 'Practica movimiento y expresión corporal', 'Busca coaching escénico']
+            },
+            'vestimenta': {
+                100: ['Vestuario perfecto para la canción', 'Excelente elección de outfit', 'Look impecable y apropiado'],
+                80: ['Muy buena elección de vestuario', 'Outfit acorde a la presentación', 'Buen sentido del estilo'],
+                60: ['Vestuario apropiado', 'Considera detalles adicionales', 'Buena base de estilo personal'],
+                40: ['Mejora la elección del vestuario', 'Busca outfit más acorde al tema', 'Trabaja en tu imagen escénica'],
+                20: ['Requiere mayor atención al vestuario', 'Fundamental cuidar la imagen', 'Considera asesoría de imagen']
+            },
+            'conexion_publico': {
+                100: ['Conexión excepcional con el público', 'Carisma natural y envolvente', 'Logras emocionar a la audiencia'],
+                80: ['Muy buena conexión con el público', 'Buen carisma y presencia', 'Generas buena respuesta del público'],
+                60: ['Conexión decente con el público', 'Sigue desarrollando tu carisma', 'Trabaja en el contacto visual'],
+                40: ['Necesitas conectar más con el público', 'Desarrolla tu carisma personal', 'Practica interacción con audiencia'],
+                20: ['Requiere trabajo en conexión', 'Fundamental desarrollar carisma', 'Busca técnicas de comunicación']
+            },
+            'eleccion_cancion': {
+                100: ['Elección de canción perfecta', 'Tema ideal para tu voz', 'Excelente selección musical'],
+                80: ['Muy buena elección de canción', 'Tema apropiado para tu estilo', 'Buena selección musical'],
+                60: ['Canción apropiada', 'Considera explorar otros géneros', 'Buena elección base'],
+                40: ['Mejora la selección de canciones', 'Busca temas más acordes a tu voz', 'Explora tu rango vocal'],
+                20: ['Requiere mejor elección musical', 'Fundamental conocer tu rango', 'Considera asesoría musical']
+            }
+        };
+
+        // FUNCIÓN PARA GENERAR FEEDBACK AUTOMÁTICO
+        function generateAutoFeedback(artistVotes) {
+            const feedbackSuggestions = [];
+            
+            CRITERIA.forEach(criteria => {
+                const score = artistVotes[criteria.id];
+                if (score && FEEDBACK_TEMPLATES[criteria.id] && FEEDBACK_TEMPLATES[criteria.id][score]) {
+                    const templates = FEEDBACK_TEMPLATES[criteria.id][score];
+                    const randomTemplate = templates[Math.floor(Math.random() * templates.length)];
+                    feedbackSuggestions.push({
+                        category: criteria.name,
+                        score: score,
+                        suggestion: randomTemplate
+                    });
+                }
+            });
+            
+            return feedbackSuggestions;
+        }
+
         // VARIABLES GLOBALES
         let currentJuror = null;
         let artists = [];
@@ -464,11 +523,21 @@
                                 </div>
                                 <div class="text-center space-y-3">
                                     <div class="text-3xl font-bold text-green-300 mb-2">${average.toFixed(1)} puntos</div>
+                                    
+                                    <!-- FEEDBACK AUTOMÁTICO GENERADO -->
+                                    <div class="bg-blue-800 bg-opacity-50 p-4 rounded-lg mt-4">
+                                        <h5 class="text-lg font-bold mb-3 text-center">💬 Sugerencias de Feedback</h5>
+                                        <div id="auto-feedback-${artist.id}" class="space-y-2 text-sm">
+                                            <!-- Se generará automáticamente -->
+                                        </div>
+                                        <p class="text-xs text-blue-300 mt-2 text-center">💡 Basado en tus puntuaciones - Puedes usarlas como guía</p>
+                                    </div>
+                                    
                                     <div class="space-x-2 space-y-2">
                                         <button onclick="editVote('${artist.id}')" class="btn btn-primary">✏️ Editar Voto</button>
                                         <button onclick="clearVote('${artist.id}')" class="btn btn-red">🗑️ Borrar Voto</button>
                                         <br>
-                                        <button onclick="forceSubmitVote('${artist.id}')" class="btn btn-green">� GUARDAR VOTO</button>
+                                        <button onclick="forceSubmitVote('${artist.id}')" class="btn btn-green">💾 GUARDAR VOTO</button>
                                     </div>
                                     <p class="text-xs text-yellow-300">💡 Si no aparece en reportes, usa "GUARDAR VOTO"</p>
                                 </div>
@@ -844,6 +913,15 @@
             // Renderizar categorías
             renderModalCategories(artist);
             
+            // Generar feedback si ya hay votos completos
+            const artistVotes = votes[artist.id] || {};
+            const hasAllVotes = CRITERIA.every(criteria => 
+                artistVotes[criteria.id] !== undefined && artistVotes[criteria.id] !== null
+            );
+            if (hasAllVotes) {
+                generateAndShowFeedback(artist.id, artistVotes);
+            }
+            
             // Mostrar modal
             document.getElementById('voting-modal').classList.remove('hidden');
         };
@@ -917,6 +995,37 @@
             const total = Object.values(currentVotes).reduce((sum, val) => sum + val, 0);
             
             document.getElementById('modal-total-score').textContent = `${total}/600`;
+            
+            // Generar y mostrar feedback automático si hay votos completos
+            const hasAllVotes = CRITERIA.every(criteria => 
+                currentVotes[criteria.id] !== undefined && currentVotes[criteria.id] !== null
+            );
+            
+            if (hasAllVotes) {
+                generateAndShowFeedback(currentModalArtist.id, currentVotes);
+            }
+        }
+
+        // Función para generar y mostrar feedback automático
+        function generateAndShowFeedback(artistId, artistVotes) {
+            const feedbackContainer = document.getElementById(`auto-feedback-${artistId}`);
+            if (!feedbackContainer) return;
+            
+            const feedbackSuggestions = generateAutoFeedback(artistVotes);
+            
+            if (feedbackSuggestions.length > 0) {
+                feedbackContainer.innerHTML = feedbackSuggestions.map(item => `
+                    <div class="bg-black bg-opacity-30 p-2 rounded">
+                        <div class="flex justify-between items-center">
+                            <span class="font-bold text-blue-300">${item.category}</span>
+                            <span class="text-xs text-gray-400">${item.score} pts</span>
+                        </div>
+                        <p class="text-white text-sm mt-1">"${item.suggestion}"</p>
+                    </div>
+                `).join('');
+            } else {
+                feedbackContainer.innerHTML = '<p class="text-gray-400 text-center">Completa todas las categorías para ver sugerencias</p>';
+            }
         }
 
         // Función para guardar votación desde modal
