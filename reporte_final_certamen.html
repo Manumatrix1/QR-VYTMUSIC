@@ -446,13 +446,22 @@
                 <button id="share-results-btn" class="py-3 px-6 bg-purple-600 text-white font-bold rounded-lg hover:bg-purple-700 transition-colors">
                     🔗 Compartir Resultados
                 </button>
+                <button id="clear-global-data-btn" class="py-3 px-6 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700 transition-colors">
+                    🧹 Limpiar Datos Globales
+                </button>
             </div>
         </section>
     </div>
 
+    <!-- SCRIPT DE GESTIÓN DE ARTISTAS GLOBALES -->
+    <script src="./global-artists-manager.js"></script>
+
     <script type="module">
         import { db } from './firebase_config.js';
         import { collection, getDocs, doc, getDoc, query, orderBy, where, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // INICIALIZAR GESTOR DE ARTISTAS GLOBALES
+        const globalArtistsManager = new GlobalArtistsManager();
 
         const urlParams = new URLSearchParams(window.location.search);
         const eventId = urlParams.get('eventId');
@@ -599,20 +608,138 @@
             const includeSecret = ui.includeSecret.checked;
             const votingModeFilter = ui.votingModeFilter.value;
 
-            // Generar ranking de jurados
-            await generateJuryRanking(includeSecret, votingModeFilter);
+            // USAR NUEVO SISTEMA CONSOLIDADO
+            console.log('🚀 Generando reporte con sistema de artistas globales...');
+            await generateConsolidatedRanking();
             
-            // Generar ranking del público
+            // Generar ranking del público (sin cambios)
             await generatePublicRanking();
             
-            // Actualizar UI
-            updatePodium();
+            // NO llamar updatePodium() porque lo hace generateConsolidatedRanking()
+            console.log('✅ Reporte final generado con sistema consolidado');
             updateJuryRanking();
             updatePublicRanking();
             updateCombinedRanking();
             updateStatistics();
             updateGalaDetails();
             updateEvolutionChart();
+        }
+
+        // NUEVA FUNCIÓN: Generar ranking consolidado por artistas globales
+        async function generateConsolidatedRanking() {
+            console.log('🏆 Generando ranking consolidado del certamen...');
+            
+            try {
+                // Obtener votos consolidados usando el GlobalArtistsManager
+                const consolidatedVotes = await globalArtistsManager.getConsolidatedVotes(db);
+                
+                // Generar ranking final
+                const finalRanking = globalArtistsManager.generateFinalRanking(consolidatedVotes);
+                
+                console.log('🎯 Ranking final:', finalRanking);
+                
+                // Actualizar interfaz con el ranking consolidado
+                renderConsolidatedRanking(finalRanking);
+                
+                // Actualizar podio con los 3 primeros
+                updatePodiumWithConsolidated(finalRanking);
+                
+                return finalRanking;
+                
+            } catch (error) {
+                console.error('❌ Error generando ranking consolidado:', error);
+                // Fallback al sistema anterior
+                return await generateJuryRanking(false, 'all');
+            }
+        }
+
+        // Renderizar ranking consolidado en la interfaz
+        function renderConsolidatedRanking(finalRanking) {
+            const juryRankingContainer = document.getElementById('jury-ranking');
+            
+            if (!juryRankingContainer) {
+                console.warn('⚠️ Container jury-ranking no encontrado');
+                return;
+            }
+            
+            juryRankingContainer.innerHTML = finalRanking.map((artist, index) => {
+                const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '';
+                
+                return `
+                    <div class="glass-effect p-4 rounded-lg flex items-center gap-4 ${artist.isWinner ? 'border-2 border-yellow-400' : ''}">
+                        <div class="text-2xl font-bold ${artist.isWinner ? 'text-yellow-400' : 'text-sky-300'}">
+                            ${medal} #${artist.position}
+                        </div>
+                        <div class="flex-grow">
+                            <h4 class="text-lg font-bold text-white">${artist.name}</h4>
+                            ${artist.alternativeNames.length > 0 ? 
+                                `<p class="text-sm text-gray-400">También conocido como: ${artist.alternativeNames.join(', ')}</p>` : ''
+                            }
+                            <p class="text-sm text-gray-300">
+                                Participó en ${artist.galas.length} gala${artist.galas.length > 1 ? 's' : ''}:
+                                ${artist.galas.map(g => `<span class="text-blue-300">${g.name || g.eventId}</span>`).join(', ')}
+                            </p>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-2xl font-bold text-green-400">${artist.averageScore.toFixed(1)}</p>
+                            <p class="text-sm text-gray-400">${artist.totalVotes} votos</p>
+                            <p class="text-xs text-gray-500">Total: ${artist.totalScore.toFixed(1)}</p>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            // Agregar información del sistema consolidado
+            const infoDiv = document.createElement('div');
+            infoDiv.className = 'mt-4 p-4 bg-blue-900 bg-opacity-50 rounded-lg text-center';
+            infoDiv.innerHTML = `
+                <h4 class="text-lg font-bold text-blue-300 mb-2">🔗 Sistema de Consolidación Activado</h4>
+                <p class="text-sm text-gray-300">
+                    Este ranking consolida automáticamente los votos de artistas que participaron en múltiples galas.
+                    Los participantes con nombres similares son detectados y sus puntuaciones se suman para determinar el ganador real del certamen.
+                </p>
+                <p class="text-xs text-gray-400 mt-2">
+                    Total de artistas únicos consolidados: ${finalRanking.length}
+                </p>
+            `;
+            
+            juryRankingContainer.appendChild(infoDiv);
+        }
+
+        // Actualizar podio con datos consolidados
+        function updatePodiumWithConsolidated(finalRanking) {
+            if (finalRanking.length >= 1) {
+                const winner = finalRanking[0];
+                document.getElementById('primer-premio').innerHTML = `
+                    <div class="text-6xl mb-4">🏆</div>
+                    <h3 class="text-2xl font-bold text-yellow-300 mb-2">GANADOR DEL CERTAMEN</h3>
+                    <p class="text-xl font-bold text-white">${winner.name}</p>
+                    <p class="text-lg text-yellow-200">${winner.averageScore.toFixed(1)} puntos</p>
+                    <p class="text-sm text-gray-300 mt-2">${winner.totalVotes} votos • ${winner.galas.length} gala${winner.galas.length > 1 ? 's' : ''}</p>
+                `;
+            }
+            
+            if (finalRanking.length >= 2) {
+                const second = finalRanking[1];
+                document.getElementById('segundo-premio').innerHTML = `
+                    <div class="text-5xl mb-4">🥈</div>
+                    <h3 class="text-xl font-bold text-gray-300 mb-2">SEGUNDO LUGAR</h3>
+                    <p class="text-lg font-bold text-white">${second.name}</p>
+                    <p class="text-md text-gray-200">${second.averageScore.toFixed(1)} puntos</p>
+                    <p class="text-sm text-gray-400 mt-1">${second.totalVotes} votos</p>
+                `;
+            }
+            
+            if (finalRanking.length >= 3) {
+                const third = finalRanking[2];
+                document.getElementById('tercer-premio').innerHTML = `
+                    <div class="text-4xl mb-4">🥉</div>
+                    <h3 class="text-lg font-bold text-orange-300 mb-2">TERCER LUGAR</h3>
+                    <p class="text-md font-bold text-white">${third.name}</p>
+                    <p class="text-md text-orange-200">${third.averageScore.toFixed(1)} puntos</p>
+                    <p class="text-sm text-gray-400 mt-1">${third.totalVotes} votos</p>
+                `;
+            }
         }
 
         async function generateJuryRanking(includeSecret, votingModeFilter) {
@@ -1592,6 +1719,19 @@
             ui.exportCsvBtn.addEventListener('click', exportToCSV);
             ui.printReportBtn.addEventListener('click', printReport);
             ui.shareResultsBtn.addEventListener('click', shareResults);
+            
+            // Botón para limpiar datos globales
+            document.getElementById('clear-global-data-btn').addEventListener('click', () => {
+                const confirmation = confirm('⚠️ ADVERTENCIA: Esto borrará TODOS los datos de vinculación de artistas globales.\n\n¿Estás SEGURO de que quieres continuar?\n\nEsta acción NO se puede deshacer.');
+                
+                if (confirmation) {
+                    globalArtistsManager.clearAllData();
+                    alert('🧹 Datos de artistas globales limpiados.\n\nEl sistema volverá a crear nuevas vinculaciones cuando votes nuevamente.');
+                    
+                    // Regenerar el reporte
+                    generateFinalReport();
+                }
+            });
         }
 
         function showLoading(show) {
