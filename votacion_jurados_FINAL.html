@@ -823,11 +823,27 @@ Formato de respuesta:
         };
 
         window.editVote = function(artistId) {
-            if (confirm('¿Editar esta votación?')) {
-                delete votes[artistId];
+            const artist = artists.find(a => a.id === artistId);
+            const confirmation = confirm(`✏️ EDITAR VOTACIÓN\n\n¿Quieres modificar los votos para "${artist?.name || artistId}"?\n\nEsto te permitirá:\n• Cambiar las puntuaciones\n• Volver a guardar los votos\n• El voto anterior se sobrescribirá\n\n¿Continuar con la edición?`);
+            
+            if (confirmation) {
+                console.log(`✏️ Editando voto para: ${artistId}`);
+                
+                // NO borrar los votos, mantenerlos para edición
+                // Los votos actuales se mantendrán como base para edición
+                
+                // Si estamos en modo grid, cambiar a lista para mejor edición
+                if (currentViewMode === 'grid') {
+                    switchViewMode('list');
+                }
+                
+                // Forzar actualización de la vista
                 renderArtists();
-                preserveFilter(); // Mantener filtro
+                preserveFilter();
                 updateStats();
+                
+                // Mensaje informativo
+                alert(`✏️ MODO EDICIÓN ACTIVADO\n\n• Puedes modificar cualquier puntuación\n• Los valores actuales se muestran como base\n• Al guardar, sobrescribirás el voto anterior\n\nCambia a vista de lista para mejor experiencia de edición.`);
             }
         };
 
@@ -938,7 +954,22 @@ Formato de respuesta:
             } catch (error) {
                 console.error('❌ Error completo:', error);
                 console.error('❌ Stack trace:', error.stack);
-                alert('❌ Error al guardar. Revisa la consola (F12) y verifica tu conexión.');
+                console.error('❌ Error message:', error.message);
+                console.error('❌ Error code:', error.code);
+                console.error('❌ EventId actual:', eventId);
+                console.error('❌ CurrentJuror:', currentJuror);
+                console.error('❌ VoteData generada:', JSON.stringify(voteData, null, 2));
+                
+                let errorMessage = 'Error al guardar la votación.\n\n';
+                errorMessage += `Detalles del error:\n`;
+                errorMessage += `• Mensaje: ${error.message || 'Error desconocido'}\n`;
+                errorMessage += `• Código: ${error.code || 'Sin código'}\n`;
+                errorMessage += `• EventId: ${eventId}\n`;
+                errorMessage += `• Jurado: ${currentJuror?.name || 'Sin nombre'}\n\n`;
+                errorMessage += 'Revisa la consola (F12) para más detalles.\n';
+                errorMessage += 'Puedes intentar usar "💾 GUARDAR VOTO" (botón verde) como alternativa.';
+                
+                alert(errorMessage);
             }
         };
 
@@ -989,14 +1020,55 @@ Formato de respuesta:
             }
         }
 
-        // Función para limpiar votos de un artista
-        window.clearVote = function(artistId) {
-            if (confirm('¿Estás seguro de que quieres borrar todos los votos de este artista?')) {
+        // Función para limpiar votos de un artista (LOCAL + FIREBASE)
+        window.clearVote = async function(artistId) {
+            const artist = artists.find(a => a.id === artistId);
+            const confirmation = confirm(`🗑️ BORRAR VOTO COMPLETO\n\n¿Estás seguro de borrar TODOS los votos para "${artist?.name || artistId}"?\n\nEsto eliminará:\n• Los votos locales\n• Los votos guardados en Firebase\n\nEsta acción NO se puede deshacer.`);
+            
+            if (!confirmation) return;
+            
+            try {
+                console.log(`🗑️ Borrando voto para: ${artistId}`);
+                
+                // Borrar localmente
                 delete votes[artistId];
+                console.log('✅ Voto borrado localmente');
+                
+                // Intentar borrar de Firebase en todas las colecciones posibles
+                const docId = `${currentJuror.id}_${artistId}`;
+                let deletedCount = 0;
+                
+                const collections = [
+                    `events/${eventId}/jury_evaluations`,
+                    `events/${eventId}/jury_votes`, 
+                    `events/${eventId}/votes`
+                ];
+                
+                for (const collectionPath of collections) {
+                    try {
+                        await deleteDoc(doc(db, collectionPath, docId));
+                        console.log(`✅ Borrado de ${collectionPath}`);
+                        deletedCount++;
+                    } catch (error) {
+                        console.log(`⚠️ No encontrado en ${collectionPath}:`, error.message);
+                    }
+                }
+                
+                // Actualizar interfaz
                 renderArtists();
-                preserveFilter(); // Mantener el filtro
+                preserveFilter();
                 updateStats();
-                console.log(`🗑️ Votos borrados para artista: ${artistId}`);
+                
+                alert(`✅ VOTO BORRADO EXITOSAMENTE\n\n• Borrado localmente: ✅\n• Borrado de Firebase: ${deletedCount} colecciones\n\nPuedes votar nuevamente para "${artist?.name || artistId}"`);
+                
+            } catch (error) {
+                console.error('❌ Error borrando voto:', error);
+                alert(`❌ Error al borrar:\n${error.message}\n\nEl voto local se borró, pero puede quedar en Firebase.`);
+                
+                // Actualizar interfaz aunque haya error
+                renderArtists();
+                preserveFilter();
+                updateStats();
             }
         };
 
