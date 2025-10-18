@@ -591,43 +591,61 @@
                 html5QrCode = new Html5Qrcode("qr-code-reader");
                 console.log("✅ Html5Qrcode instanciado");
 
-                // 🎯 CONFIGURACIÓN PANTALLA COMPLETA + LECTURA RÁPIDA
+                // 🎯 CONFIGURACIÓN ADAPTATIVA - FUNCIONA EN CELULARES BÁSICOS Y PREMIUM
                 const config = { 
-                    fps: 60, // ✅ FPS ALTOS para lectura rápida
+                    fps: 30, // ✅ FPS EQUILIBRADOS - Rápido pero compatible
                     // ✅ SIN qrbox = DETECCIÓN EN TODA LA PANTALLA
                     aspectRatio: 1.0, // Aspecto cuadrado para mejor centrado
                     disableFlip: false,
                     experimentalFeatures: {
-                        useBarCodeDetectorIfSupported: true // ✅ Detector nativo del navegador
+                        useBarCodeDetectorIfSupported: true // Solo si el dispositivo lo soporta
                     },
-                    // ✅ CONFIGURACIÓN OPTIMIZADA PARA VELOCIDAD
+                    // ✅ CONFIGURACIÓN COMPATIBLE CON CELULARES BÁSICOS
                     showTorchButtonIfSupported: true,
                     showZoomSliderIfSupported: false,
-                    defaultZoomValueIfSupported: 1.0
+                    defaultZoomValueIfSupported: 1.0,
+                    // ✅ OPTIMIZACIONES LIGERAS
+                    rememberLastUsedCamera: true,
+                    supportedScanTypes: [Html5QrcodeScanType.SCAN_TYPE_CAMERA]
                 };
                 
                 console.log("📋 Configuración pantalla completa:", config);
 
                 try {
-                    // ✅ INICIO CON CONFIGURACIÓN OPTIMIZADA PARA VELOCIDAD
-                    await html5QrCode.start(
-                        { 
-                            facingMode: "environment",
-                            // ✅ CONFIGURACIONES PARA LECTURA RÁPIDA
-                            width: { ideal: 1920, max: 1920 },
-                            height: { ideal: 1080, max: 1080 },
-                            frameRate: { ideal: 60, min: 30 }, // FPS altos
-                            focusMode: "continuous", // Enfoque continuo
-                            exposureMode: "continuous", // Exposición automática
-                            zoom: 1.0 // Sin zoom para mejor velocidad
-                        }, 
-                        config, 
-                        onScanSuccess, 
-                        onScanError
-                    );
-                    console.log("✅ Scanner iniciado - PANTALLA COMPLETA + LECTURA RÁPIDA");
+                    // 🎯 CONFIGURACIÓN ADAPTATIVA SEGÚN DISPOSITIVO
+                    // Detectar si es un dispositivo de gama baja/alta
+                    const isLowEndDevice = navigator.hardwareConcurrency <= 4 || 
+                                         navigator.deviceMemory <= 4 ||
+                                         /Android.*[2-6]\./i.test(navigator.userAgent);
                     
-                    // 🎯 OPTIMIZAR CSS PARA VELOCIDAD
+                    let cameraConfig;
+                    
+                    if (isLowEndDevice) {
+                        // ✅ CONFIGURACIÓN PARA CELULARES BÁSICOS
+                        cameraConfig = { 
+                            facingMode: "environment",
+                            width: { ideal: 640, max: 1280 },      // Resolución moderada
+                            height: { ideal: 480, max: 720 },     // Menos exigente
+                            frameRate: { ideal: 20, max: 30 }     // FPS más bajos pero estables
+                        };
+                        console.log("📱 Dispositivo básico detectado - Configuración ligera");
+                    } else {
+                        // ✅ CONFIGURACIÓN PARA CELULARES PREMIUM
+                        cameraConfig = { 
+                            facingMode: "environment",
+                            width: { ideal: 1280, max: 1920 },    // Alta resolución
+                            height: { ideal: 720, max: 1080 },    // Mejor calidad
+                            frameRate: { ideal: 30, max: 60 },    // FPS altos
+                            focusMode: "continuous",              // Solo en dispositivos buenos
+                            exposureMode: "continuous"            // Exposición automática
+                        };
+                        console.log("🚀 Dispositivo premium detectado - Configuración optimizada");
+                    }
+                    
+                    await html5QrCode.start(cameraConfig, config, onScanSuccess, onScanError);
+                    console.log("✅ Scanner iniciado - ADAPTATIVO para tu dispositivo");
+                    
+                    // 🎯 CSS LIGERO COMPATIBLE CON TODOS LOS DISPOSITIVOS
                     setTimeout(() => {
                         const video = document.querySelector('#qr-code-reader video');
                         if (video) {
@@ -636,13 +654,16 @@
                             video.style.objectFit = 'cover';
                             video.style.objectPosition = 'center center';
                             video.style.transform = 'none';
-                            // ✅ OPTIMIZACIONES PARA RENDIMIENTO
-                            video.style.imageRendering = 'optimizeSpeed';
-                            video.style.imageRendering = '-webkit-optimize-contrast';
-                            console.log("✅ CSS optimizado para velocidad aplicado");
+                            
+                            // ✅ OPTIMIZACIONES SOLO PARA DISPOSITIVOS CAPACES
+                            if (!isLowEndDevice) {
+                                video.style.imageRendering = 'optimizeSpeed';
+                                video.style.imageRendering = '-webkit-optimize-contrast';
+                            }
+                            console.log("✅ CSS adaptativo aplicado");
                         }
                         
-                        // Optimizar canvas
+                        // Canvas básico para todos
                         const canvas = document.querySelector('#qr-code-reader canvas');
                         if (canvas) {
                             canvas.style.position = 'absolute';
@@ -650,27 +671,21 @@
                             canvas.style.left = '0';
                             canvas.style.width = '100%';
                             canvas.style.height = '100%';
-                            // ✅ OPTIMIZACIONES DE CANVAS
-                            const ctx = canvas.getContext('2d');
-                            if (ctx) {
-                                ctx.imageSmoothingEnabled = false; // Mejor para QR
-                                ctx.imageSmoothingQuality = 'high';
-                            }
                         }
-                    }, 300); // Reducido a 300ms para aplicar más rápido
+                    }, 300);
                     
                 } catch (err) {
-                    console.warn("⚠️ Error con configuración optimizada, probando simple:", err);
+                    console.warn("⚠️ Error con configuración adaptativa, probando básica:", err);
                     
                     try {
-                        // Fallback simple pero rápido
+                        // ✅ FALLBACK ULTRA COMPATIBLE (para cualquier celular)
                         await html5QrCode.start(
                             "environment", 
-                            { fps: 60 }, // Solo FPS alto
+                            { fps: 15 }, // FPS muy bajos pero funcionan en cualquier lado
                             onScanSuccess, 
                             onScanError
                         );
-                        console.log("✅ Scanner iniciado con configuración simple");
+                        console.log("✅ Scanner iniciado con configuración básica universal");
                     } catch (finalErr) {
                         console.error("❌ Error crítico:", finalErr);
                         alert("No se pudo iniciar la cámara. Verifica los permisos y refresca la página.");
