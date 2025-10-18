@@ -612,13 +612,15 @@ Formato de respuesta:
             }
 
             // SOLUCIÓN SIMPLE: ACEPTAR CUALQUIER NOMBRE
+            const jurorId = `jurado_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
             currentJuror = {
-                id: Date.now(),
-                name: name,
-                type: 'jurado'
+                id: jurorId,
+                name: name.trim(),
+                type: 'jurado',
+                loginTime: new Date().toISOString()
             };
             
-            console.log('✅ Login exitoso automático:', currentJuror);
+            console.log('✅ Login exitoso automático:', JSON.stringify(currentJuror, null, 2));
             document.getElementById('juror-display').textContent = currentJuror.name;
             document.getElementById('auth-section').style.display = 'none';
             document.getElementById('main-content').style.display = 'block';
@@ -863,13 +865,27 @@ Formato de respuesta:
 
         window.submitVote = async function(artistId) {
             console.log('🎯 Iniciando submitVote para:', artistId);
-            console.log('👤 Jurado actual:', currentJuror);
+            console.log('👤 Jurado actual completo:', JSON.stringify(currentJuror, null, 2));
             
             const artist = artists.find(a => a.id === artistId);
             const artistVotes = votes[artistId];
             
-            if (!currentJuror || !currentJuror.id) {
-                alert('❌ Error: No hay jurado autenticado. Por favor, vuelve a ingresar.');
+            // Verificación más robusta del jurado
+            if (!currentJuror) {
+                console.error('❌ currentJuror es null');
+                alert('❌ Error: No hay jurado autenticado. Por favor, recarga la página e ingresa tu nombre.');
+                return;
+            }
+            
+            if (!currentJuror.id) {
+                console.error('❌ currentJuror.id no existe:', currentJuror);
+                alert('❌ Error: ID de jurado no válido. Por favor, recarga la página.');
+                return;
+            }
+            
+            if (!artist) {
+                console.error('❌ Artista no encontrado:', artistId);
+                alert('❌ Error: Artista no encontrado.');
                 return;
             }
             
@@ -884,26 +900,29 @@ Formato de respuesta:
                 console.log('💾 Guardando voto en Firebase...');
                 console.log('📊 Datos del voto:', { artistId, artistVotes, currentJuror });
                 
+                // Asegurar que tenemos nombre del jurado
+                const jurorName = currentJuror.name || currentJuror.id || 'Jurado Anónimo';
+                
                 const voteData = {
-                    artistId: artistId,
-                    artistName: artist.name,
-                    jurorName: currentJuror.name || currentJuror.id, // Fallback si no hay name
-                    jurorId: currentJuror.id,
+                    artistId: String(artistId),
+                    artistName: String(artist.name || 'Artista'),
+                    jurorName: String(jurorName),
+                    jurorId: String(currentJuror.id),
                     scores: artistVotes,
-                    score: average, // Campo principal para compatibilidad
-                    average: average,
+                    score: Number(average),
+                    average: Number(average),
                     timestamp: new Date().toISOString(),
-                    eventId: eventId
+                    eventId: String(eventId || 'default-event')
                 };
 
-                console.log('💾 Guardando en Firebase con datos:', voteData);
+                console.log('💾 Guardando en Firebase con datos:', JSON.stringify(voteData, null, 2));
 
-                // Guardar en jury_evaluations para consistencia con el resto del sistema
-                await setDoc(doc(db, 'jury_evaluations', `${currentJuror.id}_${artistId}`), {
-                    ...voteData,
-                    score: average, // Puntuación principal para compatibilidad
-                    comment: `Evaluación completa - Promedio: ${average.toFixed(1)} puntos`
-                });
+                // Usar una colección más simple para evitar problemas
+                const docId = `juror_${currentJuror.id}_artist_${artistId}_${Date.now()}`;
+                
+                await setDoc(doc(db, 'jury_votes', docId), voteData);
+                
+                console.log('✅ Documento guardado con ID:', docId);
                 
                 console.log('✅ Voto guardado exitosamente en Firebase');
                 
