@@ -511,7 +511,7 @@
 
             let lastScannedCode = null;
             let lastScanTime = 0;
-            let scanCooldown = 500; // ✅ 0.5 segundos - LECTURA MÁS RÁPIDA
+            let scanCooldown = 300; // ✅ 0.3 segundos - LECTURA ULTRA RÁPIDA
             let scanAttempts = 0;
             let maxRetries = 3;
 
@@ -591,74 +591,106 @@
                 html5QrCode = new Html5Qrcode("qr-code-reader");
                 console.log("✅ Html5Qrcode instanciado");
 
-                // 🎯 CONFIGURACIÓN SIMPLE Y CONFIABLE
+                // 🎯 CONFIGURACIÓN EQUILIBRADA - FUNCIONA + CENTRADA + RÁPIDA
                 const config = { 
-                    fps: 25, // FPS moderados para compatibilidad
-                    // ✅ SIN qrbox = DETECCIÓN EN TODA LA PANTALLA
-                    aspectRatio: 1.0,
-                    disableFlip: false
-                    // ✅ MÍNIMA configuración para máxima compatibilidad
+                    fps: 35, // ✅ FPS altos para velocidad
+                    qrbox: function(viewfinderWidth, viewfinderHeight) {
+                        // ✅ CUADRO DINÁMICO QUE SE CENTRA AUTOMÁTICAMENTE
+                        let minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+                        let qrboxSize = Math.floor(minEdge * 0.8); // 80% del área
+                        return {
+                            width: qrboxSize,
+                            height: qrboxSize
+                        };
+                    },
+                    aspectRatio: 1.0, // Cuadrado para mejor centrado
+                    disableFlip: false,
+                    // ✅ CONFIGURACIONES PARA MEJOR RENDIMIENTO
+                    supportedScanTypes: [Html5QrcodeScanType.SCAN_TYPE_CAMERA]
                 };
                 
                 console.log("📋 Configuración pantalla completa:", config);
 
                 try {
-                    // ✅ CONFIGURACIÓN SIMPLE Y CONFIABLE - FUNCIONA SIEMPRE
-                    console.log("🚀 Iniciando con configuración básica universal...");
+                    // ✅ CONFIGURACIÓN BALANCEADA - COMPATIBLE PERO CENTRADA
+                    console.log("🚀 Iniciando con configuración balanceada...");
                     
                     await html5QrCode.start(
-                        { facingMode: "environment" }, // Configuración mínima
+                        { 
+                            facingMode: "environment",
+                            // ✅ CONFIGURACIÓN MÍNIMA PARA CENTRADO
+                            width: { ideal: 1280 },
+                            height: { ideal: 720 },
+                            frameRate: { ideal: 35 }
+                        }, 
                         config, 
                         onScanSuccess, 
                         onScanError
                     );
-                    console.log("✅ Scanner iniciado exitosamente");
+                    console.log("✅ Scanner iniciado - CENTRADO y rápido");
                     
-                    // CSS básico después del inicio
+                    // ✅ CSS MEJORADO PARA CENTRADO PERFECTO
                     setTimeout(() => {
                         const video = document.querySelector('#qr-code-reader video');
                         if (video) {
+                            // Forzar centrado absoluto
                             video.style.width = '100%';
                             video.style.height = '100%';
                             video.style.objectFit = 'cover';
                             video.style.objectPosition = 'center center';
-                            console.log("✅ CSS aplicado correctamente");
+                            video.style.transform = 'translateZ(0)'; // Acelerar hardware
+                            video.style.backfaceVisibility = 'hidden';
+                            console.log("✅ CSS de centrado mejorado aplicado");
+                        }
+                        
+                        // ✅ CENTRAR TAMBIÉN EL CANVAS DE DETECCIÓN
+                        const canvas = document.querySelector('#qr-code-reader canvas');
+                        if (canvas) {
+                            canvas.style.position = 'absolute';
+                            canvas.style.top = '50%';
+                            canvas.style.left = '50%';
+                            canvas.style.transform = 'translate(-50%, -50%)';
+                            canvas.style.maxWidth = '100%';
+                            canvas.style.maxHeight = '100%';
+                            console.log("✅ Canvas centrado correctamente");
+                        }
+                        
+                        // ✅ CENTRAR CONTENEDOR QR
+                        const qrReader = document.getElementById('qr-code-reader');
+                        if (qrReader) {
+                            qrReader.style.display = 'flex';
+                            qrReader.style.alignItems = 'center';
+                            qrReader.style.justifyContent = 'center';
+                            qrReader.style.position = 'relative';
                         }
                     }, 500);
                     
                 } catch (err) {
-                    console.warn("⚠️ Error con facingMode object, probando string:", err);
+                    console.warn("⚠️ Error con configuración balanceada, probando simple:", err);
                     
                     try {
-                        // ✅ FALLBACK 1: String simple
+                        // ✅ FALLBACK 1: String simple pero con cuadro centrado
                         await html5QrCode.start(
-                            "environment", // String más compatible
-                            { fps: 25 }, 
+                            "environment", 
+                            config, // Mantener config con qrbox para centrado
                             onScanSuccess, 
                             onScanError
                         );
-                        console.log("✅ Scanner iniciado con string simple");
+                        console.log("✅ Scanner iniciado con fallback centrado");
                     } catch (secondErr) {
                         console.warn("⚠️ Error con environment, probando user:", secondErr);
                         
                         try {
                             // ✅ FALLBACK 2: Cámara frontal
                             await html5QrCode.start(
-                                "user", // Cámara frontal como último recurso
-                                { fps: 20 }, 
+                                "user", 
+                                { fps: 30, qrbox: {width: 250, height: 250} }, 
                                 onScanSuccess, 
                                 onScanError
                             );
-                            console.log("✅ Scanner iniciado con cámara frontal");
+                            console.log("✅ Scanner iniciado con cámara frontal centrada");
                         } catch (finalErr) {
                             console.error("❌ Error crítico en todos los intentos:", finalErr);
-                            
-                            // ✅ DIAGNÓSTICO DETALLADO
-                            console.log("🔍 Información del navegador:");
-                            console.log("- User Agent:", navigator.userAgent);
-                            console.log("- HTTPS:", location.protocol === 'https:');
-                            console.log("- MediaDevices:", !!navigator.mediaDevices);
-                            console.log("- getUserMedia:", !!navigator.mediaDevices?.getUserMedia);
                             
                             alert(`❌ No se pudo iniciar la cámara. 
                             
@@ -668,9 +700,8 @@ Posibles soluciones:
 3. ✅ Cierra otras apps que usen la cámara
 4. ✅ Prueba refrescar la página (F5)
 5. ✅ Prueba en modo incógnito
-6. ✅ Verifica que tengas cámara trasera
 
-Navegador: ${navigator.userAgent.includes('Chrome') ? 'Chrome ✅' : 'Otro navegador ⚠️'}`);
+Error técnico: ${finalErr.message}`);
                             
                             await stopScanner();
                         }
