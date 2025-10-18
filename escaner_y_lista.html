@@ -373,48 +373,28 @@
                 }
             };
 
-            // 🔄 FUNCIÓN PARA CONTINUAR ESCANEANDO - VERSIÓN ROBUSTA
+            // 🔄 FUNCIÓN CONTINUAR ESCANEANDO - REACTIVAR SIN PANTALLA NEGRA
             window.continueScanningAfterResult = async function() {
-                console.log("🔄 Reiniciando scanner de forma ROBUSTA...");
+                console.log("🔄 Reactivando detección - SIN pantalla negra");
                 
-                try {
-                    // 1. Ocultar resultado inmediatamente
-                    document.getElementById('scanned-ticket-info-fullscreen').classList.add('hidden');
-                    
-                    // 2. PARADA COMPLETA DEL SCANNER
-                    if (html5QrCode && isScannerActive) {
-                        console.log("🛑 Deteniendo scanner actual...");
-                        await html5QrCode.stop();
-                        await html5QrCode.clear(); // ✅ LIMPIAR completamente
-                    }
-                    
-                    // 3. Resetear TODAS las variables
-                    isScannerActive = false;
-                    lastScannedCode = null;
-                    lastScanTime = 0;
-                    html5QrCode = null; // ✅ DESTRUIR instancia anterior
-                    
-                    // 4. Limpiar contenedor de video
-                    const qrReader = document.getElementById('qr-code-reader');
-                    if (qrReader) {
-                        qrReader.innerHTML = ''; // ✅ VACIAR completamente
-                    }
-                    
-                    console.log("✅ Limpieza completa realizada");
-                    
-                    // 5. RECREAR DESDE CERO después de 1.5 segundos
-                    setTimeout(() => {
-                        console.log("🚀 Recreando scanner desde cero...");
-                        startScanner(); // Esto creará una nueva instancia
-                    }, 1500);
-                    
-                } catch (error) {
-                    console.error("❌ Error en reinicio:", error);
-                    // Si algo falla, forzar recarga completa
+                // 1. Ocultar resultado inmediatamente
+                document.getElementById('scanned-ticket-info-fullscreen').classList.add('hidden');
+                
+                // 2. Resetear variables de control
+                lastScannedCode = null;
+                lastScanTime = 0;
+                
+                // 3. ✅ REACTIVAR detección - El scanner nunca se detuvo
+                isScannerActive = true;
+                console.log("✅ Detección reactivada - Scanner sigue funcionando");
+                
+                // Verificar que el scanner esté funcionando
+                if (!html5QrCode || !html5QrCode.getState || html5QrCode.getState() !== Html5QrcodeScanner.STATE.SCANNING) {
+                    console.warn("⚠️ Scanner no está funcionando, reiniciando...");
                     isScannerActive = false;
                     setTimeout(() => {
                         startScanner();
-                    }, 2000);
+                    }, 300);
                 }
             };
 
@@ -549,10 +529,19 @@
                 lastScannedCode = decodedText;
                 lastScanTime = currentTime;
                 
-                // ⭐ PARAR SCANNER INMEDIATAMENTE AL DETECTAR
-                html5QrCode.stop().then(() => {
-                    console.log("� Scanner DETENIDO tras detectar código");
-                }).catch(err => console.warn("Error al detener scanner:", err));
+                // ✅ NO DETENER SCANNER - Solo pausar detección temporalmente
+                console.log("📱 CÓDIGO DETECTADO - Scanner sigue activo");
+                
+                // 🛑 PAUSAR detección temporalmente con variable de control
+                const originalActive = isScannerActive;
+                isScannerActive = false; // Pausar nuevas detecciones
+                
+                // Reactivar después de mostrar resultado (será manejado por continueScanningAfterResult)
+                setTimeout(() => {
+                    if (!isScannerActive) {
+                        isScannerActive = originalActive; // Restaurar estado si no se ha continuado
+                    }
+                }, 5000); // Auto-reactivar después de 5 segundos si no se presiona continuar
                 
                 // � DETECTAR TIPO DE CÓDIGO (QR vs Barras)
                 const isQR = decodedText.length > 10;
@@ -602,53 +591,64 @@
                 html5QrCode = new Html5Qrcode("qr-code-reader");
                 console.log("✅ Html5Qrcode instanciado");
 
-                // 🎯 CONFIGURACIÓN UNIVERSAL - FUNCIONA EN TODOS LOS NAVEGADORES
+                // 🎯 CONFIGURACIÓN PANTALLA COMPLETA + CÁMARA CENTRADA
                 const config = { 
-                    fps: 20, // FPS más bajo para mejor estabilidad
-                    qrbox: {width: 250, height: 250}, // ✅ CUADRO FIJO CENTRADO
-                    aspectRatio: 1.0, // Aspecto cuadrado = mejor centrado
+                    fps: 25, // FPS estable para mejor rendimiento
+                    // ✅ SIN qrbox = DETECCIÓN EN TODA LA PANTALLA
+                    aspectRatio: 1.0, // Aspecto cuadrado para mejor centrado
                     disableFlip: false,
-                    videoConstraints: {
-                        facingMode: "environment" // Directo en config
+                    experimentalFeatures: {
+                        useBarCodeDetectorIfSupported: true
                     }
                 };
                 
-                console.log("📋 Configuración universal:", config);
+                console.log("📋 Configuración pantalla completa:", config);
 
                 try {
-                    // ✅ INICIO SIMPLE SIN VIDEOCONSTRAINTS COMPLEJOS
+                    // ✅ INICIO SIMPLE CON CÁMARA CENTRADA
                     await html5QrCode.start(
-                        "environment", // String simple 
+                        { facingMode: "environment" }, // Objeto para mejor control
                         config, 
                         onScanSuccess, 
                         onScanError
                     );
-                    console.log("✅ Scanner iniciado - CENTRADO y compatible");
+                    console.log("✅ Scanner iniciado - PANTALLA COMPLETA y centrado");
                     
-                    // 🎯 FORZAR CENTRADO CSS DESPUÉS DEL INICIO
+                    // 🎯 FORZAR CENTRADO Y PANTALLA COMPLETA
                     setTimeout(() => {
                         const video = document.querySelector('#qr-code-reader video');
                         if (video) {
-                            video.style.objectFit = 'cover';
                             video.style.width = '100%';
                             video.style.height = '100%';
-                            video.style.objectPosition = 'center';
-                            console.log("✅ CSS de centrado aplicado");
+                            video.style.objectFit = 'cover';
+                            video.style.objectPosition = 'center center';
+                            video.style.transform = 'none'; // Sin transformaciones
+                            console.log("✅ CSS pantalla completa aplicado");
                         }
-                    }, 1000);
+                        
+                        // Centrar canvas de detección
+                        const canvas = document.querySelector('#qr-code-reader canvas');
+                        if (canvas) {
+                            canvas.style.position = 'absolute';
+                            canvas.style.top = '0';
+                            canvas.style.left = '0';
+                            canvas.style.width = '100%';
+                            canvas.style.height = '100%';
+                        }
+                    }, 500);
                     
                 } catch (err) {
-                    console.warn("⚠️ Error con cámara trasera, probando frontal:", err);
+                    console.warn("⚠️ Error con configuración principal, probando simple:", err);
                     
                     try {
-                        // Fallback simple
+                        // Fallback ultra simple
                         await html5QrCode.start(
-                            "user", 
-                            { fps: 20, qrbox: {width: 250, height: 250} }, 
+                            "environment", 
+                            { fps: 25 }, // Solo FPS, sin restricciones
                             onScanSuccess, 
                             onScanError
                         );
-                        console.log("✅ Scanner iniciado con cámara frontal");
+                        console.log("✅ Scanner iniciado con configuración simple");
                     } catch (finalErr) {
                         console.error("❌ Error crítico:", finalErr);
                         alert("No se pudo iniciar la cámara. Verifica los permisos y refresca la página.");
