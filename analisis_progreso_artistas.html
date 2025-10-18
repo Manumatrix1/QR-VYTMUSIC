@@ -55,6 +55,9 @@
                 <button id="analyze-all-btn" class="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 px-6 py-3 rounded-lg font-semibold transition-all transform hover:scale-105 ml-4">
                     📊 Analizar Todos los Artistas
                 </button>
+                <button id="debug-data-btn" class="bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-600 hover:to-orange-600 px-6 py-3 rounded-lg font-semibold transition-all transform hover:scale-105 ml-4">
+                    🔧 Debug: Ver Datos
+                </button>
             </div>
         </div>
 
@@ -115,8 +118,24 @@
         function initializePage() {
             // Obtener parámetros de URL
             const urlParams = new URLSearchParams(window.location.search);
-            currentEventId = urlParams.get('eventId') || 'demo';
-            currentEventName = urlParams.get('eventName') || 'Evento Demo';
+            currentEventId = urlParams.get('eventId');
+            currentEventName = urlParams.get('eventName');
+            
+            // Si no hay eventId en URL, intentar obtenerlo del localStorage
+            if (!currentEventId) {
+                const storedEvents = JSON.parse(localStorage.getItem('events') || '[]');
+                if (storedEvents.length > 0) {
+                    currentEventId = storedEvents[0].id;
+                    currentEventName = storedEvents[0].name;
+                    console.log(`📋 Usando evento del localStorage: ${currentEventName} (${currentEventId})`);
+                } else {
+                    currentEventId = 'demo';
+                    currentEventName = 'Evento Demo';
+                    console.warn('⚠️ No se encontró eventId, usando demo');
+                }
+            }
+            
+            console.log(`🎯 Analizando evento: ${currentEventName} (ID: ${currentEventId})`);
             
             // Inicializar manager
             progressManager = new ProgressAnalyticsManager(currentEventId);
@@ -132,37 +151,225 @@
         function setupEventListeners() {
             document.getElementById('analyze-btn').addEventListener('click', analyzeArtistProgress);
             document.getElementById('analyze-all-btn').addEventListener('click', analyzeAllArtists);
+            document.getElementById('debug-data-btn').addEventListener('click', debugShowData);
             document.getElementById('artist-selector').addEventListener('change', onArtistChange);
+        }
+
+        async function debugShowData() {
+            try {
+                showLoading('Inspeccionando datos del evento...');
+                
+                const { collection, getDocs } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js");
+                const { db } = await import("./firebase_config.js");
+                
+                let debugInfo = {
+                    eventId: currentEventId,
+                    eventName: currentEventName,
+                    collections: {},
+                    foundData: []
+                };
+                
+                // Lista de colecciones posibles
+                const collectionsToCheck = [
+                    `artistas_${currentEventId}`,
+                    `votaciones_jurados_${currentEventId}`,
+                    `votaciones_publicas_${currentEventId}`,
+                    `votos_publicos`,
+                    `votos_jurados`,
+                    'events'
+                ];
+                
+                for (const collectionName of collectionsToCheck) {
+                    try {
+                        const snapshot = await getDocs(collection(db, collectionName));
+                        debugInfo.collections[collectionName] = {
+                            exists: true,
+                            documentCount: snapshot.size,
+                            sampleData: []
+                        };
+                        
+                        // Obtener muestra de datos
+                        let sampleCount = 0;
+                        snapshot.forEach(doc => {
+                            if (sampleCount < 3) {
+                                const data = doc.data();
+                                debugInfo.collections[collectionName].sampleData.push({
+                                    id: doc.id,
+                                    data: data
+                                });
+                                
+                                // Buscar nombres de artistas
+                                if (data.artistName) {
+                                    debugInfo.foundData.push({
+                                        collection: collectionName,
+                                        artist: data.artistName,
+                                        type: 'artistName'
+                                    });
+                                }
+                                if (data.name) {
+                                    debugInfo.foundData.push({
+                                        collection: collectionName,
+                                        artist: data.name,
+                                        type: 'name'
+                                    });
+                                }
+                                sampleCount++;
+                            }
+                        });
+                    } catch (error) {
+                        debugInfo.collections[collectionName] = {
+                            exists: false,
+                            error: error.message
+                        };
+                    }
+                }
+                
+                hideLoading();
+                
+                // Mostrar información de debug
+                const debugWindow = window.open('', '_blank', 'width=800,height=600');
+                debugWindow.document.write(`
+                    <html>
+                    <head><title>Debug Info - ${currentEventName}</title>
+                    <style>
+                        body { font-family: monospace; padding: 20px; background: #1a1a1a; color: #fff; }
+                        .collection { margin: 20px 0; padding: 15px; background: #2a2a2a; border-radius: 8px; }
+                        .exists { border-left: 4px solid #4ade80; }
+                        .missing { border-left: 4px solid #ef4444; }
+                        .sample { background: #3a3a3a; padding: 10px; margin: 10px 0; border-radius: 4px; }
+                        pre { overflow-x: auto; white-space: pre-wrap; }
+                    </style>
+                    </head>
+                    <body>
+                        <h1>🔧 Debug Info: ${currentEventName}</h1>
+                        <p><strong>Event ID:</strong> ${currentEventId}</p>
+                        <h2>📊 Colecciones Firebase:</h2>
+                        ${Object.entries(debugInfo.collections).map(([name, info]) => `
+                            <div class="collection ${info.exists ? 'exists' : 'missing'}">
+                                <h3>${name}</h3>
+                                ${info.exists ? `
+                                    <p>✅ <strong>Documentos:</strong> ${info.documentCount}</p>
+                                    ${info.sampleData.length > 0 ? `
+                                        <h4>Datos de muestra:</h4>
+                                        ${info.sampleData.map(sample => `
+                                            <div class="sample">
+                                                <strong>ID:</strong> ${sample.id}<br>
+                                                <pre>${JSON.stringify(sample.data, null, 2)}</pre>
+                                            </div>
+                                        `).join('')}
+                                    ` : '<p>Sin datos de muestra</p>'}
+                                ` : `
+                                    <p>❌ <strong>Error:</strong> ${info.error}</p>
+                                `}
+                            </div>
+                        `).join('')}
+                        
+                        <h2>🎤 Artistas Encontrados:</h2>
+                        ${debugInfo.foundData.length > 0 ? `
+                            <ul>
+                                ${debugInfo.foundData.map(item => `
+                                    <li><strong>${item.artist}</strong> (${item.collection} - ${item.type})</li>
+                                `).join('')}
+                            </ul>
+                        ` : '<p>❌ No se encontraron artistas</p>'}
+                        
+                        <h2>💡 Recomendaciones:</h2>
+                        <ul>
+                            <li>Verifica que el eventId sea correcto: <strong>${currentEventId}</strong></li>
+                            <li>Asegúrate de que hay votos guardados en Firebase</li>
+                            <li>Revisa las colecciones que tienen datos</li>
+                            <li>Confirma que los nombres de artistas están en el campo correcto</li>
+                        </ul>
+                    </body>
+                    </html>
+                `);
+                
+                console.log('🔧 Debug Info:', debugInfo);
+                
+            } catch (error) {
+                hideLoading();
+                console.error('❌ Error en debug:', error);
+                alert(`Error ejecutando debug: ${error.message}`);
+            }
         }
 
         async function loadArtists() {
             try {
                 showLoading('Cargando lista de artistas...');
                 
-                // Obtener artistas de todas las galas
+                // Obtener artistas de múltiples fuentes
                 const artistsSet = new Set();
                 
+                // 1. Buscar en colección de artistas del evento
+                try {
+                    const { collection, getDocs } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js");
+                    const { db } = await import("./firebase_config.js");
+                    
+                    // Buscar artistas registrados en el evento
+                    const artistsSnapshot = await getDocs(collection(db, `artistas_${currentEventId}`));
+                    artistsSnapshot.forEach(doc => {
+                        const artistData = doc.data();
+                        if (artistData.name) {
+                            artistsSet.add(artistData.name);
+                        }
+                        if (artistData.artistName) {
+                            artistsSet.add(artistData.artistName);
+                        }
+                    });
+                    
+                    console.log(`📋 Encontrados ${artistsSnapshot.size} artistas en artistas_${currentEventId}`);
+                } catch (error) {
+                    console.warn('⚠️ No se pudo acceder a la colección de artistas:', error);
+                }
+                
+                // 2. Buscar en votos de jurados para encontrar más artistas
                 for (let gala = 1; gala <= 5; gala++) {
                     try {
-                        const galasData = await progressManager.getGalasData(gala);
+                        const { collection, getDocs, query, where } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js");
+                        const { db } = await import("./firebase_config.js");
                         
-                        galasData.forEach(galaData => {
-                            // Extraer artistas de votos de jurados
-                            galaData.juradosVotes.forEach(vote => {
-                                if (vote.artistName) {
-                                    artistsSet.add(vote.artistName);
-                                }
-                            });
-                            
-                            // Extraer artistas de votos del público
-                            galaData.publicVotes.forEach(vote => {
-                                if (vote.artistName) {
-                                    artistsSet.add(vote.artistName);
-                                }
-                            });
+                        // Buscar votos de jurados
+                        const juradosSnapshot = await getDocs(collection(db, `votaciones_jurados_${currentEventId}`));
+                        juradosSnapshot.forEach(doc => {
+                            const voteData = doc.data();
+                            if (voteData.artistName) {
+                                artistsSet.add(voteData.artistName);
+                            }
                         });
+                        
+                        // Buscar votos del público
+                        const publicSnapshot = await getDocs(collection(db, `votaciones_publicas_${currentEventId}`));
+                        publicSnapshot.forEach(doc => {
+                            const voteData = doc.data();
+                            if (voteData.artistName) {
+                                artistsSet.add(voteData.artistName);
+                            }
+                        });
+                        
+                        console.log(`📊 Gala ${gala}: ${juradosSnapshot.size} votos jurados, ${publicSnapshot.size} votos público`);
                     } catch (error) {
-                        console.warn(`⚠️ No se pudieron cargar datos de gala ${gala}`);
+                        console.warn(`⚠️ No se pudieron cargar votos de gala ${gala}:`, error);
+                    }
+                }
+                
+                // 3. Si no hay artistas, buscar en colecciones alternativas
+                if (artistsSet.size === 0) {
+                    try {
+                        const { collection, getDocs } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js");
+                        const { db } = await import("./firebase_config.js");
+                        
+                        // Buscar en votos generales sin prefijo
+                        const votesSnapshot = await getDocs(collection(db, 'votos_publicos'));
+                        votesSnapshot.forEach(doc => {
+                            const voteData = doc.data();
+                            if (voteData.artistName && voteData.eventId === currentEventId) {
+                                artistsSet.add(voteData.artistName);
+                            }
+                        });
+                        
+                        console.log(`🔍 Búsqueda alternativa encontró ${votesSnapshot.size} votos`);
+                    } catch (error) {
+                        console.warn('⚠️ Búsqueda alternativa falló:', error);
                     }
                 }
                 
@@ -170,12 +377,17 @@
                 populateArtistSelector();
                 hideLoading();
                 
-                console.log(`✅ Cargados ${allArtists.length} artistas`);
+                console.log(`✅ Total de artistas únicos encontrados: ${allArtists.length}`);
+                console.log('🎤 Lista de artistas:', allArtists);
+                
+                if (allArtists.length === 0) {
+                    showError(`No se encontraron artistas para el evento: ${currentEventId}. Verifica que el evento tenga datos de votación.`);
+                }
                 
             } catch (error) {
                 console.error('❌ Error cargando artistas:', error);
                 hideLoading();
-                showError('Error cargando lista de artistas');
+                showError(`Error cargando lista de artistas: ${error.message}`);
             }
         }
 
