@@ -591,61 +591,30 @@
                 html5QrCode = new Html5Qrcode("qr-code-reader");
                 console.log("✅ Html5Qrcode instanciado");
 
-                // 🎯 CONFIGURACIÓN ADAPTATIVA - FUNCIONA EN CELULARES BÁSICOS Y PREMIUM
+                // 🎯 CONFIGURACIÓN SIMPLE Y CONFIABLE
                 const config = { 
-                    fps: 30, // ✅ FPS EQUILIBRADOS - Rápido pero compatible
+                    fps: 25, // FPS moderados para compatibilidad
                     // ✅ SIN qrbox = DETECCIÓN EN TODA LA PANTALLA
-                    aspectRatio: 1.0, // Aspecto cuadrado para mejor centrado
-                    disableFlip: false,
-                    experimentalFeatures: {
-                        useBarCodeDetectorIfSupported: true // Solo si el dispositivo lo soporta
-                    },
-                    // ✅ CONFIGURACIÓN COMPATIBLE CON CELULARES BÁSICOS
-                    showTorchButtonIfSupported: true,
-                    showZoomSliderIfSupported: false,
-                    defaultZoomValueIfSupported: 1.0,
-                    // ✅ OPTIMIZACIONES LIGERAS
-                    rememberLastUsedCamera: true,
-                    supportedScanTypes: [Html5QrcodeScanType.SCAN_TYPE_CAMERA]
+                    aspectRatio: 1.0,
+                    disableFlip: false
+                    // ✅ MÍNIMA configuración para máxima compatibilidad
                 };
                 
                 console.log("📋 Configuración pantalla completa:", config);
 
                 try {
-                    // 🎯 CONFIGURACIÓN ADAPTATIVA SEGÚN DISPOSITIVO
-                    // Detectar si es un dispositivo de gama baja/alta
-                    const isLowEndDevice = navigator.hardwareConcurrency <= 4 || 
-                                         navigator.deviceMemory <= 4 ||
-                                         /Android.*[2-6]\./i.test(navigator.userAgent);
+                    // ✅ CONFIGURACIÓN SIMPLE Y CONFIABLE - FUNCIONA SIEMPRE
+                    console.log("🚀 Iniciando con configuración básica universal...");
                     
-                    let cameraConfig;
+                    await html5QrCode.start(
+                        { facingMode: "environment" }, // Configuración mínima
+                        config, 
+                        onScanSuccess, 
+                        onScanError
+                    );
+                    console.log("✅ Scanner iniciado exitosamente");
                     
-                    if (isLowEndDevice) {
-                        // ✅ CONFIGURACIÓN PARA CELULARES BÁSICOS
-                        cameraConfig = { 
-                            facingMode: "environment",
-                            width: { ideal: 640, max: 1280 },      // Resolución moderada
-                            height: { ideal: 480, max: 720 },     // Menos exigente
-                            frameRate: { ideal: 20, max: 30 }     // FPS más bajos pero estables
-                        };
-                        console.log("📱 Dispositivo básico detectado - Configuración ligera");
-                    } else {
-                        // ✅ CONFIGURACIÓN PARA CELULARES PREMIUM
-                        cameraConfig = { 
-                            facingMode: "environment",
-                            width: { ideal: 1280, max: 1920 },    // Alta resolución
-                            height: { ideal: 720, max: 1080 },    // Mejor calidad
-                            frameRate: { ideal: 30, max: 60 },    // FPS altos
-                            focusMode: "continuous",              // Solo en dispositivos buenos
-                            exposureMode: "continuous"            // Exposición automática
-                        };
-                        console.log("🚀 Dispositivo premium detectado - Configuración optimizada");
-                    }
-                    
-                    await html5QrCode.start(cameraConfig, config, onScanSuccess, onScanError);
-                    console.log("✅ Scanner iniciado - ADAPTATIVO para tu dispositivo");
-                    
-                    // 🎯 CSS LIGERO COMPATIBLE CON TODOS LOS DISPOSITIVOS
+                    // CSS básico después del inicio
                     setTimeout(() => {
                         const video = document.querySelector('#qr-code-reader video');
                         if (video) {
@@ -653,43 +622,58 @@
                             video.style.height = '100%';
                             video.style.objectFit = 'cover';
                             video.style.objectPosition = 'center center';
-                            video.style.transform = 'none';
-                            
-                            // ✅ OPTIMIZACIONES SOLO PARA DISPOSITIVOS CAPACES
-                            if (!isLowEndDevice) {
-                                video.style.imageRendering = 'optimizeSpeed';
-                                video.style.imageRendering = '-webkit-optimize-contrast';
-                            }
-                            console.log("✅ CSS adaptativo aplicado");
+                            console.log("✅ CSS aplicado correctamente");
                         }
-                        
-                        // Canvas básico para todos
-                        const canvas = document.querySelector('#qr-code-reader canvas');
-                        if (canvas) {
-                            canvas.style.position = 'absolute';
-                            canvas.style.top = '0';
-                            canvas.style.left = '0';
-                            canvas.style.width = '100%';
-                            canvas.style.height = '100%';
-                        }
-                    }, 300);
+                    }, 500);
                     
                 } catch (err) {
-                    console.warn("⚠️ Error con configuración adaptativa, probando básica:", err);
+                    console.warn("⚠️ Error con facingMode object, probando string:", err);
                     
                     try {
-                        // ✅ FALLBACK ULTRA COMPATIBLE (para cualquier celular)
+                        // ✅ FALLBACK 1: String simple
                         await html5QrCode.start(
-                            "environment", 
-                            { fps: 15 }, // FPS muy bajos pero funcionan en cualquier lado
+                            "environment", // String más compatible
+                            { fps: 25 }, 
                             onScanSuccess, 
                             onScanError
                         );
-                        console.log("✅ Scanner iniciado con configuración básica universal");
-                    } catch (finalErr) {
-                        console.error("❌ Error crítico:", finalErr);
-                        alert("No se pudo iniciar la cámara. Verifica los permisos y refresca la página.");
-                        await stopScanner();
+                        console.log("✅ Scanner iniciado con string simple");
+                    } catch (secondErr) {
+                        console.warn("⚠️ Error con environment, probando user:", secondErr);
+                        
+                        try {
+                            // ✅ FALLBACK 2: Cámara frontal
+                            await html5QrCode.start(
+                                "user", // Cámara frontal como último recurso
+                                { fps: 20 }, 
+                                onScanSuccess, 
+                                onScanError
+                            );
+                            console.log("✅ Scanner iniciado con cámara frontal");
+                        } catch (finalErr) {
+                            console.error("❌ Error crítico en todos los intentos:", finalErr);
+                            
+                            // ✅ DIAGNÓSTICO DETALLADO
+                            console.log("🔍 Información del navegador:");
+                            console.log("- User Agent:", navigator.userAgent);
+                            console.log("- HTTPS:", location.protocol === 'https:');
+                            console.log("- MediaDevices:", !!navigator.mediaDevices);
+                            console.log("- getUserMedia:", !!navigator.mediaDevices?.getUserMedia);
+                            
+                            alert(`❌ No se pudo iniciar la cámara. 
+                            
+Posibles soluciones:
+1. ✅ ASEGURATE de estar en HTTPS (no HTTP)
+2. ✅ Permite el acceso a la cámara cuando el navegador lo pida
+3. ✅ Cierra otras apps que usen la cámara
+4. ✅ Prueba refrescar la página (F5)
+5. ✅ Prueba en modo incógnito
+6. ✅ Verifica que tengas cámara trasera
+
+Navegador: ${navigator.userAgent.includes('Chrome') ? 'Chrome ✅' : 'Otro navegador ⚠️'}`);
+                            
+                            await stopScanner();
+                        }
                     }
                 }
             }
