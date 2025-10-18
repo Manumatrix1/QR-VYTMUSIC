@@ -525,7 +525,7 @@
                                     <div class="text-3xl font-bold text-green-300 mb-2">${average.toFixed(1)} puntos</div>
                                     
                                     <!-- FEEDBACK AUTOMÁTICO GENERADO -->
-                                    <div class="bg-blue-800 bg-opacity-50 p-4 rounded-lg mt-4">
+                                    <div id="feedback-section-${artist.id}" class="bg-blue-800 bg-opacity-50 p-4 rounded-lg mt-4" style="display: none;">
                                         <h5 class="text-lg font-bold mb-3 text-center">💬 Sugerencias de Feedback</h5>
                                         <div id="auto-feedback-${artist.id}" class="space-y-2 text-sm">
                                             <!-- Se generará automáticamente -->
@@ -947,7 +947,10 @@
                 categoryDiv.innerHTML = `
                     <div class="flex justify-between items-center mb-2">
                         <label class="font-bold text-white">${criteria.name}</label>
-                        <span id="modal-${criteria.id}-display" class="text-xl font-bold text-blue-300">${currentValue}</span>
+                        <div class="flex items-center gap-2">
+                            <span id="modal-${criteria.id}-display" class="text-xl font-bold text-blue-300">${currentValue}</span>
+                            <span id="modal-${criteria.id}-label" class="px-2 py-1 rounded text-xs font-bold"></span>
+                        </div>
                     </div>
                     <input type="range" 
                            id="modal-${criteria.id}-slider" 
@@ -957,25 +960,54 @@
                            value="${currentValue}"
                            oninput="updateModalScore('${criteria.id}', this.value)">
                     <div class="flex justify-between text-xs text-gray-300 mt-1">
-                        <span>25</span>
-                        <span>100</span>
+                        <span>MALO</span>
+                        <span>MEDIOCRE</span>
+                        <span>BUENO</span>
+                        <span>MUY BUENO</span>
+                        <span>EXCELENTE</span>
                     </div>
                 `;
 
                 container.appendChild(categoryDiv);
+                
+                // Inicializar la etiqueta visual
+                const label = getScoreLabel(currentValue);
+                const labelElement = document.getElementById(`modal-${criteria.id}-label`);
+                if (labelElement) {
+                    labelElement.textContent = label.text;
+                    labelElement.className = `px-2 py-1 rounded text-xs font-bold ${label.color} ${label.bg}`;
+                }
             });
 
             updateModalTotal();
+        }
+
+        // FUNCIÓN PARA CONVERTIR PUNTAJE A TEXTO VISUAL
+        function getScoreLabel(score) {
+            const scoreInt = parseInt(score);
+            if (scoreInt >= 90) return { text: 'EXCELENTE', color: 'text-blue-300', bg: 'bg-blue-600' };
+            if (scoreInt >= 70) return { text: 'MUY BUENO', color: 'text-green-300', bg: 'bg-green-600' };
+            if (scoreInt >= 50) return { text: 'BUENO', color: 'text-yellow-300', bg: 'bg-yellow-600' };
+            if (scoreInt >= 35) return { text: 'MEDIOCRE', color: 'text-orange-300', bg: 'bg-orange-600' };
+            return { text: 'MALO', color: 'text-red-300', bg: 'bg-red-600' };
         }
 
         // Función para actualizar puntaje en modal
         window.updateModalScore = function(criteriaId, value) {
             if (!currentModalArtist) return;
 
-            // Actualizar display
+            // Actualizar display con número y texto visual
             const displayElement = document.getElementById(`modal-${criteriaId}-display`);
+            const labelElement = document.getElementById(`modal-${criteriaId}-label`);
+            
             if (displayElement) {
                 displayElement.textContent = value;
+            }
+            
+            if (labelElement) {
+                const label = getScoreLabel(value);
+                labelElement.textContent = label.text;
+                labelElement.className = `px-2 py-1 rounded text-xs font-bold ${label.color} ${label.bg}`;
             }
 
             // Guardar en votes (temporal)
@@ -1009,7 +1041,9 @@
         // Función para generar y mostrar feedback automático
         function generateAndShowFeedback(artistId, artistVotes) {
             const feedbackContainer = document.getElementById(`auto-feedback-${artistId}`);
-            if (!feedbackContainer) return;
+            const feedbackSection = document.getElementById(`feedback-section-${artistId}`);
+            
+            if (!feedbackContainer || !feedbackSection) return;
             
             const feedbackSuggestions = generateAutoFeedback(artistVotes);
             
@@ -1023,8 +1057,12 @@
                         <p class="text-white text-sm mt-1">"${item.suggestion}"</p>
                     </div>
                 `).join('');
+                
+                // Mostrar la sección de feedback
+                feedbackSection.style.display = 'block';
             } else {
-                feedbackContainer.innerHTML = '<p class="text-gray-400 text-center">Completa todas las categorías para ver sugerencias</p>';
+                // Ocultar la sección de feedback si no hay sugerencias
+                feedbackSection.style.display = 'none';
             }
         }
 
