@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>📈 Análisis de Progreso - VYT Music</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-gradient-to-br from-blue-900 via-purple-900 to-pink-900 min-h-screen text-white">
+    
+    <!-- Header -->
+    <div class="container mx-auto px-4 py-6">
+        <div class="flex items-center justify-between mb-8">
+            <div>
+                <h1 class="text-4xl font-bold mb-2">📈 Análisis de Progreso</h1>
+                <p class="text-blue-200">Seguimiento de evolución de artistas</p>
+            </div>
+            <a href="reportes.html" class="bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-lg transition-colors">
+                ← Volver a Reportes
+            </a>
+        </div>
+
+        <!-- Información del Evento -->
+        <div id="event-info" class="bg-white/10 backdrop-blur-sm rounded-xl p-6 mb-8">
+            <h2 id="event-title" class="text-2xl font-bold mb-2">Cargando evento...</h2>
+            <p id="event-details" class="text-blue-200">Preparando análisis de progreso...</p>
+        </div>
+
+        <!-- Selector de Artista -->
+        <div class="bg-white/10 backdrop-blur-sm rounded-xl p-6 mb-8">
+            <h3 class="text-xl font-bold mb-4">🎤 Seleccionar Artista</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium mb-2">Artista:</label>
+                    <select id="artist-selector" class="w-full bg-white/20 border border-white/30 rounded-lg px-4 py-2 text-white">
+                        <option value="">Seleccionar artista...</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-2">Hasta Gala:</label>
+                    <select id="gala-selector" class="w-full bg-white/20 border border-white/30 rounded-lg px-4 py-2 text-white">
+                        <option value="1">Gala 1</option>
+                        <option value="2">Gala 2</option>
+                        <option value="3">Gala 3</option>
+                        <option value="4">Gala 4</option>
+                        <option value="5">Gala 5</option>
+                    </select>
+                </div>
+            </div>
+            <div class="mt-4">
+                <button id="analyze-btn" class="bg-gradient-to-r from-green-500 to-blue-500 hover:from-green-600 hover:to-blue-600 px-6 py-3 rounded-lg font-semibold transition-all transform hover:scale-105">
+                    🔍 Analizar Progreso
+                </button>
+                <button id="analyze-all-btn" class="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 px-6 py-3 rounded-lg font-semibold transition-all transform hover:scale-105 ml-4">
+                    📊 Analizar Todos los Artistas
+                </button>
+            </div>
+        </div>
+
+        <!-- Estado de Carga -->
+        <div id="loading-state" class="hidden bg-white/10 backdrop-blur-sm rounded-xl p-8 mb-8 text-center">
+            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
+            <p class="text-lg">Analizando progreso...</p>
+            <p id="loading-message" class="text-blue-200 mt-2">Preparando datos...</p>
+        </div>
+
+        <!-- Resultados del Análisis -->
+        <div id="progress-results" class="hidden">
+            <!-- El contenido se generará dinámicamente -->
+        </div>
+
+        <!-- Gráficos de Evolución -->
+        <div id="charts-container" class="hidden mt-8">
+            <div class="bg-white/10 backdrop-blur-sm rounded-xl p-6">
+                <h3 class="text-xl font-bold mb-4">📊 Gráficos de Evolución</h3>
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div class="bg-white/20 rounded-lg p-4">
+                        <canvas id="scores-chart"></canvas>
+                    </div>
+                    <div class="bg-white/20 rounded-lg p-4">
+                        <canvas id="position-chart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Comparativa de Todos los Artistas -->
+        <div id="all-artists-comparison" class="hidden mt-8">
+            <div class="bg-white/10 backdrop-blur-sm rounded-xl p-6">
+                <h3 class="text-xl font-bold mb-4">🏆 Comparativa General de Progreso</h3>
+                <div id="comparison-content">
+                    <!-- Contenido dinámico -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="./progress-analytics-manager.js"></script>
+    <script type="module">
+        import { db } from './firebase_config.js';
+        
+        let currentEventId = '';
+        let currentEventName = '';
+        let progressManager = null;
+        let allArtists = [];
+
+        // Inicializar página
+        document.addEventListener('DOMContentLoaded', function() {
+            initializePage();
+            setupEventListeners();
+        });
+
+        function initializePage() {
+            // Obtener parámetros de URL
+            const urlParams = new URLSearchParams(window.location.search);
+            currentEventId = urlParams.get('eventId') || 'demo';
+            currentEventName = urlParams.get('eventName') || 'Evento Demo';
+            
+            // Inicializar manager
+            progressManager = new ProgressAnalyticsManager(currentEventId);
+            
+            // Mostrar información del evento
+            document.getElementById('event-title').textContent = currentEventName;
+            document.getElementById('event-details').textContent = `Análisis de progreso para: ${currentEventName} (ID: ${currentEventId})`;
+            
+            // Cargar artistas
+            loadArtists();
+        }
+
+        function setupEventListeners() {
+            document.getElementById('analyze-btn').addEventListener('click', analyzeArtistProgress);
+            document.getElementById('analyze-all-btn').addEventListener('click', analyzeAllArtists);
+            document.getElementById('artist-selector').addEventListener('change', onArtistChange);
+        }
+
+        async function loadArtists() {
+            try {
+                showLoading('Cargando lista de artistas...');
+                
+                // Obtener artistas de todas las galas
+                const artistsSet = new Set();
+                
+                for (let gala = 1; gala <= 5; gala++) {
+                    try {
+                        const galasData = await progressManager.getGalasData(gala);
+                        
+                        galasData.forEach(galaData => {
+                            // Extraer artistas de votos de jurados
+                            galaData.juradosVotes.forEach(vote => {
+                                if (vote.artistName) {
+                                    artistsSet.add(vote.artistName);
+                                }
+                            });
+                            
+                            // Extraer artistas de votos del público
+                            galaData.publicVotes.forEach(vote => {
+                                if (vote.artistName) {
+                                    artistsSet.add(vote.artistName);
+                                }
+                            });
+                        });
+                    } catch (error) {
+                        console.warn(`⚠️ No se pudieron cargar datos de gala ${gala}`);
+                    }
+                }
+                
+                allArtists = Array.from(artistsSet).sort();
+                populateArtistSelector();
+                hideLoading();
+                
+                console.log(`✅ Cargados ${allArtists.length} artistas`);
+                
+            } catch (error) {
+                console.error('❌ Error cargando artistas:', error);
+                hideLoading();
+                showError('Error cargando lista de artistas');
+            }
+        }
+
+        function populateArtistSelector() {
+            const selector = document.getElementById('artist-selector');
+            selector.innerHTML = '<option value="">Seleccionar artista...</option>';
+            
+            allArtists.forEach(artist => {
+                const option = document.createElement('option');
+                option.value = artist;
+                option.textContent = artist;
+                selector.appendChild(option);
+            });
+        }
+
+        function onArtistChange() {
+            const selectedArtist = document.getElementById('artist-selector').value;
+            if (selectedArtist) {
+                // Auto-seleccionar la última gala disponible
+                document.getElementById('gala-selector').value = '5';
+            }
+        }
+
+        async function analyzeArtistProgress() {
+            const artistName = document.getElementById('artist-selector').value;
+            const currentGala = parseInt(document.getElementById('gala-selector').value);
+            
+            if (!artistName) {
+                alert('Por favor selecciona un artista');
+                return;
+            }
+            
+            try {
+                showLoading(`Analizando progreso de ${artistName}...`);
+                
+                // Calcular progreso
+                const progressMetrics = await progressManager.calculateArtistProgress(artistName, currentGala);
+                
+                if (progressMetrics) {
+                    displayProgressResults(artistName, progressMetrics);
+                    createProgressCharts(progressMetrics);
+                } else {
+                    showError('No se pudieron calcular las métricas de progreso');
+                }
+                
+                hideLoading();
+                
+            } catch (error) {
+                console.error('❌ Error analizando progreso:', error);
+                hideLoading();
+                showError('Error analizando el progreso del artista');
+            }
+        }
+
+        async function analyzeAllArtists() {
+            const currentGala = parseInt(document.getElementById('gala-selector').value);
+            
+            try {
+                showLoading('Analizando progreso de todos los artistas...');
+                
+                const allProgressData = [];
+                
+                for (let i = 0; i < allArtists.length; i++) {
+                    const artist = allArtists[i];
+                    updateLoadingMessage(`Analizando ${artist} (${i + 1}/${allArtists.length})...`);
+                    
+                    try {
+                        const progressMetrics = await progressManager.calculateArtistProgress(artist, currentGala);
+                        if (progressMetrics) {
+                            allProgressData.push({
+                                artist: artist,
+                                metrics: progressMetrics
+                            });
+                        }
+                    } catch (error) {
+                        console.warn(`⚠️ Error analizando ${artist}:`, error);
+                    }
+                }
+                
+                displayAllArtistsComparison(allProgressData);
+                hideLoading();
+                
+            } catch (error) {
+                console.error('❌ Error analizando todos los artistas:', error);
+                hideLoading();
+                showError('Error analizando el progreso de todos los artistas');
+            }
+        }
+
+        function displayProgressResults(artistName, metrics) {
+            const resultsContainer = document.getElementById('progress-results');
+            resultsContainer.innerHTML = progressManager.generateProgressReport(artistName, metrics);
+            resultsContainer.classList.remove('hidden');
+            
+            // Scroll hacia los resultados
+            resultsContainer.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function createProgressCharts(metrics) {
+            const chartsContainer = document.getElementById('charts-container');
+            chartsContainer.classList.remove('hidden');
+            
+            // Gráfico de puntuaciones
+            const scoresCtx = document.getElementById('scores-chart').getContext('2d');
+            new Chart(scoresCtx, {
+                type: 'line',
+                data: {
+                    labels: metrics.evolution.map(e => `Gala ${e.gala}`),
+                    datasets: [
+                        {
+                            label: 'Jurados',
+                            data: metrics.evolution.map(e => e.juradosScore.total),
+                            borderColor: 'rgb(59, 130, 246)',
+                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                            tension: 0.4
+                        },
+                        {
+                            label: 'Público',
+                            data: metrics.evolution.map(e => e.publicScore.total),
+                            borderColor: 'rgb(16, 185, 129)',
+                            backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                            tension: 0.4
+                        },
+                        {
+                            label: 'Total',
+                            data: metrics.evolution.map(e => e.totalScore),
+                            borderColor: 'rgb(139, 92, 246)',
+                            backgroundColor: 'rgba(139, 92, 246, 0.1)',
+                            tension: 0.4,
+                            borderWidth: 3
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'Evolución de Puntuaciones',
+                            color: 'white'
+                        },
+                        legend: {
+                            labels: {
+                                color: 'white'
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: { color: 'white' },
+                            grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                        },
+                        x: {
+                            ticks: { color: 'white' },
+                            grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                        }
+                    }
+                }
+            });
+            
+            // Gráfico de posiciones (invertido)
+            const positionCtx = document.getElementById('position-chart').getContext('2d');
+            new Chart(positionCtx, {
+                type: 'line',
+                data: {
+                    labels: metrics.evolution.map(e => `Gala ${e.gala}`),
+                    datasets: [{
+                        label: 'Posición en Ranking',
+                        data: metrics.evolution.map(e => e.position),
+                        borderColor: 'rgb(251, 191, 36)',
+                        backgroundColor: 'rgba(251, 191, 36, 0.1)',
+                        tension: 0.4,
+                        borderWidth: 3
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'Evolución de Posición en Ranking',
+                            color: 'white'
+                        },
+                        legend: {
+                            labels: {
+                                color: 'white'
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            reverse: true, // Invertir eje Y (posición 1 arriba)
+                            beginAtZero: false,
+                            ticks: { 
+                                color: 'white',
+                                stepSize: 1
+                            },
+                            grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                        },
+                        x: {
+                            ticks: { color: 'white' },
+                            grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                        }
+                    }
+                }
+            });
+        }
+
+        function displayAllArtistsComparison(allProgressData) {
+            // Ordenar por progreso general
+            allProgressData.sort((a, b) => b.metrics.overallProgress - a.metrics.overallProgress);
+            
+            let html = `
+                <div class="overflow-x-auto">
+                    <table class="w-full bg-white/10 rounded-lg">
+                        <thead class="bg-white/20">
+                            <tr>
+                                <th class="px-4 py-3 text-left">#</th>
+                                <th class="px-4 py-3 text-left">Artista</th>
+                                <th class="px-4 py-3 text-left">Progreso Total</th>
+                                <th class="px-4 py-3 text-left">Posición Actual</th>
+                                <th class="px-4 py-3 text-left">Tendencia Jurados</th>
+                                <th class="px-4 py-3 text-left">Tendencia Público</th>
+                                <th class="px-4 py-3 text-left">Galas Participadas</th>
+                            </tr>
+                        </thead>
+                        <tbody>`;
+            
+            allProgressData.forEach((data, index) => {
+                const progressColor = data.metrics.overallProgress >= 0 ? 'text-green-400' : 'text-red-400';
+                const trendIcon = (trend) => {
+                    return trend === 'ascendente' ? '📈' : trend === 'descendente' ? '📉' : '➡️';
+                };
+                
+                html += `
+                    <tr class="border-t border-white/10 hover:bg-white/5">
+                        <td class="px-4 py-3 font-bold">${index + 1}</td>
+                        <td class="px-4 py-3 font-medium">${data.artist}</td>
+                        <td class="px-4 py-3 ${progressColor} font-bold">
+                            ${data.metrics.overallProgress >= 0 ? '+' : ''}${data.metrics.overallProgress}%
+                        </td>
+                        <td class="px-4 py-3">
+                            #${data.metrics.evolution[data.metrics.evolution.length - 1]?.position || 'N/A'}
+                        </td>
+                        <td class="px-4 py-3">
+                            ${trendIcon(data.metrics.trends.jurados)} ${data.metrics.trends.jurados}
+                        </td>
+                        <td class="px-4 py-3">
+                            ${trendIcon(data.metrics.trends.publico)} ${data.metrics.trends.publico}
+                        </td>
+                        <td class="px-4 py-3">${data.metrics.totalGalas}</td>
+                    </tr>`;
+            });
+            
+            html += `
+                        </tbody>
+                    </table>
+                </div>
+                
+                <!-- Top 3 Mejorias -->
+                <div class="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="bg-gradient-to-r from-yellow-500/20 to-yellow-600/20 p-4 rounded-lg border border-yellow-500/30">
+                        <h4 class="font-bold text-yellow-300 mb-2">🥇 Mayor Progreso</h4>
+                        <p class="text-lg font-semibold">${allProgressData[0]?.artist || 'N/A'}</p>
+                        <p class="text-yellow-200">+${allProgressData[0]?.metrics.overallProgress || 0}%</p>
+                    </div>
+                    <div class="bg-gradient-to-r from-silver-500/20 to-gray-600/20 p-4 rounded-lg border border-gray-500/30">
+                        <h4 class="font-bold text-gray-300 mb-2">🥈 Segundo Lugar</h4>
+                        <p class="text-lg font-semibold">${allProgressData[1]?.artist || 'N/A'}</p>
+                        <p class="text-gray-200">+${allProgressData[1]?.metrics.overallProgress || 0}%</p>
+                    </div>
+                    <div class="bg-gradient-to-r from-amber-600/20 to-orange-600/20 p-4 rounded-lg border border-amber-600/30">
+                        <h4 class="font-bold text-amber-300 mb-2">🥉 Tercer Lugar</h4>
+                        <p class="text-lg font-semibold">${allProgressData[2]?.artist || 'N/A'}</p>
+                        <p class="text-amber-200">+${allProgressData[2]?.metrics.overallProgress || 0}%</p>
+                    </div>
+                </div>`;
+            
+            document.getElementById('comparison-content').innerHTML = html;
+            document.getElementById('all-artists-comparison').classList.remove('hidden');
+        }
+
+        function showLoading(message) {
+            document.getElementById('loading-message').textContent = message;
+            document.getElementById('loading-state').classList.remove('hidden');
+        }
+
+        function updateLoadingMessage(message) {
+            document.getElementById('loading-message').textContent = message;
+        }
+
+        function hideLoading() {
+            document.getElementById('loading-state').classList.add('hidden');
+        }
+
+        function showError(message) {
+            alert(`❌ Error: ${message}`);
+        }
+    </script>
+</body>
+</html>

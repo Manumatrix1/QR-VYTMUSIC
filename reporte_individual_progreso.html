@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🏆 Reporte Individual de Progreso - VYT Music</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-gradient-to-br from-blue-900 via-purple-900 to-pink-900 min-h-screen text-white">
+    
+    <!-- Header -->
+    <div class="container mx-auto px-4 py-6">
+        <div class="flex items-center justify-between mb-8">
+            <div>
+                <h1 class="text-4xl font-bold mb-2">🏆 Tu Progreso en el Certamen</h1>
+                <p class="text-blue-200">Análisis personalizado de tu evolución</p>
+            </div>
+            <button onclick="window.print()" class="bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-lg transition-colors">
+                🖨️ Imprimir Reporte
+            </button>
+        </div>
+
+        <!-- Información del Artista -->
+        <div id="artist-info" class="bg-white/10 backdrop-blur-sm rounded-xl p-6 mb-8">
+            <div class="flex items-center space-x-4">
+                <div class="text-6xl">🎤</div>
+                <div>
+                    <h2 id="artist-name" class="text-3xl font-bold mb-2">Cargando artista...</h2>
+                    <p id="event-name" class="text-blue-200">Preparando tu reporte...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Resumen Principal -->
+        <div id="main-summary" class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            <!-- Se generará dinámicamente -->
+        </div>
+
+        <!-- Estado de Carga -->
+        <div id="loading-state" class="bg-white/10 backdrop-blur-sm rounded-xl p-8 text-center">
+            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
+            <p class="text-lg">Analizando tu progreso...</p>
+            <p id="loading-message" class="text-blue-200 mt-2">Obteniendo datos del certamen...</p>
+        </div>
+
+        <!-- Reporte de Progreso -->
+        <div id="progress-content" class="hidden">
+            <!-- Contenido principal del reporte -->
+            <div id="detailed-progress"></div>
+            
+            <!-- Gráficos -->
+            <div class="mt-8 bg-white/10 backdrop-blur-sm rounded-xl p-6">
+                <h3 class="text-xl font-bold mb-4">📊 Gráficos de tu Evolución</h3>
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div class="bg-white/20 rounded-lg p-4">
+                        <canvas id="personal-scores-chart"></canvas>
+                    </div>
+                    <div class="bg-white/20 rounded-lg p-4">
+                        <canvas id="personal-position-chart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Consejos y Recomendaciones -->
+            <div id="recommendations" class="mt-8 bg-gradient-to-r from-purple-600/20 to-pink-600/20 rounded-xl p-6 border border-purple-500/30">
+                <h3 class="text-xl font-bold mb-4">💡 Recomendaciones Personalizadas</h3>
+                <div id="recommendations-content">
+                    <!-- Se generará dinámicamente -->
+                </div>
+            </div>
+
+            <!-- Certificado de Participación -->
+            <div id="certificate" class="mt-8 bg-gradient-to-r from-yellow-600/20 to-orange-600/20 rounded-xl p-8 border border-yellow-500/30 text-center">
+                <div class="text-6xl mb-4">🏆</div>
+                <h3 class="text-2xl font-bold mb-4">Certificado de Participación</h3>
+                <p class="text-lg mb-2">Se certifica que</p>
+                <p id="certificate-name" class="text-3xl font-bold text-yellow-300 mb-2">Nombre del Artista</p>
+                <p class="text-lg mb-2">ha participado en el certamen</p>
+                <p id="certificate-event" class="text-xl font-semibold text-yellow-200 mb-4">Nombre del Evento</p>
+                <p class="text-sm text-yellow-100">Con un progreso total de <span id="certificate-progress" class="font-bold">X%</span> a lo largo del certamen</p>
+                <div class="mt-6 text-xs text-yellow-200">
+                    Generado automáticamente por VYT Music System
+                </div>
+            </div>
+        </div>
+
+        <!-- Error State -->
+        <div id="error-state" class="hidden bg-red-600/20 backdrop-blur-sm rounded-xl p-8 text-center border border-red-500/50">
+            <div class="text-6xl mb-4">❌</div>
+            <h3 class="text-xl font-bold mb-2">No se pudo generar el reporte</h3>
+            <p id="error-message" class="text-red-200 mb-4">Error desconocido</p>
+            <button onclick="location.reload()" class="bg-red-600 hover:bg-red-700 px-6 py-3 rounded-lg transition-colors">
+                🔄 Intentar de nuevo
+            </button>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="./progress-analytics-manager.js"></script>
+    <script type="module">
+        import { db } from './firebase_config.js';
+        
+        let artistName = '';
+        let eventId = '';
+        let eventName = '';
+        let progressManager = null;
+
+        // Inicializar página
+        document.addEventListener('DOMContentLoaded', function() {
+            initializePage();
+        });
+
+        function initializePage() {
+            // Obtener parámetros de URL
+            const urlParams = new URLSearchParams(window.location.search);
+            artistName = urlParams.get('artist') || '';
+            eventId = urlParams.get('eventId') || 'demo';
+            eventName = urlParams.get('eventName') || 'Certamen Demo';
+            
+            if (!artistName) {
+                showError('No se especificó el artista. Por favor, accede desde el sistema principal.');
+                return;
+            }
+            
+            // Mostrar información inicial
+            document.getElementById('artist-name').textContent = artistName;
+            document.getElementById('event-name').textContent = `${eventName} (${eventId})`;
+            document.getElementById('certificate-name').textContent = artistName;
+            document.getElementById('certificate-event').textContent = eventName;
+            
+            // Inicializar manager y generar reporte
+            progressManager = new ProgressAnalyticsManager(eventId);
+            generatePersonalReport();
+        }
+
+        async function generatePersonalReport() {
+            try {
+                showLoading('Analizando tu participación en el certamen...');
+                
+                // Determinar la última gala disponible
+                const lastGala = await determineLastGala();
+                
+                updateLoadingMessage(`Calculando tu progreso hasta la Gala ${lastGala}...`);
+                
+                // Calcular progreso del artista
+                const progressMetrics = await progressManager.calculateArtistProgress(artistName, lastGala);
+                
+                if (progressMetrics) {
+                    displayPersonalReport(progressMetrics);
+                    createPersonalCharts(progressMetrics);
+                    generateRecommendations(progressMetrics);
+                    hideLoading();
+                } else {
+                    showError('No se encontraron datos de participación para este artista.');
+                }
+                
+            } catch (error) {
+                console.error('❌ Error generando reporte:', error);
+                showError('Error al generar el reporte de progreso.');
+            }
+        }
+
+        async function determineLastGala() {
+            // Buscar la última gala con datos
+            for (let gala = 5; gala >= 1; gala--) {
+                try {
+                    const galasData = await progressManager.getGalasData(gala);
+                    if (galasData.length > 0) {
+                        return gala;
+                    }
+                } catch (error) {
+                    continue;
+                }
+            }
+            return 1; // Por defecto, gala 1
+        }
+
+        function displayPersonalReport(metrics) {
+            // Actualizar resumen principal
+            const summaryHtml = `
+                <div class="bg-white/10 backdrop-blur-sm rounded-xl p-6 text-center">
+                    <div class="text-4xl mb-2">📈</div>
+                    <h3 class="text-xl font-bold mb-2">Progreso Total</h3>
+                    <div class="text-3xl font-bold ${metrics.overallProgress >= 0 ? 'text-green-400' : 'text-red-400'}">
+                        ${metrics.overallProgress >= 0 ? '+' : ''}${metrics.overallProgress}%
+                    </div>
+                    <p class="text-sm text-gray-300 mt-2">Evolución en el certamen</p>
+                </div>
+                
+                <div class="bg-white/10 backdrop-blur-sm rounded-xl p-6 text-center">
+                    <div class="text-4xl mb-2">🏆</div>
+                    <h3 class="text-xl font-bold mb-2">Posición Final</h3>
+                    <div class="text-3xl font-bold text-blue-400">
+                        #${metrics.evolution[metrics.evolution.length - 1]?.position || 'N/A'}
+                    </div>
+                    <p class="text-sm text-gray-300 mt-2">de ${metrics.evolution[metrics.evolution.length - 1]?.participantCount || 'N/A'} participantes</p>
+                </div>
+                
+                <div class="bg-white/10 backdrop-blur-sm rounded-xl p-6 text-center">
+                    <div class="text-4xl mb-2">🎭</div>
+                    <h3 class="text-xl font-bold mb-2">Galas Participadas</h3>
+                    <div class="text-3xl font-bold text-purple-400">
+                        ${metrics.totalGalas}
+                    </div>
+                    <p class="text-sm text-gray-300 mt-2">presentaciones realizadas</p>
+                </div>
+            `;
+            
+            document.getElementById('main-summary').innerHTML = summaryHtml;
+            
+            // Mostrar reporte detallado
+            const detailedReport = progressManager.generateProgressReport(artistName, metrics);
+            document.getElementById('detailed-progress').innerHTML = detailedReport;
+            
+            // Actualizar certificado
+            document.getElementById('certificate-progress').textContent = `${metrics.overallProgress}%`;
+            
+            // Mostrar contenido
+            document.getElementById('progress-content').classList.remove('hidden');
+        }
+
+        function createPersonalCharts(metrics) {
+            // Gráfico de puntuaciones personales
+            const scoresCtx = document.getElementById('personal-scores-chart').getContext('2d');
+            new Chart(scoresCtx, {
+                type: 'line',
+                data: {
+                    labels: metrics.evolution.map(e => `Gala ${e.gala}`),
+                    datasets: [
+                        {
+                            label: 'Calificación Jurados',
+                            data: metrics.evolution.map(e => e.juradosScore.total),
+                            borderColor: 'rgb(59, 130, 246)',
+                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                            tension: 0.4,
+                            fill: true
+                        },
+                        {
+                            label: 'Votos del Público',
+                            data: metrics.evolution.map(e => e.publicScore.total),
+                            borderColor: 'rgb(16, 185, 129)',
+                            backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                            tension: 0.4,
+                            fill: true
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'Tu Evolución de Puntuaciones',
+                            color: 'white',
+                            font: { size: 16 }
+                        },
+                        legend: {
+                            labels: { color: 'white' }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: { color: 'white' },
+                            grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                        },
+                        x: {
+                            ticks: { color: 'white' },
+                            grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                        }
+                    }
+                }
+            });
+            
+            // Gráfico de posición en ranking
+            const positionCtx = document.getElementById('personal-position-chart').getContext('2d');
+            new Chart(positionCtx, {
+                type: 'line',
+                data: {
+                    labels: metrics.evolution.map(e => `Gala ${e.gala}`),
+                    datasets: [{
+                        label: 'Tu Posición',
+                        data: metrics.evolution.map(e => e.position),
+                        borderColor: 'rgb(251, 191, 36)',
+                        backgroundColor: 'rgba(251, 191, 36, 0.1)',
+                        tension: 0.4,
+                        borderWidth: 4,
+                        pointBackgroundColor: 'rgb(251, 191, 36)',
+                        pointBorderColor: 'white',
+                        pointBorderWidth: 2,
+                        pointRadius: 6
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'Tu Posición en el Ranking',
+                            color: 'white',
+                            font: { size: 16 }
+                        },
+                        legend: {
+                            labels: { color: 'white' }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            reverse: true, // Menor posición = mejor
+                            beginAtZero: false,
+                            ticks: { 
+                                color: 'white',
+                                stepSize: 1,
+                                callback: function(value) {
+                                    return '#' + value;
+                                }
+                            },
+                            grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                        },
+                        x: {
+                            ticks: { color: 'white' },
+                            grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                        }
+                    }
+                }
+            });
+        }
+
+        function generateRecommendations(metrics) {
+            const recommendations = [];
+            
+            // Análisis de tendencias
+            if (metrics.trends.jurados === 'ascendente') {
+                recommendations.push({
+                    icon: '👨‍⚖️',
+                    title: 'Excelente impresión en jurados',
+                    content: 'Los jurados han notado tu mejora constante. Continúa trabajando en los aspectos técnicos que te han llevado a esta evolución positiva.',
+                    type: 'success'
+                });
+            } else if (metrics.trends.jurados === 'descendente') {
+                recommendations.push({
+                    icon: '🎯',
+                    title: 'Enfócate en la técnica',
+                    content: 'Los jurados valoran mucho el aspecto técnico. Considera trabajar más en musicalidad, interpretación y presencia escénica.',
+                    type: 'improvement'
+                });
+            }
+            
+            if (metrics.trends.publico === 'ascendente') {
+                recommendations.push({
+                    icon: '❤️',
+                    title: 'Conectas cada vez más con el público',
+                    content: 'Tu carisma y capacidad de conectar con la audiencia está creciendo. ¡Mantén esa energía!',
+                    type: 'success'
+                });
+            } else if (metrics.trends.publico === 'descendente') {
+                recommendations.push({
+                    icon: '🎭',
+                    title: 'Mejora tu conexión con el público',
+                    content: 'Intenta interactuar más con la audiencia, mostrar más personalidad en el escenario y elegir repertorio que conecte emocionalmente.',
+                    type: 'improvement'
+                });
+            }
+            
+            // Análisis de progreso general
+            if (metrics.overallProgress > 20) {
+                recommendations.push({
+                    icon: '🚀',
+                    title: '¡Progreso extraordinario!',
+                    content: `Con un ${metrics.overallProgress}% de mejora, estás entre los participantes con mayor evolución. Continúa así.`,
+                    type: 'highlight'
+                });
+            } else if (metrics.overallProgress > 0) {
+                recommendations.push({
+                    icon: '📈',
+                    title: 'Progreso constante',
+                    content: `Tu ${metrics.overallProgress}% de mejora muestra dedicación. Identifica qué te ha funcionado y profundiza en ello.`,
+                    type: 'success'
+                });
+            } else {
+                recommendations.push({
+                    icon: '💪',
+                    title: 'Oportunidad de crecimiento',
+                    content: 'Todo proceso artístico tiene altibajos. Analiza tu repertorio, técnica y preparación para el siguiente certamen.',
+                    type: 'improvement'
+                });
+            }
+            
+            // Consejos específicos por posición
+            const lastPosition = metrics.evolution[metrics.evolution.length - 1]?.position;
+            if (lastPosition <= 3) {
+                recommendations.push({
+                    icon: '🏆',
+                    title: 'Estás en el top 3',
+                    content: 'Tu lugar en el podio es merecido. Para mantener este nivel, sigue puliendo los detalles y mantén la consistencia.',
+                    type: 'highlight'
+                });
+            } else if (lastPosition <= 5) {
+                recommendations.push({
+                    icon: '🎯',
+                    title: 'Muy cerca del podio',
+                    content: 'Estás muy cerca de los primeros lugares. Un poco más de trabajo en interpretación o técnica puede llevarte al top 3.',
+                    type: 'improvement'
+                });
+            }
+            
+            // Generar HTML
+            let html = '<div class="grid grid-cols-1 md:grid-cols-2 gap-4">';
+            recommendations.forEach(rec => {
+                const bgColor = rec.type === 'success' ? 'bg-green-600/20 border-green-500/50' :
+                               rec.type === 'highlight' ? 'bg-yellow-600/20 border-yellow-500/50' :
+                               'bg-blue-600/20 border-blue-500/50';
+                
+                html += `
+                    <div class="p-4 rounded-lg border ${bgColor}">
+                        <div class="flex items-start space-x-3">
+                            <div class="text-2xl">${rec.icon}</div>
+                            <div>
+                                <h4 class="font-bold mb-1">${rec.title}</h4>
+                                <p class="text-sm opacity-90">${rec.content}</p>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            html += '</div>';
+            
+            document.getElementById('recommendations-content').innerHTML = html;
+        }
+
+        function showLoading(message) {
+            document.getElementById('loading-message').textContent = message;
+            document.getElementById('loading-state').classList.remove('hidden');
+        }
+
+        function updateLoadingMessage(message) {
+            document.getElementById('loading-message').textContent = message;
+        }
+
+        function hideLoading() {
+            document.getElementById('loading-state').classList.add('hidden');
+        }
+
+        function showError(message) {
+            document.getElementById('error-message').textContent = message;
+            document.getElementById('error-state').classList.remove('hidden');
+            document.getElementById('loading-state').classList.add('hidden');
+        }
+    </script>
+    
+    <style>
+        @media print {
+            body {
+                background: white !important;
+                color: black !important;
+            }
+            .bg-gradient-to-br {
+                background: white !important;
+            }
+            .text-white {
+                color: black !important;
+            }
+            .bg-white\/10, .bg-white\/20 {
+                background: #f8f9fa !important;
+                border: 1px solid #dee2e6 !important;
+            }
+        }
+    </style>
+</body>
+</html>
