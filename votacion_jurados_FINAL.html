@@ -357,8 +357,100 @@
             }
         };
 
-        // SISTEMA DE FEEDBACK INTELIGENTE Y PROFESIONAL
-        function generateAutoFeedback(artistVotes) {
+        // CONFIGURACIÓN DE GEMINI AI
+        const GEMINI_API_KEY = 'AIzaSyAOwLwJFPJugk3DBvdlexUVmLVPt23c_6g';
+        const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${GEMINI_API_KEY}`;
+
+        // SISTEMA DE FEEDBACK CON IA GEMINI
+        async function generateAutoFeedback(artistVotes) {
+            const scores = Object.values(artistVotes);
+            const totalScore = scores.reduce((sum, val) => sum + val, 0);
+            const averageScore = totalScore / scores.length;
+            
+            // Preparar datos para Gemini AI
+            const criteriaDetails = CRITERIA.map(criteria => {
+                const score = artistVotes[criteria.id] || 0;
+                return `${criteria.name}: ${score}/100 puntos`;
+            }).join('\n');
+            
+            const prompt = `Eres un jurado profesional de un certamen de canto. Analiza estas puntuaciones y genera EXACTAMENTE 5 sugerencias específicas y profesionales para el artista:
+
+PUNTUACIONES DEL ARTISTA:
+${criteriaDetails}
+
+PROMEDIO GENERAL: ${averageScore.toFixed(1)}/100
+
+INSTRUCCIONES:
+- Genera exactamente 5 comentarios profesionales
+- Cada comentario debe ser específico y útil
+- Incluye tanto fortalezas como áreas de mejora
+- Usa un tono constructivo y profesional
+- Cada sugerencia debe ser de 1-2 líneas máximo
+- Enumera del 1 al 5
+
+Formato de respuesta:
+1. [Comentario sobre técnica vocal o interpretación]
+2. [Comentario sobre presencia escénica o expresión]
+3. [Comentario sobre aspectos técnicos específicos]
+4. [Sugerencia concreta de mejora]
+5. [Reconocimiento de fortalezas y consejo final]`;
+
+            try {
+                // Llamada a Gemini AI
+                const response = await fetch(GEMINI_API_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        contents: [{
+                            parts: [{
+                                text: prompt
+                            }]
+                        }]
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Error de Gemini AI: ${response.status}`);
+                }
+
+                const data = await response.json();
+                const aiResponse = data.candidates[0].content.parts[0].text;
+                
+                console.log('🤖 Respuesta de Gemini AI:', aiResponse);
+                
+                // Procesar respuesta de IA
+                const lines = aiResponse.split('\n').filter(line => line.trim());
+                const feedbackSuggestions = [];
+                
+                lines.forEach((line, index) => {
+                    if (line.match(/^\d+\./)) {
+                        feedbackSuggestions.push({
+                            category: `💬 Sugerencia ${index + 1}`,
+                            score: "IA Generated",
+                            suggestion: line.replace(/^\d+\.\s*/, '').trim()
+                        });
+                    }
+                });
+                
+                // Si no hay suficientes sugerencias, usar sistema de respaldo
+                if (feedbackSuggestions.length < 3) {
+                    console.warn('⚠️ Pocas sugerencias de IA, usando sistema de respaldo');
+                    return generateFallbackFeedback(artistVotes);
+                }
+                
+                return feedbackSuggestions;
+                
+            } catch (error) {
+                console.error('❌ Error con Gemini AI:', error);
+                console.log('🔄 Usando sistema de feedback de respaldo...');
+                return generateFallbackFeedback(artistVotes);
+            }
+        }
+
+        // SISTEMA DE FEEDBACK DE RESPALDO (si falla Gemini)
+        function generateFallbackFeedback(artistVotes) {
             const feedbackSuggestions = [];
             const scores = Object.values(artistVotes);
             const totalScore = scores.reduce((sum, val) => sum + val, 0);
@@ -1084,7 +1176,7 @@
                 artistVotes[criteria.id] !== undefined && artistVotes[criteria.id] !== null
             );
             if (hasAllVotes) {
-                generateAndShowModalFeedback(artistVotes);
+                generateAndShowModalFeedback(artistVotes).catch(console.error);
             }
             
             // Mostrar modal
@@ -1158,7 +1250,7 @@
         }
 
         // Función para actualizar puntaje en modal
-        window.updateModalScore = function(criteriaId, value) {
+        window.updateModalScore = async function(criteriaId, value) {
             if (!currentModalArtist) return;
 
             // Actualizar display con número y texto visual
@@ -1181,11 +1273,11 @@
             }
             votes[currentModalArtist.id][criteriaId] = parseInt(value);
 
-            updateModalTotal();
+            await updateModalTotal();
         };
 
         // Función para actualizar total en modal
-        function updateModalTotal() {
+        async function updateModalTotal() {
             if (!currentModalArtist) return;
 
             const currentVotes = votes[currentModalArtist.id] || {};
@@ -1199,16 +1291,27 @@
             );
             
             if (hasAllVotes) {
-                generateAndShowModalFeedback(currentVotes);
+                await generateAndShowModalFeedback(currentVotes);
             }
         }
 
         // Función para generar y mostrar feedback automático en el modal
-        function generateAndShowModalFeedback(artistVotes) {
-            console.log('🔍 Generando feedback para modal:', artistVotes);
+        async function generateAndShowModalFeedback(artistVotes) {
+            console.log('🔍 Generando feedback con IA para modal:', artistVotes);
             
             const feedbackContainer = document.getElementById('auto-feedback-modal');
             const feedbackSection = document.getElementById('feedback-section-modal');
+            
+            // Mostrar indicador de carga
+            if (feedbackContainer && feedbackSection) {
+                feedbackContainer.innerHTML = `
+                    <div class="text-center py-4">
+                        <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-300 mx-auto mb-2"></div>
+                        <p class="text-blue-300">🤖 Gemini AI generando feedback profesional...</p>
+                    </div>
+                `;
+                feedbackSection.style.display = 'block';
+            }
             
             console.log('📦 Elementos del modal encontrados:', {
                 feedbackContainer: !!feedbackContainer,
@@ -1245,30 +1348,50 @@
             const feedbackSuggestions = generateAutoFeedback(artistVotes);
             console.log('💬 Sugerencias generadas:', feedbackSuggestions.length, 'elementos');
             
-            if (feedbackSuggestions.length > 0) {
-                const feedbackHTML = feedbackSuggestions.map(item => `
-                    <div class="bg-black bg-opacity-30 p-3 rounded mb-2">
-                        <div class="flex justify-between items-center mb-1">
-                            <span class="font-bold text-blue-300 text-sm">${item.category}</span>
-                            <span class="text-xs text-gray-400">${item.score}</span>
+            try {
+                const feedbackSuggestions = await generateAutoFeedback(artistVotes);
+                
+                if (feedbackSuggestions.length > 0) {
+                    const feedbackHTML = feedbackSuggestions.map((item, index) => `
+                        <div class="bg-gradient-to-r from-blue-900 to-purple-900 bg-opacity-50 p-3 rounded-lg mb-3 border border-blue-400">
+                            <div class="flex justify-between items-center mb-1">
+                                <span class="font-bold text-blue-300 text-sm">${item.category}</span>
+                                <span class="text-xs text-green-400">${item.score === 'IA Generated' ? '🤖 IA' : item.score}</span>
+                            </div>
+                            <p class="text-white text-sm leading-relaxed">${item.suggestion}</p>
                         </div>
-                        <p class="text-white text-sm leading-relaxed">${item.suggestion}</p>
+                    `).join('');
+                    
+                    feedbackContainer.innerHTML = `
+                        <div class="mb-3 text-center">
+                            <span class="bg-green-600 text-white px-3 py-1 rounded-full text-xs font-bold">
+                                ✅ Análisis completado por Gemini AI
+                            </span>
+                        </div>
+                        ${feedbackHTML}
+                    `;
+                    
+                    // Mostrar la sección de feedback
+                    feedbackSection.style.display = 'block';
+                    feedbackSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    
+                    console.log('✅ Feedback con IA mostrado correctamente');
+                    console.log('📄 Sugerencias generadas:', feedbackSuggestions.length);
+                } else {
+                    // Mostrar mensaje si no hay sugerencias
+                    feedbackContainer.innerHTML = '<p class="text-gray-400 text-center">Completa todas las categorías para ver sugerencias personalizadas con IA</p>';
+                    feedbackSection.style.display = 'block';
+                    console.log('📝 Mostrando mensaje de completar categorías');
+                }
+            } catch (error) {
+                console.error('❌ Error generando feedback:', error);
+                feedbackContainer.innerHTML = `
+                    <div class="bg-red-900 bg-opacity-50 p-3 rounded text-center">
+                        <p class="text-red-300 text-sm">⚠️ Error generando feedback con IA</p>
+                        <p class="text-red-400 text-xs mt-1">Se usará sistema de respaldo</p>
                     </div>
-                `).join('');
-                
-                feedbackContainer.innerHTML = feedbackHTML;
-                
-                // Mostrar la sección de feedback
+                `;
                 feedbackSection.style.display = 'block';
-                feedbackSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                
-                console.log('✅ Feedback del modal mostrado correctamente');
-                console.log('📄 HTML generado:', feedbackHTML.length, 'caracteres');
-            } else {
-                // Mostrar mensaje si no hay sugerencias
-                feedbackContainer.innerHTML = '<p class="text-gray-400 text-center">Completa todas las categorías para ver sugerencias personalizadas</p>';
-                feedbackSection.style.display = 'block';
-                console.log('📝 Mostrando mensaje de completar categorías');
             }
         }
 
