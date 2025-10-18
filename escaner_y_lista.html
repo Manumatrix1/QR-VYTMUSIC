@@ -78,25 +78,10 @@
         
         <!-- 📊 INDICADOR DE ESTADO DEL SCANNER -->
         <div id="scanner-status" class="absolute top-4 left-1/2 transform -translate-x-1/2 bg-green-600 bg-opacity-90 text-white px-4 py-2 rounded-lg text-sm font-medium z-60">
-            🎯 QR + Códigos de barras - Sistema dual para galas
+            🎯 Apunta directamente - Detección TODA LA PANTALLA
         </div>
         
-        <!-- 🎯 GUÍA VISUAL PANTALLA COMPLETA -->
-        <div class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-50 pointer-events-none">
-            <div class="w-80 h-80 border-4 border-white border-opacity-40 rounded-2xl animate-pulse"></div>
-            <div class="absolute top-4 left-4 w-12 h-12 border-l-4 border-t-4 border-white border-opacity-80"></div>
-            <div class="absolute top-4 right-4 w-12 h-12 border-r-4 border-t-4 border-white border-opacity-80"></div>
-            <div class="absolute bottom-4 left-4 w-12 h-12 border-l-4 border-b-4 border-white border-opacity-80"></div>
-            <div class="absolute bottom-4 right-4 w-12 h-12 border-r-4 border-b-4 border-white border-opacity-80"></div>
-        </div>
-        
-        <!-- 📱 INSTRUCCIONES EN LA PARTE INFERIOR -->
-        <div class="absolute bottom-20 left-1/2 transform -translate-x-1/2 z-40 pointer-events-none">
-            <div class="bg-black bg-opacity-70 text-white px-4 py-2 rounded-lg text-center">
-                <div class="text-sm font-medium">✨ Área de detección: Pantalla completa</div>
-                <div class="text-xs text-gray-300 mt-1">Funciona con códigos QR desde celular, papel o pantalla</div>
-            </div>
-        </div>
+        <!-- ✅ SIN GUÍAS VISUALES PARA EVITAR CONFUSIÓN DE ALINEACIÓN -->
 
         <div id="scanned-ticket-info-fullscreen" class="hidden bg-gray-800 bg-opacity-95 p-4 rounded-lg shadow-xl text-center backdrop-blur-sm"></div>
     </div>
@@ -124,7 +109,7 @@
 
     <script type="module">
         import { db } from './firebase_config.js';
-        import { collection, onSnapshot, query, doc, deleteDoc, getDoc, updateDoc, writeBatch, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { collection, onSnapshot, query, doc, deleteDoc, getDoc, updateDoc, writeBatch, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         document.addEventListener('DOMContentLoaded', () => {
             const urlParams = new URLSearchParams(window.location.search);
@@ -284,6 +269,125 @@
                 console.log("✅ Scanner en modo continuo - listo para próximo código");
             }
 
+            async function processScanWithButtons(decodedText) {
+                try {
+                    const infoContainer = document.getElementById('scanned-ticket-info-fullscreen');
+                    const ticketRef = doc(db, `events/${eventId}/tickets`, decodedText);
+                    const ticketDoc = await getDoc(ticketRef);
+                    
+                    let status, colorClass, bgColorClass, ticketData, sound, buttonText;
+
+                    if (!ticketDoc.exists()) {
+                        status = 'ENTRADA INVÁLIDA';
+                        colorClass = 'text-red-400';
+                        bgColorClass = 'bg-red-600';
+                        sound = "C3";
+                        buttonText = "❌ INVÁLIDA";
+                        ticketData = { name: 'Desconocido' };
+                    } else {
+                        ticketData = { id: ticketDoc.id, ...ticketDoc.data() };
+                        
+                        if (ticketData.used) {
+                            status = 'YA INGRESÓ';
+                            colorClass = 'text-yellow-400';
+                            bgColorClass = 'bg-yellow-600';
+                            sound = "F3";
+                            buttonText = "🟡 YA INGRESÓ";
+                        } else {
+                            status = 'PUEDE INGRESAR';
+                            colorClass = 'text-green-400';
+                            bgColorClass = 'bg-green-600';
+                            sound = "A4";
+                            buttonText = "🟢 INGRESAR";
+                        }
+                    }
+
+                    // 🎵 SONIDO SEGÚN ESTADO
+                    if (Tone.context.state === 'running') {
+                        const synth = new Tone.Synth().toDestination();
+                        synth.triggerAttackRelease(sound, "0.3");
+                    }
+
+                    // 📱 MOSTRAR RESULTADO CON BOTONES
+                    infoContainer.innerHTML = `
+                        <div class="w-full max-w-md mx-auto ${bgColorClass} p-6 rounded-xl shadow-2xl">
+                            <div class="text-center mb-4">
+                                <h3 class="text-xl font-bold text-white mb-2">${status}</h3>
+                                <p class="text-white text-lg">${ticketData.name}</p>
+                                <p class="text-gray-200 text-sm">ID: ${decodedText}</p>
+                            </div>
+                            
+                            <div class="flex flex-col gap-3">
+                                ${!ticketData.used && ticketDoc.exists() ? `
+                                    <button onclick="markAsUsed('${decodedText}')" class="w-full ${bgColorClass} hover:opacity-80 text-white font-bold py-3 px-4 rounded-lg">
+                                        ${buttonText}
+                                    </button>
+                                ` : `
+                                    <div class="w-full ${bgColorClass} text-white font-bold py-3 px-4 rounded-lg text-center">
+                                        ${buttonText}
+                                    </div>
+                                `}
+                                
+                                <button onclick="continueScanningAfterResult()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg">
+                                    🔄 CONTINUAR ESCANEANDO
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                    
+                    infoContainer.classList.remove('hidden');
+                    
+                } catch (error) {
+                    console.error("❌ Error al procesar scan:", error);
+                    document.getElementById('scanned-ticket-info-fullscreen').innerHTML = `
+                        <div class="bg-red-600 p-4 rounded-lg">
+                            <p class="text-white font-bold">Error al verificar entrada</p>
+                            <button onclick="continueScanningAfterResult()" class="mt-2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+                                🔄 CONTINUAR
+                            </button>
+                        </div>
+                    `;
+                    document.getElementById('scanned-ticket-info-fullscreen').classList.remove('hidden');
+                }
+            }
+
+            // 🟢 FUNCIÓN PARA MARCAR COMO USADO
+            window.markAsUsed = async function(ticketId) {
+                try {
+                    const ticketRef = doc(db, `events/${eventId}/tickets`, ticketId);
+                    await updateDoc(ticketRef, { 
+                        used: true, 
+                        usedAt: serverTimestamp() 
+                    });
+                    
+                    // Actualizar la UI
+                    const button = event.target;
+                    button.textContent = "✅ INGRESO REGISTRADO";
+                    button.className = button.className.replace('bg-green-600', 'bg-gray-600');
+                    button.disabled = true;
+                    
+                    console.log(`✅ Ticket ${ticketId} marcado como usado`);
+                } catch (error) {
+                    console.error("Error al marcar como usado:", error);
+                    alert("Error al registrar ingreso");
+                }
+            };
+
+            // 🔄 FUNCIÓN PARA CONTINUAR ESCANEANDO
+            window.continueScanningAfterResult = function() {
+                // Ocultar resultado
+                document.getElementById('scanned-ticket-info-fullscreen').classList.add('hidden');
+                
+                // Reiniciar scanner
+                lastScannedCode = null;
+                lastScanTime = 0;
+                
+                // Volver a iniciar
+                setTimeout(() => {
+                    startScanner();
+                }, 500);
+            };
+
             async function processScan(decodedText) {
                 try {
                     const infoContainer = document.getElementById('scanned-ticket-info-fullscreen');
@@ -406,7 +510,7 @@
                 
                 const currentTime = Date.now();
                 
-                // 🚀 PREVENIR ESCANEOS DUPLICADOS RÁPIDOS (como MercadoPago)
+                // 🚀 PREVENIR ESCANEOS DUPLICADOS RÁPIDOS
                 if (lastScannedCode === decodedText && (currentTime - lastScanTime) < scanCooldown) {
                     console.log("🔄 Escaneo duplicado ignorado");
                     return;
@@ -415,27 +519,16 @@
                 lastScannedCode = decodedText;
                 lastScanTime = currentTime;
                 
-                // 🔍 DETECTAR TIPO DE CÓDIGO (QR vs Barras)
-                const isQR = decodedText.length > 10; // QR suelen ser más largos
+                // ⭐ PARAR SCANNER INMEDIATAMENTE AL DETECTAR
+                html5QrCode.stop().then(() => {
+                    console.log("� Scanner DETENIDO tras detectar código");
+                }).catch(err => console.warn("Error al detener scanner:", err));
+                
+                // � DETECTAR TIPO DE CÓDIGO (QR vs Barras)
+                const isQR = decodedText.length > 10;
                 const codeType = isQR ? "📱 QR" : "📊 CÓDIGO DE BARRAS";
                 
                 console.log(`✅ ${codeType} DETECTADO: ${decodedText}`);
-                
-                // 📱 FEEDBACK VISUAL DIFERENCIADO
-                const statusDiv = document.getElementById('scanner-status-fullscreen');
-                if (statusDiv) {
-                    statusDiv.innerHTML = `
-                        <div class="bg-green-600 p-4 rounded-lg animate-bounce">
-                            <p class="font-bold text-white text-lg">✅ ${codeType} DETECTADO</p>
-                            <p class="text-green-100 text-sm">${decodedText.substring(0, 20)}...</p>
-                        </div>
-                    `;
-                    
-                    // Limpiar después de 2 segundos
-                    setTimeout(() => {
-                        statusDiv.innerHTML = '';
-                    }, 2000);
-                }
                 
                 // 🎵 SONIDO DIFERENCIADO POR TIPO
                 if (Tone.context.state === 'running') {
@@ -447,7 +540,8 @@
                     }
                 }
                 
-                processScan(decodedText);
+                // 💾 PROCESAR Y MOSTRAR RESULTADO
+                processScanWithButtons(decodedText);
             }
 
             function onScanError(errorMessage) {
@@ -478,20 +572,18 @@
                 html5QrCode = new Html5Qrcode("qr-code-reader");
                 console.log("✅ Html5Qrcode instanciado");
 
-                // 🎯 CONFIGURACIÓN SIMPLIFICADA Y COMPATIBLE PARA GALAS
+                // 🎯 CONFIGURACIÓN PANTALLA COMPLETA SIN CAJA - APUNTAR = DETECTAR
                 const config = { 
                     fps: 60,
-                    qrbox: function(viewfinderWidth, viewfinderHeight) {
-                        const size = Math.min(viewfinderWidth, viewfinderHeight) * 0.9;
-                        return { width: size, height: size };
-                    },
+                    // ✅ SIN qrbox = DETECCIÓN EN TODA LA PANTALLA
+                    // qrbox: removed - para que funcione donde apuntes
                     aspectRatio: 1.0,
                     disableFlip: false,
                     rememberLastUsedCamera: true,
                     showTorchButtonIfSupported: true
                 };
                 
-                console.log("📋 Configuración:", config);
+                console.log("📋 Configuración pantalla completa:", config);
 
                 // 📱 CONFIGURACIÓN CÁMARA OPTIMIZADA PARA QR DE CELULARES EN GALAS
                 const videoConstraints = {
