@@ -359,7 +359,7 @@
 
         // CONFIGURACIÓN DE GEMINI AI
         const GEMINI_API_KEY = 'AIzaSyAOwLwJFPJugk3DBvdlexUVmLVPt23c_6g';
-        const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${GEMINI_API_KEY}`;
+        const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key=${GEMINI_API_KEY}`;
 
         // SISTEMA DE FEEDBACK CON IA GEMINI
         async function generateAutoFeedback(artistVotes) {
@@ -443,9 +443,13 @@ Formato de respuesta:
                 return feedbackSuggestions;
                 
             } catch (error) {
-                console.error('❌ Error con Gemini AI:', error);
+                console.error('❌ Error con Gemini AI:', error.message || error);
                 console.log('🔄 Usando sistema de feedback de respaldo...');
-                return generateFallbackFeedback(artistVotes);
+                
+                // Usar sistema de respaldo inmediatamente
+                const fallbackSuggestions = generateFallbackFeedback(artistVotes);
+                console.log('✅ Feedback de respaldo generado:', fallbackSuggestions.length, 'sugerencias');
+                return fallbackSuggestions;
             }
         }
 
@@ -917,12 +921,24 @@ Formato de respuesta:
 
                 console.log('💾 Guardando en Firebase con datos:', JSON.stringify(voteData, null, 2));
 
-                // Usar una colección más simple para evitar problemas
-                const docId = `juror_${currentJuror.id}_artist_${artistId}_${Date.now()}`;
+                // Simplificar el guardado para evitar errores
+                const docId = `${currentJuror.id}_${artistId}`;
                 
-                await setDoc(doc(db, 'jury_votes', docId), voteData);
-                
-                console.log('✅ Documento guardado con ID:', docId);
+                // Intentar múltiples formas de guardado
+                try {
+                    await setDoc(doc(db, 'jury_evaluations', docId), voteData);
+                    console.log('✅ Guardado en jury_evaluations:', docId);
+                } catch (err1) {
+                    console.warn('⚠️ Error en jury_evaluations, intentando jury_votes:', err1);
+                    try {
+                        await setDoc(doc(db, 'jury_votes', docId), voteData);
+                        console.log('✅ Guardado en jury_votes:', docId);
+                    } catch (err2) {
+                        console.warn('⚠️ Error en jury_votes, intentando votes:', err2);
+                        await setDoc(doc(db, 'votes', docId), voteData);
+                        console.log('✅ Guardado en votes:', docId);
+                    }
+                }
                 
                 console.log('✅ Voto guardado exitosamente en Firebase');
                 
@@ -1266,6 +1282,24 @@ Formato de respuesta:
             if (scoreInt >= 50) return { text: 'BUENO', color: 'text-yellow-300', bg: 'bg-yellow-600' };
             if (scoreInt >= 35) return { text: 'MEDIOCRE', color: 'text-orange-300', bg: 'bg-orange-600' };
             return { text: 'MALO', color: 'text-red-300', bg: 'bg-red-600' };
+        }
+
+        // FUNCIÓN PARA CALCULAR PROMEDIO DE VOTOS
+        function calculateAverage(artistVotes) {
+            if (!artistVotes || typeof artistVotes !== 'object') {
+                return 0;
+            }
+            
+            const scores = Object.values(artistVotes).filter(score => 
+                typeof score === 'number' && !isNaN(score)
+            );
+            
+            if (scores.length === 0) {
+                return 0;
+            }
+            
+            const total = scores.reduce((sum, score) => sum + score, 0);
+            return total / scores.length;
         }
 
         // Función para actualizar puntaje en modal
