@@ -51,8 +51,11 @@
                 '1GALA2024',
                 'primera-gala',
                 'gala1',
-                'default'
-            ];
+                'default',
+                eventId // Incluir también el eventId actual como backup
+            ].filter(id => id && id !== 'null' && id !== 'undefined'); // Filtrar valores inválidos
+            
+            console.log('🔍 Probando eventIds:', possibleEventIds);
             
             for (let testEventId of possibleEventIds) {
                 console.log(`🔍 Probando eventId: ${testEventId}`);
@@ -69,6 +72,8 @@
                     console.log(`❌ Error en ${testEventId}:`, error.message);
                 }
             }
+            
+            console.log('❌ No se encontraron artistas en ningún eventId');
             return null;
         }
 
@@ -100,8 +105,25 @@
             
             if (!snapshot) {
                 console.log('🔍 No encontrado en eventIds comunes, probando el actual...');
+                console.log('🔍 EventId actual:', eventId);
+                
+                if (!eventId || eventId === 'null' || eventId === 'undefined') {
+                    console.error('❌ EventId inválido:', eventId);
+                    document.getElementById('artists-container').innerHTML = `
+                        <div class="text-center text-red-400 p-8">
+                            <h3 class="text-xl mb-4">🚨 ERROR CRÍTICO</h3>
+                            <p class="mb-4">EventId no válido</p>
+                            <p class="text-sm mb-4">EventId actual: "${eventId}"</p>
+                            <p class="text-xs">Ve a "Gestión de Votaciones" y verifica la configuración del evento</p>
+                        </div>
+                    `;
+                    return;
+                }
+                
                 try {
+                    console.log('🔍 Intentando cargar:', `events/${eventId}/artists`);
                     snapshot = await getDocs(collection(db, `events/${eventId}/artists`));
+                    console.log('✅ Carga exitosa, documentos encontrados:', snapshot.docs.length);
                 } catch (error) {
                     console.error('❌ Error total:', error);
                     document.getElementById('artists-container').innerHTML = `
@@ -109,6 +131,7 @@
                             <h3 class="text-xl mb-4">🚨 ERROR CRÍTICO</h3>
                             <p class="mb-4">No se pueden cargar los artistas</p>
                             <p class="text-sm mb-4">Error: ${error.message}</p>
+                            <p class="text-xs mb-2">EventId usado: "${eventId}"</p>
                             <p class="text-xs">Ve a "Gestión de Votaciones" y verifica que los artistas estén cargados</p>
                         </div>
                     `;
@@ -176,17 +199,24 @@
 
         window.vote = async function(artistId, score) {
             try {
+                // Usar el eventId que funcionó para cargar artistas
+                const useEventId = window.workingEventId || eventId;
+                console.log('🗳️ Votando con eventId:', useEventId);
+                
                 const voteId = `${currentJuror.id}_${artistId}`;
-                await setDoc(doc(db, `events/${eventId}/jury_votes`, voteId), {
+                await setDoc(doc(db, `events/${useEventId}/jury_votes`, voteId), {
                     jurorName: currentJuror.name,
                     jurorId: currentJuror.id,
                     artistId: artistId,
                     score: score,
-                    timestamp: new Date()
+                    timestamp: new Date(),
+                    emergencyVote: true // Marcar como voto de emergencia
                 });
                 
+                console.log('✅ Voto registrado exitosamente');
                 alert(`✅ Voto enviado: ${score} puntos`);
             } catch (error) {
+                console.error('❌ Error votando:', error);
                 alert('❌ Error: ' + error.message);
             }
         };

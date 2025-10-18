@@ -24,6 +24,63 @@
         .artist-card { margin: 20px 0; padding: 20px; }
         .criteria { margin: 15px 0; }
         .rating-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin-top: 10px; }
+        
+        /* Estilos para el nuevo sistema de grid y modal */
+        .artist-grid-card {
+            background: rgba(255,255,255,0.1);
+            border: 2px solid rgba(255,255,255,0.2);
+            border-radius: 15px;
+            cursor: pointer;
+            transition: all 0.3s;
+            overflow: hidden;
+        }
+        .artist-grid-card:hover {
+            transform: translateY(-5px);
+            border-color: #3b82f6;
+            box-shadow: 0 10px 25px rgba(59, 130, 246, 0.3);
+        }
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            padding: 20px;
+        }
+        .modal-content {
+            background: linear-gradient(135deg, #1e3a8a, #1e40af);
+            border-radius: 20px;
+            border: 2px solid rgba(255,255,255,0.3);
+            max-width: 800px;
+            width: 100%;
+            max-height: 90vh;
+            overflow-y: auto;
+            padding: 30px;
+        }
+        .category-slider {
+            width: 100%;
+            height: 8px;
+            border-radius: 5px;
+            background: #ddd;
+            outline: none;
+            -webkit-appearance: none;
+            appearance: none;
+        }
+        .category-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #3b82f6;
+            cursor: pointer;
+        }
+        .hidden { display: none !important; }
     </style>
 </head>
 <body class="p-4">
@@ -92,6 +149,22 @@
                     </div>
                     <p class="text-sm mt-2 opacity-75 text-center">💡 Escribe el nombre para encontrar rápidamente al artista</p>
                 </div>
+
+                <!-- SELECTOR DE MODO DE VISTA -->
+                <div class="card p-4 mb-6 max-w-lg mx-auto">
+                    <div class="text-center">
+                        <h3 class="text-lg font-bold mb-3">👁️ Modo de Vista</h3>
+                        <div class="flex gap-3 justify-center">
+                            <button id="btn-list-mode" onclick="switchViewMode('list')" class="btn btn-primary">
+                                📋 Vista Lista
+                            </button>
+                            <button id="btn-grid-mode" onclick="switchViewMode('grid')" class="btn btn-yellow">
+                                🎯 Vista Organizada
+                            </button>
+                        </div>
+                        <p class="text-xs mt-2 opacity-75">Vista organizada: solo nombre y foto, clic para evaluar</p>
+                    </div>
+                </div>
                 
                 <div id="artists-list">
                     <div class="text-center">
@@ -99,6 +172,58 @@
                         <p>Cargando artistas...</p>
                     </div>
                 </div>
+
+                <!-- GRID DE ARTISTAS (MODO ORGANIZADO) -->
+                <div id="artists-grid" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4" style="display: none;">
+                    <!-- Se llenará dinámicamente -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL DE VOTACIÓN -->
+    <div id="voting-modal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <!-- Header del Modal -->
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-2xl font-bold">🎤 Evaluación Individual</h2>
+                <button onclick="closeVotingModal()" class="text-white text-3xl">&times;</button>
+            </div>
+
+            <!-- Información del Artista -->
+            <div class="flex items-center gap-4 mb-6 p-4 card">
+                <img id="modal-artist-photo" src="" alt="Foto del artista" 
+                     class="w-20 h-20 object-cover rounded-full border-2 border-blue-300">
+                <div>
+                    <h3 id="modal-artist-name" class="text-2xl font-bold"></h3>
+                    <p id="modal-artist-info" class="text-gray-300"></p>
+                </div>
+            </div>
+
+            <!-- Sistema de Puntuación por Categorías -->
+            <div class="mb-6">
+                <h4 class="text-xl font-bold mb-4">📊 Evaluación por Categorías (25-100 puntos)</h4>
+                <div id="modal-categories" class="space-y-4">
+                    <!-- Se llenará dinámicamente -->
+                </div>
+            </div>
+
+            <!-- Puntaje Total -->
+            <div class="text-center mb-6">
+                <div class="card p-4 inline-block">
+                    <h4 class="text-lg font-bold">Puntaje Total:</h4>
+                    <div id="modal-total-score" class="text-3xl font-bold text-yellow-300">0/600</div>
+                </div>
+            </div>
+
+            <!-- Botones -->
+            <div class="flex gap-4 justify-end">
+                <button onclick="closeVotingModal()" class="btn btn-red">
+                    Cancelar
+                </button>
+                <button onclick="saveModalVote()" class="btn btn-green">
+                    💾 Guardar Votación
+                </button>
             </div>
         </div>
     </div>
@@ -187,6 +312,26 @@
             document.getElementById('juror-display').textContent = currentJuror.name;
             document.getElementById('auth-section').style.display = 'none';
             document.getElementById('main-content').style.display = 'block';
+            
+            // Diagnóstico del nuevo sistema
+            setTimeout(() => {
+                const listBtn = document.getElementById('btn-list-mode');
+                const gridBtn = document.getElementById('btn-grid-mode');
+                const modal = document.getElementById('voting-modal');
+                
+                console.log('🔍 DIAGNÓSTICO DEL NUEVO SISTEMA:');
+                console.log('- Botón Lista:', listBtn ? '✅ Presente' : '❌ No encontrado');
+                console.log('- Botón Grid:', gridBtn ? '✅ Presente' : '❌ No encontrado');
+                console.log('- Modal:', modal ? '✅ Presente' : '❌ No encontrado');
+                console.log('- switchViewMode:', typeof switchViewMode === 'function' ? '✅ Función disponible' : '❌ Función no disponible');
+                
+                if (listBtn && gridBtn) {
+                    console.log('🎯 NUEVO SISTEMA LISTO - Busca los botones "Vista Lista" y "Vista Organizada"');
+                } else {
+                    console.log('❌ PROBLEMA: Los botones del nuevo sistema no están presentes');
+                }
+            }, 1000);
+            
             loadArtists();
         };
 
@@ -607,6 +752,198 @@
         // Hacer función global
         window.filterArtists = filterArtists;
         window.clearSearch = clearSearch;
+
+        // === NUEVO SISTEMA DE GRID Y MODAL ===
+        let currentViewMode = 'list'; // 'list' o 'grid'
+        let currentModalArtist = null;
+
+        // Función para cambiar modo de vista
+        window.switchViewMode = function(mode) {
+            currentViewMode = mode;
+            
+            // Actualizar botones
+            const listBtn = document.getElementById('btn-list-mode');
+            const gridBtn = document.getElementById('btn-grid-mode');
+            
+            if (listBtn && gridBtn) {
+                listBtn.className = mode === 'list' ? 'btn btn-primary' : 'btn btn-yellow';
+                gridBtn.className = mode === 'grid' ? 'btn btn-primary' : 'btn btn-yellow';
+            }
+            
+            // Mostrar/ocultar vistas
+            const artistsList = document.getElementById('artists-list');
+            const artistsGrid = document.getElementById('artists-grid');
+            
+            if (mode === 'list') {
+                if (artistsList) artistsList.style.display = 'block';
+                if (artistsGrid) artistsGrid.style.display = 'none';
+            } else {
+                if (artistsList) artistsList.style.display = 'none';
+                if (artistsGrid) {
+                    artistsGrid.style.display = 'grid';
+                    renderArtistsGrid();
+                }
+            }
+        };
+
+        // Función para renderizar artistas en grid
+        function renderArtistsGrid() {
+            const gridContainer = document.getElementById('artists-grid');
+            gridContainer.innerHTML = '';
+
+            artists.forEach(artist => {
+                const isVoted = votes[artist.id] && Object.keys(votes[artist.id]).length > 0;
+                const average = isVoted ? calculateAverage(votes[artist.id]) : 0;
+
+                const artistCard = document.createElement('div');
+                artistCard.className = 'artist-grid-card p-4 text-center';
+                artistCard.onclick = () => openVotingModal(artist);
+
+                artistCard.innerHTML = `
+                    <div class="relative">
+                        <img src="${artist.foto || artist.photoURL || 'https://via.placeholder.com/150x150/1e3a8a/ffffff?text=' + encodeURIComponent(artist.name.charAt(0))}" 
+                             alt="${artist.name}" 
+                             class="w-24 h-24 object-cover rounded-full mx-auto mb-3 border-2 border-white">
+                        ${isVoted ? `
+                            <div class="absolute -top-2 -right-2 bg-green-500 text-white rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold">
+                                ✓
+                            </div>
+                        ` : ''}
+                    </div>
+                    <h3 class="font-bold text-lg">${artist.name}</h3>
+                    ${isVoted ? `
+                        <p class="text-green-300 text-sm">Votado: ${average.toFixed(1)} pts</p>
+                    ` : `
+                        <p class="text-yellow-300 text-sm">Pendiente de votar</p>
+                    `}
+                `;
+
+                gridContainer.appendChild(artistCard);
+            });
+        }
+
+        // Función para abrir modal de votación
+        window.openVotingModal = function(artist) {
+            currentModalArtist = artist;
+            
+            // Llenar información del artista
+            document.getElementById('modal-artist-name').textContent = artist.name;
+            document.getElementById('modal-artist-info').textContent = `Participante del certamen`;
+            document.getElementById('modal-artist-photo').src = artist.foto || artist.photoURL || 
+                'https://via.placeholder.com/80x80/1e3a8a/ffffff?text=' + encodeURIComponent(artist.name.charAt(0));
+
+            // Renderizar categorías
+            renderModalCategories(artist);
+            
+            // Mostrar modal
+            document.getElementById('voting-modal').classList.remove('hidden');
+        };
+
+        // Función para cerrar modal
+        window.closeVotingModal = function() {
+            document.getElementById('voting-modal').classList.add('hidden');
+            currentModalArtist = null;
+        };
+
+        // Función para renderizar categorías en el modal
+        function renderModalCategories(artist) {
+            const container = document.getElementById('modal-categories');
+            container.innerHTML = '';
+
+            const currentVotes = votes[artist.id] || {};
+
+            CRITERIA.forEach(criteria => {
+                const currentValue = currentVotes[criteria.id] || 50;
+
+                const categoryDiv = document.createElement('div');
+                categoryDiv.className = 'card p-4';
+                categoryDiv.innerHTML = `
+                    <div class="flex justify-between items-center mb-2">
+                        <label class="font-bold text-white">${criteria.name}</label>
+                        <span id="modal-${criteria.id}-display" class="text-xl font-bold text-blue-300">${currentValue}</span>
+                    </div>
+                    <input type="range" 
+                           id="modal-${criteria.id}-slider" 
+                           class="category-slider" 
+                           min="25" 
+                           max="100" 
+                           value="${currentValue}"
+                           oninput="updateModalScore('${criteria.id}', this.value)">
+                    <div class="flex justify-between text-xs text-gray-300 mt-1">
+                        <span>25</span>
+                        <span>100</span>
+                    </div>
+                `;
+
+                container.appendChild(categoryDiv);
+            });
+
+            updateModalTotal();
+        }
+
+        // Función para actualizar puntaje en modal
+        window.updateModalScore = function(criteriaId, value) {
+            if (!currentModalArtist) return;
+
+            // Actualizar display
+            const displayElement = document.getElementById(`modal-${criteriaId}-display`);
+            if (displayElement) {
+                displayElement.textContent = value;
+            }
+
+            // Guardar en votes (temporal)
+            if (!votes[currentModalArtist.id]) {
+                votes[currentModalArtist.id] = {};
+            }
+            votes[currentModalArtist.id][criteriaId] = parseInt(value);
+
+            updateModalTotal();
+        };
+
+        // Función para actualizar total en modal
+        function updateModalTotal() {
+            if (!currentModalArtist) return;
+
+            const currentVotes = votes[currentModalArtist.id] || {};
+            const total = Object.values(currentVotes).reduce((sum, val) => sum + val, 0);
+            
+            document.getElementById('modal-total-score').textContent = `${total}/600`;
+        }
+
+        // Función para guardar votación desde modal
+        window.saveModalVote = async function() {
+            if (!currentModalArtist) return;
+
+            const artistVotes = votes[currentModalArtist.id] || {};
+            
+            // Verificar que todas las categorías estén completas
+            const missingCriteria = CRITERIA.filter(criteria => 
+                artistVotes[criteria.id] === undefined || artistVotes[criteria.id] === null
+            );
+            
+            if (missingCriteria.length > 0) {
+                alert(`Por favor completa las siguientes categorías:\n${missingCriteria.map(c => c.name).join('\n')}`);
+                return;
+            }
+
+            try {
+                await submitVote(currentModalArtist.id);
+                closeVotingModal();
+                
+                // Actualizar vista actual
+                if (currentViewMode === 'grid') {
+                    renderArtistsGrid();
+                } else {
+                    renderArtists();
+                }
+                
+                updateStats();
+                alert(`✅ Votación guardada para ${currentModalArtist.name}`);
+            } catch (error) {
+                console.error('Error guardando voto:', error);
+                alert('Error guardando la votación. Intenta de nuevo.');
+            }
+        };
 
         // === INICIALIZACIÓN ===
         console.log('🚀 Sistema iniciado');

@@ -373,19 +373,49 @@
                 }
             };
 
-            // 🔄 FUNCIÓN PARA CONTINUAR ESCANEANDO
-            window.continueScanningAfterResult = function() {
-                // Ocultar resultado
-                document.getElementById('scanned-ticket-info-fullscreen').classList.add('hidden');
+            // 🔄 FUNCIÓN PARA CONTINUAR ESCANEANDO - VERSIÓN ROBUSTA
+            window.continueScanningAfterResult = async function() {
+                console.log("🔄 Reiniciando scanner de forma ROBUSTA...");
                 
-                // Reiniciar scanner
-                lastScannedCode = null;
-                lastScanTime = 0;
-                
-                // Volver a iniciar
-                setTimeout(() => {
-                    startScanner();
-                }, 500);
+                try {
+                    // 1. Ocultar resultado inmediatamente
+                    document.getElementById('scanned-ticket-info-fullscreen').classList.add('hidden');
+                    
+                    // 2. PARADA COMPLETA DEL SCANNER
+                    if (html5QrCode && isScannerActive) {
+                        console.log("🛑 Deteniendo scanner actual...");
+                        await html5QrCode.stop();
+                        await html5QrCode.clear(); // ✅ LIMPIAR completamente
+                    }
+                    
+                    // 3. Resetear TODAS las variables
+                    isScannerActive = false;
+                    lastScannedCode = null;
+                    lastScanTime = 0;
+                    html5QrCode = null; // ✅ DESTRUIR instancia anterior
+                    
+                    // 4. Limpiar contenedor de video
+                    const qrReader = document.getElementById('qr-code-reader');
+                    if (qrReader) {
+                        qrReader.innerHTML = ''; // ✅ VACIAR completamente
+                    }
+                    
+                    console.log("✅ Limpieza completa realizada");
+                    
+                    // 5. RECREAR DESDE CERO después de 1.5 segundos
+                    setTimeout(() => {
+                        console.log("🚀 Recreando scanner desde cero...");
+                        startScanner(); // Esto creará una nueva instancia
+                    }, 1500);
+                    
+                } catch (error) {
+                    console.error("❌ Error en reinicio:", error);
+                    // Si algo falla, forzar recarga completa
+                    isScannerActive = false;
+                    setTimeout(() => {
+                        startScanner();
+                    }, 2000);
+                }
             };
 
             async function processScan(decodedText) {
@@ -572,64 +602,55 @@
                 html5QrCode = new Html5Qrcode("qr-code-reader");
                 console.log("✅ Html5Qrcode instanciado");
 
-                // 🎯 CONFIGURACIÓN PANTALLA COMPLETA SIN CAJA - APUNTAR = DETECTAR
+                // 🎯 CONFIGURACIÓN UNIVERSAL - FUNCIONA EN TODOS LOS NAVEGADORES
                 const config = { 
-                    fps: 60,
-                    // ✅ SIN qrbox = DETECCIÓN EN TODA LA PANTALLA
-                    // qrbox: removed - para que funcione donde apuntes
-                    aspectRatio: 1.0,
+                    fps: 20, // FPS más bajo para mejor estabilidad
+                    qrbox: {width: 250, height: 250}, // ✅ CUADRO FIJO CENTRADO
+                    aspectRatio: 1.0, // Aspecto cuadrado = mejor centrado
                     disableFlip: false,
-                    rememberLastUsedCamera: true,
-                    showTorchButtonIfSupported: true
+                    videoConstraints: {
+                        facingMode: "environment" // Directo en config
+                    }
                 };
                 
-                console.log("📋 Configuración pantalla completa:", config);
+                console.log("📋 Configuración universal:", config);
 
-                // 📱 CONFIGURACIÓN CÁMARA OPTIMIZADA PARA QR DE CELULARES EN GALAS
-                const videoConstraints = {
-                    width: { min: 640, ideal: 1280, max: 1920 }, // Resolución equilibrada
-                    height: { min: 480, ideal: 720, max: 1080 },
-                    frameRate: { ideal: 60, max: 60 }, // FPS ALTOS para móviles rápidos
-                    focusMode: { ideal: "continuous" }, // Auto-focus continuo
-                    exposureMode: { ideal: "continuous" }, // Exposición automática
-                    whiteBalanceMode: { ideal: "continuous" }, // Balance automático
-                    zoom: { ideal: 1.0 },
-                    // 🎯 OPTIMIZADO PARA PANTALLAS MÓVILES BRILLANTES
-                    brightness: { ideal: 0.5 }, // Neutral para adaptar luces de gala
-                    contrast: { ideal: 1.0 }, // Natural
-                    saturation: { ideal: 1.0 }, // Colores naturales
-                    facingMode: "environment" // Cámara trasera prioritaria
-                };
-                
                 try {
-                    // Intentar con configuración premium primero
+                    // ✅ INICIO SIMPLE SIN VIDEOCONSTRAINTS COMPLEJOS
                     await html5QrCode.start(
-                        { facingMode: { ideal: "environment" }, advanced: [videoConstraints] }, 
+                        "environment", // String simple 
                         config, 
                         onScanSuccess, 
                         onScanError
                     );
-                    console.log("✅ Scanner iniciado con configuración premium");
-                } catch (err) {
-                    console.warn("⚠️ Configuración premium falló. Probando configuración estándar...", err);
-                    html5QrCode = new Html5Qrcode("qr-code-reader");
+                    console.log("✅ Scanner iniciado - CENTRADO y compatible");
                     
-                    // Configuración de respaldo - PANTALLA COMPLETA
-                    const fallbackConfig = { 
-                        fps: 30
-                        // Sin qrbox = detección en toda la pantalla
-                    };
+                    // 🎯 FORZAR CENTRADO CSS DESPUÉS DEL INICIO
+                    setTimeout(() => {
+                        const video = document.querySelector('#qr-code-reader video');
+                        if (video) {
+                            video.style.objectFit = 'cover';
+                            video.style.width = '100%';
+                            video.style.height = '100%';
+                            video.style.objectPosition = 'center';
+                            console.log("✅ CSS de centrado aplicado");
+                        }
+                    }, 1000);
+                    
+                } catch (err) {
+                    console.warn("⚠️ Error con cámara trasera, probando frontal:", err);
                     
                     try {
+                        // Fallback simple
                         await html5QrCode.start(
-                            { facingMode: "environment" }, 
-                            fallbackConfig, 
+                            "user", 
+                            { fps: 20, qrbox: {width: 250, height: 250} }, 
                             onScanSuccess, 
                             onScanError
                         );
-                        console.log("✅ Scanner iniciado con configuración estándar");
+                        console.log("✅ Scanner iniciado con cámara frontal");
                     } catch (finalErr) {
-                        console.error("❌ Error crítico al iniciar scanner:", finalErr);
+                        console.error("❌ Error crítico:", finalErr);
                         alert("No se pudo iniciar la cámara. Verifica los permisos y refresca la página.");
                         await stopScanner();
                     }

@@ -10,10 +10,16 @@
     <style>
         body { 
             font-family: 'Inter', sans-serif; 
-            background: linear-gradient(135deg, #1e3a8a, #1e40af); 
+            background-color: #111827; 
             color: #f9fafb; 
             min-height: 100vh;
         }
+        body {
+            background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+            min-height: 100vh;
+            color: white;
+        }
+
         .glass-effect { 
             background: rgba(255, 255, 255, 0.1); 
             backdrop-filter: blur(10px); 
@@ -22,9 +28,79 @@
         .progress-bar {
             background: linear-gradient(90deg, #f59e0b, #10b981, #3b82f6);
         }
+        .hidden { display: none; }
+        .artist-ranking-card { transition: all 0.3s ease; }
+        .artist-ranking-card:hover { transform: translateY(-2px); box-shadow: 0 10px 25px rgba(56, 189, 248, 0.2); }
+        
+        /* Estilos para las barras de categorías - igual que el original */
+        .category-bar {
+            height: 25px;
+            border-radius: 12px;
+            position: relative;
+            overflow: hidden;
+            margin: 8px 0;
+        }
+        .category-bar-fill {
+            height: 100%;
+            border-radius: 12px;
+            transition: width 0.8s ease;
+        }
+        
+        /* Colores específicos para cada categoría */
+        .bar-canto { background: linear-gradient(90deg, #3b82f6, #60a5fa); }
+        .bar-transmision { background: linear-gradient(90deg, #10b981, #34d399); }
+        .bar-actitud { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+        .bar-originalidad { background: linear-gradient(90deg, #8b5cf6, #a78bfa); }
+        .bar-vestuario { background: linear-gradient(90deg, #ec4899, #f472b6); }
+        .bar-puesta { background: linear-gradient(90deg, #f97316, #fb923c); }
+        
+        /* Estilos para las barras de categorías */
+        .category-bar {
+            height: 8px;
+            border-radius: 4px;
+            overflow: hidden;
+            position: relative;
+        }
+        
+        .category-bar-fill {
+            height: 100%;
+            transition: width 0.8s ease-in-out;
+            border-radius: 4px;
+        }
+        
+        /* Colores específicos para cada categoría */
+        .bar-canto {
+            background: linear-gradient(90deg, #3b82f6, #60a5fa);
+        }
+        
+        .bar-transmision {
+            background: linear-gradient(90deg, #10b981, #34d399);
+        }
+        
+        .bar-actitud {
+            background: linear-gradient(90deg, #f59e0b, #fbbf24);
+        }
+        
+        .bar-originalidad {
+            background: linear-gradient(90deg, #8b5cf6, #a78bfa);
+        }
+        
+        .bar-vestuario {
+            background: linear-gradient(90deg, #ec4899, #f472b6);
+        }
+        
+        .bar-puesta {
+            background: linear-gradient(90deg, #f97316, #fb923c);
+        }
+
+        @media print {
+            body { background-color: white; color: black; }
+            .no-print { display: none !important; }
+            .print-title { font-size: 24px; text-align: center; margin-bottom: 20px; }
+        }
     </style>
 </head>
-<body class="antialiased">
+<body class="antialiased bg-gray-900 text-white">
     <div class="container mx-auto max-w-4xl p-4 sm:p-6">
         
         <!-- HEADER -->
@@ -178,7 +254,9 @@
             const juryContainer = document.getElementById('jury-content');
             
             try {
-                // Buscar evaluaciones del jurado para este artista
+                console.log('🔍 Buscando evaluaciones del jurado para:', { eventId, artistId });
+                
+                // Primera consulta: con eventId correcto
                 const juryQuery = query(
                     collection(db, 'jury_evaluations'),
                     where('eventId', '==', eventId),
@@ -191,6 +269,28 @@
                 jurySnapshot.forEach(doc => {
                     evaluations.push({ id: doc.id, ...doc.data() });
                 });
+
+                console.log('📊 Evaluaciones encontradas con eventId:', evaluations.length);
+
+                // Si no encontramos con eventId, buscar por solo artistId
+                if (evaluations.length === 0) {
+                    console.log('🔍 Buscando evaluaciones sin eventId para artistId:', artistId);
+                    
+                    const allEvaluationsQuery = query(
+                        collection(db, 'jury_evaluations'),
+                        where('artistId', '==', artistId)
+                    );
+                    
+                    const allEvaluationsSnapshot = await getDocs(allEvaluationsQuery);
+                    
+                    allEvaluationsSnapshot.forEach(doc => {
+                        const evalData = doc.data();
+                        console.log('🎯 Evaluación encontrada:', evalData);
+                        evaluations.push({ id: doc.id, ...evalData });
+                    });
+                    
+                    console.log('📊 Total evaluaciones encontradas:', evaluations.length);
+                }
 
                 if (evaluations.length === 0) {
                     juryContainer.innerHTML = `
@@ -211,27 +311,98 @@
                 const totalScore = evaluations.reduce((sum, evaluation) => sum + (evaluation.score || 0), 0);
                 const avgScore = totalScore / evaluations.length;
 
+                // Calcular promedios por categoría del jurado
+                const juryCategories = [
+                    { key: 'singing', name: 'Canto', icon: '🎤', barClass: 'bar-canto' },
+                    { key: 'transmission', name: 'Transmisión', icon: '📡', barClass: 'bar-transmision' },
+                    { key: 'attitude', name: 'Actitud', icon: '😊', barClass: 'bar-actitud' },
+                    { key: 'originality', name: 'Originalidad', icon: '💡', barClass: 'bar-originalidad' },
+                    { key: 'costume', name: 'Vestuario', icon: '👗', barClass: 'bar-vestuario' },
+                    { key: 'staging', name: 'Puesta en Escena', icon: '🎭', barClass: 'bar-puesta' }
+                ];
+
+                // Calcular promedios por categoría
+                const categoryAverages = juryCategories.map(cat => {
+                    const total = evaluations.reduce((sum, evaluation) => {
+                        return sum + (evaluation.categories && evaluation.categories[cat.key] ? evaluation.categories[cat.key] : 0);
+                    }, 0);
+                    return {
+                        ...cat,
+                        average: evaluations.length > 0 ? total / evaluations.length : 0
+                    };
+                });
+
+                const bestJuryCategory = categoryAverages.reduce((prev, current) => 
+                    current.average > prev.average ? current : prev
+                );
+
+                const worstJuryCategory = categoryAverages.reduce((prev, current) => 
+                    current.average < prev.average ? current : prev
+                );
+
                 juryContainer.innerHTML = `
                     <div class="space-y-6">
-                        <div class="text-center">
-                            <div class="text-5xl font-bold text-yellow-400 mb-2">${avgScore.toFixed(1)}/10</div>
-                            <h3 class="text-xl font-bold text-yellow-300 mb-2">Puntuación del Jurado</h3>
-                            <p class="text-yellow-200">Promedio de ${evaluations.length} evaluador(es)</p>
+                        <!-- Información principal del jurado -->
+                        <div class="bg-gray-800 p-6 rounded-lg border border-gray-700">
+                            <div class="flex items-center justify-between mb-4">
+                                <h3 class="text-2xl font-bold text-white">Evaluación del Jurado</h3>
+                                <div class="text-right">
+                                    <div class="text-3xl font-bold text-yellow-400">${avgScore.toFixed(1)}/10</div>
+                                    <div class="text-sm text-gray-400">Promedio de ${evaluations.length} evaluador(es)</div>
+                                </div>
+                            </div>
+                            
+                            <!-- Barras de categorías del jurado -->
+                            <div class="space-y-3">
+                                ${categoryAverages.map(cat => {
+                                    const percentage = (cat.average / 10) * 100;
+                                    return `
+                                        <div class="flex items-center justify-between">
+                                            <div class="flex items-center space-x-3 w-40">
+                                                <span class="text-lg">${cat.icon}</span>
+                                                <span class="text-sm font-medium text-gray-300">${cat.name}</span>
+                                            </div>
+                                            <div class="flex-1 mx-4">
+                                                <div class="category-bar bg-gray-700">
+                                                    <div class="category-bar-fill ${cat.barClass}" style="width: ${percentage}%"></div>
+                                                </div>
+                                            </div>
+                                            <div class="w-16 text-right">
+                                                <span class="text-sm font-bold text-white">${cat.average.toFixed(1)}/10</span>
+                                            </div>
+                                        </div>
+                                    `;
+                                }).join('')}
+                            </div>
+                            
+                            <!-- Observaciones del jurado -->
+                            <div class="mt-6 space-y-3">
+                                <h4 class="text-sm font-bold text-gray-300">Observaciones del jurado:</h4>
+                                <div class="flex items-center space-x-2">
+                                    <span class="inline-block w-3 h-3 bg-green-500 rounded-full"></span>
+                                    <span class="text-sm text-green-400"><strong>Fortaleza:</strong> ${bestJuryCategory.icon} ${bestJuryCategory.name} (${bestJuryCategory.average.toFixed(1)}/10)</span>
+                                </div>
+                                <div class="flex items-center space-x-2">
+                                    <span class="inline-block w-3 h-3 bg-yellow-500 rounded-full"></span>
+                                    <span class="text-sm text-yellow-400"><strong>A mejorar:</strong> ${worstJuryCategory.icon} ${worstJuryCategory.name} (${worstJuryCategory.average.toFixed(1)}/10)</span>
+                                </div>
+                            </div>
                         </div>
 
+                        <!-- Evaluaciones individuales -->
                         <div class="space-y-4">
                             <h4 class="text-lg font-bold text-yellow-300 text-center">Evaluaciones Individuales:</h4>
                             ${evaluations.map(evaluation => `
-                                <div class="bg-yellow-900 bg-opacity-30 p-4 rounded-lg border border-yellow-600">
+                                <div class="bg-gray-800 p-4 rounded-lg border border-gray-700">
                                     <div class="flex justify-between items-center mb-2">
                                         <span class="font-bold text-yellow-200">
                                             <i class="fas fa-user-tie mr-2"></i>
-                                            ${evaluation.jurorName || 'Jurado'}
+                                            ${evaluation.jurorName || 'jurado grupal'}
                                         </span>
                                         <span class="text-2xl font-bold text-yellow-400">${evaluation.score || 0}/10</span>
                                     </div>
                                     ${evaluation.comment ? `
-                                        <div class="mt-3 p-3 bg-yellow-800 bg-opacity-30 rounded border-l-4 border-yellow-500">
+                                        <div class="mt-3 p-3 bg-gray-700 rounded border-l-4 border-yellow-500">
                                             <div class="text-sm text-yellow-100">
                                                 <i class="fas fa-quote-left mr-1"></i>
                                                 <em>${evaluation.comment}</em>
@@ -242,7 +413,7 @@
                             `).join('')}
                         </div>
 
-                        <div class="bg-yellow-900 bg-opacity-20 p-4 rounded-lg text-center">
+                        <div class="bg-gray-800 p-4 rounded-lg text-center border border-gray-700">
                             <p class="text-sm text-yellow-200">
                                 <i class="fas fa-trophy mr-2"></i>
                                 <strong>Esta puntuación del jurado determina tu posición oficial en el certamen</strong>
@@ -280,71 +451,73 @@
 
             // Calcular promedios por categoría
             const categories = [
-                { key: 'Singing', name: 'Canto', icon: '🎤', total: artistData.totalSingingScore || 0 },
-                { key: 'Transmission', name: 'Transmisión', icon: '📡', total: artistData.totalTransmissionScore || 0 },
-                { key: 'Attitude', name: 'Actitud', icon: '😊', total: artistData.totalAttitudeScore || 0 },
-                { key: 'Originality', name: 'Originalidad', icon: '💡', total: artistData.totalOriginalityScore || 0 },
-                { key: 'Costume', name: 'Vestuario', icon: '👗', total: artistData.totalCostumeScore || 0 },
-                { key: 'Staging', name: 'Puesta en Escena', icon: '🎭', total: artistData.totalStagingScore || 0 }
+                { key: 'Singing', name: 'Canto', icon: '🎤', total: artistData.totalSingingScore || 0, barClass: 'bar-canto' },
+                { key: 'Transmission', name: 'Transmisión', icon: '📡', total: artistData.totalTransmissionScore || 0, barClass: 'bar-transmision' },
+                { key: 'Attitude', name: 'Actitud', icon: '😊', total: artistData.totalAttitudeScore || 0, barClass: 'bar-actitud' },
+                { key: 'Originality', name: 'Originalidad', icon: '💡', total: artistData.totalOriginalityScore || 0, barClass: 'bar-originalidad' },
+                { key: 'Costume', name: 'Vestuario', icon: '👗', total: artistData.totalCostumeScore || 0, barClass: 'bar-vestuario' },
+                { key: 'Staging', name: 'Puesta en Escena', icon: '🎭', total: artistData.totalStagingScore || 0, barClass: 'bar-puesta' }
             ];
 
             const bestCategory = categories.reduce((prev, current) => 
                 (current.total / votes) > (prev.total / votes) ? current : prev
             );
 
+            const worstCategory = categories.reduce((prev, current) => 
+                (current.total / votes) < (prev.total / votes) ? current : prev
+            );
+
             publicContainer.innerHTML = `
                 <div class="space-y-6">
-                    <div class="text-center">
-                        <div class="text-5xl font-bold text-blue-400 mb-2">${votes}</div>
-                        <h3 class="text-xl font-bold text-blue-300 mb-2">Personas Votaron</h3>
-                        <p class="text-blue-200">Promedio general: ${votes > 0 ? (artistData.totalScore / votes).toFixed(1) : '0'}/10</p>
-                    </div>
-
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div class="space-y-4">
-                            <h4 class="text-lg font-bold text-blue-300 text-center">📊 Promedios por Categoría</h4>
+                    <!-- Información del artista con estilo igual al original -->
+                    <div class="bg-gray-800 p-6 rounded-lg border border-gray-700">
+                        <div class="flex items-center justify-between mb-4">
+                            <h3 class="text-2xl font-bold text-white">${artistData.name}</h3>
+                            <div class="text-right">
+                                <div class="text-3xl font-bold text-green-400">${artistData.totalScore || 0} pts</div>
+                                <div class="text-sm text-gray-400">${votes} personas calificaron • Posición: #1</div>
+                            </div>
+                        </div>
+                        
+                        <!-- Barras de categorías con el mismo estilo -->
+                        <div class="space-y-3">
                             ${categories.map(cat => {
                                 const avg = votes > 0 ? (cat.total / votes) : 0;
                                 const percentage = (avg / 10) * 100;
                                 return `
-                                    <div>
-                                        <div class="flex justify-between items-center mb-1">
-                                            <span class="text-sm font-medium text-blue-200">${cat.icon} ${cat.name}</span>
-                                            <span class="text-sm font-bold text-blue-400">${avg.toFixed(1)}/10</span>
+                                    <div class="flex items-center justify-between">
+                                        <div class="flex items-center space-x-3 w-40">
+                                            <span class="text-lg">${cat.icon}</span>
+                                            <span class="text-sm font-medium text-gray-300">${cat.name}</span>
                                         </div>
-                                        <div class="w-full bg-blue-900 bg-opacity-30 rounded-full h-3">
-                                            <div class="progress-bar h-3 rounded-full" style="width: ${percentage}%"></div>
+                                        <div class="flex-1 mx-4">
+                                            <div class="category-bar bg-gray-700">
+                                                <div class="category-bar-fill ${cat.barClass}" style="width: ${percentage}%"></div>
+                                            </div>
+                                        </div>
+                                        <div class="w-16 text-right">
+                                            <span class="text-sm font-bold text-white">${avg.toFixed(1)}/10</span>
                                         </div>
                                     </div>
                                 `;
                             }).join('')}
                         </div>
-
-                        <div class="space-y-4">
-                            <h4 class="text-lg font-bold text-blue-300 text-center">✨ Análisis del Público</h4>
-                            <div class="bg-green-900 bg-opacity-30 p-4 rounded-lg border border-green-600">
-                                <h5 class="font-bold text-green-400 mb-2">🌟 Tu Mayor Fortaleza</h5>
-                                <p class="text-blue-200">${bestCategory.icon} <strong>${bestCategory.name}</strong></p>
-                                <p class="text-green-300 text-lg font-bold">${(bestCategory.total / votes).toFixed(1)}/10</p>
-                                <p class="text-xs text-green-200 mt-1">¡Esta fue tu categoría mejor valorada por el público!</p>
+                        
+                        <!-- Observaciones del público con el mismo estilo -->
+                        <div class="mt-6 space-y-3">
+                            <h4 class="text-sm font-bold text-gray-300">Observaciones del público:</h4>
+                            <div class="flex items-center space-x-2">
+                                <span class="inline-block w-3 h-3 bg-green-500 rounded-full"></span>
+                                <span class="text-sm text-green-400"><strong>Fortaleza:</strong> ${bestCategory.icon} ${bestCategory.name} (${(bestCategory.total / votes).toFixed(1)}/10)</span>
                             </div>
-                            
-                            <div class="bg-blue-900 bg-opacity-30 p-4 rounded-lg border border-blue-600">
-                                <h5 class="font-bold text-blue-400 mb-2">📈 Resumen</h5>
-                                <ul class="text-sm text-blue-200 space-y-1">
-                                    <li>• Total de votos: ${votes}</li>
-                                    <li>• Puntaje total: ${artistData.totalScore || 0} pts</li>
-                                    <li>• Promedio: ${votes > 0 ? (artistData.totalScore / votes).toFixed(1) : '0'}/10</li>
-                                </ul>
+                            <div class="flex items-center space-x-2">
+                                <span class="inline-block w-3 h-3 bg-yellow-500 rounded-full"></span>
+                                <span class="text-sm text-yellow-400"><strong>A mejorar:</strong> ${worstCategory.icon} ${worstCategory.name} (${(worstCategory.total / votes).toFixed(1)}/10)</span>
+                            </div>
+                            <div class="text-sm text-gray-400 mt-2">
+                                Promedio general: ${votes > 0 ? (artistData.totalScore / votes).toFixed(1) : '0'}/10
                             </div>
                         </div>
-                    </div>
-
-                    <div class="bg-blue-900 bg-opacity-20 p-4 rounded-lg text-center">
-                        <p class="text-sm text-blue-200">
-                            <i class="fas fa-heart mr-2"></i>
-                            <strong>La opinión del público refleja tu conexión con la audiencia</strong>
-                        </p>
                     </div>
                 </div>
             `;
