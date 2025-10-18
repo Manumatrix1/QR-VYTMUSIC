@@ -790,17 +790,21 @@
 
             try {
                 console.log('💾 Guardando voto en Firebase...');
+                console.log('📊 Datos del voto:', { artistId, artistVotes, currentJuror });
                 
                 const voteData = {
                     artistId: artistId,
                     artistName: artist.name,
-                    jurorName: currentJuror.name, // ✅ CORREGIDO: usar .name del objeto
+                    jurorName: currentJuror.name || currentJuror.id, // Fallback si no hay name
                     jurorId: currentJuror.id,
                     scores: artistVotes,
                     score: average, // Campo principal para compatibilidad
                     average: average,
-                    timestamp: new Date().toISOString()
+                    timestamp: new Date().toISOString(),
+                    eventId: eventId
                 };
+
+                console.log('💾 Guardando en Firebase con datos:', voteData);
 
                 // Guardar en jury_evaluations para consistencia con el resto del sistema
                 await setDoc(doc(db, 'jury_evaluations', `${currentJuror.id}_${artistId}`), {
@@ -809,16 +813,27 @@
                     comment: `Evaluación completa - Promedio: ${average.toFixed(1)} puntos`
                 });
                 
-                console.log('✅ Voto guardado exitosamente');
-                alert(`✅ Voto enviado para ${artist.name}\nPromedio: ${average.toFixed(1)} puntos`);
+                console.log('✅ Voto guardado exitosamente en Firebase');
+                
+                // Generar y mostrar feedback después de guardar
+                const feedbackSuggestions = generateAutoFeedback(artistVotes);
+                if (feedbackSuggestions.length > 0) {
+                    const feedbackText = feedbackSuggestions.map(item => 
+                        `${item.category}: ${item.suggestion}`
+                    ).join('\n\n');
+                    console.log('💬 Feedback generado:', feedbackText);
+                }
+                
+                alert(`✅ Voto guardado para ${artist.name}\nPromedio: ${average.toFixed(1)} puntos\n\nRevisa el feedback generado en la sección azul del modal.`);
                 
                 renderArtists();
                 preserveFilter(); // Mantener filtro
                 updateStats();
 
             } catch (error) {
-                console.error('❌ Error guardando voto:', error);
-                alert('❌ Error al guardar: ' + error.message);
+                console.error('❌ Error completo:', error);
+                console.error('❌ Stack trace:', error.stack);
+                alert('❌ Error al guardar. Revisa la consola (F12) y verifica tu conexión.');
             }
         };
 
@@ -1197,35 +1212,63 @@
             
             console.log('📦 Elementos del modal encontrados:', {
                 feedbackContainer: !!feedbackContainer,
-                feedbackSection: !!feedbackSection
+                feedbackSection: !!feedbackSection,
+                containerHTML: feedbackContainer ? 'Existe' : 'No existe',
+                sectionHTML: feedbackSection ? 'Existe' : 'No existe'
             });
             
             if (!feedbackContainer || !feedbackSection) {
                 console.warn('⚠️ No se encontraron elementos de feedback en el modal');
+                // Intentar crear los elementos si no existen
+                const modalContent = document.querySelector('.modal-content');
+                if (modalContent && !feedbackSection) {
+                    const newFeedbackSection = document.createElement('div');
+                    newFeedbackSection.id = 'feedback-section-modal';
+                    newFeedbackSection.className = 'bg-blue-800 bg-opacity-50 p-4 rounded-lg mb-6';
+                    newFeedbackSection.innerHTML = `
+                        <h5 class="text-lg font-bold mb-3 text-center">💬 Sugerencias de Feedback</h5>
+                        <div id="auto-feedback-modal" class="space-y-2 text-sm"></div>
+                        <p class="text-xs text-blue-300 mt-2 text-center">💡 Basado en tus puntuaciones - Puedes usarlas como guía</p>
+                    `;
+                    const buttonsDiv = modalContent.querySelector('.flex.gap-4.justify-end');
+                    if (buttonsDiv) {
+                        modalContent.insertBefore(newFeedbackSection, buttonsDiv);
+                        console.log('🔧 Elementos de feedback creados dinámicamente');
+                        // Reintentar con los nuevos elementos
+                        setTimeout(() => generateAndShowModalFeedback(artistVotes), 100);
+                        return;
+                    }
+                }
                 return;
             }
             
             const feedbackSuggestions = generateAutoFeedback(artistVotes);
-            console.log('💬 Sugerencias generadas:', feedbackSuggestions);
+            console.log('💬 Sugerencias generadas:', feedbackSuggestions.length, 'elementos');
             
             if (feedbackSuggestions.length > 0) {
-                feedbackContainer.innerHTML = feedbackSuggestions.map(item => `
-                    <div class="bg-black bg-opacity-30 p-2 rounded">
-                        <div class="flex justify-between items-center">
-                            <span class="font-bold text-blue-300">${item.category}</span>
-                            <span class="text-xs text-gray-400">${item.score} pts</span>
+                const feedbackHTML = feedbackSuggestions.map(item => `
+                    <div class="bg-black bg-opacity-30 p-3 rounded mb-2">
+                        <div class="flex justify-between items-center mb-1">
+                            <span class="font-bold text-blue-300 text-sm">${item.category}</span>
+                            <span class="text-xs text-gray-400">${item.score}</span>
                         </div>
-                        <p class="text-white text-sm mt-1">"${item.suggestion}"</p>
+                        <p class="text-white text-sm leading-relaxed">${item.suggestion}</p>
                     </div>
                 `).join('');
                 
+                feedbackContainer.innerHTML = feedbackHTML;
+                
                 // Mostrar la sección de feedback
                 feedbackSection.style.display = 'block';
+                feedbackSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                
                 console.log('✅ Feedback del modal mostrado correctamente');
+                console.log('📄 HTML generado:', feedbackHTML.length, 'caracteres');
             } else {
-                // Ocultar la sección de feedback si no hay sugerencias
-                feedbackSection.style.display = 'none';
-                console.log('❌ No hay sugerencias, ocultando sección del modal');
+                // Mostrar mensaje si no hay sugerencias
+                feedbackContainer.innerHTML = '<p class="text-gray-400 text-center">Completa todas las categorías para ver sugerencias personalizadas</p>';
+                feedbackSection.style.display = 'block';
+                console.log('📝 Mostrando mensaje de completar categorías');
             }
         }
 
