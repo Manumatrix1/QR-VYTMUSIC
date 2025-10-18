@@ -15,6 +15,7 @@
         .btn-green:hover { background: #15803d; }
         .btn-red { background: #dc2626; color: white; }
         .btn-orange { background: #ea580c; color: white; }
+        .btn-orange:hover { background: #c2410c; }
         .btn-yellow { background: #eab308; color: white; }
         .btn-selected { 
             border: 3px solid #ffffff !important; 
@@ -129,7 +130,10 @@
                         <div class="text-sm">Pendientes</div>
                     </div>
                 </div>
-                <button onclick="logout()" class="btn btn-red mt-4">Cerrar Sesión</button>
+                <div class="flex gap-4 mt-4">
+                    <button onclick="logout()" class="btn btn-red">Cerrar Sesión</button>
+                    <button onclick="resetAllVotes()" class="btn btn-orange">🔄 Reiniciar Todos los Votos</button>
+                </div>
             </div>
 
             <!-- ARTISTAS -->
@@ -244,7 +248,7 @@
     <script type="module">
         // === CONFIGURACIÓN ===
         import { db } from './firebase_config.js';
-        import { collection, getDocs, query, orderBy, doc, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { collection, getDocs, query, orderBy, doc, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // OBTENER EVENT ID DESDE URL (como en gestión de votaciones)
         const urlParams = new URLSearchParams(window.location.search);
@@ -359,10 +363,23 @@
 
         // CONFIGURACIÓN DE GEMINI AI
         const GEMINI_API_KEY = 'AIzaSyAOwLwJFPJugk3DBvdlexUVmLVPt23c_6g';
-        const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key=${GEMINI_API_KEY}`;
+        const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${GEMINI_API_KEY}`;
 
-        // SISTEMA DE FEEDBACK CON IA GEMINI
+        // SISTEMA DE FEEDBACK CON IA GEMINI (SIMPLIFICADO)
         async function generateAutoFeedback(artistVotes) {
+            console.log('🤖 Iniciando generación de feedback...');
+            
+            // USAR SISTEMA DE RESPALDO PRIMERO
+            try {
+                const fallbackSuggestions = generateFallbackFeedback(artistVotes);
+                if (fallbackSuggestions && fallbackSuggestions.length >= 3) {
+                    console.log('✅ Usando sistema de respaldo con', fallbackSuggestions.length, 'sugerencias');
+                    return fallbackSuggestions;
+                }
+            } catch (error) {
+                console.warn('⚠️ Error en sistema de respaldo:', error);
+            }
+
             const scores = Object.values(artistVotes);
             const totalScore = scores.reduce((sum, val) => sum + val, 0);
             const averageScore = totalScore / scores.length;
@@ -395,62 +412,9 @@ Formato de respuesta:
 4. [Sugerencia concreta de mejora]
 5. [Reconocimiento de fortalezas y consejo final]`;
 
-            try {
-                // Llamada a Gemini AI
-                const response = await fetch(GEMINI_API_URL, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        contents: [{
-                            parts: [{
-                                text: prompt
-                            }]
-                        }]
-                    })
-                });
-
-                if (!response.ok) {
-                    throw new Error(`Error de Gemini AI: ${response.status}`);
-                }
-
-                const data = await response.json();
-                const aiResponse = data.candidates[0].content.parts[0].text;
-                
-                console.log('🤖 Respuesta de Gemini AI:', aiResponse);
-                
-                // Procesar respuesta de IA
-                const lines = aiResponse.split('\n').filter(line => line.trim());
-                const feedbackSuggestions = [];
-                
-                lines.forEach((line, index) => {
-                    if (line.match(/^\d+\./)) {
-                        feedbackSuggestions.push({
-                            category: `💬 Sugerencia ${index + 1}`,
-                            score: "IA Generated",
-                            suggestion: line.replace(/^\d+\.\s*/, '').trim()
-                        });
-                    }
-                });
-                
-                // Si no hay suficientes sugerencias, usar sistema de respaldo
-                if (feedbackSuggestions.length < 3) {
-                    console.warn('⚠️ Pocas sugerencias de IA, usando sistema de respaldo');
-                    return generateFallbackFeedback(artistVotes);
-                }
-                
-                return feedbackSuggestions;
-                
-            } catch (error) {
-                console.error('❌ Error con Gemini AI:', error.message || error);
-                console.log('🔄 Usando sistema de feedback de respaldo...');
-                
-                // Usar sistema de respaldo inmediatamente
-                const fallbackSuggestions = generateFallbackFeedback(artistVotes);
-                console.log('✅ Feedback de respaldo generado:', fallbackSuggestions.length, 'sugerencias');
-                return fallbackSuggestions;
-            }
+            // POR AHORA DESHABILITADO GEMINI - USAR SOLO SISTEMA DE RESPALDO
+            console.log('ℹ️ Gemini deshabilitado temporalmente, usando sistema profesional integrado');
+            return generateFallbackFeedback(artistVotes);
         }
 
         // SISTEMA DE FEEDBACK DE RESPALDO (si falla Gemini)
@@ -924,20 +888,34 @@ Formato de respuesta:
                 // Simplificar el guardado para evitar errores
                 const docId = `${currentJuror.id}_${artistId}`;
                 
-                // Intentar múltiples formas de guardado
+                // Intentar múltiples formas de guardado con las rutas correctas del evento
+                let saveSuccess = false;
+                
                 try {
-                    await setDoc(doc(db, 'jury_evaluations', docId), voteData);
-                    console.log('✅ Guardado en jury_evaluations:', docId);
+                    await setDoc(doc(db, `events/${eventId}/jury_evaluations`, docId), voteData);
+                    console.log('✅ Guardado en events/' + eventId + '/jury_evaluations:', docId);
+                    saveSuccess = true;
                 } catch (err1) {
-                    console.warn('⚠️ Error en jury_evaluations, intentando jury_votes:', err1);
+                    console.warn('⚠️ Error en jury_evaluations, intentando jury_votes:', err1.message);
                     try {
-                        await setDoc(doc(db, 'jury_votes', docId), voteData);
-                        console.log('✅ Guardado en jury_votes:', docId);
+                        await setDoc(doc(db, `events/${eventId}/jury_votes`, docId), voteData);
+                        console.log('✅ Guardado en events/' + eventId + '/jury_votes:', docId);
+                        saveSuccess = true;
                     } catch (err2) {
-                        console.warn('⚠️ Error en jury_votes, intentando votes:', err2);
-                        await setDoc(doc(db, 'votes', docId), voteData);
-                        console.log('✅ Guardado en votes:', docId);
+                        console.warn('⚠️ Error en jury_votes, intentando votes:', err2.message);
+                        try {
+                            await setDoc(doc(db, `events/${eventId}/votes`, docId), voteData);
+                            console.log('✅ Guardado en events/' + eventId + '/votes:', docId);
+                            saveSuccess = true;
+                        } catch (err3) {
+                            console.error('❌ Error en todas las colecciones:', err3.message);
+                            throw new Error('No se pudo guardar en ninguna colección: ' + err3.message);
+                        }
                     }
+                }
+                
+                if (!saveSuccess) {
+                    throw new Error('Error desconocido al guardar');
                 }
                 
                 console.log('✅ Voto guardado exitosamente en Firebase');
@@ -1053,12 +1031,12 @@ Formato de respuesta:
                 forceSubmitted: true // Marcar como forzado
             };
 
-            // Intentar múltiples métodos de guardado
+            // Intentar múltiples métodos de guardado con rutas correctas del evento
             let success = false;
             const attempts = [
-                () => setDoc(doc(db, 'jury_evaluations', `${currentJuror.id}_${artistId}`), voteData),
-                () => setDoc(doc(db, 'jury_evaluations', `${currentJuror.id}_${artistId}_${Date.now()}`), voteData),
-                () => setDoc(doc(db, `events/${eventId}/jury_votes`, `${currentJuror.id}_${artistId}`), voteData)
+                () => setDoc(doc(db, `events/${eventId}/jury_evaluations`, `${currentJuror.id}_${artistId}`), voteData),
+                () => setDoc(doc(db, `events/${eventId}/jury_votes`, `${currentJuror.id}_${artistId}`), voteData),
+                () => setDoc(doc(db, `events/${eventId}/votes`, `${currentJuror.id}_${artistId}_${Date.now()}`), voteData)
             ];
 
             for (let i = 0; i < attempts.length && !success; i++) {
@@ -1521,6 +1499,92 @@ Formato de respuesta:
             } catch (error) {
                 console.error('Error guardando voto:', error);
                 alert('Error guardando la votación. Intenta de nuevo.');
+            }
+        };
+
+        // Función para reiniciar todos los votos
+        window.resetAllVotes = async function() {
+            const confirmation = confirm('⚠️ ADVERTENCIA: Esto borrará TODOS los votos de TODOS los jurados.\n\n¿Estás SEGURO de que quieres continuar?\n\nEsta acción NO se puede deshacer.');
+            
+            if (!confirmation) return;
+            
+            const doubleConfirmation = confirm('🚨 ÚLTIMA CONFIRMACIÓN:\n\nSe borrarán permanentemente:\n• Todos los votos de jurados\n• Todas las evaluaciones guardadas\n• Todo el historial de votación\n\n¿PROCEDER con el reinicio total?');
+            
+            if (!doubleConfirmation) return;
+            
+            try {
+                console.log('🔄 Iniciando reinicio total de votos...');
+                document.getElementById('status').textContent = 'Reiniciando votos...';
+                
+                let deletedCount = 0;
+                
+                // Limpiar colección jury_evaluations
+                try {
+                    const juryEvaluationsRef = collection(db, `events/${eventId}/jury_evaluations`);
+                    const juryEvaluationsSnapshot = await getDocs(juryEvaluationsRef);
+                    console.log(`📊 Encontradas ${juryEvaluationsSnapshot.docs.length} evaluaciones de jurado`);
+                    
+                    for (const docRef of juryEvaluationsSnapshot.docs) {
+                        await deleteDoc(doc(db, `events/${eventId}/jury_evaluations`, docRef.id));
+                        deletedCount++;
+                    }
+                } catch (error) {
+                    console.log('⚠️ Error limpiando jury_evaluations:', error.message);
+                }
+                
+                // Limpiar colección jury_votes
+                try {
+                    const juryVotesRef = collection(db, `events/${eventId}/jury_votes`);
+                    const juryVotesSnapshot = await getDocs(juryVotesRef);
+                    console.log(`📊 Encontrados ${juryVotesSnapshot.docs.length} votos de jurado`);
+                    
+                    for (const docRef of juryVotesSnapshot.docs) {
+                        await deleteDoc(doc(db, `events/${eventId}/jury_votes`, docRef.id));
+                        deletedCount++;
+                    }
+                } catch (error) {
+                    console.log('⚠️ Error limpiando jury_votes:', error.message);
+                }
+                
+                // Limpiar colección votes
+                try {
+                    const votesRef = collection(db, `events/${eventId}/votes`);
+                    const votesSnapshot = await getDocs(votesRef);
+                    console.log(`📊 Encontrados ${votesSnapshot.docs.length} votos generales`);
+                    
+                    for (const docRef of votesSnapshot.docs) {
+                        await deleteDoc(doc(db, `events/${eventId}/votes`, docRef.id));
+                        deletedCount++;
+                    }
+                } catch (error) {
+                    console.log('⚠️ Error limpiando votes:', error.message);
+                }
+                
+                // Limpiar localStorage
+                localStorage.clear();
+                console.log('🧹 LocalStorage limpiado');
+                
+                // Limpiar variables locales
+                votes = {};
+                console.log('🧹 Variables locales limpiadas');
+                
+                // Actualizar interfaz
+                if (currentViewMode === 'grid') {
+                    renderArtistsGrid();
+                } else {
+                    renderArtists();
+                }
+                updateStats();
+                
+                console.log(`✅ Reinicio completo exitoso. ${deletedCount} documentos eliminados.`);
+                document.getElementById('status').textContent = `✅ Reinicio completo: ${deletedCount} votos eliminados`;
+                
+                alert(`🔄 REINICIO COMPLETADO\n\n✅ ${deletedCount} votos eliminados exitosamente\n✅ Sistema limpio y listo para nueva votación\n\nTodos los jurados deben volver a votar.`);
+                
+            } catch (error) {
+                console.error('❌ Error durante el reinicio:', error);
+                document.getElementById('status').textContent = 'Error en el reinicio';
+                alert(`❌ Error durante el reinicio:\n${error.message}\n\nIntenta nuevamente o contacta al administrador.`);
             }
         };
 
