@@ -69,9 +69,16 @@
         <div id="qr-code-reader"></div>
         <button id="close-scanner-btn" class="scanner-button"><svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg></button>
         
+        <!-- 🔧 BOTÓN DE DEBUG -->
+        <button id="debug-scanner-btn" class="scanner-button" style="top: 1.5rem; left: 1.5rem;">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+        </button>
+        
         <!-- 📊 INDICADOR DE ESTADO DEL SCANNER -->
         <div id="scanner-status" class="absolute top-4 left-1/2 transform -translate-x-1/2 bg-green-600 bg-opacity-90 text-white px-4 py-2 rounded-lg text-sm font-medium z-60">
-            📷 Escaneando pantalla completa... Muestra cualquier código QR
+            🎯 QR + Códigos de barras - Sistema dual para galas
         </div>
         
         <!-- 🎯 GUÍA VISUAL PANTALLA COMPLETA -->
@@ -83,10 +90,11 @@
             <div class="absolute bottom-4 right-4 w-12 h-12 border-r-4 border-b-4 border-white border-opacity-80"></div>
         </div>
         
-        <!-- 📱 INDICADOR DE ÁREA ACTIVA COMPLETA -->
-        <div class="absolute top-8 left-1/2 transform -translate-x-1/2 z-40 pointer-events-none">
-            <div class="bg-black bg-opacity-50 text-white px-3 py-1 rounded-full text-xs font-medium">
-                📷 Toda la pantalla detecta códigos QR
+        <!-- 📱 INSTRUCCIONES EN LA PARTE INFERIOR -->
+        <div class="absolute bottom-20 left-1/2 transform -translate-x-1/2 z-40 pointer-events-none">
+            <div class="bg-black bg-opacity-70 text-white px-4 py-2 rounded-lg text-center">
+                <div class="text-sm font-medium">✨ Área de detección: Pantalla completa</div>
+                <div class="text-xs text-gray-300 mt-1">Funciona con códigos QR desde celular, papel o pantalla</div>
             </div>
         </div>
 
@@ -378,7 +386,7 @@
 
             let lastScannedCode = null;
             let lastScanTime = 0;
-            let scanCooldown = 2000; // 2 segundos de cooldown entre escaneos del mismo código
+            let scanCooldown = 1000; // 1 segundo - RAPIDEZ PARA GALAS CON CELULARES
             let scanAttempts = 0;
             let maxRetries = 3;
 
@@ -396,14 +404,55 @@
                 lastScannedCode = decodedText;
                 lastScanTime = currentTime;
                 
+                // 🔍 DETECTAR TIPO DE CÓDIGO (QR vs Barras)
+                const isQR = decodedText.length > 10; // QR suelen ser más largos
+                const codeType = isQR ? "📱 QR" : "📊 CÓDIGO DE BARRAS";
+                
+                console.log(`✅ ${codeType} DETECTADO: ${decodedText}`);
+                
+                // 📱 FEEDBACK VISUAL DIFERENCIADO
+                const statusDiv = document.getElementById('scanner-status-fullscreen');
+                if (statusDiv) {
+                    statusDiv.innerHTML = `
+                        <div class="bg-green-600 p-4 rounded-lg animate-bounce">
+                            <p class="font-bold text-white text-lg">✅ ${codeType} DETECTADO</p>
+                            <p class="text-green-100 text-sm">${decodedText.substring(0, 20)}...</p>
+                        </div>
+                    `;
+                    
+                    // Limpiar después de 2 segundos
+                    setTimeout(() => {
+                        statusDiv.innerHTML = '';
+                    }, 2000);
+                }
+                
+                // 🎵 SONIDO DIFERENCIADO POR TIPO
+                if (Tone.context.state === 'running') {
+                    const synth = new Tone.Synth().toDestination();
+                    if (isQR) {
+                        synth.triggerAttackRelease("E5", "0.15");  // QR: tono alto
+                    } else {
+                        synth.triggerAttackRelease("C4", "0.2");   // Código de barras: tono más bajo
+                    }
+                }
+                
                 processScan(decodedText);
             }
 
             function onScanError(errorMessage) {
-                // 🔇 Silenciar errores de escaneo para mejor UX (como MercadoPago)
-                // Solo logear errores críticos
-                if (errorMessage.includes("NotFoundException") === false) {
-                    console.warn("Scanner error:", errorMessage);
+                // 🔇 Silenciar solo errores normales de "no encontrado"
+                if (errorMessage.includes("NotFoundException") === false && 
+                    errorMessage.includes("No MultiFormat Readers") === false) {
+                    console.log("🔍 Scanner info:", errorMessage);
+                    
+                    // Mostrar en interfaz si hay problema real
+                    if (errorMessage.includes("NotAllowedError") || 
+                        errorMessage.includes("NotFoundError") ||
+                        errorMessage.includes("camera")) {
+                        const statusIndicator = document.getElementById('scanner-status');
+                        statusIndicator.textContent = '⚠️ ' + errorMessage;
+                        statusIndicator.className = 'absolute top-4 left-1/2 transform -translate-x-1/2 bg-red-600 bg-opacity-90 text-white px-4 py-2 rounded-lg text-sm font-medium z-60';
+                    }
                 }
             }
             
@@ -415,27 +464,47 @@
                 
                 html5QrCode = new Html5Qrcode("qr-code-reader");
 
-                // 🚀 CONFIGURACIÓN OPTIMIZADA PANTALLA COMPLETA
+                // 🎯 CONFIGURACIÓN ULTRA-OPTIMIZADA PARA QR DE CELULARES (GALAS)
                 const config = { 
-                    fps: 60, // Mantener FPS alto para detección rápida
-                    // 📱 SIN qrbox = PANTALLA COMPLETA para máximo margen de lectura
-                    aspectRatio: 1.777778, // Ratio 16:9 para mejor rendimiento
-                    disableFlip: false, // Permitir voltear imagen
+                    fps: 60, // FPS ALTOS para captura rápida de móviles
+                    // 📱 ÁREA AMPLIA para facilitar enfoque de celulares
+                    qrbox: function(viewfinderWidth, viewfinderHeight) {
+                        const size = Math.min(viewfinderWidth, viewfinderHeight) * 0.9;
+                        return { width: size, height: size };
+                    },
+                    aspectRatio: 1.0, // Cuadrado perfecto para QR móviles
+                    disableFlip: false,
                     supportedScanTypes: [Html5QrcodeScanType.SCAN_TYPE_CAMERA],
                     experimentalFeatures: {
-                        useBarCodeDetectorIfSupported: true // Usar detector nativo si está disponible
-                    }
+                        useBarCodeDetectorIfSupported: true
+                    },
+                    formatsToSupport: [
+                        Html5QrcodeSupportedFormats.QR_CODE,      // Principal: QR
+                        Html5QrcodeSupportedFormats.CODE_128,     // Backup: Código de barras
+                        Html5QrcodeSupportedFormats.CODE_39,      // Backup: Código de barras
+                        Html5QrcodeSupportedFormats.EAN_13,       // Backup: Código de barras
+                        Html5QrcodeSupportedFormats.EAN_8         // Backup: Código de barras
+                    ],
+                    rememberLastUsedCamera: true,
+                    showTorchButtonIfSupported: true,
+                    // 🚀 MODO DUAL: QR rápido + Códigos de barras backup
+                    verbose: false
                 };
 
-                // 📱 CONFIGURACIÓN DE CÁMARA OPTIMIZADA
+                // 📱 CONFIGURACIÓN CÁMARA OPTIMIZADA PARA QR DE CELULARES EN GALAS
                 const videoConstraints = {
-                    width: { min: 640, ideal: 1920, max: 1920 },
-                    height: { min: 480, ideal: 1080, max: 1080 },
-                    frameRate: { ideal: 60, max: 60 },
-                    focusMode: { ideal: "continuous" },
-                    exposureMode: { ideal: "continuous" },
-                    whiteBalanceMode: { ideal: "continuous" },
-                    zoom: { ideal: 1.0 }
+                    width: { min: 640, ideal: 1280, max: 1920 }, // Resolución equilibrada
+                    height: { min: 480, ideal: 720, max: 1080 },
+                    frameRate: { ideal: 60, max: 60 }, // FPS ALTOS para móviles rápidos
+                    focusMode: { ideal: "continuous" }, // Auto-focus continuo
+                    exposureMode: { ideal: "continuous" }, // Exposición automática
+                    whiteBalanceMode: { ideal: "continuous" }, // Balance automático
+                    zoom: { ideal: 1.0 },
+                    // 🎯 OPTIMIZADO PARA PANTALLAS MÓVILES BRILLANTES
+                    brightness: { ideal: 0.5 }, // Neutral para adaptar luces de gala
+                    contrast: { ideal: 1.0 }, // Natural
+                    saturation: { ideal: 1.0 }, // Colores naturales
+                    facingMode: "environment" // Cámara trasera prioritaria
                 };
                 
                 try {
@@ -536,6 +605,41 @@
             });
             
             document.getElementById('close-scanner-btn').addEventListener('click', stopScanner);
+
+            // 🔧 DEBUG BUTTON - INFORMACIÓN DE CÁMARA Y SCANNER
+            document.getElementById('debug-scanner-btn').addEventListener('click', async () => {
+                try {
+                    const devices = await Html5Qrcode.getCameras();
+                    const info = {
+                        cameras: devices.length,
+                        userAgent: navigator.userAgent,
+                        resolution: `${window.screen.width}x${window.screen.height}`,
+                        pixelRatio: window.devicePixelRatio,
+                        timestamp: new Date().toLocaleString()
+                    };
+                    
+                    // Mostrar info en la pantalla
+                    const statusDiv = document.getElementById('scanner-status-fullscreen');
+                    statusDiv.innerHTML = `
+                        <div class="bg-blue-900 p-4 rounded-lg text-sm">
+                            <h4 class="text-yellow-300 font-bold mb-2">🎯 SCANNER DUAL PARA GALAS</h4>
+                            <p><strong>Cámaras disponibles:</strong> ${info.cameras}</p>
+                            <p><strong>Formatos:</strong> QR + Códigos de barras</p>
+                            <p><strong>Configuración:</strong> 60 FPS optimizado</p>
+                            <p><strong>Cooldown:</strong> 1 segundo (flujo rápido)</p>
+                            <p><strong>Dispositivo:</strong> ${info.userAgent.includes('Mobile') ? '📱 MÓVIL' : '🖥️ ESCRITORIO'}</p>
+                            <p class="text-green-300 mt-2"><strong>Status:</strong> ${isScannerActive ? '✅ SISTEMA DUAL ACTIVO' : '❌ INACTIVO'}</p>
+                        </div>
+                    `;
+                    
+                    console.log("🔧 DEBUG INFO:", info);
+                    setTimeout(() => {
+                        if (statusDiv) statusDiv.innerHTML = '';
+                    }, 5000);
+                } catch (error) {
+                    console.error("❌ Error en debug:", error);
+                }
+            });
 
             document.getElementById('reset-selected-qrs-btn').addEventListener('click', resetSelectedTickets);
         });
