@@ -619,28 +619,12 @@
                 html5QrCode = new Html5Qrcode("qr-code-reader");
                 console.log("✅ Html5Qrcode instanciado");
 
-                // ⚡ CONFIGURACIÓN EXTREMA PARA VELOCIDAD + BAJO BRILLO
+                // ⚡ CONFIGURACIÓN PANTALLA COMPLETA + CÁMARA TRASERA FORZADA
                 const config = { 
                     fps: 30, // ✅ Equilibrio velocidad/procesamiento
-                    qrbox: function(viewfinderWidth, viewfinderHeight) {
-                        // ✅ Área adaptativa más grande
-                        const minEdgePercentage = 0.9; // 90% de la pantalla
-                        const minEdgeSize = Math.min(viewfinderWidth, viewfinderHeight);
-                        const qrboxSize = Math.floor(minEdgeSize * minEdgePercentage);
-                        return {
-                            width: qrboxSize,
-                            height: qrboxSize
-                        };
-                    },
+                    // ✅ SIN qrbox = PANTALLA COMPLETA TOTAL
                     aspectRatio: 1.0,
-                    disableFlip: false, // ✅ Permitir flip para mejor detección
-                    // ✅ OPTIMIZACIONES PARA BAJO BRILLO
-                    videoConstraints: {
-                        focusMode: "continuous",
-                        brightness: { min: 0.5, max: 1.5 }, // Ajuste automático brillo
-                        contrast: { min: 1.0, max: 2.0 },   // Mejor contraste
-                        saturation: { min: 0.8, max: 1.2 }  // Saturación optimizada
-                    },
+                    disableFlip: false,
                     formatsToSupport: [ // ✅ SOLO FORMATOS MÁS COMUNES = MÁS RÁPIDO
                         Html5QrcodeSupportedFormats.QR_CODE,
                         Html5QrcodeSupportedFormats.CODE_128,
@@ -657,15 +641,7 @@
                     
                     await html5QrCode.start(
                         { 
-                            facingMode: "environment",
-                            // ✅ OPTIMIZACIONES DINÁMICAS PARA BAJO BRILLO Y VELOCIDAD
-                            advanced: [
-                                { torch: flashEnabled || false }, // Flash según botón
-                                { focusMode: "continuous" },
-                                { exposureCompensation: flashEnabled ? 0.5 : 1.5 }, // Menos exposición con flash
-                                { whiteBalanceMode: "auto" },
-                                { imageStabilization: true }
-                            ]
+                            facingMode: { exact: "environment" } // ✅ FORZAR CÁMARA TRASERA SOLAMENTE
                         },
                         config, 
                         onScanSuccess, 
@@ -740,40 +716,41 @@
                     }, 300); // Aplicar más rápido
                     
                 } catch (err) {
-                    console.warn("⚠️ Error con environment, probando fallback:", err);
+                    console.warn("⚠️ Error con environment exact, probando fallback:", err);
                     
                     try {
-                        // ✅ FALLBACK PANTALLA COMPLETA
+                        // ✅ FALLBACK - CÁMARA TRASERA SIN EXACT
                         await html5QrCode.start(
                             { facingMode: "environment" }, 
-                            { fps: 35 }, // ✅ SIN qrbox = pantalla completa
+                            config,
                             onScanSuccess, 
                             onScanError
                         );
-                        console.log("✅ Scanner iniciado con fallback pantalla completa");
+                        console.log("✅ Scanner iniciado con fallback cámara trasera");
                     } catch (secondErr) {
-                        console.warn("⚠️ Probando cámara frontal:", secondErr);
+                        console.warn("⚠️ Último intento - environment string:", secondErr);
                         
                         try {
                             await html5QrCode.start(
-                                "user",
-                                { fps: 30 }, // ✅ SIN qrbox = pantalla completa
+                                "environment", // String simple
+                                config,
                                 onScanSuccess, 
                                 onScanError
                             );
-                            console.log("✅ Scanner iniciado con cámara frontal pantalla completa");
+                            console.log("✅ Scanner iniciado con environment string");
                         } catch (finalErr) {
                             console.error("❌ Error crítico:", finalErr);
                             
-                            alert(`❌ Error al iniciar cámara.
+                            alert(`❌ Error al iniciar cámara trasera.
 
 🔧 SOLUCIONES:
-1. ✅ Refresca la página completamente
-2. ✅ Permite acceso a la cámara
+1. ✅ Refresca la página completamente  
+2. ✅ Permite acceso a la cámara TRASERA
 3. ✅ Cierra otras apps que usen cámara
-4. ✅ Prueba en modo incógnito
+4. ✅ Prueba en Chrome/Firefox
+5. ✅ Verifica que tu dispositivo tenga cámara trasera
 
-Error: ${finalErr.message || 'Configuración no soportada'}`);
+Error: ${finalErr.message || 'No se puede acceder a cámara trasera'}`);
                             
                             await stopScanner();
                         }
