@@ -747,7 +747,7 @@ Formato de respuesta:
                     Object.values(artistVotes).reduce((sum, val) => sum + val, 0) / CRITERIA.length : 0;
 
                 return `
-                    <div class="card artist-card">
+                    <div class="card artist-card" data-artist-id="${artist.id}">
                         <!-- HEADER DEL ARTISTA -->
                         <div class="flex items-center mb-6 p-4 bg-black bg-opacity-30 rounded-lg">
                             <img src="${artist.photoURL || 'https://placehold.co/80x80/4338ca/ffffff?text=' + artist.name.charAt(0)}" 
@@ -907,33 +907,43 @@ Formato de respuesta:
 
         window.editVote = function(artistId) {
             const artist = artists.find(a => a.id === artistId);
-            const confirmation = confirm(`✏️ EDITAR VOTACIÓN\n\n¿Quieres modificar los votos para "${artist?.name || artistId}"?\n\nEsto te permitirá:\n• Cambiar las puntuaciones usando sliders\n• Volver a guardar los votos\n• El voto anterior se sobrescribirá\n\n¿Continuar con la edición?`);
+            
+            console.log(`🔍 Iniciando edición para: ${artistId}`, {
+                artist: artist,
+                currentVotes: votes[artistId],
+                viewMode: currentViewMode
+            });
+            
+            const confirmation = confirm(`✏️ EDITAR VOTACIÓN\n\n¿Quieres modificar los votos para "${artist?.name || artistId}"?\n\n• Se mostrarán los sliders de edición\n• Los valores actuales quedarán como base\n• Podrás modificar y guardar los cambios\n\n¿Continuar?`);
             
             if (confirmation) {
-                console.log(`✏️ Editando voto para: ${artistId}`);
+                console.log(`✅ Usuario confirmó edición para: ${artistId}`);
                 
-                // Convertir artista a estado "no completado" temporalmente para mostrar controles
-                const currentVotes = votes[artistId] || {};
+                // Forzar cambio a Vista Lista si estamos en Vista Organizada
+                if (currentViewMode === 'grid') {
+                    console.log('🔄 Cambiando de Vista Organizada a Vista Lista para edición');
+                    switchViewMode('list');
+                }
                 
-                // Marcar que estamos en modo edición para este artista
+                // Marcar como en edición
                 if (!window.editingMode) window.editingMode = {};
                 window.editingMode[artistId] = true;
                 
-                // Si estamos en modo grid, cambiar a lista para mejor edición
-                if (currentViewMode === 'grid') {
-                    switchViewMode('list');
-                    // Esperar un poco para que cambie la vista y luego simular edición
-                    setTimeout(() => {
-                        // Forzar re-renderizado en modo lista
-                        renderArtists();
-                    }, 100);
-                } else {
-                    // Ya estamos en lista, solo re-renderizar
-                    renderArtists();
-                }
+                console.log('🔄 Re-renderizando artistas en modo edición');
                 
-                // Mensaje informativo
-                alert(`✏️ MODO EDICIÓN ACTIVADO\n\n• Usa los sliders para modificar puntuaciones\n• Los valores actuales se muestran como base\n• Al guardar, sobrescribirás el voto anterior\n\n¡Los controles de edición ya están disponibles!`);
+                // Re-renderizar inmediatamente
+                setTimeout(() => {
+                    renderArtists();
+                    console.log('✅ Renderizado completado en modo edición');
+                    
+                    // Scroll al artista
+                    const artistCard = document.querySelector(`[data-artist-id="${artistId}"]`);
+                    if (artistCard) {
+                        artistCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                }, 100);
+                
+                alert(`✏️ MODO EDICIÓN ACTIVADO\n\n• Usa los sliders para modificar las puntuaciones\n• Los valores actuales aparecen como base\n• Cuando termines, usa "✅ TERMINAR EDICIÓN"`);
             }
         };
 
@@ -1711,7 +1721,8 @@ Formato de respuesta:
             }
             
             try {
-                const feedbackSuggestions = generateAutoFeedback(artistVotes);
+                // Usar la función async correctamente
+                const feedbackSuggestions = await generateAutoFeedback(artistVotes);
                 console.log('💬 Sugerencias generadas para lista:', feedbackSuggestions);
                 
                 if (feedbackSuggestions.length > 0) {
