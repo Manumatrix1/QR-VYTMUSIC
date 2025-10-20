@@ -91,17 +91,34 @@
     <script>
         // 🚀 CONFIGURACIÓN GLOBAL MEJORADA Y VERIFICACIÓN DE DEPENDENCIAS
         if (typeof Html5QrcodeScanType === 'undefined') {
-            window.Html5QrcodeScanType = { SCAN_TYPE_CAMERA: 0, SCAN_TYPE_FILE: 1 };
+            window.Html5QrcodeScanType = { 
+                SCAN_TYPE_CAMERA: 0, 
+                SCAN_TYPE_FILE: 1,
+                SCAN_TYPE_QR_CODE: 2,
+                SCAN_TYPE_BARCODE: 3
+            };
         }
         
-        // 📱 DEFINIR FORMATOS SI NO ESTÁN DISPONIBLES
+        // 📱 DEFINIR TODOS LOS FORMATOS PARA QR + CÓDIGOS DE BARRAS
         if (typeof Html5QrcodeSupportedFormats === 'undefined') {
             window.Html5QrcodeSupportedFormats = {
                 QR_CODE: 0,
-                CODE_128: 1,
-                CODE_39: 2,
-                EAN_13: 3,
-                EAN_8: 4
+                AZTEC: 1,
+                CODABAR: 2,
+                CODE_39: 3,
+                CODE_93: 4,
+                CODE_128: 5,
+                DATA_MATRIX: 6,
+                EAN_8: 7,
+                EAN_13: 8,
+                ITF: 9,
+                MAXICODE: 10,
+                PDF_417: 11,
+                RSS_14: 12,
+                RSS_EXPANDED: 13,
+                UPC_A: 14,
+                UPC_E: 15,
+                UPC_EAN_EXTENSION: 16
             };
         }
     </script>
@@ -520,28 +537,39 @@
                 
                 const currentTime = Date.now();
                 
-                // 🚀 PREVENIR ESCANEOS DUPLICADOS RÁPIDOS
-                if (lastScannedCode === decodedText && (currentTime - lastScanTime) < scanCooldown) {
-                    console.log("🔄 Escaneo duplicado ignorado");
+                // 🚀 DETECCIÓN ULTRA-RÁPIDA - Cooldown mínimo
+                if (lastScannedCode === decodedText && (currentTime - lastScanTime) < 100) { // Solo 100ms
                     return;
                 }
                 
                 lastScannedCode = decodedText;
                 lastScanTime = currentTime;
                 
-                // ✅ NO DETENER SCANNER - Solo pausar detección temporalmente
-                console.log("📱 CÓDIGO DETECTADO - Scanner sigue activo");
+                // ✅ AUDIO INMEDIATO + VIBRACIÓN
+                try {
+                    // Sonido de éxito rápido
+                    new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmIdCUSK1fLOeSsFJHbD8N+SRAwUX7Pp66hVEwlGnt/yv2MeBDuH1fLNeSsFJn…').play();
+                    
+                    // Vibración si disponible
+                    if (navigator.vibrate) {
+                        navigator.vibrate(100);
+                    }
+                } catch(e) {
+                    console.log("Audio/vibración no disponible");
+                }
                 
-                // 🛑 PAUSAR detección temporalmente con variable de control
-                const originalActive = isScannerActive;
-                isScannerActive = false; // Pausar nuevas detecciones
+                // 🛑 PAUSAR detección temporalmente
+                isScannerActive = false;
                 
-                // Reactivar después de mostrar resultado (será manejado por continueScanningAfterResult)
+                console.log(`🎯 CÓDIGO DETECTADO: ${decodedText.substring(0, 20)}...`);
+                
+                // ⚡ Reactivar súper rápido después de procesamiento
                 setTimeout(() => {
                     if (!isScannerActive) {
-                        isScannerActive = originalActive; // Restaurar estado si no se ha continuado
+                        isScannerActive = true;
+                        console.log("🔄 Scanner reactivado automáticamente");
                     }
-                }, 5000); // Auto-reactivar después de 5 segundos si no se presiona continuar
+                }, 2000); // Solo 2 segundos
                 
                 // � DETECTAR TIPO DE CÓDIGO (QR vs Barras)
                 const isQR = decodedText.length > 10;
@@ -564,20 +592,13 @@
             }
 
             function onScanError(errorMessage) {
-                // 🔇 Silenciar solo errores normales de "no encontrado"
-                if (errorMessage.includes("NotFoundException") === false && 
-                    errorMessage.includes("No MultiFormat Readers") === false) {
-                    console.log("🔍 Scanner info:", errorMessage);
-                    
-                    // Mostrar en interfaz si hay problema real
-                    if (errorMessage.includes("NotAllowedError") || 
-                        errorMessage.includes("NotFoundError") ||
-                        errorMessage.includes("camera")) {
-                        const statusIndicator = document.getElementById('scanner-status');
-                        statusIndicator.textContent = '⚠️ ' + errorMessage;
-                        statusIndicator.className = 'absolute top-4 left-1/2 transform -translate-x-1/2 bg-red-600 bg-opacity-90 text-white px-4 py-2 rounded-lg text-sm font-medium z-60';
-                    }
+                // � SILENCIAR TODO - Solo mostrar errores críticos de cámara
+                if (errorMessage.includes("NotAllowedError") || 
+                    errorMessage.includes("NotFoundError") ||
+                    errorMessage.includes("camera")) {
+                    console.log("❌ Error crítico:", errorMessage);
                 }
+                // ✅ NO mostrar errores normales de "no código encontrado" - serían spam
             }
             
             async function startScanner() {
@@ -591,10 +612,20 @@
                 html5QrCode = new Html5Qrcode("qr-code-reader");
                 console.log("✅ Html5Qrcode instanciado");
 
-                // 🎯 CONFIGURACIÓN PANTALLA COMPLETA PARA NETLIFY
+                // 🚀 CONFIGURACIÓN SÚPER RÁPIDA DUAL (QR + CÓDIGO DE BARRAS)
                 const config = { 
-                    fps: 10, // ✅ FPS bajos para compatibilidad máxima
-                    qrbox: { width: 250, height: 250 } // ✅ Caja fija pequeña
+                    fps: 60, // ✅ MÁXIMA VELOCIDAD
+                    qrbox: { width: 400, height: 300 }, // ✅ Área más grande
+                    aspectRatio: 1.0,
+                    formatsToSupport: [ // ✅ LECTURA DUAL - Formatos específicos
+                        Html5QrcodeSupportedFormats.QR_CODE,
+                        Html5QrcodeSupportedFormats.CODE_128,
+                        Html5QrcodeSupportedFormats.CODE_39,
+                        Html5QrcodeSupportedFormats.EAN_13,
+                        Html5QrcodeSupportedFormats.EAN_8,
+                        Html5QrcodeSupportedFormats.UPC_A,
+                        Html5QrcodeSupportedFormats.UPC_E
+                    ]
                 };
                 
                 console.log("📋 Configuración pantalla completa:", config);
