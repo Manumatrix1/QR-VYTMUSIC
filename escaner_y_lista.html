@@ -69,15 +69,8 @@
         <div id="qr-code-reader"></div>
         <button id="close-scanner-btn" class="scanner-button"><svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg></button>
         
-        <!-- � BOTÓN DE FLASH PARA BAJO BRILLO -->
-        <button id="flash-toggle-btn" class="scanner-button" style="top: 1.5rem; right: 5rem; background: rgba(0,0,0,0.7);">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
-            </svg>
-        </button>
-        
-        <!-- �🔧 BOTÓN DE DEBUG -->
-        <button id="debug-scanner-btn" class="scanner-button" style="top: 1.5rem; left: 1.5rem;">
+        <!-- � BOTÓN DE DEBUG -->
+        <button id="debug-scanner-btn" class="scanner-button" style="top: 1.5rem; left: 1.5rem;"
             <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
@@ -641,28 +634,13 @@
                     
                     await html5QrCode.start(
                         { 
-                            facingMode: { exact: "environment" }, // ✅ FORZAR CÁMARA TRASERA SOLAMENTE
-                            // ✅ CONFIGURACIÓN PARA PERMITIR CONTROL DE FLASH
-                            advanced: [{ torch: flashEnabled }] 
+                            facingMode: { exact: "environment" } // ✅ FORZAR CÁMARA TRASERA SOLAMENTE
                         },
                         config, 
                         onScanSuccess, 
                         onScanError
                     );
                     console.log("✅ Scanner iniciado correctamente");
-                    
-                    // 💡 OBTENER ACCESO AL STREAM DE VIDEO PARA CONTROLAR FLASH
-                    setTimeout(async () => {
-                        try {
-                            const video = document.querySelector('#qr-code-reader video');
-                            if (video && video.srcObject) {
-                                window.currentVideoStream = video.srcObject;
-                                console.log("✅ Stream de video capturado para control de flash");
-                            }
-                        } catch (e) {
-                            console.log("⚠️ No se pudo capturar stream para flash:", e);
-                        }
-                    }, 1000);
                     
                     // ✅ CSS EXTREMO PARA FORZAR CENTRADO DE CÁMARA
                     setTimeout(() => {
@@ -869,79 +847,6 @@ Error: ${finalErr.message || 'No se puede acceder a cámara trasera'}`);
                     }, 5000);
                 } catch (error) {
                     console.error("❌ Error en debug:", error);
-                }
-            });
-
-            // 💡 BOTÓN DE FLASH CON API NATIVA MEJORADA
-            let flashEnabled = false;
-            document.getElementById('flash-toggle-btn').addEventListener('click', async () => {
-                try {
-                    flashEnabled = !flashEnabled;
-                    const flashBtn = document.getElementById('flash-toggle-btn');
-                    
-                    if (flashEnabled) {
-                        flashBtn.style.background = 'rgba(255,255,0,0.8)'; // Amarillo = encendido
-                        flashBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="currentColor" viewBox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>';
-                        console.log("💡 Intentando activar flash...");
-                        
-                        // ✅ MÉTODO 1: API ImageCapture (más moderno)
-                        try {
-                            if (window.currentVideoStream) {
-                                const track = window.currentVideoStream.getVideoTracks()[0];
-                                if (track && track.getCapabilities && track.applyConstraints) {
-                                    const capabilities = track.getCapabilities();
-                                    if (capabilities.torch) {
-                                        await track.applyConstraints({
-                                            advanced: [{ torch: true }]
-                                        });
-                                        console.log("✅ Flash activado via ImageCapture API");
-                                    }
-                                }
-                            }
-                        } catch (e) {
-                            console.log("⚠️ ImageCapture no disponible, probando método 2");
-                            
-                            // ✅ MÉTODO 2: Reiniciar con torch en configuración
-                            if (html5QrCode && html5QrCode.getState() === Html5QrcodeScannerState.SCANNING) {
-                                await stopScanner();
-                                setTimeout(() => startScanner(), 500);
-                            }
-                        }
-                        
-                        // Mostrar mensaje
-                        const statusDiv = document.createElement('div');
-                        statusDiv.className = 'fixed top-16 left-1/2 transform -translate-x-1/2 bg-yellow-500 text-black px-4 py-2 rounded-lg z-50 font-bold';
-                        statusDiv.textContent = '💡 Flash Activado';
-                        document.body.appendChild(statusDiv);
-                        setTimeout(() => statusDiv.remove(), 2000);
-                        
-                    } else {
-                        flashBtn.style.background = 'rgba(0,0,0,0.7)'; // Negro = apagado
-                        flashBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>';
-                        console.log("🌙 Desactivando flash...");
-                        
-                        try {
-                            if (window.currentVideoStream) {
-                                const track = window.currentVideoStream.getVideoTracks()[0];
-                                if (track && track.applyConstraints) {
-                                    await track.applyConstraints({
-                                        advanced: [{ torch: false }]
-                                    });
-                                    console.log("✅ Flash desactivado");
-                                }
-                            }
-                        } catch (e) {
-                            console.log("⚠️ Desactivando flash via reinicio");
-                            if (html5QrCode && html5QrCode.getState() === Html5QrcodeScannerState.SCANNING) {
-                                await stopScanner();
-                                setTimeout(() => startScanner(), 500);
-                            }
-                        }
-                    }
-                    
-                } catch (error) {
-                    console.error("❌ Error controlando flash:", error);
-                    alert("⚠️ No se pudo controlar el flash. Tu dispositivo puede no soportar esta función.");
                 }
             });
 
