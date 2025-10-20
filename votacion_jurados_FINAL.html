@@ -800,21 +800,41 @@ Formato de respuesta:
                                 </div>
                             </div>
                         ` : `
-                            <!-- FORMULARIO DE VOTACIÓN -->
+                            <!-- FORMULARIO DE VOTACIÓN CON SLIDERS -->
                             <div class="space-y-6">
-                                ${CRITERIA.map(criteria => `
-                                    <div class="criteria">
-                                        <h4 class="text-lg font-bold mb-3">${criteria.name}</h4>
-                                        <div class="rating-grid">
-                                            ${RATINGS.map(rating => `
-                                                <button class="btn ${rating.class} ${artistVotes[criteria.id] === rating.value ? 'btn-selected' : ''}"
-                                                        onclick="selectRating('${artist.id}', '${criteria.id}', ${rating.value})">
-                                                    ${rating.name}<br><small>(${rating.value} pts)</small>
-                                                </button>
-                                            `).join('')}
+                                ${CRITERIA.map(criteria => {
+                                    const currentValue = artistVotes[criteria.id] || 50;
+                                    return `
+                                    <div class="criteria bg-black bg-opacity-30 p-4 rounded-lg">
+                                        <div class="flex justify-between items-center mb-3">
+                                            <h4 class="text-lg font-bold">${criteria.name}</h4>
+                                            <div class="flex items-center gap-3">
+                                                <span id="list-${artist.id}-${criteria.id}-display" class="text-2xl font-bold text-blue-300">${currentValue}</span>
+                                                <input type="number" 
+                                                       id="list-${artist.id}-${criteria.id}-input" 
+                                                       class="w-16 h-8 text-center bg-gray-800 text-white rounded border border-gray-600" 
+                                                       min="25" 
+                                                       max="100" 
+                                                       value="${currentValue}"
+                                                       onchange="updateListScore('${artist.id}', '${criteria.id}', this.value)">
+                                            </div>
+                                        </div>
+                                        <input type="range" 
+                                               id="list-${artist.id}-${criteria.id}-slider" 
+                                               class="category-slider w-full" 
+                                               min="25" 
+                                               max="100" 
+                                               value="${currentValue}"
+                                               oninput="updateListScore('${artist.id}', '${criteria.id}', this.value)">
+                                        <div class="flex justify-between text-xs text-gray-300 mt-2">
+                                            <span>25 - MALO</span>
+                                            <span>50 - REGULAR</span>
+                                            <span>75 - BUENO</span>
+                                            <span>100 - EXCELENTE</span>
                                         </div>
                                     </div>
-                                `).join('')}
+                                `;
+                                }).join('')}
                                 
                                 <div class="text-center pt-4 space-y-3">
                                     <!-- Botón para votación completa -->
@@ -1449,6 +1469,29 @@ Formato de respuesta:
             votes[currentModalArtist.id][criteriaId] = parseInt(value);
 
             await updateModalTotal();
+        };
+
+        // Función para actualizar puntuaciones en Vista Lista
+        window.updateListScore = function(artistId, criteriaId, value) {
+            value = Math.max(25, Math.min(100, parseInt(value))); // Asegurar rango válido
+            
+            // Actualizar display y sincronizar slider/input
+            const displayElement = document.getElementById(`list-${artistId}-${criteriaId}-display`);
+            const sliderElement = document.getElementById(`list-${artistId}-${criteriaId}-slider`);
+            const inputElement = document.getElementById(`list-${artistId}-${criteriaId}-input`);
+            
+            if (displayElement) displayElement.textContent = value;
+            if (sliderElement) sliderElement.value = value;
+            if (inputElement) inputElement.value = value;
+
+            // Guardar en votes
+            if (!votes[artistId]) {
+                votes[artistId] = {};
+            }
+            votes[artistId][criteriaId] = value;
+
+            // Re-renderizar para actualizar estado visual
+            renderArtists();
         };
 
         // Función para actualizar total en modal
