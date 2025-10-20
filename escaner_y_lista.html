@@ -69,7 +69,14 @@
         <div id="qr-code-reader"></div>
         <button id="close-scanner-btn" class="scanner-button"><svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg></button>
         
-        <!-- 🔧 BOTÓN DE DEBUG -->
+        <!-- � BOTÓN DE FLASH PARA BAJO BRILLO -->
+        <button id="flash-toggle-btn" class="scanner-button" style="top: 1.5rem; right: 5rem; background: rgba(0,0,0,0.7);">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+        </button>
+        
+        <!-- �🔧 BOTÓN DE DEBUG -->
         <button id="debug-scanner-btn" class="scanner-button" style="top: 1.5rem; left: 1.5rem;">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -612,19 +619,33 @@
                 html5QrCode = new Html5Qrcode("qr-code-reader");
                 console.log("✅ Html5Qrcode instanciado");
 
-                // 🚀 CONFIGURACIÓN SÚPER RÁPIDA DUAL (QR + CÓDIGO DE BARRAS)
+                // ⚡ CONFIGURACIÓN EXTREMA PARA VELOCIDAD + BAJO BRILLO
                 const config = { 
-                    fps: 60, // ✅ MÁXIMA VELOCIDAD
-                    qrbox: { width: 400, height: 300 }, // ✅ Área más grande
+                    fps: 30, // ✅ Equilibrio velocidad/procesamiento
+                    qrbox: function(viewfinderWidth, viewfinderHeight) {
+                        // ✅ Área adaptativa más grande
+                        const minEdgePercentage = 0.9; // 90% de la pantalla
+                        const minEdgeSize = Math.min(viewfinderWidth, viewfinderHeight);
+                        const qrboxSize = Math.floor(minEdgeSize * minEdgePercentage);
+                        return {
+                            width: qrboxSize,
+                            height: qrboxSize
+                        };
+                    },
                     aspectRatio: 1.0,
-                    formatsToSupport: [ // ✅ LECTURA DUAL - Formatos específicos
+                    disableFlip: false, // ✅ Permitir flip para mejor detección
+                    // ✅ OPTIMIZACIONES PARA BAJO BRILLO
+                    videoConstraints: {
+                        focusMode: "continuous",
+                        brightness: { min: 0.5, max: 1.5 }, // Ajuste automático brillo
+                        contrast: { min: 1.0, max: 2.0 },   // Mejor contraste
+                        saturation: { min: 0.8, max: 1.2 }  // Saturación optimizada
+                    },
+                    formatsToSupport: [ // ✅ SOLO FORMATOS MÁS COMUNES = MÁS RÁPIDO
                         Html5QrcodeSupportedFormats.QR_CODE,
                         Html5QrcodeSupportedFormats.CODE_128,
-                        Html5QrcodeSupportedFormats.CODE_39,
                         Html5QrcodeSupportedFormats.EAN_13,
-                        Html5QrcodeSupportedFormats.EAN_8,
-                        Html5QrcodeSupportedFormats.UPC_A,
-                        Html5QrcodeSupportedFormats.UPC_E
+                        Html5QrcodeSupportedFormats.EAN_8
                     ]
                 };
                 
@@ -635,7 +656,17 @@
                     console.log("🚀 Iniciando configuración simple y estable...");
                     
                     await html5QrCode.start(
-                        "environment", // ✅ String simple para máxima compatibilidad
+                        { 
+                            facingMode: "environment",
+                            // ✅ OPTIMIZACIONES DINÁMICAS PARA BAJO BRILLO Y VELOCIDAD
+                            advanced: [
+                                { torch: flashEnabled || false }, // Flash según botón
+                                { focusMode: "continuous" },
+                                { exposureCompensation: flashEnabled ? 0.5 : 1.5 }, // Menos exposición con flash
+                                { whiteBalanceMode: "auto" },
+                                { imageStabilization: true }
+                            ]
+                        },
                         config, 
                         onScanSuccess, 
                         onScanError
@@ -846,6 +877,46 @@ Error: ${finalErr.message || 'Configuración no soportada'}`);
                     }, 5000);
                 } catch (error) {
                     console.error("❌ Error en debug:", error);
+                }
+            });
+
+            // 💡 BOTÓN DE FLASH PARA MEJORAR DETECCIÓN EN BAJO BRILLO
+            let flashEnabled = false;
+            document.getElementById('flash-toggle-btn').addEventListener('click', async () => {
+                try {
+                    if (html5QrCode && html5QrCode.getState() === Html5QrcodeScannerState.SCANNING) {
+                        flashEnabled = !flashEnabled;
+                        
+                        // Intentar cambiar la configuración de la cámara
+                        const flashBtn = document.getElementById('flash-toggle-btn');
+                        
+                        if (flashEnabled) {
+                            flashBtn.style.background = 'rgba(255,255,0,0.8)'; // Amarillo = encendido
+                            flashBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="currentColor" viewBox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>';
+                            console.log("💡 Flash activado");
+                            
+                            // Mostrar mensaje temporal
+                            const statusDiv = document.createElement('div');
+                            statusDiv.className = 'fixed top-16 left-1/2 transform -translate-x-1/2 bg-yellow-500 text-black px-4 py-2 rounded-lg z-50 font-bold';
+                            statusDiv.textContent = '💡 Flash Activado - Mejor para códigos oscuros';
+                            document.body.appendChild(statusDiv);
+                            setTimeout(() => statusDiv.remove(), 3000);
+                            
+                        } else {
+                            flashBtn.style.background = 'rgba(0,0,0,0.7)'; // Negro = apagado
+                            flashBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>';
+                            console.log("🌙 Flash desactivado");
+                        }
+                        
+                        // Reiniciar scanner con nueva configuración
+                        await stopScanner();
+                        setTimeout(() => startScanner(), 500);
+                        
+                    } else {
+                        console.warn("⚠️ Scanner no está activo");
+                    }
+                } catch (error) {
+                    console.error("❌ Error controlando flash:", error);
                 }
             });
 
