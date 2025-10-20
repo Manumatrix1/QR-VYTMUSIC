@@ -742,6 +742,7 @@ Formato de respuesta:
             const html = artists.map(artist => {
                 const artistVotes = votes[artist.id] || {};
                 const isComplete = CRITERIA.every(c => artistVotes[c.id] !== undefined);
+                const isEditing = window.editingMode && window.editingMode[artist.id];
                 const average = isComplete ? 
                     Object.values(artistVotes).reduce((sum, val) => sum + val, 0) / CRITERIA.length : 0;
 
@@ -754,19 +755,19 @@ Formato de respuesta:
                             <div class="flex-grow">
                                 <h3 class="text-2xl font-bold">${artist.name}</h3>
                                 <p class="opacity-75">🎵 Participante del certamen</p>
-                                ${isComplete ? `
+                                ${isComplete && !isEditing ? `
                                     <div class="mt-2 px-3 py-1 bg-green-600 rounded-full inline-block">
                                         <span class="text-sm font-bold">✅ VOTADO - Promedio: ${average.toFixed(1)} pts</span>
                                     </div>
                                 ` : `
                                     <div class="mt-2 px-3 py-1 bg-yellow-600 rounded-full inline-block">
-                                        <span class="text-sm font-bold">⏳ PENDIENTE DE VOTAR</span>
+                                        <span class="text-sm font-bold">${isEditing ? '✏️ EDITANDO' : '⏳ PENDIENTE DE VOTAR'}</span>
                                     </div>
                                 `}
                             </div>
                         </div>
 
-                        ${isComplete ? `
+                        ${isComplete && !isEditing ? `
                             <!-- VOTACIÓN COMPLETADA -->
                             <div class="bg-green-800 bg-opacity-50 p-6 rounded-lg">
                                 <h4 class="text-xl font-bold mb-4 text-center">✅ Votación Completada</h4>
@@ -858,6 +859,13 @@ Formato de respuesta:
                                         </button>
                                     ` : ''}
                                     
+                                    <!-- Botón para terminar edición -->
+                                    ${isEditing ? `
+                                        <button onclick="exitEditMode('${artist.id}')" class="btn btn-yellow px-4 py-2">
+                                            ✅ TERMINAR EDICIÓN
+                                        </button>
+                                    ` : ''}
+                                    
                                     <div class="text-sm space-y-1 opacity-75">
                                         <p class="font-bold">${isComplete ? '✅ ¡Listo para enviar!' : '⏳ Votación en progreso'}</p>
                                         <p>Criterios completados: ${Object.keys(artistVotes).length}/${CRITERIA.length}</p>
@@ -871,6 +879,16 @@ Formato de respuesta:
             }).join('');
 
             document.getElementById('artists-list').innerHTML = html;
+            
+            // Generar feedback automático para artistas con votos completos
+            artists.forEach(artist => {
+                const artistVotes = votes[artist.id] || {};
+                const isComplete = CRITERIA.every(c => artistVotes[c.id] !== undefined);
+                if (isComplete) {
+                    // Generar feedback automático para la Vista Lista
+                    generateAndShowListFeedback(artist.id, artistVotes).catch(console.error);
+                }
+            });
             
             // Mantener el filtro después de renderizar
             preserveFilter();
@@ -889,27 +907,48 @@ Formato de respuesta:
 
         window.editVote = function(artistId) {
             const artist = artists.find(a => a.id === artistId);
-            const confirmation = confirm(`✏️ EDITAR VOTACIÓN\n\n¿Quieres modificar los votos para "${artist?.name || artistId}"?\n\nEsto te permitirá:\n• Cambiar las puntuaciones\n• Volver a guardar los votos\n• El voto anterior se sobrescribirá\n\n¿Continuar con la edición?`);
+            const confirmation = confirm(`✏️ EDITAR VOTACIÓN\n\n¿Quieres modificar los votos para "${artist?.name || artistId}"?\n\nEsto te permitirá:\n• Cambiar las puntuaciones usando sliders\n• Volver a guardar los votos\n• El voto anterior se sobrescribirá\n\n¿Continuar con la edición?`);
             
             if (confirmation) {
                 console.log(`✏️ Editando voto para: ${artistId}`);
                 
-                // NO borrar los votos, mantenerlos para edición
-                // Los votos actuales se mantendrán como base para edición
+                // Convertir artista a estado "no completado" temporalmente para mostrar controles
+                const currentVotes = votes[artistId] || {};
+                
+                // Marcar que estamos en modo edición para este artista
+                if (!window.editingMode) window.editingMode = {};
+                window.editingMode[artistId] = true;
                 
                 // Si estamos en modo grid, cambiar a lista para mejor edición
                 if (currentViewMode === 'grid') {
                     switchViewMode('list');
+                    // Esperar un poco para que cambie la vista y luego simular edición
+                    setTimeout(() => {
+                        // Forzar re-renderizado en modo lista
+                        renderArtists();
+                    }, 100);
+                } else {
+                    // Ya estamos en lista, solo re-renderizar
+                    renderArtists();
                 }
                 
-                // Forzar actualización de la vista
-                renderArtists();
-                preserveFilter();
-                updateStats();
-                
                 // Mensaje informativo
-                alert(`✏️ MODO EDICIÓN ACTIVADO\n\n• Puedes modificar cualquier puntuación\n• Los valores actuales se muestran como base\n• Al guardar, sobrescribirás el voto anterior\n\nCambia a vista de lista para mejor experiencia de edición.`);
+                alert(`✏️ MODO EDICIÓN ACTIVADO\n\n• Usa los sliders para modificar puntuaciones\n• Los valores actuales se muestran como base\n• Al guardar, sobrescribirás el voto anterior\n\n¡Los controles de edición ya están disponibles!`);
             }
+        };
+
+        // Función para salir del modo edición
+        window.exitEditMode = function(artistId) {
+            console.log(`🚪 Saliendo del modo edición para: ${artistId}`);
+            
+            if (window.editingMode && window.editingMode[artistId]) {
+                delete window.editingMode[artistId];
+            }
+            
+            // Re-renderizar para mostrar el estado normal
+            renderArtists();
+            
+            alert(`✅ EDICIÓN TERMINADA\n\nVolviste al modo normal. El voto se mantiene guardado con los últimos cambios.`);
         };
 
         window.submitVote = async function(artistId) {
@@ -1651,6 +1690,56 @@ Formato de respuesta:
                 // Ocultar la sección de feedback si no hay sugerencias
                 feedbackSection.style.display = 'none';
                 console.log('❌ No hay sugerencias, ocultando sección');
+            }
+        }
+
+        // Función para generar y mostrar feedback automático en Vista Lista
+        async function generateAndShowListFeedback(artistId, artistVotes) {
+            console.log('🔍 Generando feedback para Vista Lista:', artistId, artistVotes);
+            
+            const feedbackContainer = document.getElementById(`auto-feedback-${artistId}`);
+            const feedbackSection = document.getElementById(`feedback-section-${artistId}`);
+            
+            console.log('📦 Elementos encontrados en Vista Lista:', {
+                feedbackContainer: !!feedbackContainer,
+                feedbackSection: !!feedbackSection
+            });
+            
+            if (!feedbackContainer || !feedbackSection) {
+                console.warn('⚠️ No se encontraron elementos de feedback para Vista Lista:', artistId);
+                return;
+            }
+            
+            try {
+                const feedbackSuggestions = generateAutoFeedback(artistVotes);
+                console.log('💬 Sugerencias generadas para lista:', feedbackSuggestions);
+                
+                if (feedbackSuggestions.length > 0) {
+                    feedbackContainer.innerHTML = feedbackSuggestions.map(item => `
+                        <div class="bg-black bg-opacity-30 p-2 rounded">
+                            <div class="flex justify-between items-center">
+                                <span class="font-bold text-blue-300">${item.category}</span>
+                                <span class="text-xs text-gray-400">${item.score} pts</span>
+                            </div>
+                            <p class="text-white text-sm mt-1">"${item.suggestion}"</p>
+                        </div>
+                    `).join('');
+                    
+                    // Mostrar la sección de feedback
+                    feedbackSection.style.display = 'block';
+                    console.log('✅ Feedback mostrado correctamente en Vista Lista');
+                } else {
+                    feedbackSection.style.display = 'none';
+                    console.log('❌ No hay sugerencias para Vista Lista');
+                }
+            } catch (error) {
+                console.error('❌ Error generando feedback en Vista Lista:', error);
+                feedbackContainer.innerHTML = `
+                    <div class="bg-red-900 bg-opacity-50 p-3 rounded text-center">
+                        <p class="text-red-300 text-sm">⚠️ Error generando feedback</p>
+                    </div>
+                `;
+                feedbackSection.style.display = 'block';
             }
         }
 
