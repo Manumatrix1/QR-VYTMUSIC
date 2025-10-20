@@ -271,6 +271,52 @@
 
         <div id="message-container" class="mb-4"></div>
 
+        <!-- ✨ NUEVA SECCIÓN: Agregar Artista Individual -->
+        <section class="bg-gradient-to-r from-green-800 to-green-700 p-6 rounded-lg shadow-xl mb-6">
+            <h2 class="text-2xl font-bold mb-4 flex items-center gap-2">
+                <span>➕</span> Agregar Nuevo Artista Individual
+            </h2>
+            <p class="text-green-100 mb-4">¿Quieres agregar solo un artista nuevo sin afectar los existentes? Usa esta opción:</p>
+            
+            <div class="bg-white bg-opacity-10 p-4 rounded-lg">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label for="single-artist-name" class="block mb-2 font-semibold text-green-100">
+                            Nombre del Artista
+                        </label>
+                        <input type="text" id="single-artist-name" 
+                               class="w-full p-3 bg-gray-800 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-green-400" 
+                               placeholder="Ej: María González">
+                    </div>
+                    <div>
+                        <label for="single-artist-photo" class="block mb-2 font-semibold text-green-100">
+                            Foto del Artista
+                        </label>
+                        <input type="file" id="single-artist-photo" accept="image/*" 
+                               class="w-full p-3 bg-gray-800 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-green-400">
+                    </div>
+                </div>
+                
+                <!-- Vista previa del artista individual -->
+                <div id="single-artist-preview" class="hidden mt-4 p-4 bg-gray-800 rounded-lg">
+                    <h4 class="font-semibold text-green-300 mb-2">Vista Previa:</h4>
+                    <div class="flex items-center gap-3">
+                        <img id="single-artist-preview-img" src="" class="w-16 h-16 rounded-full object-cover border-2 border-green-400">
+                        <div>
+                            <p id="single-artist-preview-name" class="font-semibold text-white"></p>
+                            <p class="text-sm text-gray-400">Nuevo artista individual</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="flex justify-end mt-4">
+                    <button id="add-single-artist-btn" class="px-6 py-3 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                        ➕ Agregar Este Artista
+                    </button>
+                </div>
+            </div>
+        </section>
+
         <!-- Sección de carga masiva de fotos -->
         <section class="bg-gray-800 p-6 rounded-lg shadow-xl mb-6">
             <h2 class="text-2xl font-bold mb-4">Carga Masiva de Fotos</h2>
@@ -434,7 +480,15 @@
             photoPreviewSection: document.getElementById('photo-preview-section'),
             photoAssociations: document.getElementById('photo-associations'),
             cancelUploadBtn: document.getElementById('cancel-upload-btn'),
-            confirmUploadBtn: document.getElementById('confirm-upload-btn')
+            confirmUploadBtn: document.getElementById('confirm-upload-btn'),
+            
+            // ➕ ELEMENTOS PARA ARTISTA INDIVIDUAL
+            singleArtistName: document.getElementById('single-artist-name'),
+            singleArtistPhoto: document.getElementById('single-artist-photo'),
+            singleArtistPreview: document.getElementById('single-artist-preview'),
+            singleArtistPreviewImg: document.getElementById('single-artist-preview-img'),
+            singleArtistPreviewName: document.getElementById('single-artist-preview-name'),
+            addSingleArtistBtn: document.getElementById('add-single-artist-btn')
         };
 
         let artists = [];
@@ -907,6 +961,87 @@
         // Event listeners para manejo de fotos
         ui.newArtistPhoto.addEventListener('change', handlePhotoPreview);
         ui.removePhotoBtn.addEventListener('click', handleRemovePhoto);
+
+        // ➕ EVENT LISTENERS PARA ARTISTA INDIVIDUAL
+        ui.singleArtistName.addEventListener('input', validateSingleArtistForm);
+        ui.singleArtistPhoto.addEventListener('change', handleSingleArtistPhotoPreview);
+        ui.addSingleArtistBtn.addEventListener('click', addSingleArtist);
+
+        // Funciones para artista individual
+        function validateSingleArtistForm() {
+            const name = ui.singleArtistName.value.trim();
+            const hasPhoto = ui.singleArtistPhoto.files.length > 0;
+            ui.addSingleArtistBtn.disabled = !name || !hasPhoto;
+        }
+
+        function handleSingleArtistPhotoPreview() {
+            const file = ui.singleArtistPhoto.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    ui.singleArtistPreviewImg.src = e.target.result;
+                    ui.singleArtistPreviewName.textContent = ui.singleArtistName.value.trim() || 'Nuevo Artista';
+                    ui.singleArtistPreview.classList.remove('hidden');
+                    validateSingleArtistForm();
+                };
+                reader.readAsDataURL(file);
+            } else {
+                ui.singleArtistPreview.classList.add('hidden');
+            }
+        }
+
+        async function addSingleArtist() {
+            const name = ui.singleArtistName.value.trim();
+            const file = ui.singleArtistPhoto.files[0];
+
+            if (!name || !file) {
+                showMessage('Por favor completa el nombre y selecciona una foto', 'error');
+                return;
+            }
+
+            try {
+                showLoading(true);
+                ui.addSingleArtistBtn.disabled = true;
+                showMessage(`Agregando artista: ${name}...`, 'info');
+
+                // Generar ID único
+                const artistId = `artist_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+                // Subir imagen a Firebase Storage
+                const imageRef = ref(storage, `events/${eventId}/artists/${artistId}_${Date.now()}.jpg`);
+                const snapshot = await uploadBytes(imageRef, file);
+                const photoURL = await getDownloadURL(snapshot.ref);
+
+                // Crear documento del artista
+                const artistData = {
+                    name: name,
+                    photoURL: photoURL,
+                    totalScore: 0,
+                    createdAt: new Date().toISOString(),
+                    createdFrom: 'individual-add'
+                };
+
+                await setDoc(doc(db, `events/${eventId}/artists`, artistId), artistData);
+
+                showMessage(`✅ Artista "${name}" agregado correctamente`, 'success');
+
+                // Limpiar formulario
+                ui.singleArtistName.value = '';
+                ui.singleArtistPhoto.value = '';
+                ui.singleArtistPreview.classList.add('hidden');
+                ui.addSingleArtistBtn.disabled = true;
+
+                // Recargar lista de artistas
+                await loadArtists();
+
+            } catch (error) {
+                console.error('Error agregando artista:', error);
+                showMessage(`❌ Error agregando artista: ${error.message}`, 'error');
+            } finally {
+                showLoading(false);
+                ui.addSingleArtistBtn.disabled = false;
+            }
+        }
 
         // Initialize
         loadArtists();
