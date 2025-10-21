@@ -172,17 +172,28 @@
 
         <!-- Tab: Configuración -->
         <div id="content-config" class="tab-content hidden">
-            <!-- Panel Simple para Crear Votos -->
+            <!-- Panel para buscar votos reales -->
             <div class="premio-card rounded-xl p-6 shadow-lg mb-6">
-                <h2 class="text-xl font-bold mb-4 text-gray-800">� Crear Votos de Prueba (Simple)</h2>
+                <h2 class="text-xl font-bold mb-4 text-gray-800">🔍 Buscar Votos Reales en Firebase</h2>
                 <div class="space-y-4">
-                    <p class="text-gray-600">Como no hay votos en Firebase, vamos a crear algunos para probar:</p>
+                    <p class="text-gray-600">Vamos a buscar en TODAS las colecciones de Firebase para encontrar los votos reales:</p>
                     
-                    <button id="crear-votos-simple" class="w-full bg-green-600 text-white py-4 rounded-lg hover:bg-green-700 text-lg font-bold">
-                        ✨ Crear 10 Votos de Prueba Ahora
+                    <button id="buscar-colecciones" class="w-full bg-blue-600 text-white py-4 rounded-lg hover:bg-blue-700 text-lg font-bold">
+                        🔎 Buscar en TODAS las colecciones
                     </button>
                     
-                    <div id="resultado-votos" class="mt-4 p-4 bg-gray-50 rounded">
+                    <div class="grid md:grid-cols-3 gap-2">
+                        <button id="buscar-votes" class="bg-green-600 text-white py-2 rounded hover:bg-green-700">votes</button>
+                        <button id="buscar-votations" class="bg-green-600 text-white py-2 rounded hover:bg-green-700">votations</button>
+                        <button id="buscar-votos" class="bg-green-600 text-white py-2 rounded hover:bg-green-700">votos</button>
+                        <button id="buscar-ballots" class="bg-green-600 text-white py-2 rounded hover:bg-green-700">ballots</button>
+                        <button id="buscar-participants" class="bg-green-600 text-white py-2 rounded hover:bg-green-700">participants</button>
+                        <button id="buscar-users" class="bg-green-600 text-white py-2 rounded hover:bg-green-700">users</button>
+                    </div>
+                    
+                    <div id="resultado-busqueda" class="mt-4 p-4 bg-gray-50 rounded max-h-96 overflow-y-auto">
+                        <p class="text-gray-500">Haz clic para buscar los datos reales</p>
+                    </div>
                         <p class="text-gray-500">Haz clic para crear votos de ejemplo</p>
                     </div>
                 </div>
@@ -228,6 +239,7 @@
         let galas = [];
         let votosData = {};
         let sorteoEnProceso = false;
+        let coleccionVotosActual = 'votes'; // Por defecto, pero se puede cambiar
 
         // Inicialización
         document.addEventListener('DOMContentLoaded', function() {
@@ -296,77 +308,122 @@
             document.getElementById('sortear-gala-btn').addEventListener('click', sortearPremioGala);
             document.getElementById('sortear-general-btn').addEventListener('click', sortearPremioGeneral);
             
-            // Botón simple para crear votos
-            document.getElementById('crear-votos-simple').addEventListener('click', crearVotosDePrueba);
+            // Botones para buscar votos reales
+            document.getElementById('buscar-colecciones').addEventListener('click', buscarTodasLasColecciones);
+            document.getElementById('buscar-votes').addEventListener('click', () => buscarEnColeccion('votes'));
+            document.getElementById('buscar-votations').addEventListener('click', () => buscarEnColeccion('votations'));
+            document.getElementById('buscar-votos').addEventListener('click', () => buscarEnColeccion('votos'));
+            document.getElementById('buscar-ballots').addEventListener('click', () => buscarEnColeccion('ballots'));
+            document.getElementById('buscar-participants').addEventListener('click', () => buscarEnColeccion('participants'));
+            document.getElementById('buscar-users').addEventListener('click', () => buscarEnColeccion('users'));
         }
 
-        // 🚀 SIMPLE: Crear votos de prueba rápido
-        async function crearVotosDePrueba() {
-            const resultDiv = document.getElementById('resultado-votos');
-            const boton = document.getElementById('crear-votos-simple');
+        // 🔍 Buscar en todas las colecciones posibles
+        async function buscarTodasLasColecciones() {
+            const resultDiv = document.getElementById('resultado-busqueda');
+            resultDiv.innerHTML = '<p class="text-blue-600">🔄 Buscando en todas las colecciones...</p>';
             
-            // Obtener el primer evento disponible
-            if (galas.length === 0) {
-                resultDiv.innerHTML = '<p class="text-red-600">❌ No hay eventos para votar</p>';
-                return;
+            const coleccionesPosibles = [
+                'votes', 'votations', 'votos', 'ballots', 'participants', 'users', 
+                'voting', 'poll', 'survey', 'responses', 'submissions', 'entries',
+                'contestants', 'artists', 'judges', 'audience', 'public'
+            ];
+            
+            let resultadosHTML = '<h3 class="font-bold mb-3 text-green-800">🔍 BÚSQUEDA EN TODAS LAS COLECCIONES:</h3>';
+            let coleccionesConDatos = [];
+            
+            for (const coleccion of coleccionesPosibles) {
+                try {
+                    const snapshot = await db.collection(coleccion).limit(5).get();
+                    
+                    if (!snapshot.empty) {
+                        coleccionesConDatos.push({
+                            nombre: coleccion,
+                            cantidad: snapshot.size,
+                            datos: snapshot.docs.map(doc => ({id: doc.id, data: doc.data()}))
+                        });
+                        
+                        resultadosHTML += `
+                            <div class="mb-4 p-3 bg-green-50 border border-green-200 rounded">
+                                <h4 class="font-bold text-green-800">✅ "${coleccion}" - ${snapshot.size}+ documentos</h4>
+                                <button onclick="buscarEnColeccion('${coleccion}')" 
+                                        class="mt-2 px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700">
+                                    Ver detalles de "${coleccion}"
+                                </button>
+                            </div>
+                        `;
+                    }
+                } catch (error) {
+                    // Colección no existe o sin permisos
+                }
             }
             
-            const eventoParaVotar = galas[0]; // Usar el primer evento
+            if (coleccionesConDatos.length === 0) {
+                resultadosHTML += '<p class="text-red-600">❌ No se encontraron colecciones con datos de votos</p>';
+            } else {
+                resultadosHTML += `<p class="mt-4 text-blue-600 font-semibold">Encontradas ${coleccionesConDatos.length} colecciones con datos</p>`;
+            }
             
-            boton.innerHTML = '⏳ Creando votos...';
-            boton.disabled = true;
+            resultDiv.innerHTML = resultadosHTML;
+        }
+
+        // 🔍 Buscar en una colección específica
+        async function buscarEnColeccion(nombreColeccion) {
+            const resultDiv = document.getElementById('resultado-busqueda');
+            resultDiv.innerHTML = `<p class="text-blue-600">🔄 Buscando en "${nombreColeccion}"...</p>`;
             
             try {
-                // Crear 10 votos de diferentes personas
-                const votantes = [
-                    'María González', 'Juan Pérez', 'Ana López', 'Carlos Ruiz', 'Sofia Martinez',
-                    'Pedro Silva', 'Laura Torres', 'Diego Castro', 'Valentina Morales', 'Andrés Vargas'
-                ];
+                const snapshot = await db.collection(nombreColeccion).limit(10).get();
                 
-                resultDiv.innerHTML = '<p class="text-blue-600">🔄 Creando votos...</p>';
-                
-                for (let i = 0; i < votantes.length; i++) {
-                    const voto = {
-                        eventId: eventoParaVotar.id,
-                        eventName: eventoParaVotar.name,
-                        userName: votantes[i],
-                        userEmail: `${votantes[i].toLowerCase().replace(' ', '.')}@ejemplo.com`,
-                        artistId: 'artista-ejemplo-' + (i % 3 + 1), // 3 artistas diferentes
-                        artistName: 'Artista ' + (i % 3 + 1),
-                        timestamp: new Date(),
-                        createdAt: Date.now()
-                    };
-                    
-                    await db.collection('votes').add(voto);
+                if (snapshot.empty) {
+                    resultDiv.innerHTML = `<p class="text-yellow-600">⚠️ La colección "${nombreColeccion}" está vacía</p>`;
+                    return;
                 }
                 
-                resultDiv.innerHTML = `
-                    <div class="text-green-600">
-                        <p class="font-bold">✅ ¡Votos creados exitosamente!</p>
-                        <p class="text-sm">• Evento: ${eventoParaVotar.name}</p>
-                        <p class="text-sm">• Votantes: ${votantes.length} personas</p>
-                        <p class="text-sm">• Ahora puedes hacer sorteos</p>
-                    </div>
+                let html = `
+                    <h3 class="font-bold mb-3 text-blue-800">📊 COLECCIÓN "${nombreColeccion}" (${snapshot.size} documentos mostrados):</h3>
                 `;
                 
-                // Recargar estadísticas
-                setTimeout(() => {
-                    cargarEstadisticasGenerales();
-                    if (document.getElementById('gala-selector').value) {
-                        cargarEstadisticasGala();
-                    }
-                }, 1000);
+                snapshot.forEach((doc, index) => {
+                    const data = doc.data();
+                    html += `
+                        <div class="mb-3 p-3 bg-blue-50 border rounded text-xs">
+                            <strong>Documento ${index + 1}:</strong><br>
+                            <strong>ID:</strong> ${doc.id}<br>
+                            <strong>Datos:</strong><br>
+                            <pre class="mt-1 text-xs overflow-x-auto">${JSON.stringify(data, null, 2)}</pre>
+                        </div>
+                    `;
+                });
+                
+                html += `
+                    <button onclick="usarColeccionParaSorteo('${nombreColeccion}')" 
+                            class="mt-3 w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700">
+                        🎯 Usar "${nombreColeccion}" para sorteos
+                    </button>
+                `;
+                
+                resultDiv.innerHTML = html;
                 
             } catch (error) {
-                resultDiv.innerHTML = `<p class="text-red-600">❌ Error: ${error.message}</p>`;
-                console.error('Error creando votos:', error);
+                resultDiv.innerHTML = `<p class="text-red-600">❌ Error accediendo a "${nombreColeccion}": ${error.message}</p>`;
             }
-            
-            boton.innerHTML = '✨ Crear 10 Votos de Prueba Ahora';
-            boton.disabled = false;
         }
 
-        // Cargar estadísticas de gala específica (SIMPLE)
+        // 🎯 Usar una colección específica para los sorteos
+        window.usarColeccionParaSorteo = function(nombreColeccion) {
+            // Actualizar la función de carga para usar esta colección
+            coleccionVotosActual = nombreColeccion;
+            alert(`✅ Ahora usando "${nombreColeccion}" para los sorteos. Recarga las estadísticas de gala.`);
+            
+            // Recargar estadísticas si hay una gala seleccionada
+            if (document.getElementById('gala-selector').value) {
+                cargarEstadisticasGala();
+            }
+            cargarEstadisticasGenerales();
+        };
+
+        // Cargar estadísticas de gala específica (usando colección dinámica)
         async function cargarEstadisticasGala() {
             const galaId = document.getElementById('gala-selector').value;
             if (!galaId) {
@@ -375,60 +432,94 @@
             }
 
             try {
-                // Buscar votos para esta gala (simple)
-                const votosSnapshot = await db.collection('votes')
+                console.log(`🔍 Buscando votos en colección: "${coleccionVotosActual}"`);
+                
+                // Buscar votos para esta gala en la colección actual
+                const votosSnapshot = await db.collection(coleccionVotosActual)
                     .where('eventId', '==', galaId)
                     .get();
 
                 const participantes = {};
                 
                 if (votosSnapshot.empty) {
+                    // Si no encuentra por eventId, buscar por otros métodos
+                    console.log('❌ No encontrado por eventId, buscando por otros métodos...');
+                    const todosLosVotos = await db.collection(coleccionVotosActual).get();
+                    
+                    if (!todosLosVotos.empty) {
+                        const eventoSeleccionado = galas.find(g => g.id === galaId);
+                        
+                        todosLosVotos.forEach(doc => {
+                            const voto = doc.data();
+                            
+                            // Buscar coincidencias por nombre, fecha, etc.
+                            if (eventoSeleccionado && (
+                                voto.eventName?.includes(eventoSeleccionado.name) ||
+                                voto.event?.includes(eventoSeleccionado.name) ||
+                                voto.gala?.includes(eventoSeleccionado.name)
+                            )) {
+                                const userId = extraerNombreUsuario(voto);
+                                participantes[userId] = (participantes[userId] || 0) + 1;
+                            }
+                        });
+                    }
+                } else {
+                    // Encontrados por eventId exacto
+                    votosSnapshot.forEach(doc => {
+                        const voto = doc.data();
+                        const userId = extraerNombreUsuario(voto);
+                        participantes[userId] = (participantes[userId] || 0) + 1;
+                    });
+                }
+                
+                // Mostrar resultados
+                if (Object.keys(participantes).length > 0) {
+                    const statsHtml = `
+                        <div class="mb-3 p-3 bg-green-50 rounded text-sm">
+                            <strong>✅ Votos encontrados</strong><br>
+                            📊 Colección: "${coleccionVotosActual}"<br>
+                            👥 Participantes: ${Object.keys(participantes).length}
+                        </div>
+                    ` + Object.entries(participantes)
+                        .sort((a, b) => b[1] - a[1])
+                        .map(([user, votos]) => `
+                            <div class="flex justify-between p-2 bg-gray-50 rounded mb-1">
+                                <span class="ticket-animation">🎫 ${user}</span>
+                                <span class="font-bold text-indigo-600">${votos} ticket${votos > 1 ? 's' : ''}</span>
+                            </div>
+                        `).join('');
+
+                    document.getElementById('stats-gala').innerHTML = statsHtml;
+                    votosData.gala = participantes;
+                } else {
                     document.getElementById('stats-gala').innerHTML = `
                         <div class="p-4 bg-yellow-50 rounded">
-                            <p class="text-yellow-800 font-semibold">⚠️ No hay votos para esta gala</p>
+                            <p class="text-yellow-800 font-semibold">⚠️ No se encontraron votos para esta gala</p>
                             <p class="text-sm text-yellow-600 mt-2">
-                                Ve a la pestaña "Configurar" y crea votos de prueba
+                                • Colección actual: "${coleccionVotosActual}"<br>
+                                • Ve a "Configurar" para buscar en otras colecciones
                             </p>
                         </div>
                     `;
                     votosData.gala = {};
-                    return;
                 }
-                
-                // Contar votos por persona
-                votosSnapshot.forEach(doc => {
-                    const voto = doc.data();
-                    const userId = voto.userName || voto.userEmail || voto.userId || 'Usuario Anónimo';
-                    participantes[userId] = (participantes[userId] || 0) + 1;
-                });
-
-                // Mostrar participantes
-                const statsHtml = `
-                    <div class="mb-3 p-3 bg-blue-50 rounded text-sm">
-                        <strong>🎯 Gala seleccionada</strong><br>
-                        📊 Votos encontrados: ${votosSnapshot.size}<br>
-                        👥 Participantes únicos: ${Object.keys(participantes).length}
-                    </div>
-                ` + Object.entries(participantes)
-                    .sort((a, b) => b[1] - a[1])
-                    .map(([user, votos]) => `
-                        <div class="flex justify-between p-2 bg-gray-50 rounded mb-1">
-                            <span class="ticket-animation">🎫 ${user}</span>
-                            <span class="font-bold text-indigo-600">${votos} ticket${votos > 1 ? 's' : ''}</span>
-                        </div>
-                    `).join('');
-
-                document.getElementById('stats-gala').innerHTML = statsHtml;
-                votosData.gala = participantes;
                 
             } catch (error) {
                 console.error('Error:', error);
                 document.getElementById('stats-gala').innerHTML = `
                     <div class="p-4 bg-red-50 rounded">
                         <p class="text-red-800">❌ Error cargando datos</p>
+                        <p class="text-sm text-red-600">${error.message}</p>
                     </div>
                 `;
             }
+        }
+
+        // Función auxiliar para extraer el nombre de usuario de diferentes estructuras
+        function extraerNombreUsuario(voto) {
+            return voto.userName || voto.userEmail || voto.userId || voto.name || 
+                   voto.voter || voto.participant || voto.user || 
+                   `Usuario-${Math.random().toString(36).substr(2, 5)}`;
         }
 
         // Cargar estadísticas generales
