@@ -51,13 +51,17 @@
         <!-- Estado del Sistema -->
         <div class="premio-card rounded-xl p-4 mb-6 shadow-lg">
             <div class="flex items-center justify-between">
-                <div>
+                <div class="flex-1">
                     <h3 class="font-bold text-gray-800">🤖 Sistema Automático</h3>
                     <p class="text-sm text-gray-600" id="estado-sistema">Detectando votos...</p>
                 </div>
                 <div class="text-right">
                     <div class="text-sm text-gray-500">Fuente:</div>
                     <div class="font-bold text-blue-600" id="fuente-datos">Automática</div>
+                    <button onclick="debugearTodasLasGalas()" 
+                            class="mt-2 px-3 py-1 bg-red-600 text-white rounded text-xs hover:bg-red-700">
+                        🔍 Debug: Todas las galas
+                    </button>
                 </div>
             </div>
         </div>
@@ -531,6 +535,52 @@
                 console.error('❌ Error guardando sorteo:', error);
             }
         }
+
+        // 🔍 DEBUG: Revisar TODAS las galas automáticamente
+        window.debugearTodasLasGalas = async function() {
+            console.log('🔍 REVISANDO TODAS LAS GALAS PARA ENCONTRAR VOTOS...');
+            
+            for (const gala of galas) {
+                console.log(`\n📋 === GALA: ${gala.name} (${gala.id}) ===`);
+                
+                // Buscar en diferentes subcolecciones posibles
+                const subcoleccionesPosibles = ['votes', 'publicVotes', 'audienceVotes', 'votos', 'votaciones', 'public'];
+                
+                for (const subcol of subcoleccionesPosibles) {
+                    try {
+                        const snapshot = await db.collection('events').doc(gala.id).collection(subcol).get();
+                        if (!snapshot.empty) {
+                            console.log(`✅ ENCONTRADOS ${snapshot.size} votos en: events/${gala.id}/${subcol}`);
+                            
+                            // Mostrar algunos datos de ejemplo
+                            snapshot.docs.slice(0, 2).forEach((doc, index) => {
+                                console.log(`   📝 Voto ejemplo ${index + 1}:`, doc.data());
+                            });
+                        }
+                    } catch (error) {
+                        // No existe esta subcolección
+                    }
+                }
+                
+                // También buscar en el documento principal
+                try {
+                    const galaDoc = await db.collection('events').doc(gala.id).get();
+                    const data = galaDoc.data();
+                    if (data && (data.votes || data.publicVotes || data.votos)) {
+                        console.log('📊 Votos encontrados en el documento principal:', {
+                            votes: data.votes ? 'SÍ' : 'NO',
+                            publicVotes: data.publicVotes ? 'SÍ' : 'NO',
+                            votos: data.votos ? 'SÍ' : 'NO'
+                        });
+                    }
+                } catch (error) {
+                    console.log('❌ Error accediendo al documento:', error.message);
+                }
+            }
+            
+            console.log('\n🔍 === BÚSQUEDA COMPLETADA ===');
+            alert('Revisa la consola - se revisaron todas las galas buscando votos');
+        };
 
         // 🔍 FUNCIÓN DEBUG TEMPORAL - Ver TODO sobre una gala
         window.debugearGalaCompleta = async function(galaId) {
