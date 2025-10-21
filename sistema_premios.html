@@ -172,18 +172,18 @@
 
         <!-- Tab: Configuración -->
         <div id="content-config" class="tab-content hidden">
-            <!-- Panel Debug -->
+            <!-- Panel Simple para Crear Votos -->
             <div class="premio-card rounded-xl p-6 shadow-lg mb-6">
-                <h2 class="text-xl font-bold mb-4 text-gray-800">🔍 Debug - Ver Datos Reales</h2>
+                <h2 class="text-xl font-bold mb-4 text-gray-800">� Crear Votos de Prueba (Simple)</h2>
                 <div class="space-y-4">
-                    <button id="debug-votos" class="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700">
-                        🔎 Mostrar TODOS los votos de Firebase
+                    <p class="text-gray-600">Como no hay votos en Firebase, vamos a crear algunos para probar:</p>
+                    
+                    <button id="crear-votos-simple" class="w-full bg-green-600 text-white py-4 rounded-lg hover:bg-green-700 text-lg font-bold">
+                        ✨ Crear 10 Votos de Prueba Ahora
                     </button>
-                    <button id="debug-eventos" class="w-full bg-green-600 text-white py-3 rounded-lg hover:bg-green-700">
-                        📋 Mostrar TODOS los eventos de Firebase
-                    </button>
-                    <div id="debug-results" class="mt-4 p-4 bg-gray-50 rounded max-h-96 overflow-y-auto">
-                        <p class="text-gray-500">Haz clic en los botones para ver los datos reales</p>
+                    
+                    <div id="resultado-votos" class="mt-4 p-4 bg-gray-50 rounded">
+                        <p class="text-gray-500">Haz clic para crear votos de ejemplo</p>
                     </div>
                 </div>
             </div>
@@ -296,80 +296,77 @@
             document.getElementById('sortear-gala-btn').addEventListener('click', sortearPremioGala);
             document.getElementById('sortear-general-btn').addEventListener('click', sortearPremioGeneral);
             
-            // Debug buttons
-            document.getElementById('debug-votos').addEventListener('click', debugVerVotos);
-            document.getElementById('debug-eventos').addEventListener('click', debugVerEventos);
+            // Botón simple para crear votos
+            document.getElementById('crear-votos-simple').addEventListener('click', crearVotosDePrueba);
         }
 
-        // 🔍 DEBUG: Ver todos los votos reales
-        async function debugVerVotos() {
-            const resultDiv = document.getElementById('debug-results');
-            resultDiv.innerHTML = '<p class="text-blue-600">🔄 Cargando todos los votos...</p>';
+        // 🚀 SIMPLE: Crear votos de prueba rápido
+        async function crearVotosDePrueba() {
+            const resultDiv = document.getElementById('resultado-votos');
+            const boton = document.getElementById('crear-votos-simple');
+            
+            // Obtener el primer evento disponible
+            if (galas.length === 0) {
+                resultDiv.innerHTML = '<p class="text-red-600">❌ No hay eventos para votar</p>';
+                return;
+            }
+            
+            const eventoParaVotar = galas[0]; // Usar el primer evento
+            
+            boton.innerHTML = '⏳ Creando votos...';
+            boton.disabled = true;
             
             try {
-                const snapshot = await db.collection('votes').get();
+                // Crear 10 votos de diferentes personas
+                const votantes = [
+                    'María González', 'Juan Pérez', 'Ana López', 'Carlos Ruiz', 'Sofia Martinez',
+                    'Pedro Silva', 'Laura Torres', 'Diego Castro', 'Valentina Morales', 'Andrés Vargas'
+                ];
                 
-                if (snapshot.empty) {
-                    resultDiv.innerHTML = '<p class="text-red-600">❌ No hay votos en la colección "votes"</p>';
-                    return;
+                resultDiv.innerHTML = '<p class="text-blue-600">🔄 Creando votos...</p>';
+                
+                for (let i = 0; i < votantes.length; i++) {
+                    const voto = {
+                        eventId: eventoParaVotar.id,
+                        eventName: eventoParaVotar.name,
+                        userName: votantes[i],
+                        userEmail: `${votantes[i].toLowerCase().replace(' ', '.')}@ejemplo.com`,
+                        artistId: 'artista-ejemplo-' + (i % 3 + 1), // 3 artistas diferentes
+                        artistName: 'Artista ' + (i % 3 + 1),
+                        timestamp: new Date(),
+                        createdAt: Date.now()
+                    };
+                    
+                    await db.collection('votes').add(voto);
                 }
                 
-                let votosHTML = `<h3 class="font-bold mb-2">📊 TODOS LOS VOTOS (${snapshot.size} encontrados):</h3>`;
+                resultDiv.innerHTML = `
+                    <div class="text-green-600">
+                        <p class="font-bold">✅ ¡Votos creados exitosamente!</p>
+                        <p class="text-sm">• Evento: ${eventoParaVotar.name}</p>
+                        <p class="text-sm">• Votantes: ${votantes.length} personas</p>
+                        <p class="text-sm">• Ahora puedes hacer sorteos</p>
+                    </div>
+                `;
                 
-                snapshot.forEach((doc, index) => {
-                    const voto = doc.data();
-                    votosHTML += `
-                        <div class="border-b pb-2 mb-2 text-xs">
-                            <strong>Voto ${index + 1}:</strong><br>
-                            <strong>ID:</strong> ${doc.id}<br>
-                            <strong>Datos:</strong> ${JSON.stringify(voto, null, 2)}
-                        </div>
-                    `;
-                });
-                
-                resultDiv.innerHTML = votosHTML;
+                // Recargar estadísticas
+                setTimeout(() => {
+                    cargarEstadisticasGenerales();
+                    if (document.getElementById('gala-selector').value) {
+                        cargarEstadisticasGala();
+                    }
+                }, 1000);
                 
             } catch (error) {
                 resultDiv.innerHTML = `<p class="text-red-600">❌ Error: ${error.message}</p>`;
-                console.error('Error debug votos:', error);
+                console.error('Error creando votos:', error);
             }
-        }
-
-        // 🔍 DEBUG: Ver todos los eventos reales  
-        async function debugVerEventos() {
-            const resultDiv = document.getElementById('debug-results');
-            resultDiv.innerHTML = '<p class="text-blue-600">🔄 Cargando todos los eventos...</p>';
             
-            try {
-                const snapshot = await db.collection('events').get();
-                
-                if (snapshot.empty) {
-                    resultDiv.innerHTML = '<p class="text-red-600">❌ No hay eventos en la colección "events"</p>';
-                    return;
-                }
-                
-                let eventosHTML = `<h3 class="font-bold mb-2">🎪 TODOS LOS EVENTOS (${snapshot.size} encontrados):</h3>`;
-                
-                snapshot.forEach((doc, index) => {
-                    const evento = doc.data();
-                    eventosHTML += `
-                        <div class="border-b pb-2 mb-2 text-xs">
-                            <strong>Evento ${index + 1}:</strong><br>
-                            <strong>ID:</strong> ${doc.id}<br>
-                            <strong>Datos:</strong> ${JSON.stringify(evento, null, 2)}
-                        </div>
-                    `;
-                });
-                
-                resultDiv.innerHTML = eventosHTML;
-                
-            } catch (error) {
-                resultDiv.innerHTML = `<p class="text-red-600">❌ Error: ${error.message}</p>`;
-                console.error('Error debug eventos:', error);
-            }
+            boton.innerHTML = '✨ Crear 10 Votos de Prueba Ahora';
+            boton.disabled = false;
         }
 
-        // Cargar estadísticas de gala específica
+        // Cargar estadísticas de gala específica (SIMPLE)
         async function cargarEstadisticasGala() {
             const galaId = document.getElementById('gala-selector').value;
             if (!galaId) {
@@ -378,115 +375,57 @@
             }
 
             try {
-                console.log('🔍 Cargando estadísticas para gala ID:', galaId);
-                
-                // Primero, mostrar info del evento seleccionado
-                const eventoSeleccionado = galas.find(g => g.id === galaId);
-                console.log('📋 Evento seleccionado:', eventoSeleccionado);
-                
-                // Cargar TODOS los votos para debug
-                const todosVotos = await db.collection('votes').get();
-                console.log('📊 Total votos en Firebase:', todosVotos.size);
-                
-                // Buscar votos que coincidan de diferentes maneras
-                const votosPorEventId = [];
-                const votosPorNombre = [];
-                const votosSinEventId = [];
-                
-                todosVotos.forEach(doc => {
-                    const voto = doc.data();
-                    console.log('🗳️ Voto encontrado:', voto);
-                    
-                    // Buscar por eventId exacto
-                    if (voto.eventId === galaId) {
-                        votosPorEventId.push(voto);
-                    }
-                    
-                    // Buscar por nombre del evento
-                    if (voto.eventName && eventoSeleccionado && 
-                        voto.eventName.includes(eventoSeleccionado.name)) {
-                        votosPorNombre.push(voto);
-                    }
-                    
-                    // Votos sin eventId claro
-                    if (!voto.eventId) {
-                        votosSinEventId.push(voto);
-                    }
-                });
+                // Buscar votos para esta gala (simple)
+                const votosSnapshot = await db.collection('votes')
+                    .where('eventId', '==', galaId)
+                    .get();
 
-                console.log('✅ Votos por eventId:', votosPorEventId.length);
-                console.log('🔍 Votos por nombre:', votosPorNombre.length); 
-                console.log('❓ Votos sin eventId:', votosSinEventId.length);
-
-                // Usar el método que encuentre más votos
-                let votosAUsar = [];
-                if (votosPorEventId.length > 0) {
-                    votosAUsar = votosPorEventId;
-                    console.log('✅ Usando votos por eventId');
-                } else if (votosPorNombre.length > 0) {
-                    votosAUsar = votosPorNombre;
-                    console.log('✅ Usando votos por nombre');
-                } else if (votosSinEventId.length > 0) {
-                    votosAUsar = votosSinEventId;
-                    console.log('⚠️ Usando votos sin eventId (todos los votos)');
-                }
-
-                // Procesar participantes
                 const participantes = {};
-                votosAUsar.forEach(voto => {
-                    const userId = voto.userId || voto.userEmail || voto.userName || voto.voterName || `Usuario-${Math.random().toString(36).substr(2, 5)}`;
-                    participantes[userId] = (participantes[userId] || 0) + 1;
-                });
-
-                console.log('👥 Participantes procesados:', participantes);
-
-                // Mostrar estadísticas con info de debug
-                let statsHtml = '';
                 
-                if (Object.keys(participantes).length > 0) {
-                    statsHtml = `
-                        <div class="mb-4 p-3 bg-blue-50 rounded text-sm">
-                            <strong>🔍 Debug Info:</strong><br>
-                            📊 Método usado: ${votosPorEventId.length > 0 ? 'eventId exacto' : votosPorNombre.length > 0 ? 'nombre del evento' : 'todos los votos'}<br>
-                            🗳️ Votos encontrados: ${votosAUsar.length}<br>
-                            👥 Participantes únicos: ${Object.keys(participantes).length}
-                        </div>
-                    `;
-                    
-                    statsHtml += Object.entries(participantes)
-                        .sort((a, b) => b[1] - a[1])
-                        .map(([user, votos]) => `
-                            <div class="flex justify-between p-2 bg-gray-50 rounded mb-1">
-                                <span class="ticket-animation">🎫 ${user}</span>
-                                <span class="font-bold text-indigo-600">${votos} ticket${votos > 1 ? 's' : ''}</span>
-                            </div>
-                        `).join('');
-                } else {
-                    statsHtml = `
+                if (votosSnapshot.empty) {
+                    document.getElementById('stats-gala').innerHTML = `
                         <div class="p-4 bg-yellow-50 rounded">
-                            <p class="text-yellow-800 font-semibold">⚠️ No se encontraron votos para esta gala</p>
+                            <p class="text-yellow-800 font-semibold">⚠️ No hay votos para esta gala</p>
                             <p class="text-sm text-yellow-600 mt-2">
-                                <strong>Debug:</strong><br>
-                                • ID del evento: ${galaId}<br>
-                                • Nombre del evento: ${eventoSeleccionado?.name}<br>
-                                • Total votos en Firebase: ${todosVotos.size}<br>
-                                • Haz clic en "🔎 Mostrar TODOS los votos" para ver la estructura
+                                Ve a la pestaña "Configurar" y crea votos de prueba
                             </p>
                         </div>
                     `;
+                    votosData.gala = {};
+                    return;
                 }
+                
+                // Contar votos por persona
+                votosSnapshot.forEach(doc => {
+                    const voto = doc.data();
+                    const userId = voto.userName || voto.userEmail || voto.userId || 'Usuario Anónimo';
+                    participantes[userId] = (participantes[userId] || 0) + 1;
+                });
+
+                // Mostrar participantes
+                const statsHtml = `
+                    <div class="mb-3 p-3 bg-blue-50 rounded text-sm">
+                        <strong>🎯 Gala seleccionada</strong><br>
+                        📊 Votos encontrados: ${votosSnapshot.size}<br>
+                        👥 Participantes únicos: ${Object.keys(participantes).length}
+                    </div>
+                ` + Object.entries(participantes)
+                    .sort((a, b) => b[1] - a[1])
+                    .map(([user, votos]) => `
+                        <div class="flex justify-between p-2 bg-gray-50 rounded mb-1">
+                            <span class="ticket-animation">🎫 ${user}</span>
+                            <span class="font-bold text-indigo-600">${votos} ticket${votos > 1 ? 's' : ''}</span>
+                        </div>
+                    `).join('');
 
                 document.getElementById('stats-gala').innerHTML = statsHtml;
-                
-                // Guardar datos para sorteo
                 votosData.gala = participantes;
                 
             } catch (error) {
-                console.error('❌ Error cargando estadísticas de gala:', error);
+                console.error('Error:', error);
                 document.getElementById('stats-gala').innerHTML = `
                     <div class="p-4 bg-red-50 rounded">
-                        <p class="text-red-800">❌ Error cargando estadísticas</p>
-                        <p class="text-sm text-red-600">${error.message}</p>
+                        <p class="text-red-800">❌ Error cargando datos</p>
                     </div>
                 `;
             }
