@@ -378,36 +378,103 @@
             }
 
             try {
-                console.log('Cargando estadísticas para gala:', galaId);
+                console.log('🔍 Cargando estadísticas para gala ID:', galaId);
                 
-                // Cargar votos de la gala
-                const votosSnapshot = await db.collection('votes')
-                    .where('eventId', '==', galaId)
-                    .get();
-
-                console.log('Votos encontrados:', votosSnapshot.size);
+                // Primero, mostrar info del evento seleccionado
+                const eventoSeleccionado = galas.find(g => g.id === galaId);
+                console.log('📋 Evento seleccionado:', eventoSeleccionado);
                 
-                const participantes = {};
-                votosSnapshot.forEach(doc => {
+                // Cargar TODOS los votos para debug
+                const todosVotos = await db.collection('votes').get();
+                console.log('📊 Total votos en Firebase:', todosVotos.size);
+                
+                // Buscar votos que coincidan de diferentes maneras
+                const votosPorEventId = [];
+                const votosPorNombre = [];
+                const votosSinEventId = [];
+                
+                todosVotos.forEach(doc => {
                     const voto = doc.data();
-                    console.log('Voto:', voto);
-                    const userId = voto.userId || voto.userEmail || voto.userName || 'Usuario Anónimo';
+                    console.log('🗳️ Voto encontrado:', voto);
+                    
+                    // Buscar por eventId exacto
+                    if (voto.eventId === galaId) {
+                        votosPorEventId.push(voto);
+                    }
+                    
+                    // Buscar por nombre del evento
+                    if (voto.eventName && eventoSeleccionado && 
+                        voto.eventName.includes(eventoSeleccionado.name)) {
+                        votosPorNombre.push(voto);
+                    }
+                    
+                    // Votos sin eventId claro
+                    if (!voto.eventId) {
+                        votosSinEventId.push(voto);
+                    }
+                });
+
+                console.log('✅ Votos por eventId:', votosPorEventId.length);
+                console.log('🔍 Votos por nombre:', votosPorNombre.length); 
+                console.log('❓ Votos sin eventId:', votosSinEventId.length);
+
+                // Usar el método que encuentre más votos
+                let votosAUsar = [];
+                if (votosPorEventId.length > 0) {
+                    votosAUsar = votosPorEventId;
+                    console.log('✅ Usando votos por eventId');
+                } else if (votosPorNombre.length > 0) {
+                    votosAUsar = votosPorNombre;
+                    console.log('✅ Usando votos por nombre');
+                } else if (votosSinEventId.length > 0) {
+                    votosAUsar = votosSinEventId;
+                    console.log('⚠️ Usando votos sin eventId (todos los votos)');
+                }
+
+                // Procesar participantes
+                const participantes = {};
+                votosAUsar.forEach(voto => {
+                    const userId = voto.userId || voto.userEmail || voto.userName || voto.voterName || `Usuario-${Math.random().toString(36).substr(2, 5)}`;
                     participantes[userId] = (participantes[userId] || 0) + 1;
                 });
 
-                console.log('Participantes procesados:', participantes);
+                console.log('👥 Participantes procesados:', participantes);
 
-                // Mostrar estadísticas
-                const statsHtml = Object.keys(participantes).length > 0 
-                    ? Object.entries(participantes)
+                // Mostrar estadísticas con info de debug
+                let statsHtml = '';
+                
+                if (Object.keys(participantes).length > 0) {
+                    statsHtml = `
+                        <div class="mb-4 p-3 bg-blue-50 rounded text-sm">
+                            <strong>🔍 Debug Info:</strong><br>
+                            📊 Método usado: ${votosPorEventId.length > 0 ? 'eventId exacto' : votosPorNombre.length > 0 ? 'nombre del evento' : 'todos los votos'}<br>
+                            🗳️ Votos encontrados: ${votosAUsar.length}<br>
+                            👥 Participantes únicos: ${Object.keys(participantes).length}
+                        </div>
+                    `;
+                    
+                    statsHtml += Object.entries(participantes)
                         .sort((a, b) => b[1] - a[1])
                         .map(([user, votos]) => `
-                            <div class="flex justify-between p-2 bg-gray-50 rounded">
+                            <div class="flex justify-between p-2 bg-gray-50 rounded mb-1">
                                 <span class="ticket-animation">🎫 ${user}</span>
                                 <span class="font-bold text-indigo-600">${votos} ticket${votos > 1 ? 's' : ''}</span>
                             </div>
-                        `).join('')
-                    : '<p class="text-gray-500">No hay votos registrados para esta gala</p>';
+                        `).join('');
+                } else {
+                    statsHtml = `
+                        <div class="p-4 bg-yellow-50 rounded">
+                            <p class="text-yellow-800 font-semibold">⚠️ No se encontraron votos para esta gala</p>
+                            <p class="text-sm text-yellow-600 mt-2">
+                                <strong>Debug:</strong><br>
+                                • ID del evento: ${galaId}<br>
+                                • Nombre del evento: ${eventoSeleccionado?.name}<br>
+                                • Total votos en Firebase: ${todosVotos.size}<br>
+                                • Haz clic en "🔎 Mostrar TODOS los votos" para ver la estructura
+                            </p>
+                        </div>
+                    `;
+                }
 
                 document.getElementById('stats-gala').innerHTML = statsHtml;
                 
@@ -415,8 +482,13 @@
                 votosData.gala = participantes;
                 
             } catch (error) {
-                console.error('Error cargando estadísticas de gala:', error);
-                document.getElementById('stats-gala').innerHTML = '<p class="text-red-500">Error cargando estadísticas</p>';
+                console.error('❌ Error cargando estadísticas de gala:', error);
+                document.getElementById('stats-gala').innerHTML = `
+                    <div class="p-4 bg-red-50 rounded">
+                        <p class="text-red-800">❌ Error cargando estadísticas</p>
+                        <p class="text-sm text-red-600">${error.message}</p>
+                    </div>
+                `;
             }
         }
 
