@@ -324,6 +324,10 @@
                                 Ruta: events/${galaId}/votes<br>
                                 Cuando la gente vote, aparecerán aquí automáticamente
                             </p>
+                            <button onclick="debugearGalaCompleta('${galaId}')" 
+                                    class="mt-3 px-4 py-2 bg-blue-600 text-white rounded text-sm hover:bg-blue-700">
+                                🔍 Debug: Ver TODO sobre esta gala
+                            </button>
                         </div>
                     `;
                     votosData.gala = {};
@@ -527,6 +531,52 @@
                 console.error('❌ Error guardando sorteo:', error);
             }
         }
+
+        // 🔍 FUNCIÓN DEBUG TEMPORAL - Ver TODO sobre una gala
+        window.debugearGalaCompleta = async function(galaId) {
+            console.log(`🔍 DEBUGEANDO GALA COMPLETA: ${galaId}`);
+            
+            try {
+                // 1. Info básica de la gala
+                const galaDoc = await db.collection('events').doc(galaId).get();
+                console.log('📋 Documento de gala:', galaDoc.exists ? galaDoc.data() : 'NO EXISTE');
+                
+                // 2. Buscar en subcolección votes
+                console.log('🔍 Buscando en events/' + galaId + '/votes');
+                const votesCollection = await db.collection('events').doc(galaId).collection('votes').get();
+                console.log('📊 Votos encontrados:', votesCollection.size);
+                
+                if (votesCollection.size > 0) {
+                    console.log('📝 Datos de votos:');
+                    votesCollection.forEach((doc, index) => {
+                        console.log(`Voto ${index + 1}:`, doc.id, doc.data());
+                    });
+                }
+                
+                // 3. Buscar en otras posibles subcolecciones
+                const posiblesSubcolecciones = ['publicVotes', 'audienceVotes', 'votes', 'votaciones', 'votos'];
+                
+                for (const subcol of posiblesSubcolecciones) {
+                    try {
+                        const snapshot = await db.collection('events').doc(galaId).collection(subcol).limit(1).get();
+                        if (!snapshot.empty) {
+                            console.log(`✅ Encontrada subcolección: events/${galaId}/${subcol}`);
+                        }
+                    } catch (error) {
+                        // No existe
+                    }
+                }
+                
+                // 4. Ver todas las subcolecciones disponibles
+                console.log('🔍 Intentando listar todas las subcolecciones...');
+                
+                alert('Revisa la consola del navegador (F12) para ver todos los detalles de debug');
+                
+            } catch (error) {
+                console.error('❌ Error en debug:', error);
+                alert('Error en debug: ' + error.message);
+            }
+        };
     </script>
 </body>
 </html>
