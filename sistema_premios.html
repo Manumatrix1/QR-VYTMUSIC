@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎁 Sistema de Premios VYT-MUSIC</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="firebase_config.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+        .premio-card { background: rgba(255,255,255,0.95); backdrop-filter: blur(10px); }
+        .ticket-animation { animation: ticketPulse 2s infinite; }
+        @keyframes ticketPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
+        .sorteo-animation { animation: spin 1s linear infinite; }
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="min-h-screen">
+    <div class="container mx-auto max-w-6xl p-4">
+        <!-- Header -->
+        <header class="text-center mb-8">
+            <div class="flex items-center justify-center mb-4">
+                <div class="w-16 h-16 mr-4">
+                    <img src="imagenes/logo-movimiento.png" alt="VYT-MUSIC Logo" class="w-full h-full object-contain rounded-lg shadow-lg">
+                </div>
+                <div>
+                    <h1 class="text-4xl font-bold text-white">🎁 Sistema de Premios</h1>
+                    <p class="text-xl text-white opacity-90">Lotería VYT-MUSIC - ¡Más votos, más chances!</p>
+                </div>
+            </div>
+        </header>
+
+        <!-- Navegación de Pestañas -->
+        <div class="flex justify-center mb-6">
+            <div class="bg-white rounded-lg p-2 shadow-lg">
+                <button id="tab-gala" class="px-6 py-3 rounded-lg bg-indigo-600 text-white font-semibold">Premios por Gala</button>
+                <button id="tab-general" class="px-6 py-3 rounded-lg text-gray-600 font-semibold hover:bg-gray-100">Premio General</button>
+                <button id="tab-config" class="px-6 py-3 rounded-lg text-gray-600 font-semibold hover:bg-gray-100">⚙️ Configurar</button>
+            </div>
+        </div>
+
+        <!-- Tab: Premios por Gala -->
+        <div id="content-gala" class="tab-content">
+            <div class="grid md:grid-cols-2 gap-6">
+                <!-- Panel de Control -->
+                <div class="premio-card rounded-xl p-6 shadow-lg">
+                    <h2 class="text-2xl font-bold mb-4 text-gray-800">🎪 Sorteo por Gala</h2>
+                    
+                    <div class="mb-4">
+                        <label class="block text-gray-700 font-semibold mb-2">Seleccionar Gala:</label>
+                        <select id="gala-selector" class="w-full p-3 border rounded-lg bg-white">
+                            <option value="">Cargando galas...</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="block text-gray-700 font-semibold mb-2">Premio a Sortear:</label>
+                        <input type="text" id="premio-gala-input" placeholder="Ej: Entrada VIP próximo evento" 
+                               class="w-full p-3 border rounded-lg">
+                    </div>
+
+                    <button id="sortear-gala-btn" 
+                            class="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold py-4 rounded-lg hover:shadow-xl transition-all">
+                        🎲 Sortear Premio de Gala
+                    </button>
+
+                    <div id="resultado-gala" class="mt-4 hidden">
+                        <div class="bg-yellow-100 border-l-4 border-yellow-500 p-4 rounded">
+                            <h3 class="font-bold text-yellow-800">🏆 ¡GANADOR!</h3>
+                            <div id="ganador-gala-info" class="text-yellow-700"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Estadísticas de Gala -->
+                <div class="premio-card rounded-xl p-6 shadow-lg">
+                    <h3 class="text-xl font-bold mb-4 text-gray-800">📊 Participantes de la Gala</h3>
+                    <div id="stats-gala" class="space-y-2">
+                        <p class="text-gray-600">Selecciona una gala para ver estadísticas</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab: Premio General -->
+        <div id="content-general" class="tab-content hidden">
+            <div class="grid md:grid-cols-2 gap-6">
+                <!-- Panel de Control General -->
+                <div class="premio-card rounded-xl p-6 shadow-lg">
+                    <h2 class="text-2xl font-bold mb-4 text-gray-800">🏆 Sorteo General del Certamen</h2>
+                    
+                    <div class="mb-4">
+                        <label class="block text-gray-700 font-semibold mb-2">Gran Premio:</label>
+                        <input type="text" id="premio-general-input" placeholder="Ej: iPhone 15, $500 USD, etc." 
+                               class="w-full p-3 border rounded-lg">
+                    </div>
+
+                    <div class="mb-4 p-4 bg-blue-50 rounded-lg">
+                        <p class="text-blue-800 text-sm">
+                            <strong>💡 Nota:</strong> Este sorteo incluye TODOS los votos de TODAS las galas del certamen.
+                        </p>
+                    </div>
+
+                    <button id="sortear-general-btn" 
+                            class="w-full bg-gradient-to-r from-green-600 to-blue-600 text-white font-bold py-4 rounded-lg hover:shadow-xl transition-all">
+                        🎁 Sortear Gran Premio
+                    </button>
+
+                    <div id="resultado-general" class="mt-4 hidden">
+                        <div class="bg-green-100 border-l-4 border-green-500 p-4 rounded">
+                            <h3 class="font-bold text-green-800">🎉 ¡GRAN GANADOR!</h3>
+                            <div id="ganador-general-info" class="text-green-700"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Estadísticas Generales -->
+                <div class="premio-card rounded-xl p-6 shadow-lg">
+                    <h3 class="text-xl font-bold mb-4 text-gray-800">📈 Estadísticas Generales</h3>
+                    <div id="stats-general">
+                        <div class="space-y-3">
+                            <div class="flex justify-between p-3 bg-gray-50 rounded">
+                                <span class="font-semibold">Total Participantes:</span>
+                                <span id="total-participantes" class="text-indigo-600 font-bold">-</span>
+                            </div>
+                            <div class="flex justify-between p-3 bg-gray-50 rounded">
+                                <span class="font-semibold">Total Votos:</span>
+                                <span id="total-votos" class="text-green-600 font-bold">-</span>
+                            </div>
+                            <div class="flex justify-between p-3 bg-gray-50 rounded">
+                                <span class="font-semibold">Galas Realizadas:</span>
+                                <span id="total-galas" class="text-purple-600 font-bold">-</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Top Participantes -->
+            <div class="mt-6">
+                <div class="premio-card rounded-xl p-6 shadow-lg">
+                    <h3 class="text-xl font-bold mb-4 text-gray-800">🔥 Top Participantes (más tickets)</h3>
+                    <div id="top-participantes" class="space-y-2">
+                        <!-- Se llena dinámicamente -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab: Configuración -->
+        <div id="content-config" class="tab-content hidden">
+            <div class="premio-card rounded-xl p-6 shadow-lg max-w-2xl mx-auto">
+                <h2 class="text-2xl font-bold mb-4 text-gray-800">⚙️ Configuración de Premios</h2>
+                
+                <div class="space-y-6">
+                    <div>
+                        <label class="block text-gray-700 font-semibold mb-2">Multiplicador de Tickets:</label>
+                        <select id="ticket-multiplier" class="w-full p-3 border rounded-lg">
+                            <option value="1">1 voto = 1 ticket (Normal)</option>
+                            <option value="2">1 voto = 2 tickets (Doble chance)</option>
+                            <option value="3">1 voto = 3 tickets (Triple chance)</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <h3 class="font-bold text-gray-700 mb-3">Historial de Sorteos:</h3>
+                        <div id="historial-sorteos" class="space-y-2">
+                            <!-- Se llena dinámicamente -->
+                        </div>
+                    </div>
+
+                    <button id="limpiar-historial" class="w-full bg-red-500 text-white font-bold py-3 rounded-lg hover:bg-red-600">
+                        🗑️ Limpiar Historial de Sorteos
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Botón Volver -->
+        <div class="text-center mt-8">
+            <a href="eventos.html" class="inline-block bg-gray-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-gray-700 transition-colors">
+                ← Volver al Gestor de Eventos
+            </a>
+        </div>
+    </div>
+
+    <script>
+        // Variables globales
+        let galas = [];
+        let votosData = {};
+        let sorteoEnProceso = false;
+
+        // Inicialización
+        document.addEventListener('DOMContentLoaded', function() {
+            cargarGalas();
+            cargarEstadisticasGenerales();
+            configurarTabs();
+            configurarEventos();
+        });
+
+        // Configurar pestañas
+        function configurarTabs() {
+            const tabs = ['gala', 'general', 'config'];
+            tabs.forEach(tab => {
+                document.getElementById(`tab-${tab}`).addEventListener('click', () => mostrarTab(tab));
+            });
+        }
+
+        function mostrarTab(activeTab) {
+            // Ocultar todos los contenidos
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.add('hidden');
+            });
+            
+            // Mostrar contenido activo
+            document.getElementById(`content-${activeTab}`).classList.remove('hidden');
+            
+            // Actualizar botones
+            document.querySelectorAll('[id^="tab-"]').forEach(btn => {
+                btn.className = 'px-6 py-3 rounded-lg text-gray-600 font-semibold hover:bg-gray-100';
+            });
+            document.getElementById(`tab-${activeTab}`).className = 'px-6 py-3 rounded-lg bg-indigo-600 text-white font-semibold';
+        }
+
+        // Cargar galas desde Firebase
+        async function cargarGalas() {
+            try {
+                const snapshot = await db.collection('events').get();
+                galas = [];
+                const selector = document.getElementById('gala-selector');
+                selector.innerHTML = '<option value="">Selecciona una gala</option>';
+                
+                snapshot.forEach(doc => {
+                    const gala = { id: doc.id, ...doc.data() };
+                    galas.push(gala);
+                    selector.innerHTML += `<option value="${gala.id}">${gala.name} - ${gala.date}</option>`;
+                });
+                
+                console.log('Galas cargadas:', galas.length);
+            } catch (error) {
+                console.error('Error cargando galas:', error);
+            }
+        }
+
+        // Configurar eventos
+        function configurarEventos() {
+            document.getElementById('gala-selector').addEventListener('change', cargarEstadisticasGala);
+            document.getElementById('sortear-gala-btn').addEventListener('click', sortearPremioGala);
+            document.getElementById('sortear-general-btn').addEventListener('click', sortearPremioGeneral);
+        }
+
+        // Cargar estadísticas de gala específica
+        async function cargarEstadisticasGala() {
+            const galaId = document.getElementById('gala-selector').value;
+            if (!galaId) {
+                document.getElementById('stats-gala').innerHTML = '<p class="text-gray-600">Selecciona una gala para ver estadísticas</p>';
+                return;
+            }
+
+            try {
+                // Cargar votos de la gala
+                const votosSnapshot = await db.collection('votes')
+                    .where('eventId', '==', galaId)
+                    .get();
+
+                const participantes = {};
+                votosSnapshot.forEach(doc => {
+                    const voto = doc.data();
+                    const userId = voto.userId || voto.userEmail || 'Usuario Anónimo';
+                    participantes[userId] = (participantes[userId] || 0) + 1;
+                });
+
+                // Mostrar estadísticas
+                const statsHtml = Object.keys(participantes).length > 0 
+                    ? Object.entries(participantes)
+                        .sort((a, b) => b[1] - a[1])
+                        .map(([user, votos]) => `
+                            <div class="flex justify-between p-2 bg-gray-50 rounded">
+                                <span class="ticket-animation">🎫 ${user}</span>
+                                <span class="font-bold text-indigo-600">${votos} ticket${votos > 1 ? 's' : ''}</span>
+                            </div>
+                        `).join('')
+                    : '<p class="text-gray-500">No hay votos registrados para esta gala</p>';
+
+                document.getElementById('stats-gala').innerHTML = statsHtml;
+                
+                // Guardar datos para sorteo
+                votosData.gala = participantes;
+                
+            } catch (error) {
+                console.error('Error cargando estadísticas de gala:', error);
+            }
+        }
+
+        // Cargar estadísticas generales
+        async function cargarEstadisticasGenerales() {
+            try {
+                const votosSnapshot = await db.collection('votes').get();
+                const participantesGenerales = {};
+                let totalVotos = 0;
+
+                votosSnapshot.forEach(doc => {
+                    const voto = doc.data();
+                    const userId = voto.userId || voto.userEmail || 'Usuario Anónimo';
+                    participantesGenerales[userId] = (participantesGenerales[userId] || 0) + 1;
+                    totalVotos++;
+                });
+
+                // Actualizar estadísticas
+                document.getElementById('total-participantes').textContent = Object.keys(participantesGenerales).length;
+                document.getElementById('total-votos').textContent = totalVotos;
+                document.getElementById('total-galas').textContent = galas.length;
+
+                // Top participantes
+                const topHtml = Object.entries(participantesGenerales)
+                    .sort((a, b) => b[1] - a[1])
+                    .slice(0, 10)
+                    .map(([user, votos], index) => `
+                        <div class="flex justify-between items-center p-3 bg-gray-50 rounded">
+                            <span class="flex items-center">
+                                <span class="text-2xl mr-2">${index < 3 ? ['🥇', '🥈', '🥉'][index] : '🎫'}</span>
+                                ${user}
+                            </span>
+                            <span class="font-bold text-green-600">${votos} ticket${votos > 1 ? 's' : ''}</span>
+                        </div>
+                    `).join('');
+
+                document.getElementById('top-participantes').innerHTML = topHtml;
+                
+                // Guardar datos para sorteo
+                votosData.general = participantesGenerales;
+                
+            } catch (error) {
+                console.error('Error cargando estadísticas generales:', error);
+            }
+        }
+
+        // Sortear premio de gala
+        async function sortearPremioGala() {
+            const galaId = document.getElementById('gala-selector').value;
+            const premio = document.getElementById('premio-gala-input').value;
+            
+            if (!galaId || !premio) {
+                alert('Por favor selecciona una gala y especifica el premio');
+                return;
+            }
+
+            if (!votosData.gala || Object.keys(votosData.gala).length === 0) {
+                alert('No hay participantes en esta gala para sortear');
+                return;
+            }
+
+            await realizarSorteo(votosData.gala, premio, 'gala');
+        }
+
+        // Sortear premio general
+        async function sortearPremioGeneral() {
+            const premio = document.getElementById('premio-general-input').value;
+            
+            if (!premio) {
+                alert('Por favor especifica el gran premio');
+                return;
+            }
+
+            if (!votosData.general || Object.keys(votosData.general).length === 0) {
+                alert('No hay participantes para sortear');
+                return;
+            }
+
+            await realizarSorteo(votosData.general, premio, 'general');
+        }
+
+        // Realizar sorteo (algoritmo ponderado)
+        async function realizarSorteo(participantes, premio, tipo) {
+            if (sorteoEnProceso) return;
+            
+            sorteoEnProceso = true;
+            const boton = document.getElementById(`sortear-${tipo}-btn`);
+            const resultado = document.getElementById(`resultado-${tipo}`);
+            
+            // Animación de sorteo
+            boton.innerHTML = '<div class="sorteo-animation inline-block w-6 h-6 border-4 border-white border-t-transparent rounded-full"></div> Sorteando...';
+            boton.disabled = true;
+
+            // Crear array ponderado (cada voto = una entrada)
+            const tickets = [];
+            Object.entries(participantes).forEach(([user, votos]) => {
+                for (let i = 0; i < votos; i++) {
+                    tickets.push(user);
+                }
+            });
+
+            // Simular tiempo de sorteo
+            await new Promise(resolve => setTimeout(resolve, 2000));
+
+            // Seleccionar ganador aleatorio
+            const ganadorIndex = Math.floor(Math.random() * tickets.length);
+            const ganador = tickets[ganadorIndex];
+            const ticketsGanador = participantes[ganador];
+
+            // Mostrar resultado
+            document.getElementById(`ganador-${tipo}-info`).innerHTML = `
+                <div class="text-lg font-bold">${ganador}</div>
+                <div class="text-sm">Premio: ${premio}</div>
+                <div class="text-xs mt-2">Tenía ${ticketsGanador} ticket${ticketsGanador > 1 ? 's' : ''} de ${tickets.length} totales</div>
+                <div class="text-xs">Probabilidad: ${((ticketsGanador/tickets.length)*100).toFixed(1)}%</div>
+            `;
+            
+            resultado.classList.remove('hidden');
+
+            // Guardar en historial
+            await guardarSorteo(ganador, premio, tipo, ticketsGanador, tickets.length);
+
+            // Restaurar botón
+            boton.innerHTML = tipo === 'gala' ? '🎲 Sortear Premio de Gala' : '🎁 Sortear Gran Premio';
+            boton.disabled = false;
+            sorteoEnProceso = false;
+        }
+
+        // Guardar sorteo en Firebase
+        async function guardarSorteo(ganador, premio, tipo, ticketsGanador, totalTickets) {
+            try {
+                await db.collection('sorteos').add({
+                    ganador: ganador,
+                    premio: premio,
+                    tipo: tipo,
+                    ticketsGanador: ticketsGanador,
+                    totalTickets: totalTickets,
+                    probabilidad: ((ticketsGanador/totalTickets)*100).toFixed(1),
+                    fecha: new Date(),
+                    timestamp: Date.now()
+                });
+                console.log('Sorteo guardado exitosamente');
+            } catch (error) {
+                console.error('Error guardando sorteo:', error);
+            }
+        }
+    </script>
+</body>
+</html>
