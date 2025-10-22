@@ -253,19 +253,52 @@
             
             console.log(`📊 RESUMEN VOTOS PÚBLICOS:`, publicVotes);
 
-            // Calcular votos de jurados
+            // Calcular votos de jurados - CORREGIR RUTA Y ESTRUCTURA
             const juryVotes = {};
-            const allJuryVotesSnapshot = await getDocs(collection(db, `events/${eventId}/jury_votes`));
-            allJuryVotesSnapshot.docs.forEach(voteDoc => {
-                const voteData = voteDoc.data();
-                const artistId = voteData.artistId;
-                const score = voteData.score || voteData.rating || 0;
+            
+            // 🔥 INTENTO 1: jury_evaluations (RUTA CORRECTA)
+            try {
+                const allJuryVotesSnapshot = await getDocs(collection(db, `events/${eventId}/jury_evaluations`));
+                console.log(`🎭 Encontrados ${allJuryVotesSnapshot.docs.length} votos de jurados en jury_evaluations`);
                 
-                if (artistId) {
-                    if (!juryVotes[artistId]) juryVotes[artistId] = [];
-                    juryVotes[artistId].push(score);
+                allJuryVotesSnapshot.docs.forEach(voteDoc => {
+                    const voteData = voteDoc.data();
+                    const artistId = voteData.artistId;
+                    const score = voteData.average || voteData.score || 0; // Usar average como score principal
+                    
+                    console.log(`📊 Voto jurado para ${artistId}: ${score} pts`, voteData);
+                    
+                    if (artistId && score > 0) {
+                        if (!juryVotes[artistId]) juryVotes[artistId] = [];
+                        juryVotes[artistId].push(score);
+                    }
+                });
+            } catch (error) {
+                console.log('⚠️ Error leyendo jury_evaluations:', error.message);
+            }
+            
+            // 🔥 INTENTO 2: jury_votes (RUTA ALTERNATIVA)
+            if (Object.keys(juryVotes).length === 0) {
+                try {
+                    const fallbackSnapshot = await getDocs(collection(db, `events/${eventId}/jury_votes`));
+                    console.log(`🎭 Fallback: Encontrados ${fallbackSnapshot.docs.length} votos en jury_votes`);
+                    
+                    fallbackSnapshot.docs.forEach(voteDoc => {
+                        const voteData = voteDoc.data();
+                        const artistId = voteData.artistId;
+                        const score = voteData.average || voteData.score || voteData.rating || 0;
+                        
+                        if (artistId && score > 0) {
+                            if (!juryVotes[artistId]) juryVotes[artistId] = [];
+                            juryVotes[artistId].push(score);
+                        }
+                    });
+                } catch (error) {
+                    console.log('⚠️ Error leyendo jury_votes:', error.message);
                 }
-            });
+            }
+            
+            console.log('🎯 Votos de jurados procesados:', juryVotes);
 
             // Actualizar scores de artistas
             return artists.map(artist => {
@@ -275,14 +308,18 @@
                     ? juryScores.reduce((sum, score) => sum + score, 0) / juryScores.length 
                     : 0;
                 
-                const finalScore = (publicScore * 0.4) + (avgJuryScore * 0.6);
+                // Convertir puntaje de jurado a escala similar al público si es necesario
+                const normalizedJuryScore = avgJuryScore > 100 ? avgJuryScore / 10 : avgJuryScore;
+                const finalScore = (publicScore * 0.4) + (normalizedJuryScore * 0.6);
                 
-                console.log(`🎵 ${artist.name}: Público=${publicScore}, Jurado=${avgJuryScore.toFixed(2)}, Final=${finalScore.toFixed(2)}`);
+                console.log(`🎵 ${artist.name}: Público=${publicScore}, Jurado=${avgJuryScore.toFixed(2)} (norm: ${normalizedJuryScore.toFixed(2)}), Final=${finalScore.toFixed(2)}`);
                 
                 return {
                     ...artist,
                     totalScore: finalScore,
                     publicScore,
+                    juryScore: avgJuryScore, // Agregar para debugging
+                    juryVoteCount: juryScores.length, // Agregar contador
                     juryScore: avgJuryScore,
                     totalRatingsCount: publicScore + juryScores.length
                 };
