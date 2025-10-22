@@ -726,46 +726,39 @@
                     console.log(`📊 Método 2: Buscando en artists scores`);
                     const artistsSnapshot = await db.collection('events').doc(galaId).collection('artists').get();
                     
+                    // 🔥 PRIMERO OBTENER TICKETS UNA SOLA VEZ
+                    let ticketsConNombres = [];
+                    try {
+                        const ticketsSnapshot = await db.collection('events').doc(galaId).collection('tickets').get();
+                        ticketsSnapshot.forEach(ticketDoc => {
+                            const ticket = ticketDoc.data();
+                            if (ticket.name && ticket.name.trim()) {
+                                ticketsConNombres.push(ticket.name.trim());
+                            }
+                        });
+                        console.log(`🎫 Tickets encontrados con nombres: ${ticketsConNombres.length}`);
+                    } catch (error) {
+                        console.log('❌ Error obteniendo tickets:', error.message);
+                    }
+
+                    // Ahora procesar artistas con los nombres reales
                     artistsSnapshot.forEach(doc => {
                         const artist = doc.data();
                         if (artist.totalRatingsCount > 0) {
-                            // 🔥 BUSCAR NOMBRES REALES DE LOS TICKETS EN LUGAR DE GENÉRICOS
-                            console.log(`🎭 ${artist.name} tiene ${artist.totalRatingsCount} votos, buscando nombres reales...`);
+                            console.log(`🎭 ${artist.name} tiene ${artist.totalRatingsCount} votos`);
                             
-                            // Intentar obtener los nombres reales de los tickets
-                            try {
-                                const ticketsSnapshot = await db.collection('events').doc(gala.id).collection('tickets').get();
-                                const ticketsConNombres = [];
-                                
-                                ticketsSnapshot.forEach(ticketDoc => {
-                                    const ticket = ticketDoc.data();
-                                    if (ticket.name && ticket.name.trim()) {
-                                        ticketsConNombres.push(ticket.name.trim());
-                                    }
+                            // Si tenemos nombres reales de tickets, usar esos
+                            if (ticketsConNombres.length > 0) {
+                                // Distribuir los votos entre los tickets disponibles
+                                ticketsConNombres.forEach(nombreReal => {
+                                    participantes[nombreReal] = (participantes[nombreReal] || 0) + 1;
+                                    totalVotos++;
                                 });
-                                
-                                console.log(`🎫 Tickets encontrados con nombres: ${ticketsConNombres.length}`);
-                                
-                                // Si encontramos tickets con nombres reales, usar esos
-                                if (ticketsConNombres.length > 0) {
-                                    ticketsConNombres.forEach(nombreReal => {
-                                        participantes[nombreReal] = (participantes[nombreReal] || 0) + 1;
-                                        totalVotos++;
-                                    });
-                                } else {
-                                    // Solo si no hay nombres reales, usar genéricos
-                                    console.log(`⚠️ No se encontraron nombres reales, usando genéricos`);
-                                    for (let i = 1; i <= artist.totalRatingsCount; i++) {
-                                        const nombreGenerico = `Participante-${gala.name}-${i}`;
-                                        participantes[nombreGenerico] = 1;
-                                        totalVotos++;
-                                    }
-                                }
-                            } catch (error) {
-                                console.log('❌ Error buscando tickets:', error.message);
-                                // Fallback a nombres genéricos
+                            } else {
+                                // Solo si no hay nombres reales, usar genéricos
+                                console.log(`⚠️ No se encontraron nombres reales para ${artist.name}, usando genéricos`);
                                 for (let i = 1; i <= artist.totalRatingsCount; i++) {
-                                    const nombreGenerico = `Participante-${gala.name}-${i}`;
+                                    const nombreGenerico = `${artist.name}-Voto-${i}`;
                                     participantes[nombreGenerico] = 1;
                                     totalVotos++;
                                 }
