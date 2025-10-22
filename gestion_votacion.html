@@ -117,6 +117,58 @@
         }
         document.getElementById('back-to-panel-link').href = `panel_evento.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`;
         document.getElementById('event-name-display').textContent = eventName;
+        
+        // 🔍 FUNCIÓN DE DEBUGGING COMPLETO
+        window.debugAllVotes = async function() {
+            console.log('🔍 === DEBUGGING COMPLETO DE VOTOS ===');
+            console.log('EventId:', eventId);
+            
+            // 1. DEBUGGING VOTOS PÚBLICOS
+            console.log('\n👥 === VOTOS DEL PÚBLICO ===');
+            try {
+                const ticketVotesSnapshot = await getDocs(collection(db, `events/${eventId}/ticket_votes`));
+                console.log(`🎫 Tickets encontrados: ${ticketVotesSnapshot.docs.length}`);
+                
+                if (ticketVotesSnapshot.docs.length > 0) {
+                    for (let i = 0; i < Math.min(3, ticketVotesSnapshot.docs.length); i++) {
+                        const ticketDoc = ticketVotesSnapshot.docs[i];
+                        console.log(`🎫 Ticket ${i + 1}: ${ticketDoc.id}`, ticketDoc.data());
+                        
+                        const votesSnapshot = await getDocs(collection(db, `events/${eventId}/ticket_votes/${ticketDoc.id}/votes`));
+                        console.log(`   🗳️ Votos en este ticket: ${votesSnapshot.docs.length}`);
+                        
+                        votesSnapshot.docs.slice(0, 2).forEach(voteDoc => {
+                            console.log(`      🎭 Artista: ${voteDoc.id}`, voteDoc.data());
+                        });
+                    }
+                } else {
+                    console.log('❌ No se encontraron tickets con votos');
+                }
+            } catch (error) {
+                console.log('❌ Error en votos públicos:', error.message);
+            }
+            
+            // 2. DEBUGGING VOTOS DE JURADOS
+            console.log('\n⚖️ === VOTOS DE JURADOS ===');
+            const juryCollections = ['jury_evaluations', 'jury_votes', 'votes'];
+            
+            for (const collectionName of juryCollections) {
+                try {
+                    const snapshot = await getDocs(collection(db, `events/${eventId}/${collectionName}`));
+                    console.log(`📂 ${collectionName}: ${snapshot.docs.length} documentos`);
+                    
+                    if (snapshot.docs.length > 0) {
+                        snapshot.docs.slice(0, 3).forEach(doc => {
+                            console.log(`   ID: ${doc.id}`, doc.data());
+                        });
+                    }
+                } catch (error) {
+                    console.log(`❌ Error en ${collectionName}:`, error.message);
+                }
+            }
+            
+            console.log('\n� Ejecuta debugAllVotes() en la consola para ver todos los datos');
+        };
 
         let pendingArtists = [];
         let allArtists = [];
@@ -218,37 +270,79 @@
         async function calculateRealTimeScores(artists) {
             console.log('🔥 Calculando puntajes en tiempo real...');
             
-            // Calcular votos del público (CORREGIDO + DEBUG EXTREMO)
+            // 👥 CALCULAR VOTOS DEL PÚBLICO - DETECCIÓN MEJORADA
             const publicVotes = {};
-            console.log(`🔍 DEBUG: Buscando votos en events/${eventId}/ticket_votes`);
+            console.log(`🔍 DEBUG: Buscando votos públicos en events/${eventId}/ticket_votes`);
             
-            const ticketVotesSnapshot = await getDocs(collection(db, `events/${eventId}/ticket_votes`));
-            console.log(`🎫 Tickets encontrados: ${ticketVotesSnapshot.docs.length}`);
-            
-            for (const ticketDoc of ticketVotesSnapshot.docs) {
-                console.log(`🎫 Procesando ticket: ${ticketDoc.id}`);
-                const votesSnapshot = await getDocs(collection(db, `events/${eventId}/ticket_votes/${ticketDoc.id}/votes`));
-                console.log(`🗳️ Votos en este ticket: ${votesSnapshot.docs.length}`);
+            try {
+                const ticketVotesSnapshot = await getDocs(collection(db, `events/${eventId}/ticket_votes`));
+                console.log(`🎫 Tickets encontrados: ${ticketVotesSnapshot.docs.length}`);
                 
-                votesSnapshot.docs.forEach(voteDoc => {
-                    const artistId = voteDoc.id;
-                    const voteData = voteDoc.data();
-                    console.log(`🎭 Voto para artista ${artistId}:`, voteData);
+                if (ticketVotesSnapshot.docs.length > 0) {
+                    for (const ticketDoc of ticketVotesSnapshot.docs) {
+                        console.log(`🎫 Procesando ticket: ${ticketDoc.id}`);
+                        const votesSnapshot = await getDocs(collection(db, `events/${eventId}/ticket_votes/${ticketDoc.id}/votes`));
+                        console.log(`🗳️ Votos en este ticket: ${votesSnapshot.docs.length}`);
+                        
+                        votesSnapshot.docs.forEach(voteDoc => {
+                            const artistId = voteDoc.id;
+                            const voteData = voteDoc.data();
+                            console.log(`🎭 Voto para artista ${artistId}:`, voteData);
+                            
+                            if (!publicVotes[artistId]) publicVotes[artistId] = 0;
+                            
+                            // 🔥 MÚLTIPLES MÉTODOS DE CÁLCULO DE PUNTAJE
+                            let totalScore = 0;
+                            
+                            // Método 1: Campos específicos (como antes)
+                            const specificScore = (voteData.singingScore || 0) +
+                                               (voteData.transmissionScore || 0) +
+                                               (voteData.attitudeScore || 0) +
+                                               (voteData.originalityScore || 0) +
+                                               (voteData.costumeScore || 0) +
+                                               (voteData.stagingScore || 0);
+                            
+                            // Método 2: Campo totalScore directo
+                            const directScore = voteData.totalScore || 0;
+                            
+                            // Método 3: Campo score genérico
+                            const genericScore = voteData.score || 0;
+                            
+                            // Método 4: Sumar todos los campos numéricos
+                            const allNumericScore = Object.values(voteData)
+                                .filter(val => typeof val === 'number' && val > 0)
+                                .reduce((sum, val) => sum + val, 0);
+                            
+                            // Usar el método que dé el mayor resultado válido
+                            totalScore = Math.max(specificScore, directScore, genericScore, allNumericScore);
+                            
+                            publicVotes[artistId] += totalScore;
+                            
+                            console.log(`📊 Voto público - ${artistId}: ${totalScore} pts (Específico: ${specificScore}, Directo: ${directScore}, Genérico: ${genericScore}, Numérico: ${allNumericScore})`);
+                        });
+                    }
+                } else {
+                    console.log('⚠️ No se encontraron tickets, intentando estructura alternativa...');
                     
-                    if (!publicVotes[artistId]) publicVotes[artistId] = 0;
+                    // 🔥 MÉTODO ALTERNATIVO: Buscar directamente en artists con totalScore
+                    const artistsSnapshot = await getDocs(collection(db, `events/${eventId}/artists`));
+                    console.log(`🎭 Artistas encontrados: ${artistsSnapshot.docs.length}`);
                     
-                    // ✅ CALCULAR PUNTUACIÓN TOTAL DE TODAS LAS CATEGORÍAS
-                    const totalScore = (voteData.singingScore || 0) +
-                                     (voteData.transmissionScore || 0) +
-                                     (voteData.attitudeScore || 0) +
-                                     (voteData.originalityScore || 0) +
-                                     (voteData.costumeScore || 0) +
-                                     (voteData.stagingScore || 0);
-                    
-                    publicVotes[artistId] += totalScore;
-                    
-                    console.log(`📊 Voto público - ${artistId}: ${totalScore} pts (Canto: ${voteData.singingScore}, Trans: ${voteData.transmissionScore}, Act: ${voteData.attitudeScore}, Orig: ${voteData.originalityScore}, Vest: ${voteData.costumeScore}, Esc: ${voteData.stagingScore})`);
-                });
+                    artistsSnapshot.docs.forEach(artistDoc => {
+                        const artistData = artistDoc.data();
+                        const artistId = artistDoc.id;
+                        
+                        // Usar el totalScore del artista como votos públicos
+                        const artistScore = artistData.totalScore || artistData.totalRatingsCount || 0;
+                        
+                        if (artistScore > 0) {
+                            publicVotes[artistId] = artistScore;
+                            console.log(`🎭 Score de artista ${artistData.name}: ${artistScore} pts`);
+                        }
+                    });
+                }
+            } catch (error) {
+                console.log('❌ Error calculando votos públicos:', error.message);
             }
             
             console.log(`📊 RESUMEN VOTOS PÚBLICOS:`, publicVotes);
