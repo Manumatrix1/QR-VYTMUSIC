@@ -1098,31 +1098,13 @@
                 return;
             }
 
-            // 🎪 CONFIGURAR PREMIOS PERSONALIZADOS
-            const configuracion = prompt(`🏆 CONFIGURACIÓN DE PREMIOS 🏆\n\n¿Cómo quieres configurar los premios?\n\n1 = Solo un ganador\n2 = Configurar 2 premios personalizados\n3 = Configurar 3 premios personalizados\n4 = Configurar más premios\n\nEscribe el número:`, '1');
+            // 🎪 CONFIGURADOR COMPLETO DE PREMIOS
+            const resultadoConfiguracion = await configurarPremiosCompleto(premio);
+            if (!resultadoConfiguracion) {
+                return; // Usuario canceló
+            }
             
-            if (!configuracion || isNaN(configuracion) || configuracion < 1) {
-                return;
-            }
-
-            let premiosPersonalizados = [];
-            const cantidadPremios = parseInt(configuracion);
-
-            // Si es más de 1 premio, permitir personalizar
-            if (cantidadPremios > 1) {
-                for (let i = 1; i <= cantidadPremios; i++) {
-                    const nombrePremio = prompt(`🏆 Configurar Premio #${i}\n\nEjemplos:\n- "Primer Lugar - Guitarra Eléctrica"\n- "Segundo Lugar - Micrófono Profesional"\n- "Tercer Lugar - Auriculares"\n- "Premio Especial - Beca de Música"\n\nEscribe el nombre del premio #${i}:`, i === 1 ? 'Primer Lugar' : i === 2 ? 'Segundo Lugar' : i === 3 ? 'Tercer Lugar' : `Premio #${i}`);
-                    
-                    if (!nombrePremio) {
-                        alert('Configuración cancelada');
-                        return;
-                    }
-                    
-                    premiosPersonalizados.push(nombrePremio);
-                }
-            } else {
-                premiosPersonalizados = [premio];
-            }
+            const { premiosPersonalizados, cantidadPremios } = resultadoConfiguracion;
 
             await realizarSorteoMultiple(votosData.gala, premio, 'gala', cantidadPremios, premiosPersonalizados);
         }
@@ -1141,8 +1123,13 @@
                 return;
             }
 
-            // 🎪 CONFIGURAR PREMIOS PERSONALIZADOS
-            const configuracion = prompt(`🏆 CONFIGURACIÓN DE PREMIOS 🏆\n\n¿Cómo quieres configurar los premios?\n\n1 = Solo un ganador\n2 = Configurar 2 premios personalizados\n3 = Configurar 3 premios personalizados\n4 = Configurar más premios\n\nEscribe el número:`, '1');
+            // 🎪 CONFIGURADOR COMPLETO DE PREMIOS
+            const resultadoConfiguracion = await configurarPremiosCompleto(premio);
+            if (!resultadoConfiguracion) {
+                return; // Usuario canceló
+            }
+            
+            const { premiosPersonalizados, cantidadPremios } = resultadoConfiguracion;
             
             if (!configuracion || isNaN(configuracion) || configuracion < 1) {
                 return;
@@ -1155,18 +1142,6 @@
             if (cantidadPremios > 1) {
                 for (let i = 1; i <= cantidadPremios; i++) {
                     const nombrePremio = prompt(`🏆 Configurar Premio #${i}\n\nEjemplos:\n- "Primer Lugar - Guitarra Eléctrica"\n- "Segundo Lugar - Micrófono Profesional"\n- "Tercer Lugar - Auriculares"\n- "Premio Especial - Beca de Música"\n\nEscribe el nombre del premio #${i}:`, i === 1 ? 'Primer Lugar' : i === 2 ? 'Segundo Lugar' : i === 3 ? 'Tercer Lugar' : `Premio #${i}`);
-                    
-                    if (!nombrePremio) {
-                        alert('Configuración cancelada');
-                        return;
-                    }
-                    
-                    premiosPersonalizados.push(nombrePremio);
-                }
-            } else {
-                premiosPersonalizados = [premio];
-            }
-
             await realizarSorteoMultiple(votosData.general, premio, 'general', cantidadPremios, premiosPersonalizados);
         }
 
@@ -1410,6 +1385,300 @@
         // Función original mantenida para compatibilidad
         async function realizarSorteo(participantes, premio, tipo) {
             await realizarSorteoMultiple(participantes, premio, tipo, 1, null);
+        }
+
+        // 🏆 FUNCIÓN PARA CONFIGURACIÓN COMPLETA DE PREMIOS PERSONALIZADOS
+        async function configurarPremiosCompleto(premioBase) {
+            return new Promise((resolve) => {
+                // Crear modal para configuración de premios
+                const modal = document.createElement('div');
+                modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+                modal.innerHTML = `
+                    <div class="bg-white rounded-lg p-6 max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+                        <div class="flex justify-between items-center mb-6">
+                            <h2 class="text-2xl font-bold text-gray-800">
+                                <i class="fas fa-trophy mr-2 text-yellow-500"></i>
+                                Configuración Completa de Premios
+                            </h2>
+                            <button onclick="cerrarModal(); resolve({premios: ['${premioBase}'], cantidad: 1})" 
+                                    class="text-gray-500 hover:text-gray-700">
+                                <i class="fas fa-times text-xl"></i>
+                            </button>
+                        </div>
+
+                        <!-- Fase 1: Definir Premios Disponibles -->
+                        <div id="fase1" class="mb-8">
+                            <h3 class="text-xl font-semibold mb-4 text-blue-600">
+                                <span class="bg-blue-100 text-blue-800 rounded-full px-3 py-1 text-sm mr-2">FASE 1</span>
+                                Definir Todos los Premios Disponibles
+                            </h3>
+                            <div class="bg-blue-50 p-4 rounded-lg mb-4">
+                                <p class="text-blue-700 mb-3">
+                                    <i class="fas fa-info-circle mr-2"></i>
+                                    Primero define todos los premios que tienes disponibles para este evento.
+                                </p>
+                                <div class="flex gap-2 mb-3">
+                                    <input type="text" id="nuevoPremio" placeholder="Ej: iPhone 15, Tablet Samsung, Auriculares..."
+                                           class="flex-1 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                                    <button onclick="agregarPremio()" 
+                                            class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                                        <i class="fas fa-plus mr-1"></i>Agregar
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <div id="listaPremiosDisponibles" class="space-y-2 mb-4">
+                                <div class="flex items-center justify-between bg-yellow-50 p-3 rounded-lg border-l-4 border-yellow-400">
+                                    <span class="font-medium text-yellow-800">
+                                        <i class="fas fa-trophy mr-2"></i>${premioBase}
+                                    </span>
+                                    <span class="text-yellow-600 text-sm">Premio base</span>
+                                </div>
+                            </div>
+                            
+                            <button onclick="irAFase2()" id="btnFase2" 
+                                    class="w-full py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
+                                <i class="fas fa-arrow-right mr-2"></i>
+                                Continuar a Selección de Premios
+                            </button>
+                        </div>
+
+                        <!-- Fase 2: Seleccionar Premios a Sortear -->
+                        <div id="fase2" class="mb-8 hidden">
+                            <h3 class="text-xl font-semibold mb-4 text-green-600">
+                                <span class="bg-green-100 text-green-800 rounded-full px-3 py-1 text-sm mr-2">FASE 2</span>
+                                Seleccionar Premios a Sortear
+                            </h3>
+                            <div class="bg-green-50 p-4 rounded-lg mb-4">
+                                <p class="text-green-700 mb-3">
+                                    <i class="fas fa-check-circle mr-2"></i>
+                                    Ahora selecciona cuáles de estos premios quieres sortear en este evento.
+                                </p>
+                            </div>
+                            <div id="seleccionPremios" class="space-y-2 mb-4"></div>
+                            
+                            <div class="flex gap-3">
+                                <button onclick="volverAFase1()" 
+                                        class="px-6 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600">
+                                    <i class="fas fa-arrow-left mr-2"></i>Volver
+                                </button>
+                                <button onclick="irAFase3()" id="btnFase3" 
+                                        class="flex-1 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors">
+                                    <i class="fas fa-arrow-right mr-2"></i>
+                                    Continuar a Definir Jerarquía
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Fase 3: Definir Jerarquía -->
+                        <div id="fase3" class="hidden">
+                            <h3 class="text-xl font-semibold mb-4 text-purple-600">
+                                <span class="bg-purple-100 text-purple-800 rounded-full px-3 py-1 text-sm mr-2">FASE 3</span>
+                                Definir Jerarquía de Premios
+                            </h3>
+                            <div class="bg-purple-50 p-4 rounded-lg mb-4">
+                                <p class="text-purple-700 mb-3">
+                                    <i class="fas fa-sort mr-2"></i>
+                                    Ordena los premios por importancia. El primer lugar será el más destacado.
+                                </p>
+                            </div>
+                            <div id="jerarquiaPremios" class="space-y-2 mb-4"></div>
+                            
+                            <div class="flex gap-3">
+                                <button onclick="volverAFase2()" 
+                                        class="px-6 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600">
+                                    <i class="fas fa-arrow-left mr-2"></i>Volver
+                                </button>
+                                <button onclick="confirmarConfiguracion()" id="btnConfirmar"
+                                        class="flex-1 py-3 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition-colors">
+                                    <i class="fas fa-check mr-2"></i>
+                                    Confirmar y Comenzar Sorteo
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                document.body.appendChild(modal);
+                
+                // Variables globales para el modal
+                let premiosDisponibles = [premioBase];
+                let premiosSeleccionados = [];
+                let jerarquiaFinal = [];
+                
+                // Funciones del modal
+                window.cerrarModal = function() {
+                    modal.remove();
+                };
+                
+                window.agregarPremio = function() {
+                    const input = document.getElementById('nuevoPremio');
+                    const nuevoPremio = input.value.trim();
+                    
+                    if (nuevoPremio && !premiosDisponibles.includes(nuevoPremio)) {
+                        premiosDisponibles.push(nuevoPremio);
+                        actualizarListaPremios();
+                        input.value = '';
+                    } else if (premiosDisponibles.includes(nuevoPremio)) {
+                        alert('Este premio ya existe en la lista');
+                    }
+                };
+                
+                window.eliminarPremio = function(index) {
+                    if (index === 0) return; // No eliminar el premio base
+                    premiosDisponibles.splice(index, 1);
+                    actualizarListaPremios();
+                };
+                
+                window.actualizarListaPremios = function() {
+                    const lista = document.getElementById('listaPremiosDisponibles');
+                    lista.innerHTML = '';
+                    
+                    premiosDisponibles.forEach((premio, index) => {
+                        const div = document.createElement('div');
+                        div.className = index === 0 ? 
+                            'flex items-center justify-between bg-yellow-50 p-3 rounded-lg border-l-4 border-yellow-400' :
+                            'flex items-center justify-between bg-gray-50 p-3 rounded-lg border-l-4 border-gray-300';
+                        div.innerHTML = `
+                            <span class="font-medium ${index === 0 ? 'text-yellow-800' : 'text-gray-800'}">
+                                <i class="fas fa-trophy mr-2"></i>${premio}
+                            </span>
+                            <div class="flex items-center gap-2">
+                                ${index === 0 ? 
+                                    '<span class="text-yellow-600 text-sm">Premio base</span>' : 
+                                    `<button onclick="eliminarPremio(${index})" class="text-red-500 hover:text-red-700">
+                                        <i class="fas fa-times"></i>
+                                    </button>`
+                                }
+                            </div>
+                        `;
+                        lista.appendChild(div);
+                    });
+                };
+                
+                window.irAFase2 = function() {
+                    document.getElementById('fase1').classList.add('hidden');
+                    document.getElementById('fase2').classList.remove('hidden');
+                    actualizarSeleccionPremios();
+                };
+                
+                window.volverAFase1 = function() {
+                    document.getElementById('fase2').classList.add('hidden');
+                    document.getElementById('fase1').classList.remove('hidden');
+                };
+                
+                window.actualizarSeleccionPremios = function() {
+                    const container = document.getElementById('seleccionPremios');
+                    container.innerHTML = '';
+                    
+                    premiosDisponibles.forEach((premio, index) => {
+                        const div = document.createElement('div');
+                        div.className = 'flex items-center p-3 bg-white border rounded-lg hover:bg-gray-50';
+                        div.innerHTML = `
+                            <input type="checkbox" id="premio_${index}" value="${premio}" 
+                                   class="mr-3 w-4 h-4 text-green-600 bg-gray-100 border-gray-300 rounded focus:ring-green-500"
+                                   ${index === 0 ? 'checked' : ''} ${index === 0 ? 'disabled' : ''}>
+                            <label for="premio_${index}" class="flex-1 font-medium text-gray-800">
+                                <i class="fas fa-trophy mr-2 text-yellow-500"></i>${premio}
+                                ${index === 0 ? '<span class="text-green-600 text-sm ml-2">(Obligatorio)</span>' : ''}
+                            </label>
+                        `;
+                        container.appendChild(div);
+                    });
+                };
+                
+                window.irAFase3 = function() {
+                    // Recopilar premios seleccionados
+                    premiosSeleccionados = [];
+                    premiosDisponibles.forEach((premio, index) => {
+                        const checkbox = document.getElementById(`premio_${index}`);
+                        if (checkbox.checked) {
+                            premiosSeleccionados.push(premio);
+                        }
+                    });
+                    
+                    if (premiosSeleccionados.length === 0) {
+                        alert('Debes seleccionar al menos un premio');
+                        return;
+                    }
+                    
+                    document.getElementById('fase2').classList.add('hidden');
+                    document.getElementById('fase3').classList.remove('hidden');
+                    actualizarJerarquia();
+                };
+                
+                window.volverAFase2 = function() {
+                    document.getElementById('fase3').classList.add('hidden');
+                    document.getElementById('fase2').classList.remove('hidden');
+                };
+                
+                window.actualizarJerarquia = function() {
+                    const container = document.getElementById('jerarquiaPremios');
+                    container.innerHTML = '';
+                    
+                    if (jerarquiaFinal.length === 0) {
+                        jerarquiaFinal = [...premiosSeleccionados];
+                    }
+                    
+                    jerarquiaFinal.forEach((premio, index) => {
+                        const div = document.createElement('div');
+                        div.className = 'flex items-center justify-between p-4 bg-white border-2 rounded-lg shadow-sm';
+                        div.innerHTML = `
+                            <div class="flex items-center">
+                                <span class="bg-gradient-to-r ${
+                                    index === 0 ? 'from-yellow-400 to-yellow-600' :
+                                    index === 1 ? 'from-gray-300 to-gray-500' :
+                                    index === 2 ? 'from-orange-400 to-orange-600' :
+                                    'from-blue-400 to-blue-600'
+                                } text-white px-3 py-1 rounded-full font-bold mr-3">
+                                    ${index + 1}°
+                                </span>
+                                <span class="font-medium text-gray-800">
+                                    <i class="fas fa-trophy mr-2 text-yellow-500"></i>${premio}
+                                </span>
+                            </div>
+                            <div class="flex gap-2">
+                                ${index > 0 ? `<button onclick="moverArriba(${index})" class="px-2 py-1 bg-blue-500 text-white rounded hover:bg-blue-600">
+                                    <i class="fas fa-arrow-up"></i>
+                                </button>` : ''}
+                                ${index < jerarquiaFinal.length - 1 ? `<button onclick="moverAbajo(${index})" class="px-2 py-1 bg-blue-500 text-white rounded hover:bg-blue-600">
+                                    <i class="fas fa-arrow-down"></i>
+                                </button>` : ''}
+                            </div>
+                        `;
+                        container.appendChild(div);
+                    });
+                };
+                
+                window.moverArriba = function(index) {
+                    if (index > 0) {
+                        [jerarquiaFinal[index], jerarquiaFinal[index - 1]] = [jerarquiaFinal[index - 1], jerarquiaFinal[index]];
+                        actualizarJerarquia();
+                    }
+                };
+                
+                window.moverAbajo = function(index) {
+                    if (index < jerarquiaFinal.length - 1) {
+                        [jerarquiaFinal[index], jerarquiaFinal[index + 1]] = [jerarquiaFinal[index + 1], jerarquiaFinal[index]];
+                        actualizarJerarquia();
+                    }
+                };
+                
+                window.confirmarConfiguracion = function() {
+                    modal.remove();
+                    resolve({
+                        premios: jerarquiaFinal,
+                        cantidad: jerarquiaFinal.length
+                    });
+                };
+                
+                // Event listener para Enter en el input
+                document.getElementById('nuevoPremio').addEventListener('keypress', function(e) {
+                    if (e.key === 'Enter') {
+                        agregarPremio();
+                    }
+                });
+            });
         }
 
         // Guardar sorteo en Firebase
