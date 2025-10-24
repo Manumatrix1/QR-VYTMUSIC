@@ -8,6 +8,9 @@
     <!-- Firebase v8 SDK -->
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+    
+    <!-- Función de sorteo paso a paso optimizada -->
+    <script src="sorteo_paso_a_paso.js"></script>
     <script>
         // Configuración Firebase
         const firebaseConfig = {
@@ -1106,7 +1109,8 @@
             
             const { premios: premiosPersonalizados, cantidad: cantidadPremios } = resultadoConfiguracion;
 
-            await realizarSorteoMultiple(votosData.gala, premio, 'gala', cantidadPremios, premiosPersonalizados);
+            // Usar la nueva función de sorteo paso a paso
+            await realizarSorteoMultiplePasoAPaso(votosData.gala, premio, 'gala', cantidadPremios, premiosPersonalizados);
         }
 
         // Sortear premio general
@@ -1131,10 +1135,10 @@
             
             const { premios: premiosPersonalizados, cantidad: cantidadPremios } = resultadoConfiguracion;
 
-            await realizarSorteoMultiple(votosData.general, premio, 'general', cantidadPremios, premiosPersonalizados);
+            await realizarSorteoMultiplePasoAPaso(votosData.general, premio, 'general', cantidadPremios, premiosPersonalizados);
         }
 
-        // 🎪 SORTEO MÚLTIPLE CON ANIMACIONES GAMIFICADAS
+        // 🎪 SORTEO MÚLTIPLE PASO A PASO CON ANIMACIONES GAMIFICADAS
         async function realizarSorteoMultiple(participantes, premio, tipo, cantidadPremios, premiosPersonalizados = null) {
             if (sorteoEnProceso) return;
             
@@ -1142,37 +1146,52 @@
             const boton = document.getElementById(`sortear-${tipo}-btn`);
             const resultado = document.getElementById(`resultado-${tipo}`);
             
-            // 🎮 CREAR VENTANA GAMIFICADA PARA PANTALLA GRANDE
+            // 🎮 CREAR VENTANA GAMIFICADA PARA PANTALLA GRANDE CON LOGO VYT
             const modalGameShow = document.createElement('div');
-            modalGameShow.className = 'fixed inset-0 bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 flex items-center justify-center z-50';
+            modalGameShow.className = 'fixed inset-0 bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 flex items-center justify-center z-50 overflow-y-auto';
             modalGameShow.innerHTML = `
-                <div class="w-full h-full flex flex-col items-center justify-center text-white p-8">
+                <div class="w-full max-w-6xl mx-auto flex flex-col items-center justify-center text-white p-4 min-h-screen">
+                    <!-- LOGO VYT MUSIC -->
+                    <div class="flex items-center justify-center mb-4">
+                        <div class="bg-gradient-to-r from-yellow-400 to-orange-500 text-black px-6 py-3 rounded-full font-bold text-2xl shadow-lg">
+                            🎵 VYT MUSIC 🎵
+                        </div>
+                    </div>
+                    
                     <!-- TÍTULO DEL SHOW -->
-                    <div class="text-center mb-8 animate-pulse">
-                        <h1 class="text-6xl font-bold mb-4 text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-orange-500">
-                            🎪 GRAN SORTEO VYT MUSIC 🎪
+                    <div class="text-center mb-6">
+                        <h1 class="text-4xl lg:text-5xl font-bold mb-3 text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-orange-500">
+                            🎪 GRAN SORTEO 🎪
                         </h1>
-                        <h2 class="text-3xl font-semibold text-cyan-300">${premio}</h2>
-                        <p class="text-xl mt-2 text-gray-300">Sorteando ${cantidadPremios} premio${cantidadPremios > 1 ? 's' : ''}</p>
+                        <h2 class="text-2xl lg:text-3xl font-semibold text-cyan-300">${premio}</h2>
+                        <p class="text-lg mt-2 text-gray-300">Sorteando ${cantidadPremios} premio${cantidadPremios > 1 ? 's' : ''}</p>
                     </div>
                     
                     <!-- ÁREA DE SORTEO -->
-                    <div class="bg-black bg-opacity-50 rounded-3xl p-8 shadow-2xl border-4 border-yellow-400 mb-8">
+                    <div class="bg-black bg-opacity-50 rounded-3xl p-6 shadow-2xl border-4 border-yellow-400 mb-6 w-full max-w-4xl">
                         <div id="sorteo-display" class="text-center">
-                            <div class="text-4xl font-bold mb-4" id="status-text">🎲 Preparando sorteo...</div>
-                            <div id="nombre-girando" class="text-6xl font-bold text-yellow-400 mb-4 min-h-[80px] flex items-center justify-center">
+                            <div class="text-2xl lg:text-3xl font-bold mb-4" id="status-text">🎲 Listo para comenzar...</div>
+                            <div id="nombre-girando" class="text-3xl lg:text-5xl font-bold text-yellow-400 mb-4 min-h-[60px] flex items-center justify-center">
                                 <!--Nombres aparecerán aquí-->
                             </div>
-                            <div id="premio-info" class="text-2xl text-cyan-300"></div>
+                            <div id="premio-info" class="text-xl lg:text-2xl text-cyan-300"></div>
+                            
+                            <!-- BOTÓN PARA SORTEAR SIGUIENTE -->
+                            <div id="control-sorteo" class="mt-6">
+                                <button id="btn-sortear-siguiente" onclick="window.sortearSiguiente()" 
+                                        class="px-8 py-4 bg-gradient-to-r from-green-500 to-green-600 text-white text-xl font-bold rounded-full hover:from-green-600 hover:to-green-700 shadow-lg transform hover:scale-105 transition-all duration-200 animate-pulse">
+                                    🎲 SORTEAR PRIMER LUGAR
+                                </button>
+                            </div>
                         </div>
                     </div>
                     
                     <!-- RESULTADOS -->
-                    <div id="resultados-finales" class="w-full max-w-4xl"></div>
+                    <div id="resultados-finales" class="w-full max-w-4xl grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
                     
                     <!-- BOTÓN CERRAR -->
                     <button onclick="this.closest('.fixed').remove(); location.reload();" 
-                            class="mt-8 px-8 py-4 bg-red-600 text-white text-xl font-bold rounded-full hover:bg-red-700 shadow-lg">
+                            class="mt-6 px-6 py-3 bg-red-600 text-white text-lg font-bold rounded-full hover:bg-red-700 shadow-lg">
                         ✖ Cerrar Show
                     </button>
                 </div>
@@ -1180,163 +1199,129 @@
             
             document.body.appendChild(modalGameShow);
             
-            // Animación de botón
-            boton.innerHTML = '<div class="sorteo-animation inline-block w-6 h-6 border-4 border-white border-t-transparent rounded-full"></div> Sorteando...';
-            boton.disabled = true;
-
-            // Crear array ponderado (cada voto = una entrada)
-            const tickets = [];
-            Object.entries(participantes).forEach(([user, votos]) => {
-                for (let i = 0; i < votos; i++) {
-                    tickets.push(user);
-                }
-            });
-
-            const ganadores = [];
-            const participantesCopia = {...participantes};
+            // Variables para el sorteo paso a paso
+            let sorteoActual = 0;
+            let ganadores = [];
+            let participantesRestantes = [...Object.keys(participantes)];
             
-            // 🎪 SORTEAR CADA PREMIO CON EFECTOS
-            for (let premio_num = 1; premio_num <= cantidadPremios; premio_num++) {
+            // Función para sortear el siguiente premio
+            window.sortearSiguiente = async function() {
+                if (sorteoActual >= cantidadPremios) {
+                    return;
+                }
+                
+                const btnSortear = document.getElementById('btn-sortear-siguiente');
                 const statusText = document.getElementById('status-text');
                 const nombreGirando = document.getElementById('nombre-girando');
                 const premioInfo = document.getElementById('premio-info');
                 
-                // Mostrar qué premio se está sorteando
-                let puestoActual, premioCompleto;
+                // Deshabilitar botón durante sorteo
+                btnSortear.disabled = true;
+                btnSortear.innerHTML = '🎲 Sorteando...';
                 
-                if (premiosPersonalizados && premiosPersonalizados.length >= premio_num) {
-                    // Usar premios personalizados
-                    premioCompleto = premiosPersonalizados[premio_num - 1];
-                    puestoActual = `🏆 ${premioCompleto}`;
-                } else {
-                    // Usar puestos por defecto
-                    const puestos = ['🥇 PRIMER PUESTO', '🥈 SEGUNDO PUESTO', '🥉 TERCER PUESTO', '🏆 CUARTO PUESTO', '🎖️ QUINTO PUESTO'];
-                    puestoActual = puestos[premio_num - 1] || `🎗️ PUESTO #${premio_num}`;
-                    premioCompleto = `${premio} - ${puestoActual}`;
-                }
+                // Determinar qué premio se está sorteando
+                const premioActual = premiosPersonalizados ? premiosPersonalizados[sorteoActual] : `${sorteoActual + 1}° Lugar`;
                 
-                statusText.textContent = `Sorteando ${puestoActual}...`;
-                premioInfo.textContent = premioCompleto;
+                statusText.textContent = `🎪 Sorteando ${premioActual}...`;
+                premioInfo.textContent = `Premio: ${premioActual}`;
                 
-                // 🎮 EFECTO DE RULETA - NOMBRES GIRANDO
-                const participantesDisponibles = Object.keys(participantesCopia);
+                // Animación de nombres girando
+                let contador = 0;
+                const maxGiros = 30;
                 
-                for (let giro = 0; giro < 30; giro++) {
-                    const nombreRandom = participantesDisponibles[Math.floor(Math.random() * participantesDisponibles.length)];
-                    nombreGirando.textContent = nombreRandom;
-                    nombreGirando.className = 'text-6xl font-bold text-yellow-400 mb-4 min-h-[80px] flex items-center justify-center animate-bounce';
-                    
-                    await new Promise(resolve => setTimeout(resolve, 100 + (giro * 5))); // Ralentizar gradualmente
-                }
-                
-                // 🎯 SELECCIONAR GANADOR REAL
-                const ticketsRestantes = [];
-                Object.entries(participantesCopia).forEach(([user, votos]) => {
-                    for (let i = 0; i < votos; i++) {
-                        ticketsRestantes.push(user);
+                const intervalGiro = setInterval(() => {
+                    if (participantesRestantes.length > 0) {
+                        const indiceAleatorio = Math.floor(Math.random() * participantesRestantes.length);
+                        const participanteTemp = participantesRestantes[indiceAleatorio];
+                        nombreGirando.textContent = participanteTemp;
+                        nombreGirando.className = 'text-3xl lg:text-5xl font-bold text-yellow-400 mb-4 min-h-[60px] flex items-center justify-center animate-bounce';
                     }
-                });
-                
-                if (ticketsRestantes.length === 0) break;
-                
-                const ganadorIndex = Math.floor(Math.random() * ticketsRestantes.length);
-                const ganador = ticketsRestantes[ganadorIndex];
-                const ticketsGanador = participantesCopia[ganador];
-                
-                // 🎊 MOSTRAR GANADOR CON EFECTOS
-                nombreGirando.textContent = `🎉 ${ganador} 🎉`;
-                nombreGirando.className = 'text-6xl font-bold text-green-400 mb-4 min-h-[80px] flex items-center justify-center animate-pulse';
-                statusText.textContent = `¡${puestoActual} GANADO!`;
-                
-                // Confetti effect simulation
-                for (let i = 0; i < 20; i++) {
-                    const confetti = document.createElement('div');
-                    confetti.textContent = ['🎉', '🎊', '✨', '⭐', '🏆'][Math.floor(Math.random() * 5)];
-                    confetti.className = 'fixed text-4xl animate-bounce pointer-events-none';
-                    confetti.style.left = Math.random() * window.innerWidth + 'px';
-                    confetti.style.top = Math.random() * window.innerHeight + 'px';
-                    confetti.style.animationDelay = Math.random() * 2 + 's';
-                    document.body.appendChild(confetti);
-                    setTimeout(() => confetti.remove(), 3000);
-                }
-                
-                // Guardar ganador
-                ganadores.push({
-                    puesto: premio_num,
-                    puestoTexto: puestoActual,
-                    premioCompleto: premioCompleto,
-                    ganador: ganador,
-                    tickets: ticketsGanador,
-                    totalTickets: ticketsRestantes.length,
-                    probabilidad: ((ticketsGanador/ticketsRestantes.length)*100).toFixed(1)
-                });
-                
-                // Remover ganador para siguiente sorteo
-                delete participantesCopia[ganador];
-                
-                // Pausa dramática
-                await new Promise(resolve => setTimeout(resolve, 3000));
-            }
+                    
+                    contador++;
+                    if (contador >= maxGiros) {
+                        clearInterval(intervalGiro);
+                        
+                        // Seleccionar ganador final
+                        if (participantesRestantes.length > 0) {
+                            const indiceGanador = Math.floor(Math.random() * participantesRestantes.length);
+                            const ganador = participantesRestantes[indiceGanador];
+                            
+                            // Mostrar ganador con efectos
+                            nombreGirando.textContent = ganador;
+                            nombreGirando.className = 'text-3xl lg:text-5xl font-bold text-green-400 mb-4 min-h-[60px] flex items-center justify-center animate-pulse';
+                            
+                            statusText.innerHTML = `🎉 ¡${premioActual} para ${ganador}! 🎉`;
+                            
+                            // Agregar a ganadores y eliminar de participantes
+                            ganadores.push({
+                                premio: premioActual,
+                                ganador: ganador,
+                                posicion: sorteoActual + 1
+                            });
+                            
+                            participantesRestantes = participantesRestantes.filter(p => p !== ganador);
+                            
+                            // Mostrar en resultados finales
+                            mostrarResultadoParcial(sorteoActual);
+                            
+                            sorteoActual++;
+                            
+                            // Preparar siguiente sorteo o finalizar
+                            setTimeout(() => {
+                                if (sorteoActual < cantidadPremios && participantesRestantes.length > 0) {
+                                    // Preparar siguiente sorteo
+                                    statusText.textContent = '🎲 Listo para el siguiente sorteo...';
+                                    nombreGirando.textContent = '👥';
+                                    nombreGirando.className = 'text-3xl lg:text-5xl font-bold text-yellow-400 mb-4 min-h-[60px] flex items-center justify-center';
+                                    premioInfo.textContent = '';
+                                    
+                                    btnSortear.disabled = false;
+                                    btnSortear.innerHTML = `🎲 SORTEAR ${premiosPersonalizados ? premiosPersonalizados[sorteoActual] : (sorteoActual + 1) + '° LUGAR'}`;
+                                } else {
+                                    // Finalizar sorteo
+                                    statusText.innerHTML = '🎊 ¡SORTEO COMPLETADO! 🎊';
+                                    nombreGirando.textContent = '🏆';
+                                    premioInfo.textContent = 'Todos los premios han sido entregados';
+                                    document.getElementById('control-sorteo').style.display = 'none';
+                                }
+                            }, 2000);
+                        }
+                    }
+                }, 100);
+            };
             
-            // 🏆 MOSTRAR TODOS LOS RESULTADOS FINALES - PRIMER PUESTO ARRIBA
-            const resultadosHTML = ganadores
-                .sort((a, b) => a.puesto - b.puesto) // Ordenar por puesto: 1°, 2°, 3°, etc.
-                .map((g, visualIndex) => {
-                    // Colores especiales para cada puesto
-                    let colorClass;
-                    if (g.puesto === 1) {
-                        colorClass = 'from-yellow-400 via-yellow-500 to-yellow-600'; // Oro brillante para 1°
-                    } else if (g.puesto === 2) {
-                        colorClass = 'from-gray-300 via-gray-400 to-gray-500'; // Plata para 2°
-                    } else if (g.puesto === 3) {
-                        colorClass = 'from-orange-400 via-orange-500 to-orange-600'; // Bronce para 3°
-                    } else {
-                        colorClass = 'from-blue-400 via-blue-500 to-blue-600'; // Azul para otros
-                    }
-                    
-                    // Tamaño especial para el primer puesto
-                    const sizeClass = g.puesto === 1 ? 'text-5xl' : 'text-4xl';
-                    const containerClass = g.puesto === 1 ? 'p-8 mb-6' : 'p-6 mb-4';
-                    
-                    return `
-                        <div class="bg-gradient-to-r ${colorClass} text-white ${containerClass} rounded-xl text-center shadow-2xl transform ${g.puesto === 1 ? 'scale-105' : ''}">
-                            ${g.puesto === 1 ? '<div class="text-6xl mb-4">👑</div>' : ''}
-                            <div class="text-3xl font-bold mb-2">${g.puestoTexto}</div>
-                            <div class="${sizeClass} font-bold mb-2">${g.ganador}</div>
-                            <div class="text-lg">Tenía ${g.tickets} ticket${g.tickets > 1 ? 's' : ''} de ${g.totalTickets} totales</div>
-                            <div class="text-sm opacity-90">Probabilidad: ${g.probabilidad}%</div>
+            // Función para mostrar resultado parcial
+            function mostrarResultadoParcial(indice) {
+                const resultadosContainer = document.getElementById('resultados-finales');
+                const ganador = ganadores[indice];
+                
+                const divResultado = document.createElement('div');
+                divResultado.className = 'bg-gradient-to-r from-yellow-400 to-orange-500 text-black p-4 rounded-2xl shadow-xl transform hover:scale-105 transition-all duration-300 animate-fade-in';
+                divResultado.innerHTML = `
+                    <div class="text-center">
+                        <div class="text-2xl font-bold mb-2">
+                            ${ganador.posicion === 1 ? '🥇' : ganador.posicion === 2 ? '🥈' : ganador.posicion === 3 ? '🥉' : '🏆'} 
+                            ${ganador.premio}
                         </div>
-                    `;
-                }).join('');
-            
-            document.getElementById('resultados-finales').innerHTML = `
-                <h3 class="text-4xl font-bold text-center mb-6 text-yellow-400">🏆 RESULTADOS FINALES 🏆</h3>
-                ${resultadosHTML}
-            `;
-            
-            // Guardar todos los sorteos
-            for (const g of ganadores) {
-                await guardarSorteo(g.ganador, g.premioCompleto || `${premio} - ${g.puestoTexto}`, tipo, g.tickets, g.totalTickets);
-            }
-
-            // Mostrar resultado resumido en la interfaz principal (PRIMER PUESTO ARRIBA)
-            const resumenOrdenado = ganadores
-                .sort((a, b) => a.puesto - b.puesto) // Ordenar: 1°, 2°, 3°, etc.
-                .map(g => `${g.puestoTexto}: ${g.ganador}`)
-                .join('<br>');
+                        <div class="text-xl font-semibold">${ganador.ganador}</div>
+                        <div class="text-sm opacity-75 mt-1">Felicidades! 🎉</div>
+                    </div>
+                `;
                 
-            resultado.innerHTML = `
-                <div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded">
-                    <strong>🎊 Sorteo Completado:</strong><br>
-                    ${resumenOrdenado}
-                </div>
-            `;
-            resultado.classList.remove('hidden');
-
-            // Restaurar botón
-            boton.innerHTML = tipo === 'gala' ? '🎲 Sortear Premio de Gala' : '🎁 Sortear Gran Premio';
-            boton.disabled = false;
-            sorteoEnProceso = false;
+                resultadosContainer.appendChild(divResultado);
+            }
+            
+            // Inicializar el primer sorteo - LISTO PARA EMPEZAR
+            // No ejecutar nada automáticamente
+            
+            // Restaurar botón original
+            setTimeout(() => {
+                boton.innerHTML = tipo === 'gala' ? '🎲 Sortear Premio de Gala' : '🎁 Sortear Gran Premio';
+                boton.disabled = false;
+                sorteoEnProceso = false;
+            }, 1000);
+        }
+        // (Duplicated raffle implementation removed to fix unmatched braces and stray top-level code)
         }
 
         // 🎮 FUNCIÓN AUXILIAR: Modo Pantalla Grande
