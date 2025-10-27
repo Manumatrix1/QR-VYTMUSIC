@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Generador Entrada en Puerta - VYTMUSIC</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #111827; color: #f9fafb; }
+        .hidden { display: none !important; }
+        .loading-overlay { 
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+            background-color: rgba(0,0,0,0.9); display: flex; flex-direction: column; 
+            justify-content: center; align-items: center; z-index: 1000; gap: 1rem; 
+        }
+        .spinner { 
+            border: 4px solid rgba(255,255,255,0.3); border-top: 4px solid #10b981; 
+            border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; 
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        .success-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: linear-gradient(135deg, #10b981, #059669);
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            z-index: 2000; color: white; text-align: center;
+        }
+        
+        .success-checkmark {
+            width: 120px; height: 120px; border-radius: 50%;
+            background: rgba(255,255,255,0.2); display: flex;
+            align-items: center; justify-content: center; margin-bottom: 2rem;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); }
+        }
+        
+        .qr-preview {
+            background: white; border-radius: 12px; padding: 20px;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+        }
+        
+        .ticket-info {
+            background: rgba(255,255,255,0.1); backdrop-filter: blur(10px);
+            border-radius: 12px; padding: 1.5rem; margin: 1rem 0;
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+    </style>
+</head>
+<body>
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="loading-overlay hidden">
+        <div class="spinner"></div>
+        <p id="loading-text" class="text-xl">Generando entrada...</p>
+    </div>
+
+    <!-- Success Overlay -->
+    <div id="success-overlay" class="success-overlay hidden">
+        <div class="success-checkmark">
+            <svg width="60" height="60" fill="white" viewBox="0 0 24 24">
+                <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+        </div>
+        <h2 class="text-4xl font-bold mb-4">¡ENTRADA GENERADA!</h2>
+        <p class="text-xl mb-4">La persona ya puede ingresar al evento</p>
+        <div id="success-ticket-info" class="ticket-info max-w-md"></div>
+        <div id="success-qr-container" class="qr-preview mt-6"></div>
+        <button id="close-success-btn" class="mt-6 px-8 py-4 bg-white text-green-600 font-bold rounded-lg text-xl hover:bg-gray-100">
+            ✅ Continuar
+        </button>
+    </div>
+
+    <div class="container mx-auto max-w-2xl p-4 sm:p-6">
+        <header class="text-center mb-6">
+            <a id="back-to-panel-link" href="#" class="text-sky-400 hover:underline mb-4 inline-block">&larr; Volver al Panel</a>
+            <h1 class="text-3xl sm:text-4xl font-bold text-red-400">🚪 Generador de Entrada en Puerta</h1>
+            <p id="event-name-display" class="text-xl text-gray-300 mt-2"></p>
+            <p class="text-gray-400 mt-2">Para personas que llegan sin entrada al evento</p>
+        </header>
+
+        <main class="space-y-6">
+            <!-- Información del Vendedor/Generador -->
+            <section class="bg-gray-800 p-6 rounded-lg shadow-xl border-l-4 border-blue-500">
+                <h2 class="text-xl font-bold mb-4 text-blue-400">👤 Información del Vendedor</h2>
+                <div class="space-y-4">
+                    <div>
+                        <label for="seller-name" class="block mb-2 font-semibold text-gray-300">Nombre del Vendedor/Generador</label>
+                        <input type="text" id="seller-name" placeholder="Ej: María López, Juan García" required 
+                               class="w-full p-3 rounded-md border border-gray-600 bg-gray-900 text-white">
+                    </div>
+                    <div>
+                        <label for="seller-role" class="block mb-2 font-semibold text-gray-300">Rol/Posición</label>
+                        <select id="seller-role" class="w-full p-3 rounded-md border border-gray-600 bg-gray-900 text-white">
+                            <option value="Taquilla">Taquilla/Puerta</option>
+                            <option value="Organizador">Organizador</option>
+                            <option value="Asistente">Asistente de Evento</option>
+                            <option value="Manager">Manager/Productor</option>
+                            <option value="Otro">Otro</option>
+                        </select>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Datos de la Entrada -->
+            <section class="bg-gray-800 p-6 rounded-lg shadow-xl border-l-4 border-green-500">
+                <h2 class="text-xl font-bold mb-4 text-green-400">🎫 Datos de la Entrada</h2>
+                <div class="space-y-4">
+                    <div>
+                        <label for="client-name" class="block mb-2 font-semibold text-gray-300">Nombre del Cliente</label>
+                        <input type="text" id="client-name" placeholder="Nombre completo del asistente" required 
+                               class="w-full p-3 rounded-md border border-gray-600 bg-gray-900 text-white">
+                    </div>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label for="ticket-price" class="block mb-2 font-semibold text-gray-300">Precio Cobrado ($)</label>
+                            <input type="number" id="ticket-price" placeholder="0" min="0" step="0.01" required 
+                                   class="w-full p-3 rounded-md border border-gray-600 bg-gray-900 text-white">
+                        </div>
+                        <div>
+                            <label for="payment-method" class="block mb-2 font-semibold text-gray-300">Método de Pago</label>
+                            <select id="payment-method" class="w-full p-3 rounded-md border border-gray-600 bg-gray-900 text-white">
+                                <option value="Efectivo">Efectivo</option>
+                                <option value="Transferencia">Transferencia</option>
+                                <option value="Tarjeta">Tarjeta</option>
+                                <option value="MercadoPago">MercadoPago</option>
+                                <option value="Cortesía">Cortesía</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label for="client-phone" class="block mb-2 font-semibold text-gray-300">Teléfono (Opcional)</label>
+                        <input type="tel" id="client-phone" placeholder="Ej: +54 9 341 123-4567" 
+                               class="w-full p-3 rounded-md border border-gray-600 bg-gray-900 text-white">
+                    </div>
+
+                    <div>
+                        <label for="ticket-notes" class="block mb-2 font-semibold text-gray-300">Notas (Opcional)</label>
+                        <textarea id="ticket-notes" rows="2" placeholder="Observaciones, descuentos aplicados, etc." 
+                                  class="w-full p-3 rounded-md border border-gray-600 bg-gray-900 text-white"></textarea>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Botón de Generación -->
+            <section class="text-center">
+                <button id="generate-ticket-btn" class="w-full max-w-md px-8 py-4 bg-gradient-to-r from-green-600 to-green-700 text-white font-bold rounded-lg text-xl hover:from-green-700 hover:to-green-800 transform transition-all duration-200 hover:scale-105 shadow-lg">
+                    🎫 GENERAR ENTRADA INMEDIATA
+                </button>
+                <p class="text-gray-400 mt-3 text-sm">La entrada se marca automáticamente como "cobrada" y queda habilitada para votación</p>
+            </section>
+
+            <!-- Historial Rápido -->
+            <section class="bg-gray-800 p-6 rounded-lg shadow-xl">
+                <h3 class="text-lg font-bold mb-4 text-yellow-400">📋 Últimas Entradas Generadas en Puerta</h3>
+                <div id="recent-tickets" class="space-y-2">
+                    <p class="text-gray-400 text-center py-4">No hay entradas generadas aún en esta sesión</p>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script type="module">
+        import { db, auth, storage } from './firebase_config.js';
+        import { collection, addDoc, doc, writeBatch, serverTimestamp, query, orderBy, limit, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+
+        // Obtener parámetros del evento
+        const urlParams = new URLSearchParams(window.location.search);
+        const eventId = urlParams.get('eventId');
+        const eventName = urlParams.get('eventName');
+
+        if (!eventId || !eventName) {
+            alert('Error: No se ha especificado un evento.');
+            window.location.href = 'eventos.html';
+        }
+
+        // Configurar enlaces y títulos
+        document.getElementById('back-to-panel-link').href = `panel_evento.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`;
+        document.getElementById('event-name-display').textContent = eventName;
+
+        // Referencias DOM
+        const ui = {
+            generateBtn: document.getElementById('generate-ticket-btn'),
+            sellerName: document.getElementById('seller-name'),
+            sellerRole: document.getElementById('seller-role'),
+            clientName: document.getElementById('client-name'),
+            ticketPrice: document.getElementById('ticket-price'),
+            paymentMethod: document.getElementById('payment-method'),
+            clientPhone: document.getElementById('client-phone'),
+            ticketNotes: document.getElementById('ticket-notes'),
+            loadingOverlay: document.getElementById('loading-overlay'),
+            loadingText: document.getElementById('loading-text'),
+            successOverlay: document.getElementById('success-overlay'),
+            closeSuccessBtn: document.getElementById('close-success-btn'),
+            successTicketInfo: document.getElementById('success-ticket-info'),
+            successQrContainer: document.getElementById('success-qr-container'),
+            recentTickets: document.getElementById('recent-tickets')
+        };
+
+        // Array para almacenar entradas generadas en esta sesión
+        let sessionTickets = [];
+
+        // Funciones de utilidad
+        function showLoading(text = 'Procesando...') {
+            ui.loadingText.textContent = text;
+            ui.loadingOverlay.classList.remove('hidden');
+        }
+
+        function hideLoading() {
+            ui.loadingOverlay.classList.add('hidden');
+        }
+
+        function showSuccess(ticketData) {
+            // Mostrar información del ticket
+            ui.successTicketInfo.innerHTML = `
+                <div class="text-left">
+                    <p class="font-bold text-lg">👤 ${ticketData.name}</p>
+                    <p class="text-sm opacity-80">ID: ${ticketData.id}</p>
+                    <p class="text-sm opacity-80">💰 $${ticketData.price} - ${ticketData.paymentMethod}</p>
+                    <p class="text-sm opacity-80">👔 Vendido por: ${ticketData.soldBy}</p>
+                </div>
+            `;
+
+            // Generar QR
+            ui.successQrContainer.innerHTML = '';
+            new QRCode(ui.successQrContainer, {
+                text: ticketData.id,
+                width: 200,
+                height: 200,
+                colorDark: "#000000",
+                colorLight: "#ffffff",
+                correctLevel: QRCode.CorrectLevel.M
+            });
+
+            ui.successOverlay.classList.remove('hidden');
+
+            // Auto-cerrar después de 10 segundos
+            setTimeout(() => {
+                hideSuccess();
+            }, 10000);
+        }
+
+        function hideSuccess() {
+            ui.successOverlay.classList.add('hidden');
+            clearForm();
+        }
+
+        function clearForm() {
+            ui.clientName.value = '';
+            ui.ticketPrice.value = '';
+            ui.clientPhone.value = '';
+            ui.ticketNotes.value = '';
+            ui.clientName.focus();
+        }
+
+        function updateRecentTickets() {
+            if (sessionTickets.length === 0) {
+                ui.recentTickets.innerHTML = '<p class="text-gray-400 text-center py-4">No hay entradas generadas aún en esta sesión</p>';
+                return;
+            }
+
+            ui.recentTickets.innerHTML = sessionTickets.slice(-5).reverse().map(ticket => `
+                <div class="bg-gray-700 p-3 rounded-lg border-l-4 border-green-500">
+                    <div class="flex justify-between items-center">
+                        <div>
+                            <p class="font-semibold">${ticket.name}</p>
+                            <p class="text-sm text-gray-300">$${ticket.price} - ${ticket.paymentMethod}</p>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-xs text-gray-400">${new Date(ticket.generatedAt).toLocaleTimeString()}</p>
+                            <p class="text-xs font-mono text-green-400">${ticket.id}</p>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // Generar entrada inmediata
+        async function generateDoorTicket() {
+            // Validaciones
+            if (!ui.sellerName.value.trim()) {
+                alert('❌ Ingresa el nombre del vendedor/generador');
+                ui.sellerName.focus();
+                return;
+            }
+
+            if (!ui.clientName.value.trim()) {
+                alert('❌ Ingresa el nombre del cliente');
+                ui.clientName.focus();
+                return;
+            }
+
+            if (!ui.ticketPrice.value || parseFloat(ui.ticketPrice.value) < 0) {
+                alert('❌ Ingresa un precio válido (puede ser 0 para cortesías)');
+                ui.ticketPrice.focus();
+                return;
+            }
+
+            try {
+                showLoading('Generando entrada en puerta...');
+
+                // Generar ID único para la entrada
+                const ticketId = `PUERTA-${Date.now()}-${crypto.randomUUID().substring(0, 6)}`;
+                
+                // Crear datos del ticket
+                const ticketData = {
+                    id: ticketId,
+                    prefix: 'PUERTA',
+                    showName: eventName,
+                    showLocation: 'Evento en Vivo',
+                    showAddress: '',
+                    seatLocation: 'General',
+                    name: ui.clientName.value.trim(),
+                    paymentStatus: 'cobrada', // ✅ MARCADA COMO COBRADA AUTOMÁTICAMENTE
+                    price: parseFloat(ui.ticketPrice.value),
+                    tierName: `Puerta - ${ui.paymentMethod.value}`,
+                    used: false, // Aún no ha ingresado físicamente
+                    generatedAt: new Date().toISOString(),
+                    
+                    // 🔥 DATOS ESPECÍFICOS DE VENTA EN PUERTA
+                    isDoorSale: true,
+                    soldBy: ui.sellerName.value.trim(),
+                    sellerRole: ui.sellerRole.value,
+                    paymentMethod: ui.paymentMethod.value,
+                    clientPhone: ui.clientPhone.value.trim() || null,
+                    notes: ui.ticketNotes.value.trim() || null,
+                    soldAt: serverTimestamp(),
+                    
+                    // 🎯 HABILITACIÓN PARA VOTACIÓN
+                    canVote: true,
+                    voteEligible: true,
+                    entryAuthorized: true
+                };
+
+                // Guardar en Firebase
+                const ticketsCol = collection(db, `events/${eventId}/tickets`);
+                await addDoc(ticketsCol, ticketData);
+
+                hideLoading();
+
+                // Agregar a la sesión local
+                sessionTickets.push(ticketData);
+                updateRecentTickets();
+
+                // Mostrar éxito
+                showSuccess(ticketData);
+
+                console.log('✅ Entrada en puerta generada:', ticketData);
+
+            } catch (error) {
+                hideLoading();
+                console.error('❌ Error al generar entrada en puerta:', error);
+                alert('❌ Error al generar la entrada. Por favor intenta de nuevo.');
+            }
+        }
+
+        // Event Listeners
+        ui.generateBtn.addEventListener('click', generateDoorTicket);
+        ui.closeSuccessBtn.addEventListener('click', hideSuccess);
+
+        // Enter para generar entrada rápida
+        [ui.clientName, ui.ticketPrice].forEach(input => {
+            input.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    generateDoorTicket();
+                }
+            });
+        });
+
+        // Auto-focus en nombre del cliente
+        ui.clientName.focus();
+
+        // Cargar vendedor por defecto si está en localStorage
+        const savedSeller = localStorage.getItem('vyt_door_seller');
+        if (savedSeller) {
+            const sellerData = JSON.parse(savedSeller);
+            ui.sellerName.value = sellerData.name || '';
+            ui.sellerRole.value = sellerData.role || 'Taquilla';
+        }
+
+        // Guardar vendedor al cambiar
+        ui.sellerName.addEventListener('change', () => {
+            localStorage.setItem('vyt_door_seller', JSON.stringify({
+                name: ui.sellerName.value.trim(),
+                role: ui.sellerRole.value
+            }));
+        });
+
+        ui.sellerRole.addEventListener('change', () => {
+            if (ui.sellerName.value.trim()) {
+                localStorage.setItem('vyt_door_seller', JSON.stringify({
+                    name: ui.sellerName.value.trim(),
+                    role: ui.sellerRole.value
+                }));
+            }
+        });
+
+        console.log('🚪 Generador de Entradas en Puerta inicializado para evento:', eventName);
+    </script>
+</body>
+</html>
