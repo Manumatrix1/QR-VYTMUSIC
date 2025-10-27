@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🚨 ESCÁNER EMERGENCIA - Solo Local</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #000; color: #fff; }
+        .hidden { display: none !important; }
+        
+        /* Confirmación MEGA */
+        .confirmacion-mega {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 100; display: flex; flex-direction: column; 
+            justify-content: center; align-items: center; text-align: center;
+        }
+        
+        .exito { background: linear-gradient(135deg, #00ff88, #00cc66); }
+        .error { background: linear-gradient(135deg, #ff4444, #cc0000); }
+        .usado { background: linear-gradient(135deg, #ffaa00, #cc8800); }
+        
+        /* Contadores */
+        .contadores {
+            position: fixed; top: 20px; left: 20px; right: 20px;
+            background: rgba(0,0,0,0.9); border-radius: 15px; padding: 15px;
+            display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; z-index: 10;
+        }
+        
+        .contador { text-align: center; }
+        .numero { font-size: 2.5rem; font-weight: 900; }
+        .label { font-size: 0.8rem; opacity: 0.8; }
+        
+        /* Scanner */
+        #scanner-container { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; }
+        #reader { width: 100%; height: 100%; }
+        
+        /* Controles */
+        .controles {
+            position: fixed; bottom: 20px; left: 20px; right: 20px;
+            display: flex; gap: 10px; z-index: 10;
+        }
+        
+        .btn { flex: 1; padding: 15px; border-radius: 10px; font-weight: bold; border: none; font-size: 1rem; }
+        .btn-stop { background: #ff4444; color: white; }
+        .btn-export { background: #4444ff; color: white; }
+        .btn-clear { background: #ffaa00; color: white; }
+    </style>
+</head>
+<body>
+    <!-- Setup inicial -->
+    <div id="setup" class="min-h-screen flex items-center justify-center p-6">
+        <div class="bg-gray-900 p-8 rounded-lg max-w-md w-full border-2 border-green-500">
+            <h1 class="text-3xl font-bold text-green-400 mb-6 text-center">🚨 ESCÁNER EMERGENCIA</h1>
+            <p class="text-center text-yellow-300 mb-6 text-sm">MODO 100% OFFLINE - NO REQUIERE INTERNET</p>
+            
+            <div class="space-y-4 mb-6">
+                <input type="text" id="evento-input" 
+                       placeholder="Nombre del evento" 
+                       class="w-full p-3 rounded bg-gray-800 text-white border border-gray-600">
+                <input type="text" id="asistente-input" 
+                       placeholder="Tu nombre" 
+                       class="w-full p-3 rounded bg-gray-800 text-white border border-gray-600">
+            </div>
+            
+            <button id="start-btn" class="w-full py-3 bg-green-600 text-white font-bold rounded hover:bg-green-700">
+                🚀 INICIAR ESCÁNER DE EMERGENCIA
+            </button>
+            
+            <div class="mt-4 text-xs text-gray-400 space-y-1">
+                <p>✅ Funciona completamente sin internet</p>
+                <p>✅ Guarda todo en el dispositivo</p>
+                <p>✅ Exporta datos para transferir después</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Escáner -->
+    <div id="scanner-screen" class="hidden">
+        <!-- Contadores -->
+        <div class="contadores">
+            <div class="contador">
+                <div class="numero text-green-400" id="ingresaron">0</div>
+                <div class="label">INGRESARON</div>
+            </div>
+            <div class="contador">
+                <div class="numero text-yellow-400" id="duplicados">0</div>
+                <div class="label">DUPLICADOS</div>
+            </div>
+            <div class="contador">
+                <div class="numero text-blue-400" id="total">0</div>
+                <div class="label">TOTAL</div>
+            </div>
+        </div>
+
+        <!-- Scanner -->
+        <div id="scanner-container">
+            <div id="reader"></div>
+        </div>
+
+        <!-- Controles -->
+        <div class="controles">
+            <button id="stop-btn" class="btn btn-stop">❌ PARAR</button>
+            <button id="export-btn" class="btn btn-export">💾 EXPORTAR</button>
+            <button id="clear-btn" class="btn btn-clear">🗑️ LIMPIAR</button>
+        </div>
+    </div>
+
+    <!-- Confirmación -->
+    <div id="confirmacion" class="confirmacion-mega hidden">
+        <div id="confirmacion-content"></div>
+    </div>
+
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+    <script>
+        class EmergencyScanner {
+            constructor() {
+                this.evento = '';
+                this.asistente = '';
+                this.html5QrCode = null;
+                this.isActive = false;
+                this.registros = [];
+                this.contadores = { ingresaron: 0, duplicados: 0, total: 0 };
+                this.lastScan = null;
+                this.lastScanTime = 0;
+                
+                this.initEvents();
+                this.loadFromStorage();
+            }
+
+            initEvents() {
+                document.getElementById('start-btn').onclick = () => this.start();
+                document.getElementById('stop-btn').onclick = () => this.stop();
+                document.getElementById('export-btn').onclick = () => this.export();
+                document.getElementById('clear-btn').onclick = () => this.clear();
+            }
+
+            async start() {
+                this.evento = document.getElementById('evento-input').value.trim();
+                this.asistente = document.getElementById('asistente-input').value.trim();
+
+                if (!this.evento || !this.asistente) {
+                    alert('❌ Completa evento y tu nombre');
+                    return;
+                }
+
+                document.getElementById('setup').classList.add('hidden');
+                document.getElementById('scanner-screen').classList.remove('hidden');
+
+                await this.initScanner();
+                this.updateCounters();
+                this.saveToStorage();
+            }
+
+            async initScanner() {
+                try {
+                    this.html5QrCode = new Html5Qrcode("reader");
+                    
+                    await this.html5QrCode.start(
+                        { facingMode: "environment" },
+                        {
+                            fps: 30,
+                            qrbox: { width: 250, height: 250 }
+                        },
+                        (decodedText) => this.onScan(decodedText),
+                        () => {} // Ignorar errores
+                    );
+
+                    this.isActive = true;
+                    console.log('✅ Scanner de emergencia iniciado');
+                } catch (error) {
+                    alert(`❌ Error: ${error.message}`);
+                }
+            }
+
+            onScan(codigo) {
+                if (!this.isActive) return;
+
+                const now = Date.now();
+                if (this.lastScan === codigo && (now - this.lastScanTime) < 1000) {
+                    return; // Evitar duplicados rápidos
+                }
+
+                this.lastScan = codigo;
+                this.lastScanTime = now;
+
+                // Verificar si ya existe
+                const yaExiste = this.registros.find(r => r.codigo === codigo);
+                
+                let resultado;
+                if (yaExiste) {
+                    resultado = {
+                        tipo: 'duplicado',
+                        titulo: '⚠️ YA REGISTRADO',
+                        subtitle: 'Esta persona ya ingresó',
+                        codigo: codigo,
+                        hora: yaExiste.hora
+                    };
+                    this.contadores.duplicados++;
+                } else {
+                    // Nuevo ingreso
+                    const registro = {
+                        codigo: codigo,
+                        hora: new Date().toISOString(),
+                        horaLocal: new Date().toLocaleString(),
+                        asistente: this.asistente,
+                        evento: this.evento
+                    };
+                    
+                    this.registros.push(registro);
+                    
+                    resultado = {
+                        tipo: 'ingreso',
+                        titulo: '✅ INGRESO VÁLIDO',
+                        subtitle: 'Persona registrada correctamente',
+                        codigo: codigo,
+                        hora: registro.horaLocal
+                    };
+                    this.contadores.ingresaron++;
+                }
+
+                this.contadores.total++;
+                this.showConfirmacion(resultado);
+                this.updateCounters();
+                this.saveToStorage();
+                this.playSound(resultado.tipo);
+                this.vibrate(resultado.tipo);
+            }
+
+            showConfirmacion(resultado) {
+                const el = document.getElementById('confirmacion');
+                const content = document.getElementById('confirmacion-content');
+
+                const clase = resultado.tipo === 'ingreso' ? 'exito' : (resultado.tipo === 'duplicado' ? 'usado' : 'error');
+                el.className = `confirmacion-mega ${clase}`;
+
+                content.innerHTML = `
+                    <div style="font-size: 6rem; margin-bottom: 20px;">
+                        ${resultado.tipo === 'ingreso' ? '✅' : '⚠️'}
+                    </div>
+                    <div style="font-size: 2.5rem; font-weight: 900; margin-bottom: 15px;">
+                        ${resultado.titulo}
+                    </div>
+                    <div style="font-size: 1.5rem; margin-bottom: 10px;">
+                        ${resultado.subtitle}
+                    </div>
+                    <div style="font-size: 1rem; opacity: 0.8;">
+                        ${resultado.hora}
+                    </div>
+                    <div style="font-size: 0.8rem; opacity: 0.6; margin-top: 10px; font-family: monospace;">
+                        ${resultado.codigo.substring(0, 20)}...
+                    </div>
+                `;
+
+                el.classList.remove('hidden');
+                
+                setTimeout(() => {
+                    el.classList.add('hidden');
+                }, resultado.tipo === 'ingreso' ? 2500 : 2000);
+            }
+
+            playSound(tipo) {
+                try {
+                    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                    const osc = ctx.createOscillator();
+                    const gain = ctx.createGain();
+
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+
+                    const freq = tipo === 'ingreso' ? 800 : 400;
+                    osc.frequency.setValueAtTime(freq, ctx.currentTime);
+                    osc.type = 'sine';
+                    
+                    gain.gain.setValueAtTime(0.3, ctx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
+
+                    osc.start(ctx.currentTime);
+                    osc.stop(ctx.currentTime + 0.5);
+                } catch (e) {
+                    console.log('Audio no disponible');
+                }
+            }
+
+            vibrate(tipo) {
+                if (navigator.vibrate) {
+                    const pattern = tipo === 'ingreso' ? [200, 100, 200] : [500];
+                    navigator.vibrate(pattern);
+                }
+            }
+
+            updateCounters() {
+                document.getElementById('ingresaron').textContent = this.contadores.ingresaron;
+                document.getElementById('duplicados').textContent = this.contadores.duplicados;
+                document.getElementById('total').textContent = this.contadores.total;
+            }
+
+            async stop() {
+                if (this.html5QrCode && this.isActive) {
+                    await this.html5QrCode.stop();
+                }
+                this.isActive = false;
+                
+                document.getElementById('scanner-screen').classList.add('hidden');
+                document.getElementById('setup').classList.remove('hidden');
+            }
+
+            export() {
+                const data = {
+                    evento: this.evento,
+                    asistente: this.asistente,
+                    resumen: this.contadores,
+                    registros: this.registros,
+                    exportado: new Date().toISOString(),
+                    total_registros: this.registros.length
+                };
+
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `emergencia_${this.evento.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+
+                alert(`✅ Exportados ${this.registros.length} registros`);
+            }
+
+            clear() {
+                if (confirm('❌ ¿Borrar TODOS los datos? Esta acción no se puede deshacer.')) {
+                    this.registros = [];
+                    this.contadores = { ingresaron: 0, duplicados: 0, total: 0 };
+                    this.updateCounters();
+                    this.saveToStorage();
+                    alert('✅ Datos borrados');
+                }
+            }
+
+            saveToStorage() {
+                const data = {
+                    evento: this.evento,
+                    asistente: this.asistente,
+                    registros: this.registros,
+                    contadores: this.contadores
+                };
+                localStorage.setItem('emergency_scanner_data', JSON.stringify(data));
+            }
+
+            loadFromStorage() {
+                const saved = localStorage.getItem('emergency_scanner_data');
+                if (saved) {
+                    try {
+                        const data = JSON.parse(saved);
+                        this.evento = data.evento || '';
+                        this.asistente = data.asistente || '';
+                        this.registros = data.registros || [];
+                        this.contadores = data.contadores || { ingresaron: 0, duplicados: 0, total: 0 };
+
+                        if (this.evento) document.getElementById('evento-input').value = this.evento;
+                        if (this.asistente) document.getElementById('asistente-input').value = this.asistente;
+
+                        console.log(`📱 Cargados ${this.registros.length} registros guardados`);
+                    } catch (e) {
+                        console.error('Error cargando datos:', e);
+                    }
+                }
+            }
+        }
+
+        // Inicializar scanner de emergencia
+        const scanner = new EmergencyScanner();
+        console.log('🚨 ESCÁNER DE EMERGENCIA LISTO - 100% OFFLINE');
+    </script>
+</body>
+</html>

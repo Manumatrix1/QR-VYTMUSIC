@@ -1,0 +1,923 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎯 Escáner QR Inteligente - VYTMUSIC</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background: linear-gradient(135deg, #0f172a, #1e293b); color: #f8fafc; }
+        .hidden { display: none !important; }
+        
+        /* Escáner pantalla completa */
+        #scanner-container { 
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+            background: #000; z-index: 50; 
+        }
+        #qr-reader { width: 100vw; height: 100vh; overflow: hidden; }
+        
+        /* CONFIRMACIÓN MEGA VISIBLE */
+        .mega-confirmacion {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 100; display: flex; flex-direction: column; 
+            justify-content: center; align-items: center; text-align: center;
+            pointer-events: none;
+        }
+        
+        .confirmacion-valida {
+            background: linear-gradient(135deg, #10b981, #059669);
+            animation: confirmacionExito 3s ease-out;
+        }
+        
+        .confirmacion-usada {
+            background: linear-gradient(135deg, #f59e0b, #d97706);
+            animation: confirmacionAdvertencia 2s ease-out;
+        }
+        
+        .confirmacion-invalida {
+            background: linear-gradient(135deg, #ef4444, #dc2626);
+            animation: confirmacionError 2s ease-out;
+        }
+        
+        @keyframes confirmacionExito {
+            0% { opacity: 0; transform: scale(0.5); }
+            15% { opacity: 0.95; transform: scale(1.1); }
+            85% { opacity: 0.95; transform: scale(1); }
+            100% { opacity: 0; transform: scale(1); }
+        }
+        
+        @keyframes confirmacionAdvertencia {
+            0% { opacity: 0; transform: scale(0.5); }
+            20% { opacity: 0.9; transform: scale(1.05); }
+            80% { opacity: 0.9; transform: scale(1); }
+            100% { opacity: 0; transform: scale(1); }
+        }
+        
+        @keyframes confirmacionError {
+            0% { opacity: 0; transform: scale(0.5); }
+            25% { opacity: 0.85; transform: scale(1.02); }
+            75% { opacity: 0.85; transform: scale(1); }
+            100% { opacity: 0; transform: scale(1); }
+        }
+        
+        /* Header con contadores */
+        .header-stats {
+            position: fixed; top: 20px; left: 20px; right: 20px;
+            background: rgba(15, 23, 42, 0.95); backdrop-filter: blur(15px);
+            border: 2px solid; border-radius: 20px; padding: 20px; z-index: 60;
+            display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px;
+        }
+        
+        .header-online { border-color: #10b981; box-shadow: 0 0 20px rgba(16, 185, 129, 0.3); }
+        .header-offline { border-color: #f59e0b; box-shadow: 0 0 20px rgba(245, 158, 11, 0.3); }
+        
+        .stat-item {
+            text-align: center; padding: 10px; border-radius: 12px;
+            background: rgba(255, 255, 255, 0.1);
+        }
+        
+        .stat-number {
+            font-size: 2.2rem; font-weight: 900; line-height: 1;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+        }
+        
+        .stat-label {
+            font-size: 0.75rem; font-weight: 600; opacity: 0.9; 
+            margin-top: 5px; text-transform: uppercase; letter-spacing: 0.5px;
+        }
+        
+        /* Estado de conexión inteligente */
+        .connection-indicator {
+            position: fixed; top: 120px; left: 20px; right: 20px;
+            padding: 12px 20px; border-radius: 15px; font-weight: 700;
+            text-align: center; z-index: 60; font-size: 1.1rem;
+            display: flex; align-items: center; justify-content: center; gap: 10px;
+        }
+        
+        .status-online { 
+            background: linear-gradient(90deg, #10b981, #059669); 
+            color: white; animation: pulseOnline 2s infinite;
+        }
+        .status-offline { 
+            background: linear-gradient(90deg, #f59e0b, #d97706); 
+            color: white; animation: pulseOffline 1.5s infinite;
+        }
+        .status-syncing { 
+            background: linear-gradient(90deg, #3b82f6, #2563eb); 
+            color: white; animation: syncingAnimation 1s infinite;
+        }
+        
+        @keyframes pulseOnline { 0%, 100% { opacity: 1; } 50% { opacity: 0.8; } }
+        @keyframes pulseOffline { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+        @keyframes syncingAnimation { 0% { transform: translateX(-5px); } 50% { transform: translateX(5px); } 100% { transform: translateX(-5px); } }
+        
+        /* Controles inferiores */
+        .bottom-controls {
+            position: fixed; bottom: 20px; left: 20px; right: 20px;
+            display: flex; justify-content: space-between; gap: 15px; z-index: 60;
+        }
+        
+        .control-btn {
+            flex: 1; padding: 18px 20px; border-radius: 15px;
+            font-weight: 800; font-size: 1.1rem; border: none;
+            box-shadow: 0 8px 25px rgba(0,0,0,0.3);
+            transition: all 0.2s ease; text-transform: uppercase;
+        }
+        
+        .control-btn:active { transform: scale(0.95); }
+        
+        .btn-stop { background: linear-gradient(135deg, #ef4444, #dc2626); color: white; }
+        .btn-sync { background: linear-gradient(135deg, #3b82f6, #2563eb); color: white; }
+        .btn-export { background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: white; }
+        
+        /* Setup inicial */
+        .setup-card {
+            background: linear-gradient(135deg, #1e293b, #334155);
+            border: 3px solid #10b981; border-radius: 25px;
+            box-shadow: 0 25px 50px rgba(0,0,0,0.5), 0 0 50px rgba(16, 185, 129, 0.1);
+        }
+        
+        /* Indicador de escaneo activo */
+        .scan-indicator {
+            position: fixed; top: 50%; left: 50%; 
+            transform: translate(-50%, -50%);
+            z-index: 55; pointer-events: none;
+        }
+        
+        .scan-frame {
+            width: 280px; height: 280px; 
+            border: 4px solid #10b981; border-radius: 25px;
+            position: relative; animation: scanPulse 2s ease-in-out infinite;
+        }
+        
+        .scan-corners {
+            position: absolute; width: 50px; height: 50px;
+            border: 6px solid #10b981;
+        }
+        
+        .corner-tl { top: -3px; left: -3px; border-right: none; border-bottom: none; }
+        .corner-tr { top: -3px; right: -3px; border-left: none; border-bottom: none; }
+        .corner-bl { bottom: -3px; left: -3px; border-right: none; border-top: none; }
+        .corner-br { bottom: -3px; right: -3px; border-left: none; border-top: none; }
+        
+        @keyframes scanPulse {
+            0%, 100% { transform: scale(1); opacity: 0.8; }
+            50% { transform: scale(1.05); opacity: 1; }
+        }
+        
+        /* Notificación de sincronización */
+        .sync-notification {
+            position: fixed; top: 180px; left: 20px; right: 20px;
+            background: linear-gradient(90deg, #10b981, #059669);
+            color: white; text-align: center; padding: 12px;
+            border-radius: 15px; z-index: 65; font-weight: 700;
+            animation: slideDownNotification 0.5s ease-out;
+        }
+        
+        @keyframes slideDownNotification {
+            from { transform: translateY(-100%); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        
+        /* Loading animation */
+        .loading-spinner {
+            width: 20px; height: 20px; border: 3px solid rgba(255,255,255,0.3);
+            border-top: 3px solid white; border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <!-- Pantalla de configuración inicial -->
+    <div id="setup-screen" class="min-h-screen flex items-center justify-center p-6">
+        <div class="setup-card p-10 max-w-lg w-full">
+            <div class="text-center mb-8">
+                <h1 class="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-sky-400 mb-4">
+                    🎯 ESCÁNER INTELIGENTE
+                </h1>
+                <p class="text-xl font-bold text-emerald-400 mb-2">DETECCIÓN AUTOMÁTICA DE CONEXIÓN</p>
+                <p class="text-sm text-gray-300">Se sincroniza automáticamente cuando hay internet</p>
+            </div>
+            
+            <div class="space-y-6 mb-8">
+                <div>
+                    <label class="block text-sm font-bold mb-3 text-emerald-400">🎪 ID del Evento:</label>
+                    <input type="text" id="event-id" 
+                           class="w-full p-4 rounded-xl border-2 border-slate-600 bg-slate-800 text-white text-lg font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500" 
+                           placeholder="Ej: gala2024">
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-bold mb-3 text-emerald-400">🎵 Nombre del Evento:</label>
+                    <input type="text" id="event-name" 
+                           class="w-full p-4 rounded-xl border-2 border-slate-600 bg-slate-800 text-white text-lg font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500" 
+                           placeholder="Ej: Gala VYTMUSIC 2024">
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-bold mb-3 text-emerald-400">👤 Tu Nombre:</label>
+                    <input type="text" id="assistant-name" 
+                           class="w-full p-4 rounded-xl border-2 border-slate-600 bg-slate-800 text-white text-lg font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500" 
+                           placeholder="Tu nombre">
+                </div>
+            </div>
+            
+            <button id="start-scanner" 
+                    class="w-full py-5 px-6 bg-gradient-to-r from-emerald-500 to-sky-500 text-white font-black text-xl rounded-xl hover:from-emerald-600 hover:to-sky-600 transform hover:scale-105 transition-all duration-200 shadow-xl">
+                🚀 INICIAR ESCÁNER INTELIGENTE
+            </button>
+            
+            <div class="mt-8 grid grid-cols-2 gap-4 text-sm">
+                <div class="bg-slate-800 p-4 rounded-xl text-center">
+                    <div class="text-emerald-400 font-bold text-lg mb-2">🌐 CON INTERNET</div>
+                    <div class="text-gray-300">Sincroniza automáticamente con Firebase</div>
+                </div>
+                <div class="bg-slate-800 p-4 rounded-xl text-center">
+                    <div class="text-yellow-400 font-bold text-lg mb-2">📱 SIN INTERNET</div>
+                    <div class="text-gray-300">Guarda todo localmente</div>
+                </div>
+                <div class="bg-slate-800 p-4 rounded-xl text-center">
+                    <div class="text-sky-400 font-bold text-lg mb-2">🔄 AUTO-SYNC</div>
+                    <div class="text-gray-300">Se conecta automáticamente</div>
+                </div>
+                <div class="bg-slate-800 p-4 rounded-xl text-center">
+                    <div class="text-purple-400 font-bold text-lg mb-2">💾 RESPALDO</div>
+                    <div class="text-gray-300">Exporta datos siempre</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pantalla del escáner -->
+    <div id="scanner-screen" class="hidden">
+        <!-- Header con estadísticas -->
+        <div id="stats-header" class="header-stats header-offline">
+            <div class="stat-item">
+                <div class="stat-number text-emerald-400" id="count-valid">0</div>
+                <div class="stat-label">Ingresaron</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number text-yellow-400" id="count-used">0</div>
+                <div class="stat-label">Ya Usadas</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number text-red-400" id="count-invalid">0</div>
+                <div class="stat-label">Inválidas</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number text-sky-400" id="count-total">0</div>
+                <div class="stat-label">Total</div>
+            </div>
+        </div>
+
+        <!-- Indicador de conexión inteligente -->
+        <div id="connection-status" class="connection-indicator status-offline">
+            <div class="loading-spinner hidden" id="connection-spinner"></div>
+            <span id="connection-text">🔍 Verificando conexión...</span>
+        </div>
+
+        <!-- Indicador de escaneo -->
+        <div class="scan-indicator">
+            <div class="scan-frame">
+                <div class="scan-corners corner-tl"></div>
+                <div class="scan-corners corner-tr"></div>
+                <div class="scan-corners corner-bl"></div>
+                <div class="scan-corners corner-br"></div>
+                <div class="absolute inset-6 border-2 border-emerald-400 border-dashed rounded-xl opacity-60"></div>
+                <div class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-emerald-400 font-bold text-lg text-center">
+                    📱<br>APUNTA<br>EL QR
+                </div>
+            </div>
+        </div>
+
+        <!-- Área del escáner -->
+        <div id="scanner-container">
+            <div id="qr-reader"></div>
+        </div>
+
+        <!-- Controles inferiores -->
+        <div class="bottom-controls">
+            <button id="stop-scanner" class="control-btn btn-stop">
+                ❌ Cerrar
+            </button>
+            <button id="force-sync" class="control-btn btn-sync">
+                🔄 Sync
+            </button>
+            <button id="export-data" class="control-btn btn-export">
+                💾 Exportar
+            </button>
+        </div>
+    </div>
+
+    <!-- Overlay de confirmación -->
+    <div id="mega-confirmation" class="mega-confirmacion hidden">
+        <div id="confirmation-content"></div>
+    </div>
+
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+    <script type="module">
+        import { db } from './firebase_config.js';
+        import { doc, getDoc, updateDoc, collection, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        class IntelligentQRScanner {
+            constructor() {
+                this.eventId = null;
+                this.eventName = null;
+                this.assistantName = null;
+                this.html5QrCode = null;
+                this.isActive = false;
+                this.isOnline = false;
+                this.ticketsCache = new Map();
+                this.localEntries = [];
+                this.counters = { valid: 0, used: 0, invalid: 0, total: 0 };
+                this.lastScan = null;
+                this.lastScanTime = 0;
+                this.syncQueue = [];
+                this.isSyncing = false;
+                this.connectionCheckInterval = null;
+                
+                this.initializeEvents();
+                this.loadFromStorage();
+                this.startConnectionMonitoring();
+                
+                console.log('🎯 Escáner Inteligente Iniciado');
+            }
+
+            initializeEvents() {
+                document.getElementById('start-scanner').onclick = () => this.startSystem();
+                document.getElementById('stop-scanner').onclick = () => this.stopSystem();
+                document.getElementById('force-sync').onclick = () => this.forceSyncNow();
+                document.getElementById('export-data').onclick = () => this.exportAllData();
+            }
+
+            startConnectionMonitoring() {
+                // Monitoreo inicial
+                this.checkConnection();
+                
+                // Eventos de navegador
+                window.addEventListener('online', () => this.handleConnectionChange(true));
+                window.addEventListener('offline', () => this.handleConnectionChange(false));
+                
+                // Verificación periódica cada 5 segundos
+                this.connectionCheckInterval = setInterval(() => this.checkConnection(), 5000);
+            }
+
+            async checkConnection() {
+                try {
+                    // Ping a Google para verificar conexión real
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 3000);
+                    
+                    await fetch('https://www.gstatic.com/generate_204', {
+                        method: 'HEAD',
+                        mode: 'no-cors',
+                        signal: controller.signal
+                    });
+                    
+                    clearTimeout(timeoutId);
+                    
+                    if (!this.isOnline) {
+                        this.handleConnectionChange(true);
+                    }
+                } catch (error) {
+                    if (this.isOnline) {
+                        this.handleConnectionChange(false);
+                    }
+                }
+            }
+
+            handleConnectionChange(online) {
+                const wasOffline = !this.isOnline;
+                this.isOnline = online;
+                
+                console.log(`🔄 Conexión: ${online ? 'ONLINE' : 'OFFLINE'}`);
+                
+                this.updateConnectionUI();
+                
+                // Si acabamos de conectarnos, sincronizar
+                if (online && wasOffline && this.syncQueue.length > 0) {
+                    console.log('🔄 Reconectado - iniciando sincronización automática');
+                    setTimeout(() => this.autoSync(), 1000);
+                }
+            }
+
+            updateConnectionUI() {
+                const statusEl = document.getElementById('connection-status');
+                const textEl = document.getElementById('connection-text');
+                const spinnerEl = document.getElementById('connection-spinner');
+                const headerEl = document.getElementById('stats-header');
+                
+                if (this.isSyncing) {
+                    statusEl.className = 'connection-indicator status-syncing';
+                    textEl.textContent = '🔄 Sincronizando datos con Firebase...';
+                    spinnerEl.classList.remove('hidden');
+                } else if (this.isOnline) {
+                    const pendingCount = this.syncQueue.length;
+                    statusEl.className = 'connection-indicator status-online';
+                    textEl.textContent = pendingCount > 0 ? 
+                        `🌐 ONLINE - ${pendingCount} pendientes de sync` : 
+                        '🌐 ONLINE - Todo sincronizado ✅';
+                    spinnerEl.classList.add('hidden');
+                    headerEl.className = 'header-stats header-online';
+                } else {
+                    const pendingCount = this.syncQueue.length;
+                    statusEl.className = 'connection-indicator status-offline';
+                    textEl.textContent = `📱 SIN INTERNET - ${pendingCount} guardados localmente`;
+                    spinnerEl.classList.add('hidden');
+                    headerEl.className = 'header-stats header-offline';
+                }
+            }
+
+            async startSystem() {
+                this.eventId = document.getElementById('event-id').value.trim();
+                this.eventName = document.getElementById('event-name').value.trim();
+                this.assistantName = document.getElementById('assistant-name').value.trim();
+
+                if (!this.eventId || !this.eventName || !this.assistantName) {
+                    alert('❌ Por favor completa todos los campos');
+                    return;
+                }
+
+                console.log(`🚀 Iniciando sistema para: ${this.eventName}`);
+                
+                // Guardar configuración
+                this.saveToStorage();
+
+                // Cargar tickets si hay conexión
+                await this.loadTickets();
+
+                // Mostrar escáner
+                document.getElementById('setup-screen').classList.add('hidden');
+                document.getElementById('scanner-screen').classList.remove('hidden');
+
+                // Iniciar escáner QR
+                await this.initializeScanner();
+
+                // Actualizar UI
+                this.updateCounters();
+                this.updateConnectionUI();
+
+                console.log('✅ Sistema completamente iniciado');
+            }
+
+            async loadTickets() {
+                if (this.isOnline) {
+                    try {
+                        console.log('🔄 Cargando tickets desde Firebase...');
+                        const ticketsRef = collection(db, `events/${this.eventId}/tickets`);
+                        const snapshot = await getDocs(ticketsRef);
+                        
+                        let loadedCount = 0;
+                        snapshot.docs.forEach(doc => {
+                            this.ticketsCache.set(doc.id, { id: doc.id, ...doc.data() });
+                            loadedCount++;
+                        });
+
+                        console.log(`✅ ${loadedCount} tickets cargados desde Firebase`);
+                        this.saveToStorage();
+                    } catch (error) {
+                        console.error('❌ Error cargando tickets:', error);
+                        console.log('📱 Continuando con cache local');
+                    }
+                } else {
+                    console.log('📱 Modo offline - usando cache local');
+                }
+            }
+
+            async initializeScanner() {
+                try {
+                    this.html5QrCode = new Html5Qrcode("qr-reader");
+                    
+                    const config = {
+                        fps: 30,
+                        qrbox: { width: 250, height: 250 },
+                        aspectRatio: 1.0,
+                        disableFlip: false
+                    };
+
+                    await this.html5QrCode.start(
+                        { facingMode: "environment" },
+                        config,
+                        (decodedText) => this.onScanSuccess(decodedText),
+                        () => {} // Ignorar errores
+                    );
+
+                    this.isActive = true;
+                    console.log('✅ Escáner QR iniciado');
+                } catch (error) {
+                    console.error('❌ Error iniciando escáner:', error);
+                    alert(`❌ Error al iniciar cámara: ${error.message}`);
+                }
+            }
+
+            onScanSuccess(decodedText) {
+                if (!this.isActive) return;
+
+                // Prevenir escaneos duplicados rápidos
+                const now = Date.now();
+                if (this.lastScan === decodedText && (now - this.lastScanTime) < 1000) {
+                    return;
+                }
+
+                this.lastScan = decodedText;
+                this.lastScanTime = now;
+
+                console.log(`🔍 QR escaneado: ${decodedText.substring(0, 20)}...`);
+
+                // Vibración inmediata
+                if (navigator.vibrate) {
+                    navigator.vibrate(100);
+                }
+
+                this.processQRCode(decodedText);
+            }
+
+            processQRCode(code) {
+                const ticket = this.ticketsCache.get(code);
+                let result;
+
+                if (!ticket) {
+                    // Código no encontrado
+                    result = {
+                        type: 'invalid',
+                        title: '❌ ENTRADA INVÁLIDA',
+                        subtitle: 'Código no encontrado en el sistema',
+                        name: 'Desconocido',
+                        code: code
+                    };
+                    this.counters.invalid++;
+                } else if (ticket.used) {
+                    // Ya utilizada
+                    result = {
+                        type: 'used',
+                        title: '⚠️ YA UTILIZADA',
+                        subtitle: 'Esta entrada ya fue escaneada',
+                        name: ticket.name,
+                        usedAt: ticket.usedAt,
+                        code: code
+                    };
+                    this.counters.used++;
+                } else {
+                    // Entrada válida - REGISTRAR
+                    result = {
+                        type: 'valid',
+                        title: '✅ INGRESO CONFIRMADO',
+                        subtitle: 'Bienvenido/a al evento',
+                        name: ticket.name,
+                        prefix: ticket.prefix || 'N/A',
+                        code: code
+                    };
+                    this.counters.valid++;
+
+                    // Marcar como usada en cache local
+                    ticket.used = true;
+                    ticket.usedAt = new Date().toISOString();
+                    ticket.usedBy = this.assistantName;
+
+                    // Agregar a registros locales
+                    const entry = {
+                        ticketId: code,
+                        name: ticket.name,
+                        prefix: ticket.prefix || 'N/A',
+                        timestamp: new Date().toISOString(),
+                        timestampLocal: new Date().toLocaleString(),
+                        assistant: this.assistantName,
+                        synced: false
+                    };
+
+                    this.localEntries.push(entry);
+                    this.syncQueue.push({ ticketId: code, ticketData: ticket });
+
+                    // Intentar sincronizar inmediatamente si hay conexión
+                    if (this.isOnline) {
+                        this.syncSingleTicket(code, ticket);
+                    }
+                }
+
+                this.counters.total++;
+
+                // Mostrar confirmación mega visible
+                this.showMegaConfirmation(result);
+
+                // Actualizar contadores
+                this.updateCounters();
+
+                // Guardar en localStorage
+                this.saveToStorage();
+
+                // Actualizar UI de conexión
+                this.updateConnectionUI();
+            }
+
+            showMegaConfirmation(result) {
+                const megaEl = document.getElementById('mega-confirmation');
+                const contentEl = document.getElementById('confirmation-content');
+
+                const typeClass = {
+                    'valid': 'confirmacion-valida',
+                    'used': 'confirmacion-usada',
+                    'invalid': 'confirmacion-invalida'
+                }[result.type];
+
+                megaEl.className = `mega-confirmacion ${typeClass}`;
+
+                const icon = {
+                    'valid': '✅',
+                    'used': '⚠️',
+                    'invalid': '❌'
+                }[result.type];
+
+                contentEl.innerHTML = `
+                    <div style="font-size: 8rem; margin-bottom: 30px; filter: drop-shadow(0 0 20px currentColor);">
+                        ${icon}
+                    </div>
+                    <div style="font-size: 3.5rem; font-weight: 900; margin-bottom: 20px; text-shadow: 0 0 20px rgba(0,0,0,0.8);">
+                        ${result.title}
+                    </div>
+                    <div style="font-size: 2.2rem; font-weight: 700; margin-bottom: 15px;">
+                        ${result.name}
+                    </div>
+                    <div style="font-size: 1.6rem; opacity: 0.9; margin-bottom: 10px;">
+                        ${result.subtitle}
+                    </div>
+                    <div style="font-size: 1.2rem; opacity: 0.8;">
+                        ${new Date().toLocaleTimeString()}
+                    </div>
+                    ${result.prefix ? `<div style="font-size: 1rem; opacity: 0.7; margin-top: 10px;">Grupo: ${result.prefix}</div>` : ''}
+                `;
+
+                megaEl.classList.remove('hidden');
+
+                // Sonido
+                this.playSound(result.type);
+
+                // Vibración específica
+                if (navigator.vibrate) {
+                    const patterns = {
+                        'valid': [200, 100, 200],
+                        'used': [500],
+                        'invalid': [100, 100, 100, 100, 100]
+                    };
+                    navigator.vibrate(patterns[result.type]);
+                }
+
+                // Ocultar automáticamente
+                const hideDelay = result.type === 'valid' ? 3000 : 2000;
+                setTimeout(() => {
+                    megaEl.classList.add('hidden');
+                }, hideDelay);
+            }
+
+            playSound(type) {
+                try {
+                    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    const oscillator = audioContext.createOscillator();
+                    const gainNode = audioContext.createGain();
+
+                    oscillator.connect(gainNode);
+                    gainNode.connect(audioContext.destination);
+
+                    const configs = {
+                        'valid': { freq: [800, 1000], duration: 0.6 },
+                        'used': { freq: [400], duration: 0.8 },
+                        'invalid': { freq: [200, 150], duration: 0.4 }
+                    };
+
+                    const config = configs[type];
+                    oscillator.frequency.setValueAtTime(config.freq[0], audioContext.currentTime);
+                    if (config.freq[1]) {
+                        oscillator.frequency.exponentialRampToValueAtTime(config.freq[1], audioContext.currentTime + config.duration / 2);
+                    }
+
+                    oscillator.type = 'sine';
+                    gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+                    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + config.duration);
+
+                    oscillator.start(audioContext.currentTime);
+                    oscillator.stop(audioContext.currentTime + config.duration);
+                } catch (error) {
+                    console.log('Audio no disponible');
+                }
+            }
+
+            async syncSingleTicket(ticketId, ticketData) {
+                try {
+                    const ticketRef = doc(db, `events/${this.eventId}/tickets`, ticketId);
+                    await updateDoc(ticketRef, {
+                        used: true,
+                        usedAt: ticketData.usedAt,
+                        usedBy: ticketData.usedBy
+                    });
+
+                    // Marcar como sincronizado
+                    const queueIndex = this.syncQueue.findIndex(item => item.ticketId === ticketId);
+                    if (queueIndex !== -1) {
+                        this.syncQueue.splice(queueIndex, 1);
+                    }
+
+                    const entryIndex = this.localEntries.findIndex(entry => entry.ticketId === ticketId);
+                    if (entryIndex !== -1) {
+                        this.localEntries[entryIndex].synced = true;
+                    }
+
+                    console.log(`✅ Ticket ${ticketId} sincronizado`);
+                    this.updateConnectionUI();
+                } catch (error) {
+                    console.error(`❌ Error sincronizando ${ticketId}:`, error);
+                }
+            }
+
+            async autoSync() {
+                if (!this.isOnline || this.isSyncing || this.syncQueue.length === 0) return;
+
+                this.isSyncing = true;
+                this.updateConnectionUI();
+
+                console.log(`🔄 Auto-sincronizando ${this.syncQueue.length} entradas...`);
+
+                let syncedCount = 0;
+                const toSync = [...this.syncQueue];
+
+                for (const item of toSync) {
+                    try {
+                        await this.syncSingleTicket(item.ticketId, item.ticketData);
+                        syncedCount++;
+                    } catch (error) {
+                        console.error('Error en auto-sync:', error);
+                        break;
+                    }
+                }
+
+                this.isSyncing = false;
+                this.saveToStorage();
+                this.updateConnectionUI();
+
+                if (syncedCount > 0) {
+                    this.showSyncNotification(syncedCount);
+                }
+
+                console.log(`✅ Auto-sync completado: ${syncedCount} entradas`);
+            }
+
+            async forceSyncNow() {
+                if (!this.isOnline) {
+                    alert('❌ Sin conexión a internet. Los datos se sincronizarán automáticamente cuando haya conexión.');
+                    return;
+                }
+
+                if (this.syncQueue.length === 0) {
+                    alert('✅ No hay datos pendientes de sincronizar');
+                    return;
+                }
+
+                await this.autoSync();
+            }
+
+            showSyncNotification(count) {
+                const notification = document.createElement('div');
+                notification.className = 'sync-notification';
+                notification.textContent = `✅ ${count} entradas sincronizadas automáticamente`;
+                
+                document.body.appendChild(notification);
+                
+                setTimeout(() => {
+                    if (document.body.contains(notification)) {
+                        document.body.removeChild(notification);
+                    }
+                }, 4000);
+            }
+
+            updateCounters() {
+                document.getElementById('count-valid').textContent = this.counters.valid;
+                document.getElementById('count-used').textContent = this.counters.used;
+                document.getElementById('count-invalid').textContent = this.counters.invalid;
+                document.getElementById('count-total').textContent = this.counters.total;
+            }
+
+            exportAllData() {
+                const data = {
+                    evento: {
+                        nombre: this.eventName,
+                        id: this.eventId,
+                        asistente: this.assistantName
+                    },
+                    resumen: {
+                        ingresaron: this.counters.valid,
+                        yaUsadas: this.counters.used,
+                        invalidas: this.counters.invalid,
+                        total: this.counters.total,
+                        pendientesSincronizacion: this.syncQueue.length
+                    },
+                    ingresos: this.localEntries.map(entry => ({
+                        nombre: entry.name,
+                        grupo: entry.prefix,
+                        hora: entry.timestampLocal,
+                        horaISO: entry.timestamp,
+                        asistente: entry.assistant,
+                        sincronizado: entry.synced,
+                        codigoQR: entry.ticketId
+                    })),
+                    conexion: {
+                        estaOnline: this.isOnline,
+                        pendientesSincronizacion: this.syncQueue.length
+                    },
+                    exportado: new Date().toISOString(),
+                    exportadoLocal: new Date().toLocaleString(),
+                    version: 'Escáner Inteligente v1.0'
+                };
+
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `escaner_${this.eventName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+
+                alert(`✅ Datos exportados:\n- ${this.localEntries.length} ingresos registrados\n- ${this.syncQueue.length} pendientes de sincronización`);
+            }
+
+            async stopSystem() {
+                // Detener escáner
+                if (this.html5QrCode && this.isActive) {
+                    try {
+                        await this.html5QrCode.stop();
+                    } catch (err) {
+                        console.error("Error al detener escáner:", err);
+                    }
+                }
+                this.isActive = false;
+
+                // Intentar sincronización final
+                if (this.isOnline && this.syncQueue.length > 0) {
+                    console.log('🔄 Sincronización final antes de cerrar...');
+                    await this.autoSync();
+                }
+
+                // Limpiar interval
+                if (this.connectionCheckInterval) {
+                    clearInterval(this.connectionCheckInterval);
+                }
+
+                // Volver a setup
+                document.getElementById('scanner-screen').classList.add('hidden');
+                document.getElementById('setup-screen').classList.remove('hidden');
+
+                console.log('🛑 Sistema detenido');
+            }
+
+            saveToStorage() {
+                const data = {
+                    eventId: this.eventId,
+                    eventName: this.eventName,
+                    assistantName: this.assistantName,
+                    counters: this.counters,
+                    localEntries: this.localEntries,
+                    syncQueue: this.syncQueue,
+                    ticketsCache: Array.from(this.ticketsCache.entries()),
+                    savedAt: new Date().toISOString()
+                };
+                
+                localStorage.setItem('intelligent_scanner_data', JSON.stringify(data));
+            }
+
+            loadFromStorage() {
+                const saved = localStorage.getItem('intelligent_scanner_data');
+                if (saved) {
+                    try {
+                        const data = JSON.parse(saved);
+                        
+                        this.eventId = data.eventId || null;
+                        this.eventName = data.eventName || null;
+                        this.assistantName = data.assistantName || null;
+                        this.counters = data.counters || { valid: 0, used: 0, invalid: 0, total: 0 };
+                        this.localEntries = data.localEntries || [];
+                        this.syncQueue = data.syncQueue || [];
+                        
+                        if (data.ticketsCache) {
+                            this.ticketsCache = new Map(data.ticketsCache);
+                        }
+
+                        // Rellenar formulario
+                        if (this.eventId) document.getElementById('event-id').value = this.eventId;
+                        if (this.eventName) document.getElementById('event-name').value = this.eventName;
+                        if (this.assistantName) document.getElementById('assistant-name').value = this.assistantName;
+                        
+                        console.log(`📱 Datos cargados: ${this.localEntries.length} ingresos, ${this.syncQueue.length} pendientes`);
+                    } catch (error) {
+                        console.error('Error cargando datos:', error);
+                    }
+                }
+            }
+        }
+
+        // Inicializar el escáner inteligente
+        const intelligentScanner = new IntelligentQRScanner();
+        
+        console.log('🎯 ESCÁNER INTELIGENTE LISTO - DETECCIÓN AUTOMÁTICA DE CONEXIÓN');
+    </script>
+</body>
+</html>
