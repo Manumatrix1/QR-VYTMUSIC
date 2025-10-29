@@ -164,14 +164,17 @@
         </header>
 
         <!-- Controles Principales -->
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
             <button id="door-ticket-btn" class="px-4 py-3 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700">
                 🚪 Generar Entrada en Puerta
             </button>
-            <button id="export-btn" class="px-4 py-3 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700">
+            <button id="voting-page-btn" class="px-4 py-3 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700">
+                🗳️ Ir a Votación Pública
+            </button>
+            <button id="export-btn" class="px-4 py-3 bg-purple-600 text-white font-bold rounded-lg hover:bg-purple-700">
                 📊 Exportar Datos
             </button>
-            <button id="sync-btn" class="px-4 py-3 bg-purple-600 text-white font-bold rounded-lg hover:bg-purple-700">
+            <button id="sync-btn" class="px-4 py-3 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700">
                 🔄 Sincronizar
             </button>
         </div>
@@ -427,11 +430,16 @@
                     code: code
                 };
 
-                // Actualizar ticket
+                // Actualizar ticket - HABILITAR VOTACIÓN
                 ticket.used = true;
                 ticket.usedAt = new Date().toISOString();
                 ticket.usedBy = this.assistantName;
                 ticket.assistantCode = this.assistantCode;
+                // 🗳️ HABILITAR VOTACIÓN EN CACHE LOCAL
+                ticket.canVote = true;
+                ticket.voteEligible = true;
+                ticket.entryAuthorized = true;
+                ticket.entryConfirmed = true;
 
                 // Agregar a registros
                 const entry = {
@@ -484,6 +492,13 @@
                         🚪 ENTRADA PUERTA • Vendida por: ${result.soldBy || 'Staff'}
                     </div>` : '';
 
+                // Información de habilitación para votar
+                const voteEnabledInfo = `
+                    <div style="font-size: 1rem; margin-top: 10px; padding: 6px 12px; background: rgba(16,185,129,0.9); color: #fff; border-radius: 15px; display: inline-block;">
+                        🗳️ HABILITADO PARA VOTAR • Acceso completo al sistema
+                    </div>
+                `;
+
                 contentEl.innerHTML = `
                     <div style="font-size: 8rem; margin-bottom: 30px; filter: drop-shadow(0 0 20px currentColor);">
                         ${icon}
@@ -503,6 +518,7 @@
                     ${result.usedBy ? `<div style="font-size: 1rem; opacity: 0.7; margin-top: 10px;">Registrado por: ${result.usedBy}</div>` : ''}
                     ${paymentBadge}
                     ${doorSaleInfo}
+                    ${result.type === 'valid' ? voteEnabledInfo : ''}
                 `;
 
                 megaEl.classList.remove('hidden');
@@ -604,13 +620,18 @@
                             const ticketsCol = collection(db, `events/${this.eventId}/tickets`);
                             await addDoc(ticketsCol, item.data);
                         } else {
-                            // Registro de escaneo
+                            // Registro de escaneo - HABILITAR VOTACIÓN
                             const entryRef = doc(db, `events/${this.eventId}/tickets`, item.ticketId);
                             await updateDoc(entryRef, {
                                 used: true,
                                 usedAt: item.timestamp,
                                 usedBy: item.assistant,
-                                assistantCode: item.assistantCode
+                                assistantCode: item.assistantCode,
+                                // 🗳️ HABILITAR VOTACIÓN AUTOMÁTICAMENTE
+                                canVote: true,
+                                voteEligible: true,
+                                entryAuthorized: true,
+                                entryConfirmed: true
                             });
                         }
                         item.synced = true;
@@ -804,6 +825,9 @@
                 // Controles principales
                 document.getElementById('export-btn').addEventListener('click', () => this.exportData());
                 document.getElementById('sync-btn').addEventListener('click', () => this.syncToFirebase());
+                document.getElementById('voting-page-btn').addEventListener('click', () => {
+                    window.open(`voting_page.html?eventId=${this.eventId}`, '_blank');
+                });
             }
         }
 
