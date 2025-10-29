@@ -1,0 +1,814 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Escáner Unificado VYT - VYTMUSIC</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #111827; color: #f9fafb; }
+        .hidden { display: none !important; }
+        
+        .mega-confirmation {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            z-index: 1000; text-align: center; font-weight: 900;
+        }
+        
+        .mega-confirmation.valid { background: linear-gradient(135deg, #10b981, #059669); color: white; }
+        .mega-confirmation.used { background: linear-gradient(135deg, #f59e0b, #d97706); color: white; }
+        .mega-confirmation.invalid { background: linear-gradient(135deg, #ef4444, #dc2626); color: white; }
+        
+        .pulse { animation: pulse 2s infinite; }
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+
+        .connection-indicator {
+            position: fixed; top: 20px; right: 20px; z-index: 100;
+            padding: 8px 16px; border-radius: 20px; font-weight: bold;
+            display: flex; align-items: center; gap: 8px;
+        }
+        .connection-indicator.online { background: #10b981; color: white; }
+        .connection-indicator.offline { background: #ef4444; color: white; }
+
+        .modal-backdrop { 
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+            background-color: rgba(0,0,0,0.8); z-index: 900; display: flex; 
+            justify-content: center; align-items: center; 
+        }
+        .modal-content { 
+            background-color: #1f2937; padding: 2rem; border-radius: 12px; 
+            max-width: 90%; width: 500px; box-shadow: 0 20px 25px rgba(0,0,0,0.5); 
+        }
+
+        .qr-preview {
+            background: white; border-radius: 12px; padding: 20px;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+        }
+
+        .role-indicator {
+            position: fixed; top: 20px; left: 20px; z-index: 100;
+            padding: 8px 16px; border-radius: 20px; font-weight: bold;
+            background: #3b82f6; color: white;
+        }
+    </style>
+</head>
+<body>
+    <!-- Indicador de Conexión -->
+    <div id="connection-indicator" class="connection-indicator">
+        <span id="connection-status">Verificando...</span>
+    </div>
+
+    <!-- Indicador de Rol -->
+    <div id="role-indicator" class="role-indicator hidden">
+        <span id="role-text"></span>
+    </div>
+
+    <!-- Modal de Código de Asistente -->
+    <div id="assistant-code-modal" class="modal-backdrop">
+        <div class="modal-content text-center">
+            <h2 class="text-2xl font-bold mb-4 text-sky-400">🔐 Acceso de Asistente</h2>
+            <p class="text-gray-300 mb-6">Ingresa tu código de asistente para acceder al escáner</p>
+            <input type="text" id="assistant-code-input" placeholder="Código de asistente" 
+                   class="w-full p-3 rounded-md border border-gray-600 bg-gray-900 text-white mb-4">
+            <input type="text" id="assistant-name-input" placeholder="Tu nombre" 
+                   class="w-full p-3 rounded-md border border-gray-600 bg-gray-900 text-white mb-6">
+            <div class="flex gap-4">
+                <button id="verify-code-btn" class="flex-1 px-4 py-3 bg-sky-600 text-white font-bold rounded-lg hover:bg-sky-700">
+                    ✅ Verificar Código
+                </button>
+                <button id="cancel-code-btn" class="flex-1 px-4 py-3 bg-gray-600 text-white font-bold rounded-lg hover:bg-gray-700">
+                    ❌ Cancelar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Generación de Entrada en Puerta -->
+    <div id="door-ticket-modal" class="modal-backdrop hidden">
+        <div class="modal-content">
+            <h2 class="text-2xl font-bold mb-4 text-green-400">🚪 Generar Entrada en Puerta</h2>
+            
+            <div class="space-y-4">
+                <div>
+                    <label class="block mb-2 font-semibold text-gray-300">Nombre del Cliente</label>
+                    <input type="text" id="door-client-name" placeholder="Nombre completo" 
+                           class="w-full p-3 rounded-md border border-gray-600 bg-gray-900 text-white">
+                </div>
+                
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block mb-2 font-semibold text-gray-300">Precio ($)</label>
+                        <input type="number" id="door-price" placeholder="0" min="0" step="0.01" 
+                               class="w-full p-3 rounded-md border border-gray-600 bg-gray-900 text-white">
+                    </div>
+                    <div>
+                        <label class="block mb-2 font-semibold text-gray-300">Método de Pago</label>
+                        <select id="door-payment-method" class="w-full p-3 rounded-md border border-gray-600 bg-gray-900 text-white">
+                            <option value="Efectivo">Efectivo</option>
+                            <option value="Transferencia">Transferencia</option>
+                            <option value="Tarjeta">Tarjeta</option>
+                            <option value="MercadoPago">MercadoPago</option>
+                            <option value="Cortesía">Cortesía</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block mb-2 font-semibold text-gray-300">Teléfono (Opcional)</label>
+                    <input type="tel" id="door-phone" placeholder="+54 9 341 123-4567" 
+                           class="w-full p-3 rounded-md border border-gray-600 bg-gray-900 text-white">
+                </div>
+            </div>
+
+            <div class="flex gap-4 mt-6">
+                <button id="generate-door-ticket-btn" class="flex-1 px-4 py-3 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700">
+                    🎫 Generar Entrada
+                </button>
+                <button id="cancel-door-ticket-btn" class="flex-1 px-4 py-3 bg-gray-600 text-white font-bold rounded-lg hover:bg-gray-700">
+                    ❌ Cancelar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Entrada Generada -->
+    <div id="ticket-generated-modal" class="modal-backdrop hidden">
+        <div class="modal-content text-center">
+            <h2 class="text-2xl font-bold mb-4 text-green-400">✅ ¡Entrada Generada!</h2>
+            <div id="generated-ticket-info" class="bg-gray-700 p-4 rounded-lg mb-4"></div>
+            <div id="generated-qr-container" class="qr-preview mb-4"></div>
+            <button id="close-generated-modal-btn" class="px-6 py-3 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700">
+                ✅ Continuar Escaneando
+            </button>
+        </div>
+    </div>
+
+    <!-- Mega Confirmación -->
+    <div id="mega-confirmation" class="mega-confirmation hidden">
+        <div id="mega-content" class="pulse max-w-4xl px-8"></div>
+    </div>
+
+    <div class="container mx-auto max-w-4xl p-4 sm:p-6">
+        <header class="text-center mb-6">
+            <a id="back-to-panel-link" href="#" class="text-sky-400 hover:underline mb-4 inline-block">&larr; Volver al Panel</a>
+            <h1 class="text-3xl sm:text-4xl font-bold text-sky-400">🎯 Escáner Unificado VYT</h1>
+            <p id="event-name-display" class="text-xl text-gray-300 mt-2"></p>
+            <p class="text-gray-400 mt-2">Escaneo QR • Generación de entradas • Control de acceso</p>
+        </header>
+
+        <!-- Controles Principales -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <button id="door-ticket-btn" class="px-4 py-3 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700">
+                🚪 Generar Entrada en Puerta
+            </button>
+            <button id="export-btn" class="px-4 py-3 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700">
+                📊 Exportar Datos
+            </button>
+            <button id="sync-btn" class="px-4 py-3 bg-purple-600 text-white font-bold rounded-lg hover:bg-purple-700">
+                🔄 Sincronizar
+            </button>
+        </div>
+
+        <!-- Estadísticas -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <div class="bg-green-600 p-4 rounded-lg text-center">
+                <div class="text-2xl font-bold" id="valid-count">0</div>
+                <div class="text-sm opacity-80">Ingresos</div>
+            </div>
+            <div class="bg-yellow-600 p-4 rounded-lg text-center">
+                <div class="text-2xl font-bold" id="used-count">0</div>
+                <div class="text-sm opacity-80">Ya usadas</div>
+            </div>
+            <div class="bg-red-600 p-4 rounded-lg text-center">
+                <div class="text-2xl font-bold" id="invalid-count">0</div>
+                <div class="text-sm opacity-80">Inválidas</div>
+            </div>
+            <div class="bg-blue-600 p-4 rounded-lg text-center">
+                <div class="text-2xl font-bold" id="pending-sync">0</div>
+                <div class="text-sm opacity-80">Pendientes</div>
+            </div>
+        </div>
+
+        <!-- Cámara QR -->
+        <div class="bg-gray-800 p-6 rounded-lg shadow-xl">
+            <h2 class="text-xl font-bold mb-4 text-center">📷 Escáner QR</h2>
+            <div id="qr-reader" class="max-w-md mx-auto"></div>
+            <div id="qr-status" class="text-center mt-4 text-gray-400">Iniciando cámara...</div>
+        </div>
+
+        <!-- Lista de Entradas Escaneadas -->
+        <div class="bg-gray-800 p-6 rounded-lg shadow-xl mt-6">
+            <h3 class="text-lg font-bold mb-4">📋 Últimas Entradas Escaneadas</h3>
+            <div id="scanned-list" class="space-y-2 max-h-60 overflow-y-auto">
+                <p class="text-gray-400 text-center py-4">No hay entradas escaneadas aún</p>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { db, auth } from './firebase_config.js';
+        import { collection, doc, getDoc, getDocs, query, where, updateDoc, addDoc, serverTimestamp, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+
+        class UnifiedQRScanner {
+            constructor() {
+                this.html5QrCode = null;
+                this.isScanning = false;
+                this.isOnline = navigator.onLine;
+                this.ticketsCache = new Map();
+                this.scanResults = [];
+                this.syncQueue = [];
+                
+                // Datos del evento y usuario
+                this.eventId = null;
+                this.eventName = null;
+                this.isOrganizer = false;
+                this.assistantName = null;
+                this.assistantCode = null;
+                
+                this.counters = { valid: 0, used: 0, invalid: 0 };
+                
+                this.initializeFromURL();
+                this.initializeAuth();
+                this.setupEventListeners();
+                this.monitorConnection();
+                this.loadLocalData();
+            }
+
+            initializeFromURL() {
+                const urlParams = new URLSearchParams(window.location.search);
+                this.eventId = urlParams.get('eventId');
+                this.eventName = urlParams.get('eventName');
+
+                if (!this.eventId || !this.eventName) {
+                    alert('Error: No se ha especificado un evento.');
+                    window.location.href = 'eventos.html';
+                    return;
+                }
+
+                document.getElementById('back-to-panel-link').href = `panel_evento.html?eventId=${this.eventId}&eventName=${encodeURIComponent(this.eventName)}`;
+                document.getElementById('event-name-display').textContent = this.eventName;
+            }
+
+            async initializeAuth() {
+                return new Promise((resolve) => {
+                    onAuthStateChanged(auth, async (user) => {
+                        if (user) {
+                            // Usuario logueado = Organizador
+                            this.isOrganizer = true;
+                            this.assistantName = user.displayName || user.email || 'Organizador';
+                            this.assistantCode = 'ORGANIZADOR';
+                            
+                            document.getElementById('role-text').textContent = `👑 ${this.assistantName}`;
+                            document.getElementById('role-indicator').classList.remove('hidden');
+                            document.getElementById('assistant-code-modal').classList.add('hidden');
+                            
+                            await this.initializeScanner();
+                            resolve();
+                        } else {
+                            // Sin login = Pedir código de asistente
+                            this.showAssistantCodeModal();
+                            resolve();
+                        }
+                    });
+                });
+            }
+
+            showAssistantCodeModal() {
+                document.getElementById('assistant-code-modal').classList.remove('hidden');
+                document.getElementById('assistant-code-input').focus();
+            }
+
+            async verifyAssistantCode() {
+                const code = document.getElementById('assistant-code-input').value.trim();
+                const name = document.getElementById('assistant-name-input').value.trim();
+
+                if (!code || !name) {
+                    alert('❌ Ingresa tanto el código como tu nombre');
+                    return;
+                }
+
+                try {
+                    // Verificar código en Firebase
+                    const assistantCodesRef = collection(db, 'assistant_codes');
+                    const q = query(assistantCodesRef, 
+                        where('code', '==', code), 
+                        where('eventId', '==', this.eventId)
+                    );
+                    const querySnapshot = await getDocs(q);
+
+                    if (!querySnapshot.empty) {
+                        // Código válido
+                        this.assistantName = name;
+                        this.assistantCode = code;
+                        this.isOrganizer = false;
+
+                        document.getElementById('role-text').textContent = `👤 ${this.assistantName}`;
+                        document.getElementById('role-indicator').classList.remove('hidden');
+                        document.getElementById('assistant-code-modal').classList.add('hidden');
+
+                        await this.initializeScanner();
+                    } else {
+                        alert('❌ Código de asistente inválido para este evento');
+                    }
+                } catch (error) {
+                    console.error('Error verificando código:', error);
+                    alert('❌ Error al verificar código. Revisa tu conexión.');
+                }
+            }
+
+            async initializeScanner() {
+                await this.loadTicketsCache();
+                this.startQRScanner();
+                this.updateUI();
+            }
+
+            async loadTicketsCache() {
+                if (!this.isOnline) return;
+
+                try {
+                    const ticketsCol = collection(db, `events/${this.eventId}/tickets`);
+                    const snapshot = await getDocs(ticketsCol);
+                    
+                    this.ticketsCache.clear();
+                    snapshot.forEach(doc => {
+                        this.ticketsCache.set(doc.data().id, doc.data());
+                    });
+
+                    console.log(`✅ Cargadas ${this.ticketsCache.size} entradas en cache`);
+                } catch (error) {
+                    console.error('Error cargando entradas:', error);
+                }
+            }
+
+            async startQRScanner() {
+                try {
+                    this.html5QrCode = new Html5Qrcode("qr-reader");
+                    
+                    const config = { 
+                        fps: 10, 
+                        qrbox: { width: 300, height: 300 },
+                        aspectRatio: 1.0
+                    };
+
+                    await this.html5QrCode.start(
+                        { facingMode: "environment" }, 
+                        config,
+                        (decodedText) => this.handleQRScan(decodedText),
+                        (error) => { /* Silenciar errores de escaneo */ }
+                    );
+
+                    this.isScanning = true;
+                    document.getElementById('qr-status').textContent = '📷 Listo para escanear';
+                } catch (error) {
+                    console.error('Error iniciando escáner:', error);
+                    document.getElementById('qr-status').textContent = '❌ Error al iniciar cámara';
+                }
+            }
+
+            async handleQRScan(code) {
+                if (!this.isScanning) return;
+                
+                this.isScanning = false;
+                setTimeout(() => { this.isScanning = true; }, 3000); // Pausa 3 segundos
+
+                const result = await this.processTicket(code);
+                this.showMegaConfirmation(result);
+                this.updateScanResults(result);
+                this.updateUI();
+
+                // Sonido según resultado
+                this.playSound(result.type);
+            }
+
+            async processTicket(code) {
+                let ticket = this.ticketsCache.get(code);
+                
+                if (!ticket) {
+                    return {
+                        type: 'invalid',
+                        title: '❌ ENTRADA NO ENCONTRADA',
+                        subtitle: 'El QR no corresponde a este evento',
+                        name: 'Código no válido',
+                        prefix: 'N/A',
+                        code: code
+                    };
+                }
+
+                if (ticket.used) {
+                    return {
+                        type: 'used',
+                        title: '⚠️ ENTRADA YA USADA',
+                        subtitle: `Ingresó: ${new Date(ticket.usedAt).toLocaleString()}`,
+                        name: ticket.name,
+                        prefix: ticket.prefix || 'N/A',
+                        usedBy: ticket.usedBy,
+                        code: code
+                    };
+                }
+
+                // Entrada válida - Registrar ingreso
+                const result = {
+                    type: 'valid',
+                    title: '✅ INGRESO CONFIRMADO',
+                    subtitle: 'Bienvenido/a al evento',
+                    name: ticket.name,
+                    prefix: ticket.prefix || 'N/A',
+                    paymentStatus: ticket.paymentStatus || 'Paga',
+                    isDoorSale: ticket.isDoorSale || false,
+                    soldBy: ticket.soldBy || null,
+                    code: code
+                };
+
+                // Actualizar ticket
+                ticket.used = true;
+                ticket.usedAt = new Date().toISOString();
+                ticket.usedBy = this.assistantName;
+                ticket.assistantCode = this.assistantCode;
+
+                // Agregar a registros
+                const entry = {
+                    ticketId: code,
+                    name: ticket.name,
+                    prefix: ticket.prefix || 'N/A',
+                    paymentStatus: ticket.paymentStatus || 'Paga',
+                    isDoorSale: ticket.isDoorSale || false,
+                    soldBy: ticket.soldBy || null,
+                    timestamp: new Date().toISOString(),
+                    assistant: this.assistantName,
+                    assistantCode: this.assistantCode,
+                    eventId: this.eventId,
+                    eventName: this.eventName,
+                    synced: false
+                };
+
+                this.scanResults.push(entry);
+                this.syncQueue.push(entry);
+                this.counters.valid++;
+
+                // Sincronizar si hay conexión
+                if (this.isOnline) {
+                    this.syncToFirebase();
+                }
+
+                this.saveLocalData();
+                return result;
+            }
+
+            showMegaConfirmation(result) {
+                const megaEl = document.getElementById('mega-confirmation');
+                const contentEl = document.getElementById('mega-content');
+                
+                megaEl.className = `mega-confirmation ${result.type}`;
+                
+                const icon = {
+                    'valid': '✅',
+                    'used': '⚠️',
+                    'invalid': '❌'
+                }[result.type];
+
+                const paymentBadge = result.paymentStatus ? 
+                    `<div style="font-size: 1.2rem; margin-top: 10px; padding: 8px 16px; background: ${['Paga', 'cobrada'].includes(result.paymentStatus) ? '#10b981' : '#ef4444'}; border-radius: 20px; display: inline-block;">
+                        ${['Paga', 'cobrada'].includes(result.paymentStatus) ? '💳 PAGADO' : '⚠️ PENDIENTE PAGO'}
+                    </div>` : '';
+
+                const doorSaleInfo = result.isDoorSale ? 
+                    `<div style="font-size: 1rem; margin-top: 10px; padding: 6px 12px; background: rgba(255,193,7,0.8); color: #000; border-radius: 15px; display: inline-block;">
+                        🚪 ENTRADA PUERTA • Vendida por: ${result.soldBy || 'Staff'}
+                    </div>` : '';
+
+                contentEl.innerHTML = `
+                    <div style="font-size: 8rem; margin-bottom: 30px; filter: drop-shadow(0 0 20px currentColor);">
+                        ${icon}
+                    </div>
+                    <div style="font-size: 3.5rem; font-weight: 900; margin-bottom: 20px; text-shadow: 0 0 20px rgba(0,0,0,0.8);">
+                        ${result.title}
+                    </div>
+                    <div style="font-size: 2.2rem; font-weight: 700; margin-bottom: 15px;">
+                        ${result.name}
+                    </div>
+                    <div style="font-size: 1.6rem; opacity: 0.9; margin-bottom: 10px;">
+                        ${result.subtitle}
+                    </div>
+                    <div style="font-size: 1.2rem; opacity: 0.8;">
+                        Grupo: ${result.prefix} • ${new Date().toLocaleTimeString()}
+                    </div>
+                    ${result.usedBy ? `<div style="font-size: 1rem; opacity: 0.7; margin-top: 10px;">Registrado por: ${result.usedBy}</div>` : ''}
+                    ${paymentBadge}
+                    ${doorSaleInfo}
+                `;
+
+                megaEl.classList.remove('hidden');
+                setTimeout(() => megaEl.classList.add('hidden'), 4000);
+            }
+
+            async generateDoorTicket() {
+                const clientName = document.getElementById('door-client-name').value.trim();
+                const price = parseFloat(document.getElementById('door-price').value) || 0;
+                const paymentMethod = document.getElementById('door-payment-method').value;
+                const phone = document.getElementById('door-phone').value.trim();
+
+                if (!clientName) {
+                    alert('❌ Ingresa el nombre del cliente');
+                    return;
+                }
+
+                try {
+                    const ticketId = `PUERTA-${Date.now()}-${crypto.randomUUID().substring(0, 6)}`;
+                    
+                    const ticketData = {
+                        id: ticketId,
+                        prefix: 'PUERTA',
+                        showName: this.eventName,
+                        showLocation: 'Evento en Vivo',
+                        name: clientName,
+                        paymentStatus: 'cobrada',
+                        price: price,
+                        tierName: `Puerta - ${paymentMethod}`,
+                        used: false,
+                        generatedAt: new Date().toISOString(),
+                        isDoorSale: true,
+                        soldBy: this.assistantName,
+                        paymentMethod: paymentMethod,
+                        clientPhone: phone || null,
+                        canVote: true,
+                        voteEligible: true,
+                        entryAuthorized: true
+                    };
+
+                    // Agregar al cache local
+                    this.ticketsCache.set(ticketId, ticketData);
+
+                    // Guardar en Firebase si hay conexión
+                    if (this.isOnline) {
+                        const ticketsCol = collection(db, `events/${this.eventId}/tickets`);
+                        await addDoc(ticketsCol, ticketData);
+                    } else {
+                        // Agregar a cola de sincronización
+                        this.syncQueue.push({ type: 'newTicket', data: ticketData });
+                    }
+
+                    this.saveLocalData();
+                    this.showGeneratedTicket(ticketData);
+                    this.clearDoorTicketForm();
+
+                } catch (error) {
+                    console.error('Error generando entrada:', error);
+                    alert('❌ Error al generar entrada. Intenta de nuevo.');
+                }
+            }
+
+            showGeneratedTicket(ticketData) {
+                document.getElementById('generated-ticket-info').innerHTML = `
+                    <div class="text-left">
+                        <p class="font-bold text-lg">👤 ${ticketData.name}</p>
+                        <p class="text-sm opacity-80">ID: ${ticketData.id}</p>
+                        <p class="text-sm opacity-80">💰 $${ticketData.price} - ${ticketData.paymentMethod}</p>
+                        <p class="text-sm opacity-80">👔 Generado por: ${ticketData.soldBy}</p>
+                    </div>
+                `;
+
+                // Generar QR
+                const qrContainer = document.getElementById('generated-qr-container');
+                qrContainer.innerHTML = '';
+                new QRCode(qrContainer, {
+                    text: ticketData.id,
+                    width: 200,
+                    height: 200,
+                    colorDark: "#000000",
+                    colorLight: "#ffffff"
+                });
+
+                document.getElementById('ticket-generated-modal').classList.remove('hidden');
+            }
+
+            clearDoorTicketForm() {
+                document.getElementById('door-client-name').value = '';
+                document.getElementById('door-price').value = '';
+                document.getElementById('door-phone').value = '';
+            }
+
+            async syncToFirebase() {
+                if (!this.isOnline || this.syncQueue.length === 0) return;
+
+                try {
+                    for (const item of this.syncQueue) {
+                        if (item.type === 'newTicket') {
+                            const ticketsCol = collection(db, `events/${this.eventId}/tickets`);
+                            await addDoc(ticketsCol, item.data);
+                        } else {
+                            // Registro de escaneo
+                            const entryRef = doc(db, `events/${this.eventId}/tickets`, item.ticketId);
+                            await updateDoc(entryRef, {
+                                used: true,
+                                usedAt: item.timestamp,
+                                usedBy: item.assistant,
+                                assistantCode: item.assistantCode
+                            });
+                        }
+                        item.synced = true;
+                    }
+
+                    this.syncQueue = this.syncQueue.filter(item => !item.synced);
+                    this.saveLocalData();
+                    this.updateUI();
+                    
+                } catch (error) {
+                    console.error('Error sincronizando:', error);
+                }
+            }
+
+            playSound(type) {
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const frequencies = { valid: 800, used: 600, invalid: 300 };
+                const oscillator = audioContext.createOscillator();
+                const gainNode = audioContext.createGain();
+                
+                oscillator.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+                
+                oscillator.frequency.setValueAtTime(frequencies[type], audioContext.currentTime);
+                oscillator.type = 'sine';
+                
+                gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
+                
+                oscillator.start(audioContext.currentTime);
+                oscillator.stop(audioContext.currentTime + 0.5);
+            }
+
+            updateScanResults(result) {
+                const listEl = document.getElementById('scanned-list');
+                
+                if (this.scanResults.length === 0 && result.type !== 'valid') {
+                    listEl.innerHTML = '<p class="text-gray-400 text-center py-4">No hay entradas escaneadas aún</p>';
+                    return;
+                }
+
+                const colorMap = {
+                    valid: 'border-green-500 bg-green-900',
+                    used: 'border-yellow-500 bg-yellow-900',
+                    invalid: 'border-red-500 bg-red-900'
+                };
+
+                const resultHtml = `
+                    <div class="p-3 rounded-lg border-l-4 ${colorMap[result.type]}">
+                        <div class="flex justify-between items-center">
+                            <div>
+                                <p class="font-semibold">${result.name}</p>
+                                <p class="text-sm opacity-80">${result.prefix} • ${result.type}</p>
+                            </div>
+                            <div class="text-right">
+                                <p class="text-xs opacity-70">${new Date().toLocaleTimeString()}</p>
+                                ${result.isDoorSale ? '<p class="text-xs text-yellow-400">🚪 Puerta</p>' : ''}
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                if (listEl.children.length === 1 && listEl.children[0].textContent.includes('No hay entradas')) {
+                    listEl.innerHTML = resultHtml;
+                } else {
+                    listEl.insertAdjacentHTML('afterbegin', resultHtml);
+                }
+
+                // Mantener solo las últimas 10 entradas
+                while (listEl.children.length > 10) {
+                    listEl.removeChild(listEl.lastChild);
+                }
+            }
+
+            updateUI() {
+                document.getElementById('valid-count').textContent = this.counters.valid;
+                document.getElementById('used-count').textContent = this.counters.used;
+                document.getElementById('invalid-count').textContent = this.counters.invalid;
+                document.getElementById('pending-sync').textContent = this.syncQueue.length;
+
+                // Indicador de conexión
+                const indicator = document.getElementById('connection-indicator');
+                const status = document.getElementById('connection-status');
+                
+                if (this.isOnline) {
+                    indicator.className = 'connection-indicator online';
+                    status.textContent = '🟢 En línea';
+                } else {
+                    indicator.className = 'connection-indicator offline';
+                    status.textContent = '🔴 Sin conexión';
+                }
+            }
+
+            monitorConnection() {
+                window.addEventListener('online', () => {
+                    this.isOnline = true;
+                    this.updateUI();
+                    this.syncToFirebase();
+                    this.loadTicketsCache();
+                });
+
+                window.addEventListener('offline', () => {
+                    this.isOnline = false;
+                    this.updateUI();
+                });
+            }
+
+            saveLocalData() {
+                localStorage.setItem(`vyt_scanner_${this.eventId}`, JSON.stringify({
+                    scanResults: this.scanResults,
+                    syncQueue: this.syncQueue,
+                    counters: this.counters,
+                    ticketsCache: Array.from(this.ticketsCache.entries()),
+                    timestamp: new Date().toISOString()
+                }));
+            }
+
+            loadLocalData() {
+                const saved = localStorage.getItem(`vyt_scanner_${this.eventId}`);
+                if (saved) {
+                    try {
+                        const data = JSON.parse(saved);
+                        this.scanResults = data.scanResults || [];
+                        this.syncQueue = data.syncQueue || [];
+                        this.counters = data.counters || { valid: 0, used: 0, invalid: 0 };
+                        this.ticketsCache = new Map(data.ticketsCache || []);
+                    } catch (error) {
+                        console.error('Error cargando datos locales:', error);
+                    }
+                }
+            }
+
+            exportData() {
+                if (this.scanResults.length === 0) {
+                    alert('No hay datos para exportar');
+                    return;
+                }
+
+                const csvContent = [
+                    ['Ticket ID', 'Nombre', 'Grupo', 'Estado Pago', 'Entrada Puerta', 'Vendido Por', 'Timestamp', 'Asistente', 'Evento'].join(','),
+                    ...this.scanResults.map(entry => [
+                        entry.ticketId,
+                        entry.name,
+                        entry.prefix,
+                        entry.estadoPago || entry.paymentStatus,
+                        entry.isDoorSale ? 'Sí' : 'No',
+                        entry.soldBy || '',
+                        entry.timestamp,
+                        entry.assistant,
+                        entry.eventName
+                    ].join(','))
+                ].join('\\n');
+
+                const blob = new Blob([csvContent], { type: 'text/csv' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `entradas_${this.eventName}_${new Date().toISOString().split('T')[0]}.csv`;
+                a.click();
+                URL.revokeObjectURL(url);
+            }
+
+            setupEventListeners() {
+                // Verificar código de asistente
+                document.getElementById('verify-code-btn').addEventListener('click', () => this.verifyAssistantCode());
+                document.getElementById('cancel-code-btn').addEventListener('click', () => {
+                    window.location.href = `panel_evento.html?eventId=${this.eventId}&eventName=${encodeURIComponent(this.eventName)}`;
+                });
+
+                // Enter en código de asistente
+                document.getElementById('assistant-code-input').addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') this.verifyAssistantCode();
+                });
+                document.getElementById('assistant-name-input').addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') this.verifyAssistantCode();
+                });
+
+                // Generación de entrada en puerta
+                document.getElementById('door-ticket-btn').addEventListener('click', () => {
+                    document.getElementById('door-ticket-modal').classList.remove('hidden');
+                    document.getElementById('door-client-name').focus();
+                });
+                document.getElementById('generate-door-ticket-btn').addEventListener('click', () => this.generateDoorTicket());
+                document.getElementById('cancel-door-ticket-btn').addEventListener('click', () => {
+                    document.getElementById('door-ticket-modal').classList.add('hidden');
+                });
+                document.getElementById('close-generated-modal-btn').addEventListener('click', () => {
+                    document.getElementById('ticket-generated-modal').classList.add('hidden');
+                });
+
+                // Controles principales
+                document.getElementById('export-btn').addEventListener('click', () => this.exportData());
+                document.getElementById('sync-btn').addEventListener('click', () => this.syncToFirebase());
+            }
+        }
+
+        // Inicializar escáner unificado
+        const scanner = new UnifiedQRScanner();
+    </script>
+</body>
+</html>
