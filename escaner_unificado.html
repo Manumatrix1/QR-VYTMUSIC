@@ -201,7 +201,17 @@
 
         <!-- Cámara QR -->
         <div class="bg-gray-800 p-6 rounded-lg shadow-xl">
-            <h2 class="text-xl font-bold mb-4 text-center">📷 Escáner QR</h2>
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold">📷 Escáner QR</h2>
+                <div class="flex gap-2">
+                    <button id="toggle-camera-mode" class="px-3 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700">
+                        � Pantalla Completa
+                    </button>
+                    <button id="restart-camera" class="px-3 py-2 bg-yellow-600 text-white text-sm rounded hover:bg-yellow-700">
+                        🔄 Reiniciar
+                    </button>
+                </div>
+            </div>
             <div id="qr-reader" class="max-w-md mx-auto"></div>
             <div id="qr-status" class="text-center mt-4 text-gray-400">Iniciando cámara...</div>
         </div>
@@ -228,6 +238,10 @@
                 this.ticketsCache = new Map();
                 this.scanResults = [];
                 this.syncQueue = [];
+                
+                // Configuración de cámara
+                this.useFullScreen = localStorage.getItem('vyt_camera_fullscreen') === 'true';
+                this.isMobile = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
                 
                 // Datos del evento y usuario
                 this.eventId = null;
@@ -353,26 +367,59 @@
 
             async startQRScanner() {
                 try {
+                    // Detener escáner anterior si existe
+                    if (this.html5QrCode && this.html5QrCode.isScanning) {
+                        await this.html5QrCode.stop();
+                    }
+                    
                     this.html5QrCode = new Html5Qrcode("qr-reader");
                     
+                    // Configuración dinámica según modo y dispositivo
                     const config = { 
-                        fps: 10, 
-                        qrbox: { width: 300, height: 300 },
-                        aspectRatio: 1.0
+                        fps: 10,
+                        rememberLastUsedCamera: true
                     };
+
+                    // Configurar área de escaneo
+                    if (this.useFullScreen) {
+                        // Modo pantalla completa - sin qrbox
+                        config.aspectRatio = this.isMobile ? 1.77 : 1.33;
+                    } else {
+                        // Modo cuadradito - con qrbox
+                        const boxSize = this.isMobile ? 
+                            Math.min(window.innerWidth * 0.7, 300) : 300;
+                        config.qrbox = { width: boxSize, height: boxSize };
+                        config.aspectRatio = 1.0;
+                    }
+
+                    document.getElementById('qr-status').textContent = 'Iniciando cámara...';
 
                     await this.html5QrCode.start(
                         { facingMode: "environment" }, 
                         config,
                         (decodedText) => this.handleQRScan(decodedText),
-                        (error) => { /* Silenciar errores de escaneo */ }
+                        (error) => { 
+                            // Solo mostrar errores importantes
+                            if (error.includes('Camera access denied') || error.includes('NotAllowedError')) {
+                                document.getElementById('qr-status').textContent = '❌ Acceso a cámara denegado';
+                            }
+                        }
                     );
 
                     this.isScanning = true;
-                    document.getElementById('qr-status').textContent = '📷 Listo para escanear';
+                    this.updateCameraUI();
+                    document.getElementById('qr-status').textContent = this.useFullScreen ? 
+                        '📷 Modo pantalla completa - Muestra cualquier QR a la cámara' :
+                        '📷 Modo cuadradito - Centra el QR en el cuadro';
+                        
                 } catch (error) {
                     console.error('Error iniciando escáner:', error);
-                    document.getElementById('qr-status').textContent = '❌ Error al iniciar cámara';
+                    document.getElementById('qr-status').innerHTML = `
+                        ❌ Error al iniciar cámara<br>
+                        <button onclick="location.reload()" class="mt-2 px-4 py-2 bg-red-600 text-white rounded">
+                            🔄 Recargar Página
+                        </button>
+                    `;
                 }
             }
 
@@ -794,6 +841,31 @@
                 URL.revokeObjectURL(url);
             }
 
+            toggleCameraMode() {
+                this.useFullScreen = !this.useFullScreen;
+                localStorage.setItem('vyt_camera_fullscreen', this.useFullScreen.toString());
+                this.updateCameraUI();
+                this.restartCamera();
+            }
+
+            updateCameraUI() {
+                const toggleBtn = document.getElementById('toggle-camera-mode');
+                if (this.useFullScreen) {
+                    toggleBtn.textContent = '🔲 Modo Cuadradito';
+                    toggleBtn.className = 'px-3 py-2 bg-green-600 text-white text-sm rounded hover:bg-green-700';
+                } else {
+                    toggleBtn.textContent = '📱 Pantalla Completa';
+                    toggleBtn.className = 'px-3 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700';
+                }
+            }
+
+            async restartCamera() {
+                if (this.html5QrCode && this.html5QrCode.isScanning) {
+                    await this.html5QrCode.stop();
+                }
+                await this.startQRScanner();
+            }
+
             setupEventListeners() {
                 // Verificar código de asistente
                 document.getElementById('verify-code-btn').addEventListener('click', () => this.verifyAssistantCode());
@@ -828,6 +900,10 @@
                 document.getElementById('voting-page-btn').addEventListener('click', () => {
                     window.open(`voting_page.html?eventId=${this.eventId}`, '_blank');
                 });
+
+                // Controles de cámara
+                document.getElementById('toggle-camera-mode').addEventListener('click', () => this.toggleCameraMode());
+                document.getElementById('restart-camera').addEventListener('click', () => this.restartCamera());
             }
         }
 
