@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🔍 Buscador de Invitados - VYTMUSIC</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background: linear-gradient(135deg, #0f172a, #1e293b); color: #f8fafc; }
+        .hidden { display: none !important; }
+        
+        .search-container {
+            background: linear-gradient(135deg, #1e293b, #334155);
+            border: 2px solid #10b981; border-radius: 20px;
+            box-shadow: 0 25px 50px rgba(0,0,0,0.5), 0 0 50px rgba(16, 185, 129, 0.1);
+        }
+        
+        .artist-card {
+            background: linear-gradient(135deg, #374151, #4b5563);
+            border: 1px solid #6b7280; border-radius: 15px;
+            transition: all 0.3s ease; cursor: pointer;
+        }
+        
+        .artist-card:hover {
+            border-color: #10b981; box-shadow: 0 10px 25px rgba(16, 185, 129, 0.2);
+            transform: translateY(-2px);
+        }
+        
+        .artist-card.expanded {
+            border-color: #10b981; box-shadow: 0 15px 35px rgba(16, 185, 129, 0.3);
+        }
+        
+        .guest-item {
+            background: rgba(255, 255, 255, 0.05); border-radius: 10px;
+            border-left: 4px solid transparent; transition: all 0.2s ease;
+        }
+        
+        .guest-item.available { border-left-color: #10b981; }
+        .guest-item.used { border-left-color: #ef4444; background: rgba(239, 68, 68, 0.1); }
+        
+        .guest-item:hover {
+            background: rgba(16, 185, 129, 0.1); transform: translateX(5px);
+        }
+        
+        .search-stats {
+            background: rgba(30, 41, 59, 0.8); backdrop-filter: blur(10px);
+            border-radius: 15px; border: 1px solid #475569;
+        }
+        
+        .action-btn {
+            transition: all 0.2s ease; border: none; border-radius: 10px;
+            font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+        }
+        
+        .btn-access { background: linear-gradient(135deg, #10b981, #059669); color: white; }
+        .btn-access:hover { background: linear-gradient(135deg, #059669, #047857); transform: scale(1.05); }
+        
+        .btn-used { background: linear-gradient(135deg, #6b7280, #4b5563); color: #d1d5db; cursor: not-allowed; }
+        
+        .btn-vote { background: linear-gradient(135deg, #3b82f6, #2563eb); color: white; }
+        .btn-vote:hover { background: linear-gradient(135deg, #2563eb, #1d4ed8); transform: scale(1.05); }
+        
+        /* Confirmación de acción */
+        .action-confirmation {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.95); backdrop-filter: blur(15px);
+            z-index: 100; display: flex; align-items: center; justify-content: center;
+        }
+        
+        .confirmation-card {
+            background: linear-gradient(135deg, #1e293b, #334155);
+            border: 2px solid #10b981; border-radius: 20px;
+            box-shadow: 0 25px 50px rgba(16, 185, 129, 0.3);
+            max-width: 500px; width: 90%; padding: 30px; text-align: center;
+        }
+        
+        /* Loading animation */
+        .loading-spinner {
+            width: 20px; height: 20px; border: 3px solid rgba(255,255,255,0.3);
+            border-top: 3px solid white; border-radius: 50%;
+            animation: spin 1s linear infinite; display: inline-block;
+        }
+        
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <div class="min-h-screen p-6">
+        <!-- Header -->
+        <header class="text-center mb-8">
+            <div class="mb-4">
+                <a id="back-link" href="#" class="text-sky-400 hover:text-sky-300 text-lg">
+                    ← Volver al Panel del Evento
+                </a>
+            </div>
+            <h1 class="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-sky-400 mb-4">
+                🔍 BUSCADOR DE INVITADOS
+            </h1>
+            <p id="event-name-display" class="text-xl font-bold text-emerald-400 mb-2"></p>
+            <p class="text-sm text-gray-300">Busca artistas y sus invitados • Permite acceso manual cuando falla el escáner</p>
+        </header>
+
+        <!-- Contenedor principal de búsqueda -->
+        <div class="search-container p-8 max-w-4xl mx-auto mb-8">
+            <!-- Barra de búsqueda -->
+            <div class="mb-6">
+                <label class="block text-lg font-bold mb-3 text-emerald-400">
+                    🎤 Buscar por nombre de artista o invitado:
+                </label>
+                <input type="text" id="search-input" 
+                       class="w-full p-4 rounded-xl border-2 border-slate-600 bg-slate-800 text-white text-lg font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500" 
+                       placeholder="Escribe el nombre del artista o invitado...">
+                <p class="text-sm text-gray-400 mt-2">
+                    La búsqueda funciona en tiempo real. Escribe al menos 2 caracteres.
+                </p>
+            </div>
+
+            <!-- Estadísticas de búsqueda -->
+            <div id="search-stats" class="search-stats p-4 mb-6 hidden">
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+                    <div>
+                        <div class="text-2xl font-black text-emerald-400" id="stats-artists">0</div>
+                        <div class="text-sm text-gray-300">Artistas</div>
+                    </div>
+                    <div>
+                        <div class="text-2xl font-black text-sky-400" id="stats-guests">0</div>
+                        <div class="text-sm text-gray-300">Invitados</div>
+                    </div>
+                    <div>
+                        <div class="text-2xl font-black text-green-400" id="stats-available">0</div>
+                        <div class="text-sm text-gray-300">Disponibles</div>
+                    </div>
+                    <div>
+                        <div class="text-2xl font-black text-red-400" id="stats-used">0</div>
+                        <div class="text-sm text-gray-300">Ya Usados</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Filtros rápidos -->
+            <div class="mb-6">
+                <div class="flex flex-wrap gap-3">
+                    <button id="filter-all" class="action-btn btn-access px-4 py-2 text-sm">
+                        Todos
+                    </button>
+                    <button id="filter-available" class="action-btn btn-vote px-4 py-2 text-sm">
+                        Solo Disponibles
+                    </button>
+                    <button id="filter-used" class="action-btn btn-used px-4 py-2 text-sm">
+                        Solo Usados
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Resultados de búsqueda -->
+        <div id="search-results" class="max-w-6xl mx-auto">
+            <div class="text-center text-gray-400 py-12">
+                <div class="text-6xl mb-4">🎵</div>
+                <p class="text-xl">Usa el buscador para encontrar artistas e invitados</p>
+                <p class="text-sm mt-2">Podrás marcar entradas manualmente si el escáner QR no funciona</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de confirmación -->
+    <div id="action-confirmation" class="action-confirmation hidden">
+        <div class="confirmation-card">
+            <div id="confirmation-content"></div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script type="module">
+        import { db } from './firebase_config.js';
+        import { collection, getDocs, doc, updateDoc, query, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        class InvitadoSearcher {
+            constructor() {
+                this.eventId = null;
+                this.eventName = null;
+                this.artists = [];
+                this.tickets = [];
+                this.filteredResults = [];
+                this.currentFilter = 'all';
+                this.searchTerm = '';
+                
+                this.initializeFromURL();
+                this.initializeEvents();
+                this.loadData();
+                
+                console.log('🔍 Buscador de Invitados VYTMUSIC iniciado');
+            }
+
+            initializeFromURL() {
+                const urlParams = new URLSearchParams(window.location.search);
+                this.eventId = urlParams.get('eventId');
+                this.eventName = urlParams.get('eventName');
+                
+                if (!this.eventId || !this.eventName) {
+                    document.body.innerHTML = `
+                        <div class="min-h-screen flex items-center justify-center">
+                            <div class="text-center">
+                                <h1 class="text-3xl font-bold text-red-400 mb-4">❌ Error</h1>
+                                <p class="text-gray-300 mb-6">No se especificó un evento válido</p>
+                                <a href="eventos.html" class="btn-access action-btn px-6 py-3">
+                                    Volver al Gestor de Eventos
+                                </a>
+                            </div>
+                        </div>
+                    `;
+                    return;
+                }
+
+                // Actualizar UI
+                document.getElementById('event-name-display').textContent = this.eventName;
+                document.getElementById('back-link').href = `panel_evento.html?eventId=${this.eventId}&eventName=${encodeURIComponent(this.eventName)}`;
+            }
+
+            initializeEvents() {
+                // Búsqueda en tiempo real
+                document.getElementById('search-input').addEventListener('input', (e) => {
+                    this.searchTerm = e.target.value.toLowerCase().trim();
+                    this.performSearch();
+                });
+
+                // Filtros
+                document.getElementById('filter-all').onclick = () => this.applyFilter('all');
+                document.getElementById('filter-available').onclick = () => this.applyFilter('available');
+                document.getElementById('filter-used').onclick = () => this.applyFilter('used');
+            }
+
+            async loadData() {
+                try {
+                    console.log('📊 Cargando datos del evento...');
+                    
+                    // Cargar artistas
+                    const artistsRef = collection(db, `events/${this.eventId}/artists`);
+                    const artistsSnapshot = await getDocs(artistsRef);
+                    this.artists = artistsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+                    // Cargar tickets
+                    const ticketsRef = collection(db, `events/${this.eventId}/tickets`);
+                    const ticketsSnapshot = await getDocs(ticketsRef);
+                    this.tickets = ticketsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+                    console.log(`✅ Cargados ${this.artists.length} artistas y ${this.tickets.length} tickets`);
+                    
+                    this.updateStats();
+                    
+                } catch (error) {
+                    console.error('❌ Error cargando datos:', error);
+                    this.showError('Error cargando datos del evento');
+                }
+            }
+
+            performSearch() {
+                if (!this.searchTerm || this.searchTerm.length < 2) {
+                    this.showInitialMessage();
+                    return;
+                }
+
+                console.log(`🔍 Buscando: "${this.searchTerm}"`);
+
+                // Buscar artistas que coincidan
+                const matchingArtists = this.artists.filter(artist => 
+                    artist.name && artist.name.toLowerCase().includes(this.searchTerm)
+                );
+
+                // Buscar tickets que coincidan (por nombre de invitado)
+                const matchingTickets = this.tickets.filter(ticket => 
+                    ticket.name && ticket.name.toLowerCase().includes(this.searchTerm)
+                );
+
+                // Combinar resultados
+                this.filteredResults = {
+                    artists: matchingArtists,
+                    tickets: matchingTickets
+                };
+
+                this.displayResults();
+                this.updateSearchStats();
+            }
+
+            applyFilter(filter) {
+                this.currentFilter = filter;
+                
+                // Actualizar botones
+                document.querySelectorAll('[id^="filter-"]').forEach(btn => {
+                    btn.className = btn.className.replace('btn-access', 'btn-vote');
+                });
+                document.getElementById(`filter-${filter}`).className = 
+                    document.getElementById(`filter-${filter}`).className.replace('btn-vote', 'btn-access');
+
+                this.performSearch();
+            }
+
+            displayResults() {
+                const resultsContainer = document.getElementById('search-results');
+                
+                if (!this.filteredResults.artists.length && !this.filteredResults.tickets.length) {
+                    resultsContainer.innerHTML = `
+                        <div class="text-center text-gray-400 py-12">
+                            <div class="text-6xl mb-4">🤷‍♂️</div>
+                            <p class="text-xl">No se encontraron resultados para "${this.searchTerm}"</p>
+                            <p class="text-sm mt-2">Verifica la ortografía o intenta con otro término</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                let html = '';
+
+                // Mostrar artistas encontrados
+                if (this.filteredResults.artists.length > 0) {
+                    html += `<div class="mb-8">
+                        <h3 class="text-2xl font-bold text-emerald-400 mb-4">
+                            🎤 Artistas Encontrados (${this.filteredResults.artists.length})
+                        </h3>
+                        <div class="space-y-4">`;
+                    
+                    this.filteredResults.artists.forEach(artist => {
+                        const artistTickets = this.tickets.filter(ticket => ticket.artistId === artist.id);
+                        const availableTickets = artistTickets.filter(ticket => !ticket.used);
+                        const usedTickets = artistTickets.filter(ticket => ticket.used);
+
+                        if (this.currentFilter === 'available' && availableTickets.length === 0) return;
+                        if (this.currentFilter === 'used' && usedTickets.length === 0) return;
+
+                        html += `
+                            <div class="artist-card p-6" onclick="searchManager.toggleArtistExpansion('${artist.id}')">
+                                <div class="flex items-center justify-between">
+                                    <div class="flex items-center gap-4">
+                                        <div class="w-16 h-16 rounded-full bg-gradient-to-r from-emerald-400 to-sky-400 flex items-center justify-center text-2xl font-black text-white">
+                                            ${artist.name.charAt(0).toUpperCase()}
+                                        </div>
+                                        <div>
+                                            <h4 class="text-xl font-bold text-white">${artist.name}</h4>
+                                            <p class="text-gray-300">${artistTickets.length} invitados total</p>
+                                        </div>
+                                    </div>
+                                    <div class="text-right">
+                                        <div class="text-sm text-gray-300">
+                                            <span class="text-green-400">${availableTickets.length} disponibles</span> • 
+                                            <span class="text-red-400">${usedTickets.length} usados</span>
+                                        </div>
+                                        <div class="text-2xl text-emerald-400" id="expand-icon-${artist.id}">▼</div>
+                                    </div>
+                                </div>
+                                
+                                <div id="artist-guests-${artist.id}" class="hidden mt-6 space-y-3">
+                                    ${this.renderGuestList(artistTickets)}
+                                </div>
+                            </div>
+                        `;
+                    });
+                    
+                    html += '</div></div>';
+                }
+
+                // Mostrar invitados individuales encontrados
+                const directTickets = this.filteredResults.tickets.filter(ticket => 
+                    !this.filteredResults.artists.some(artist => artist.id === ticket.artistId)
+                );
+
+                if (directTickets.length > 0) {
+                    html += `<div class="mb-8">
+                        <h3 class="text-2xl font-bold text-sky-400 mb-4">
+                            👥 Invitados Encontrados (${directTickets.length})
+                        </h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            ${this.renderGuestList(directTickets)}
+                        </div>
+                    </div>`;
+                }
+
+                resultsContainer.innerHTML = html;
+                document.getElementById('search-stats').classList.remove('hidden');
+            }
+
+            renderGuestList(tickets) {
+                return tickets.map(ticket => {
+                    if (this.currentFilter === 'available' && ticket.used) return '';
+                    if (this.currentFilter === 'used' && !ticket.used) return '';
+
+                    const statusClass = ticket.used ? 'used' : 'available';
+                    const statusText = ticket.used ? 
+                        `❌ Ya ingresó (${ticket.usedAt ? new Date(ticket.usedAt).toLocaleString() : 'Fecha desconocida'})` : 
+                        '✅ Disponible';
+                    
+                    const actionButton = ticket.used ? 
+                        `<button class="action-btn btn-used px-4 py-2" disabled>Ya Usado</button>` :
+                        `<button class="action-btn btn-access px-4 py-2" onclick="searchManager.markEntry('${ticket.id}', '${ticket.name}', '${ticket.prefix || 'N/A'}')">
+                            Marcar Entrada
+                        </button>`;
+
+                    return `
+                        <div class="guest-item ${statusClass} p-4">
+                            <div class="flex justify-between items-center">
+                                <div>
+                                    <h5 class="font-bold text-white text-lg">${ticket.name}</h5>
+                                    <p class="text-sm text-gray-300">Grupo: ${ticket.prefix || 'Sin grupo'}</p>
+                                    <p class="text-sm ${ticket.used ? 'text-red-400' : 'text-green-400'}">${statusText}</p>
+                                </div>
+                                <div class="flex flex-col gap-2">
+                                    ${actionButton}
+                                    ${!ticket.used ? `<button class="action-btn btn-vote px-4 py-2" onclick="searchManager.enableVoting('${ticket.id}', '${ticket.name}')">Habilitar Voto</button>` : ''}
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            }
+
+            toggleArtistExpansion(artistId) {
+                const guestsContainer = document.getElementById(`artist-guests-${artistId}`);
+                const expandIcon = document.getElementById(`expand-icon-${artistId}`);
+                
+                if (guestsContainer.classList.contains('hidden')) {
+                    guestsContainer.classList.remove('hidden');
+                    expandIcon.textContent = '▲';
+                } else {
+                    guestsContainer.classList.add('hidden');
+                    expandIcon.textContent = '▼';
+                }
+            }
+
+            async markEntry(ticketId, guestName, guestGroup) {
+                const confirmed = await this.showConfirmation(
+                    'Marcar Entrada Manual',
+                    `¿Confirmar entrada de:<br><strong>${guestName}</strong><br>Grupo: ${guestGroup}`,
+                    'Confirmar Entrada'
+                );
+
+                if (!confirmed) return;
+
+                try {
+                    console.log(`👤 Marcando entrada manual: ${guestName}`);
+                    
+                    const ticketRef = doc(db, `events/${this.eventId}/tickets`, ticketId);
+                    await updateDoc(ticketRef, {
+                        used: true,
+                        usedAt: new Date().toISOString(),
+                        usedBy: 'Búsqueda Manual',
+                        manualEntry: true
+                    });
+
+                    // Actualizar datos locales
+                    const ticket = this.tickets.find(t => t.id === ticketId);
+                    if (ticket) {
+                        ticket.used = true;
+                        ticket.usedAt = new Date().toISOString();
+                        ticket.usedBy = 'Búsqueda Manual';
+                    }
+
+                    // Refrescar resultados
+                    this.performSearch();
+                    
+                    this.showNotification(`✅ Entrada marcada para ${guestName}`, 'success');
+                    
+                } catch (error) {
+                    console.error('❌ Error marcando entrada:', error);
+                    this.showNotification('❌ Error al marcar entrada', 'error');
+                }
+            }
+
+            async enableVoting(ticketId, guestName) {
+                const votingUrl = `voting_page.html?eventId=${this.eventId}&eventName=${encodeURIComponent(this.eventName)}&guestName=${encodeURIComponent(guestName)}&ticketId=${ticketId}`;
+                
+                const confirmed = await this.showConfirmation(
+                    'Habilitar Votación',
+                    `¿Abrir panel de votación para:<br><strong>${guestName}</strong>`,
+                    'Abrir Votación'
+                );
+
+                if (confirmed) {
+                    window.open(votingUrl, '_blank');
+                }
+            }
+
+            updateStats() {
+                const availableTickets = this.tickets.filter(ticket => !ticket.used);
+                const usedTickets = this.tickets.filter(ticket => ticket.used);
+
+                document.getElementById('stats-artists').textContent = this.artists.length;
+                document.getElementById('stats-guests').textContent = this.tickets.length;
+                document.getElementById('stats-available').textContent = availableTickets.length;
+                document.getElementById('stats-used').textContent = usedTickets.length;
+            }
+
+            updateSearchStats() {
+                if (!this.filteredResults) return;
+
+                const artistTickets = this.filteredResults.artists.reduce((acc, artist) => {
+                    return acc.concat(this.tickets.filter(ticket => ticket.artistId === artist.id));
+                }, []);
+
+                const allFoundTickets = [...artistTickets, ...this.filteredResults.tickets];
+                const uniqueTickets = allFoundTickets.filter((ticket, index, self) => 
+                    index === self.findIndex(t => t.id === ticket.id)
+                );
+
+                const availableFound = uniqueTickets.filter(ticket => !ticket.used);
+                const usedFound = uniqueTickets.filter(ticket => ticket.used);
+
+                document.getElementById('stats-artists').textContent = this.filteredResults.artists.length;
+                document.getElementById('stats-guests').textContent = uniqueTickets.length;
+                document.getElementById('stats-available').textContent = availableFound.length;
+                document.getElementById('stats-used').textContent = usedFound.length;
+            }
+
+            showInitialMessage() {
+                document.getElementById('search-results').innerHTML = `
+                    <div class="text-center text-gray-400 py-12">
+                        <div class="text-6xl mb-4">🎵</div>
+                        <p class="text-xl">Usa el buscador para encontrar artistas e invitados</p>
+                        <p class="text-sm mt-2">Podrás marcar entradas manualmente si el escáner QR no funciona</p>
+                    </div>
+                `;
+                document.getElementById('search-stats').classList.add('hidden');
+            }
+
+            showConfirmation(title, message, confirmText) {
+                return new Promise((resolve) => {
+                    const modal = document.getElementById('action-confirmation');
+                    const content = document.getElementById('confirmation-content');
+                    
+                    content.innerHTML = `
+                        <h3 class="text-2xl font-bold text-emerald-400 mb-4">${title}</h3>
+                        <div class="text-lg mb-6">${message}</div>
+                        <div class="flex gap-4">
+                            <button id="confirm-cancel" class="flex-1 action-btn btn-used px-6 py-3">
+                                Cancelar
+                            </button>
+                            <button id="confirm-ok" class="flex-1 action-btn btn-access px-6 py-3">
+                                ${confirmText}
+                            </button>
+                        </div>
+                    `;
+                    
+                    modal.classList.remove('hidden');
+                    
+                    document.getElementById('confirm-cancel').onclick = () => {
+                        modal.classList.add('hidden');
+                        resolve(false);
+                    };
+                    
+                    document.getElementById('confirm-ok').onclick = () => {
+                        modal.classList.add('hidden');
+                        resolve(true);
+                    };
+                });
+            }
+
+            showNotification(message, type = 'info') {
+                const notification = document.createElement('div');
+                notification.className = `fixed top-6 right-6 px-6 py-4 rounded-xl font-bold text-white z-50 ${
+                    type === 'success' ? 'bg-green-600' : 
+                    type === 'error' ? 'bg-red-600' : 'bg-blue-600'
+                }`;
+                notification.textContent = message;
+                
+                document.body.appendChild(notification);
+                
+                setTimeout(() => {
+                    if (document.body.contains(notification)) {
+                        document.body.removeChild(notification);
+                    }
+                }, 4000);
+            }
+
+            showError(message) {
+                document.getElementById('search-results').innerHTML = `
+                    <div class="text-center text-red-400 py-12">
+                        <div class="text-6xl mb-4">❌</div>
+                        <p class="text-xl">${message}</p>
+                        <button onclick="location.reload()" class="action-btn btn-access px-6 py-3 mt-4">
+                            Reintentar
+                        </button>
+                    </div>
+                `;
+            }
+        }
+
+        // Inicializar buscador
+        const searchManager = new InvitadoSearcher();
+        
+        // Hacer accesible globalmente para los onclick
+        window.searchManager = searchManager;
+        
+        console.log('🔍 BUSCADOR DE INVITADOS VYTMUSIC LISTO');
+    </script>
+</body>
+</html>
