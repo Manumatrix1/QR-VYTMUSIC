@@ -1,0 +1,844 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎯 Escáner QR Mejorado - VYTMUSIC</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background: linear-gradient(135deg, #0f172a, #1e293b); color: #f8fafc; }
+        .hidden { display: none !important; }
+        
+        /* Escáner pantalla completa */
+        #scanner-container { 
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+            background: #000; z-index: 50; 
+        }
+        #qr-reader { width: 100vw; height: 100vh; overflow: hidden; }
+        
+        /* CONFIRMACIÓN MEGA VISIBLE */
+        .mega-confirmacion {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 100; display: flex; flex-direction: column; 
+            justify-content: center; align-items: center; text-align: center;
+            pointer-events: none;
+        }
+        
+        .confirmacion-valida {
+            background: linear-gradient(135deg, #10b981, #059669);
+            animation: confirmacionExito 3s ease-out;
+        }
+        
+        .confirmacion-usada {
+            background: linear-gradient(135deg, #f59e0b, #d97706);
+            animation: confirmacionAdvertencia 2s ease-out;
+        }
+        
+        .confirmacion-invalida {
+            background: linear-gradient(135deg, #ef4444, #dc2626);
+            animation: confirmacionError 2s ease-out;
+        }
+        
+        @keyframes confirmacionExito {
+            0% { opacity: 0; transform: scale(0.5); }
+            15% { opacity: 0.95; transform: scale(1.1); }
+            85% { opacity: 0.95; transform: scale(1); }
+            100% { opacity: 0; transform: scale(1); }
+        }
+        
+        @keyframes confirmacionAdvertencia {
+            0% { opacity: 0; transform: scale(0.5); }
+            20% { opacity: 0.9; transform: scale(1.05); }
+            80% { opacity: 0.9; transform: scale(1); }
+            100% { opacity: 0; transform: scale(1); }
+        }
+        
+        @keyframes confirmacionError {
+            0% { opacity: 0; transform: scale(0.5); }
+            25% { opacity: 0.85; transform: scale(1.02); }
+            75% { opacity: 0.85; transform: scale(1); }
+            100% { opacity: 0; transform: scale(1); }
+        }
+        
+        /* Header con contadores */
+        .header-stats {
+            position: fixed; top: 20px; left: 20px; right: 20px;
+            background: rgba(15, 23, 42, 0.95); backdrop-filter: blur(15px);
+            border: 2px solid; border-radius: 20px; padding: 20px; z-index: 60;
+            display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px;
+        }
+        
+        .header-online { border-color: #10b981; box-shadow: 0 0 20px rgba(16, 185, 129, 0.3); }
+        .header-offline { border-color: #f59e0b; box-shadow: 0 0 20px rgba(245, 158, 11, 0.3); }
+        
+        .stat-item {
+            text-align: center; padding: 10px; border-radius: 12px;
+            background: rgba(255, 255, 255, 0.1);
+        }
+        
+        .stat-number {
+            font-size: 2.2rem; font-weight: 900; line-height: 1;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+        }
+        
+        .stat-label {
+            font-size: 0.75rem; font-weight: 600; opacity: 0.9; 
+            margin-top: 5px; text-transform: uppercase; letter-spacing: 0.5px;
+        }
+        
+        /* Estado de conexión inteligente */
+        .connection-indicator {
+            position: fixed; top: 120px; left: 20px; right: 20px;
+            padding: 12px 20px; border-radius: 15px; font-weight: 700;
+            text-align: center; z-index: 60; font-size: 1.1rem;
+            display: flex; align-items: center; justify-content: center; gap: 10px;
+        }
+        
+        .status-online { 
+            background: linear-gradient(90deg, #10b981, #059669); 
+            color: white; animation: pulseOnline 2s infinite;
+        }
+        .status-offline { 
+            background: linear-gradient(90deg, #f59e0b, #d97706); 
+            color: white; animation: pulseOffline 1.5s infinite;
+        }
+        .status-syncing { 
+            background: linear-gradient(90deg, #3b82f6, #2563eb); 
+            color: white; animation: syncingAnimation 1s infinite;
+        }
+        
+        @keyframes pulseOnline { 0%, 100% { opacity: 1; } 50% { opacity: 0.8; } }
+        @keyframes pulseOffline { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+        @keyframes syncingAnimation { 0% { transform: translateX(-5px); } 50% { transform: translateX(5px); } 100% { transform: translateX(-5px); } }
+        
+        /* Información del asistente */
+        .assistant-info {
+            position: fixed; top: 180px; left: 20px; right: 20px;
+            background: rgba(30, 41, 59, 0.95); backdrop-filter: blur(10px);
+            border-radius: 15px; padding: 12px 20px; z-index: 60;
+            text-align: center; border: 1px solid #475569;
+        }
+        
+        /* Controles inferiores */
+        .bottom-controls {
+            position: fixed; bottom: 20px; left: 20px; right: 20px;
+            display: flex; justify-content: space-between; gap: 10px; z-index: 60;
+        }
+        
+        .control-btn {
+            flex: 1; padding: 15px 12px; border-radius: 15px;
+            font-weight: 800; font-size: 0.95rem; border: none;
+            box-shadow: 0 8px 25px rgba(0,0,0,0.3);
+            transition: all 0.2s ease; text-transform: uppercase;
+        }
+        
+        .control-btn:active { transform: scale(0.95); }
+        
+        .btn-stop { background: linear-gradient(135deg, #ef4444, #dc2626); color: white; }
+        .btn-sync { background: linear-gradient(135deg, #3b82f6, #2563eb); color: white; }
+        .btn-export { background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: white; }
+        .btn-camera { background: linear-gradient(135deg, #f59e0b, #d97706); color: white; }
+        
+        /* Setup inicial */
+        .setup-card {
+            background: linear-gradient(135deg, #1e293b, #334155);
+            border: 3px solid #10b981; border-radius: 25px;
+            box-shadow: 0 25px 50px rgba(0,0,0,0.5), 0 0 50px rgba(16, 185, 129, 0.1);
+        }
+        
+        /* Indicador de escaneo activo */
+        .scan-indicator {
+            position: fixed; top: 50%; left: 50%; 
+            transform: translate(-50%, -50%);
+            z-index: 55; pointer-events: none;
+        }
+        
+        .scan-frame {
+            width: 280px; height: 280px; 
+            border: 4px solid #10b981; border-radius: 25px;
+            position: relative; animation: scanPulse 2s ease-in-out infinite;
+        }
+        
+        .scan-corners {
+            position: absolute; width: 50px; height: 50px;
+            border: 6px solid #10b981;
+        }
+        
+        .corner-tl { top: -3px; left: -3px; border-right: none; border-bottom: none; }
+        .corner-tr { top: -3px; right: -3px; border-left: none; border-bottom: none; }
+        .corner-bl { bottom: -3px; left: -3px; border-right: none; border-top: none; }
+        .corner-br { bottom: -3px; right: -3px; border-left: none; border-top: none; }
+        
+        @keyframes scanPulse {
+            0%, 100% { transform: scale(1); opacity: 0.8; }
+            50% { transform: scale(1.05); opacity: 1; }
+        }
+        
+        /* Notificación de sincronización */
+        .sync-notification {
+            position: fixed; top: 240px; left: 20px; right: 20px;
+            background: linear-gradient(90deg, #10b981, #059669);
+            color: white; text-align: center; padding: 12px;
+            border-radius: 15px; z-index: 65; font-weight: 700;
+            animation: slideDownNotification 0.5s ease-out;
+        }
+        
+        @keyframes slideDownNotification {
+            from { transform: translateY(-100%); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        
+        /* Loading animation */
+        .loading-spinner {
+            width: 20px; height: 20px; border: 3px solid rgba(255,255,255,0.3);
+            border-top: 3px solid white; border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        /* Error de escáner */
+        .error-panel {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(239, 68, 68, 0.95); color: white; padding: 20px;
+            border-radius: 15px; z-index: 80; text-align: center; max-width: 90%;
+        }
+    </style>
+</head>
+<body>
+    <!-- Pantalla de configuración inicial -->
+    <div id="setup-screen" class="min-h-screen flex items-center justify-center p-6">
+        <div class="setup-card p-10 max-w-lg w-full">
+            <div class="text-center mb-8">
+                <h1 class="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-sky-400 mb-4">
+                    🎯 ESCÁNER QR MEJORADO
+                </h1>
+                <p class="text-xl font-bold text-emerald-400 mb-2">DIAGNÓSTICO Y CÓDIGOS DE BARRAS</p>
+                <p class="text-sm text-gray-300">Lee QR y códigos de barras • Diagnóstico mejorado • Multi-cámara</p>
+            </div>
+            
+            <div class="space-y-6 mb-8">
+                <div>
+                    <label class="block text-sm font-bold mb-3 text-emerald-400">🎪 ID del Evento:</label>
+                    <input type="text" id="event-id" 
+                           class="w-full p-4 rounded-xl border-2 border-slate-600 bg-slate-800 text-white text-lg font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500" 
+                           placeholder="Ej: vytmusic_2024_gala">
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-bold mb-3 text-emerald-400">🎵 Nombre del Evento:</label>
+                    <input type="text" id="event-name" 
+                           class="w-full p-4 rounded-xl border-2 border-slate-600 bg-slate-800 text-white text-lg font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500" 
+                           placeholder="Ej: Gala VYT Music 2024">
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-bold mb-3 text-emerald-400">👤 Tu Nombre (Asistente):</label>
+                    <input type="text" id="assistant-name" 
+                           class="w-full p-4 rounded-xl border-2 border-slate-600 bg-slate-800 text-white text-lg font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500" 
+                           placeholder="Tu nombre">
+                </div>
+            </div>
+            
+            <div id="camera-info" class="bg-slate-800 p-4 rounded-xl mb-6 text-sm">
+                <div class="text-yellow-400 font-bold mb-2">📱 Diagnóstico del Sistema:</div>
+                <div id="diagnostics">Iniciando verificaciones...</div>
+            </div>
+            
+            <button id="start-scanner" 
+                    class="w-full py-5 px-6 bg-gradient-to-r from-emerald-500 to-sky-500 text-white font-black text-xl rounded-xl hover:from-emerald-600 hover:to-sky-600 transform hover:scale-105 transition-all duration-200 shadow-xl">
+                🚀 INICIAR ESCÁNER MEJORADO
+            </button>
+            
+            <div class="mt-8 grid grid-cols-2 gap-4 text-sm">
+                <div class="bg-slate-800 p-4 rounded-xl text-center">
+                    <div class="text-emerald-400 font-bold text-lg mb-2">📱 QR CODES</div>
+                    <div class="text-gray-300">Todos los formatos QR</div>
+                </div>
+                <div class="bg-slate-800 p-4 rounded-xl text-center">
+                    <div class="text-yellow-400 font-bold text-lg mb-2">📊 BARRAS</div>
+                    <div class="text-gray-300">EAN, CODE 128, 39, 93</div>
+                </div>
+                <div class="bg-slate-800 p-4 rounded-xl text-center">
+                    <div class="text-sky-400 font-bold text-lg mb-2">🔄 MULTI-CÁMARA</div>
+                    <div class="text-gray-300">Cambia entre cámaras</div>
+                </div>
+                <div class="bg-slate-800 p-4 rounded-xl text-center">
+                    <div class="text-purple-400 font-bold text-lg mb-2">🛠️ DIAGNÓSTICO</div>
+                    <div class="text-gray-300">Errores detallados</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pantalla del escáner -->
+    <div id="scanner-screen" class="hidden">
+        <!-- Header con estadísticas -->
+        <div id="stats-header" class="header-stats header-offline">
+            <div class="stat-item">
+                <div class="stat-number text-emerald-400" id="count-valid">0</div>
+                <div class="stat-label">Válidos</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number text-yellow-400" id="count-used">0</div>
+                <div class="stat-label">Usados</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number text-red-400" id="count-invalid">0</div>
+                <div class="stat-label">Inválidos</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number text-sky-400" id="count-total">0</div>
+                <div class="stat-label">Total</div>
+            </div>
+        </div>
+
+        <!-- Indicador de conexión -->
+        <div id="connection-status" class="connection-indicator status-offline">
+            <div class="loading-spinner hidden" id="connection-spinner"></div>
+            <span id="connection-text">🔍 Verificando conexión...</span>
+        </div>
+
+        <!-- Información del asistente -->
+        <div class="assistant-info">
+            <div class="text-sm font-semibold">
+                🎪 <span id="current-event-name">Evento</span> • 
+                👤 <span id="current-assistant-name">Asistente</span> • 
+                📷 <span id="current-camera">Cámara Principal</span>
+            </div>
+        </div>
+
+        <!-- Indicador de escaneo -->
+        <div class="scan-indicator">
+            <div class="scan-frame">
+                <div class="scan-corners corner-tl"></div>
+                <div class="scan-corners corner-tr"></div>
+                <div class="scan-corners corner-bl"></div>
+                <div class="scan-corners corner-br"></div>
+                <div class="absolute inset-6 border-2 border-emerald-400 border-dashed rounded-xl opacity-60"></div>
+                <div class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-emerald-400 font-bold text-lg text-center">
+                    📱<br>APUNTA<br>EL CÓDIGO
+                </div>
+            </div>
+        </div>
+
+        <!-- Área del escáner -->
+        <div id="scanner-container">
+            <div id="qr-reader"></div>
+        </div>
+
+        <!-- Controles inferiores -->
+        <div class="bottom-controls">
+            <button id="stop-scanner" class="control-btn btn-stop">
+                ❌ Cerrar
+            </button>
+            <button id="switch-camera" class="control-btn btn-camera">
+                🔄 Cámara
+            </button>
+            <button id="test-mode" class="control-btn btn-sync">
+                🧪 Test
+            </button>
+            <button id="diagnostics-btn" class="control-btn btn-export">
+                🛠️ Info
+            </button>
+        </div>
+    </div>
+
+    <!-- Overlay de confirmación -->
+    <div id="mega-confirmation" class="mega-confirmacion hidden">
+        <div id="confirmation-content"></div>
+    </div>
+
+    <!-- Panel de diagnóstico -->
+    <div id="diagnostics-panel" class="error-panel hidden">
+        <h3 class="text-xl font-bold mb-4">🛠️ DIAGNÓSTICO DEL ESCÁNER</h3>
+        <div id="diagnostics-content"></div>
+        <button onclick="this.parentElement.classList.add('hidden')" class="mt-4 px-6 py-2 bg-white text-red-600 rounded-lg font-bold">
+            CERRAR
+        </button>
+    </div>
+
+    <!-- Librerías -->
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+    
+    <script>
+        class DiagnosticQRScanner {
+            constructor() {
+                this.eventId = null;
+                this.eventName = null;
+                this.assistantName = null;
+                this.html5QrCode = null;
+                this.isActive = false;
+                this.cameras = [];
+                this.currentCameraIndex = 0;
+                this.counters = { valid: 0, used: 0, invalid: 0, total: 0 };
+                this.scannedCodes = new Set();
+                this.diagnostics = {
+                    cameraAccess: false,
+                    cameraCount: 0,
+                    lastError: null,
+                    scanCount: 0,
+                    lastScanTime: null
+                };
+                
+                this.initializeEvents();
+                this.runInitialDiagnostics();
+                
+                console.log('🎯 Escáner QR Diagnóstico Iniciado');
+            }
+
+            initializeEvents() {
+                document.getElementById('start-scanner').onclick = () => this.startSystem();
+                document.getElementById('stop-scanner').onclick = () => this.stopSystem();
+                document.getElementById('switch-camera').onclick = () => this.switchCamera();
+                document.getElementById('test-mode').onclick = () => this.testMode();
+                document.getElementById('diagnostics-btn').onclick = () => this.showDiagnostics();
+            }
+
+            async runInitialDiagnostics() {
+                const diagnosticsEl = document.getElementById('diagnostics');
+                
+                try {
+                    diagnosticsEl.innerHTML = '🔍 Verificando permisos de cámara...';
+                    
+                    // Verificar permisos de cámara
+                    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                    stream.getTracks().forEach(track => track.stop());
+                    this.diagnostics.cameraAccess = true;
+                    
+                    diagnosticsEl.innerHTML = '📷 Obteniendo lista de cámaras...';
+                    
+                    // Obtener cámaras
+                    this.cameras = await Html5Qrcode.getCameras();
+                    this.diagnostics.cameraCount = this.cameras.length;
+                    
+                    let diagnosticText = `✅ Sistema Operativo<br>`;
+                    diagnosticText += `✅ Permisos de Cámara Concedidos<br>`;
+                    diagnosticText += `✅ ${this.cameras.length} Cámara(s) Disponible(s)<br>`;
+                    
+                    if (this.cameras.length > 0) {
+                        diagnosticText += `<br><strong>Cámaras Detectadas:</strong><br>`;
+                        this.cameras.forEach((camera, index) => {
+                            const label = camera.label || `Cámara ${index + 1}`;
+                            diagnosticText += `📷 ${label}<br>`;
+                        });
+                    }
+                    
+                    diagnosticText += `<br>🚀 <strong>Listo para escanear</strong>`;
+                    diagnosticsEl.innerHTML = diagnosticText;
+                    
+                } catch (error) {
+                    this.diagnostics.lastError = error.message;
+                    
+                    let errorText = `❌ Error: ${error.message}<br><br>`;
+                    errorText += `🔧 <strong>Soluciones:</strong><br>`;
+                    errorText += `• Permitir acceso a la cámara<br>`;
+                    errorText += `• Cerrar otras apps que usen la cámara<br>`;
+                    errorText += `• Usar Chrome o Firefox actualizado<br>`;
+                    errorText += `• Verificar que hay cámara conectada<br>`;
+                    
+                    diagnosticsEl.innerHTML = errorText;
+                }
+            }
+
+            async startSystem() {
+                this.eventId = document.getElementById('event-id').value.trim() || 'test_event';
+                this.eventName = document.getElementById('event-name').value.trim() || 'Evento de Prueba';
+                this.assistantName = document.getElementById('assistant-name').value.trim() || 'Asistente';
+
+                console.log(`🚀 Iniciando sistema: ${this.eventName}`);
+                
+                // Mostrar escáner
+                document.getElementById('setup-screen').classList.add('hidden');
+                document.getElementById('scanner-screen').classList.remove('hidden');
+
+                // Actualizar información
+                document.getElementById('current-event-name').textContent = this.eventName;
+                document.getElementById('current-assistant-name').textContent = this.assistantName;
+
+                // Iniciar escáner
+                await this.initializeScanner();
+            }
+
+            async initializeScanner() {
+                try {
+                    console.log('🔄 Iniciando escáner...');
+                    
+                    if (this.cameras.length === 0) {
+                        this.cameras = await Html5Qrcode.getCameras();
+                    }
+                    
+                    if (this.cameras.length === 0) {
+                        throw new Error('No se encontraron cámaras disponibles');
+                    }
+
+                    this.html5QrCode = new Html5Qrcode("qr-reader");
+                    
+                    // Configuración optimizada
+                    const config = {
+                        fps: 10,
+                        qrbox: { width: 280, height: 280 },
+                        aspectRatio: 1.0,
+                        disableFlip: false,
+                        formatsToSupport: [
+                            Html5QrcodeSupportedFormats.QR_CODE,
+                            Html5QrcodeSupportedFormats.CODE_128,
+                            Html5QrcodeSupportedFormats.CODE_39,
+                            Html5QrcodeSupportedFormats.CODE_93,
+                            Html5QrcodeSupportedFormats.EAN_13,
+                            Html5QrcodeSupportedFormats.EAN_8,
+                            Html5QrcodeSupportedFormats.UPC_A,
+                            Html5QrcodeSupportedFormats.UPC_E
+                        ],
+                        experimentalFeatures: {
+                            useBarCodeDetectorIfSupported: true
+                        }
+                    };
+
+                    // Buscar cámara trasera
+                    let cameraId = this.cameras[0].id;
+                    for (let camera of this.cameras) {
+                        if (camera.label.toLowerCase().includes('back') || 
+                            camera.label.toLowerCase().includes('rear') ||
+                            camera.label.toLowerCase().includes('environment')) {
+                            cameraId = camera.id;
+                            break;
+                        }
+                    }
+
+                    console.log(`📱 Usando: ${this.cameras[this.currentCameraIndex].label}`);
+                    this.updateCameraDisplay();
+
+                    await this.html5QrCode.start(
+                        cameraId,
+                        config,
+                        (decodedText, decodedResult) => this.onScanSuccess(decodedText, decodedResult),
+                        (errorMessage) => {
+                            // Solo loguear errores importantes
+                            if (!errorMessage.includes('No QR code found') && 
+                                !errorMessage.includes('QR code parse error')) {
+                                console.warn('⚠️ Error de escaneo:', errorMessage);
+                            }
+                        }
+                    );
+
+                    this.isActive = true;
+                    console.log('✅ Escáner iniciado correctamente');
+                    
+                } catch (error) {
+                    console.error('❌ Error iniciando escáner:', error);
+                    this.diagnostics.lastError = error.message;
+                    this.showErrorMessage(error.message);
+                }
+            }
+
+            onScanSuccess(decodedText, decodedResult = null) {
+                if (!this.isActive) return;
+
+                const codeType = decodedResult ? decodedResult.result.format : 'DESCONOCIDO';
+                console.log(`🔍 Código escaneado (${codeType}): ${decodedText}`);
+
+                this.diagnostics.scanCount++;
+                this.diagnostics.lastScanTime = new Date().toLocaleString();
+
+                // Vibración
+                if (navigator.vibrate) {
+                    navigator.vibrate([100, 50, 100]);
+                }
+
+                // Efecto visual
+                this.flashScanFrame();
+
+                // Procesar código
+                this.processCode(decodedText, codeType);
+            }
+
+            processCode(code, type) {
+                // Para demo, simular diferentes tipos de respuesta
+                let result;
+                
+                if (this.scannedCodes.has(code)) {
+                    result = {
+                        type: 'used',
+                        title: '⚠️ YA ESCANEADO',
+                        subtitle: 'Este código ya fue procesado',
+                        code: code,
+                        codeType: type
+                    };
+                    this.counters.used++;
+                } else if (code.length < 5) {
+                    result = {
+                        type: 'invalid',
+                        title: '❌ CÓDIGO INVÁLIDO',
+                        subtitle: 'Formato no reconocido',
+                        code: code,
+                        codeType: type
+                    };
+                    this.counters.invalid++;
+                } else {
+                    result = {
+                        type: 'valid',
+                        title: '✅ CÓDIGO VÁLIDO',
+                        subtitle: `Tipo: ${type}`,
+                        code: code,
+                        codeType: type
+                    };
+                    this.counters.valid++;
+                    this.scannedCodes.add(code);
+                }
+
+                this.counters.total++;
+                this.showMegaConfirmation(result);
+                this.updateCounters();
+            }
+
+            showMegaConfirmation(result) {
+                const megaEl = document.getElementById('mega-confirmation');
+                const contentEl = document.getElementById('confirmation-content');
+
+                const typeClass = {
+                    'valid': 'confirmacion-valida',
+                    'used': 'confirmacion-usada',
+                    'invalid': 'confirmacion-invalida'
+                }[result.type];
+
+                megaEl.className = `mega-confirmacion ${typeClass}`;
+
+                const icon = {
+                    'valid': '✅',
+                    'used': '⚠️',
+                    'invalid': '❌'
+                }[result.type];
+
+                contentEl.innerHTML = `
+                    <div style="font-size: 8rem; margin-bottom: 30px;">
+                        ${icon}
+                    </div>
+                    <div style="font-size: 3rem; font-weight: 900; margin-bottom: 20px;">
+                        ${result.title}
+                    </div>
+                    <div style="font-size: 1.8rem; margin-bottom: 15px;">
+                        ${result.subtitle}
+                    </div>
+                    <div style="font-size: 1.2rem; opacity: 0.8; word-break: break-all;">
+                        ${result.code.substring(0, 50)}${result.code.length > 50 ? '...' : ''}
+                    </div>
+                    <div style="font-size: 1rem; opacity: 0.7; margin-top: 10px;">
+                        Tipo: ${result.codeType} • ${new Date().toLocaleTimeString()}
+                    </div>
+                `;
+
+                megaEl.classList.remove('hidden');
+
+                // Sonido
+                this.playSound(result.type);
+
+                // Ocultar automáticamente
+                setTimeout(() => {
+                    megaEl.classList.add('hidden');
+                }, result.type === 'valid' ? 2500 : 2000);
+            }
+
+            playSound(type) {
+                try {
+                    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    const oscillator = audioContext.createOscillator();
+                    const gainNode = audioContext.createGain();
+
+                    oscillator.connect(gainNode);
+                    gainNode.connect(audioContext.destination);
+
+                    const configs = {
+                        'valid': { freq: [800, 1000], duration: 0.4 },
+                        'used': { freq: [400], duration: 0.6 },
+                        'invalid': { freq: [200, 150], duration: 0.3 }
+                    };
+
+                    const config = configs[type];
+                    oscillator.frequency.setValueAtTime(config.freq[0], audioContext.currentTime);
+                    if (config.freq[1]) {
+                        oscillator.frequency.exponentialRampToValueAtTime(config.freq[1], audioContext.currentTime + config.duration / 2);
+                    }
+
+                    oscillator.type = 'sine';
+                    gainNode.gain.setValueAtTime(0.2, audioContext.currentTime);
+                    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + config.duration);
+
+                    oscillator.start(audioContext.currentTime);
+                    oscillator.stop(audioContext.currentTime + config.duration);
+                } catch (error) {
+                    console.log('Audio no disponible');
+                }
+            }
+
+            flashScanFrame() {
+                const scanFrame = document.querySelector('.scan-frame');
+                if (scanFrame) {
+                    scanFrame.style.borderColor = '#10b981';
+                    scanFrame.style.boxShadow = '0 0 30px #10b981';
+                    
+                    setTimeout(() => {
+                        scanFrame.style.borderColor = '#10b981';
+                        scanFrame.style.boxShadow = 'none';
+                    }, 300);
+                }
+            }
+
+            async switchCamera() {
+                if (!this.isActive || this.cameras.length <= 1) {
+                    alert('No hay cámaras adicionales disponibles');
+                    return;
+                }
+
+                try {
+                    console.log('🔄 Cambiando cámara...');
+                    
+                    await this.html5QrCode.stop();
+                    
+                    this.currentCameraIndex = (this.currentCameraIndex + 1) % this.cameras.length;
+                    const newCamera = this.cameras[this.currentCameraIndex];
+                    
+                    console.log(`📷 Cambiando a: ${newCamera.label}`);
+
+                    const config = {
+                        fps: 10,
+                        qrbox: { width: 280, height: 280 },
+                        aspectRatio: 1.0,
+                        disableFlip: false,
+                        formatsToSupport: [
+                            Html5QrcodeSupportedFormats.QR_CODE,
+                            Html5QrcodeSupportedFormats.CODE_128,
+                            Html5QrcodeSupportedFormats.CODE_39,
+                            Html5QrcodeSupportedFormats.EAN_13,
+                            Html5QrcodeSupportedFormats.EAN_8
+                        ]
+                    };
+
+                    await this.html5QrCode.start(
+                        newCamera.id,
+                        config,
+                        (decodedText, decodedResult) => this.onScanSuccess(decodedText, decodedResult),
+                        () => {}
+                    );
+
+                    this.updateCameraDisplay();
+                    console.log(`✅ Cámara cambiada: ${newCamera.label}`);
+                    
+                } catch (error) {
+                    console.error('❌ Error cambiando cámara:', error);
+                    alert(`Error cambiando cámara: ${error.message}`);
+                }
+            }
+
+            updateCameraDisplay() {
+                const cameraName = this.cameras[this.currentCameraIndex]?.label || 'Desconocida';
+                document.getElementById('current-camera').textContent = cameraName.substring(0, 20);
+            }
+
+            testMode() {
+                // Generar códigos de prueba
+                const testCodes = [
+                    'TEST_QR_123456789',
+                    'BARCODE_987654321',
+                    'VYT_TICKET_ABC123',
+                    'INVALID_CODE'
+                ];
+                
+                const randomCode = testCodes[Math.floor(Math.random() * testCodes.length)];
+                console.log(`🧪 Modo test - simulando código: ${randomCode}`);
+                
+                this.onScanSuccess(randomCode, { result: { format: 'TEST_CODE' } });
+            }
+
+            showDiagnostics() {
+                const panel = document.getElementById('diagnostics-panel');
+                const content = document.getElementById('diagnostics-content');
+                
+                let diagnosticInfo = `
+                    <div class="text-left space-y-2">
+                        <div><strong>📷 Cámaras:</strong> ${this.diagnostics.cameraCount}</div>
+                        <div><strong>✅ Acceso:</strong> ${this.diagnostics.cameraAccess ? 'Permitido' : 'Denegado'}</div>
+                        <div><strong>🔍 Escaneos:</strong> ${this.diagnostics.scanCount}</div>
+                        <div><strong>🕐 Último:</strong> ${this.diagnostics.lastScanTime || 'Ninguno'}</div>
+                        <div><strong>❌ Error:</strong> ${this.diagnostics.lastError || 'Ninguno'}</div>
+                        <div><strong>🏷️ Códigos únicos:</strong> ${this.scannedCodes.size}</div>
+                        
+                        <div class="mt-4">
+                            <strong>📋 Estadísticas:</strong><br>
+                            • Válidos: ${this.counters.valid}<br>
+                            • Usados: ${this.counters.used}<br>
+                            • Inválidos: ${this.counters.invalid}<br>
+                            • Total: ${this.counters.total}
+                        </div>
+                        
+                        ${this.cameras.length > 0 ? `
+                        <div class="mt-4">
+                            <strong>📷 Cámaras disponibles:</strong><br>
+                            ${this.cameras.map((camera, index) => 
+                                `• ${camera.label || `Cámara ${index + 1}`} ${index === this.currentCameraIndex ? '(ACTIVA)' : ''}`
+                            ).join('<br>')}
+                        </div>
+                        ` : ''}
+                    </div>
+                `;
+                
+                content.innerHTML = diagnosticInfo;
+                panel.classList.remove('hidden');
+            }
+
+            showErrorMessage(message) {
+                const panel = document.getElementById('diagnostics-panel');
+                const content = document.getElementById('diagnostics-content');
+                
+                content.innerHTML = `
+                    <div class="text-left">
+                        <div class="text-red-200 font-bold mb-2">❌ Error del Escáner:</div>
+                        <div class="mb-4">${message}</div>
+                        
+                        <div class="text-yellow-200 font-bold mb-2">🔧 Soluciones:</div>
+                        <div class="text-sm space-y-1">
+                            • Permitir acceso a la cámara<br>
+                            • Cerrar otras apps que usen la cámara<br>
+                            • Probar con otro navegador (Chrome recomendado)<br>
+                            • Verificar que la cámara esté conectada<br>
+                            • Recargar la página<br>
+                            • Usar otro dispositivo si persiste
+                        </div>
+                    </div>
+                `;
+                
+                panel.classList.remove('hidden');
+            }
+
+            updateCounters() {
+                document.getElementById('count-valid').textContent = this.counters.valid;
+                document.getElementById('count-used').textContent = this.counters.used;
+                document.getElementById('count-invalid').textContent = this.counters.invalid;
+                document.getElementById('count-total').textContent = this.counters.total;
+            }
+
+            async stopSystem() {
+                if (this.html5QrCode && this.isActive) {
+                    try {
+                        await this.html5QrCode.stop();
+                    } catch (err) {
+                        console.error("Error al detener escáner:", err);
+                    }
+                }
+                this.isActive = false;
+
+                document.getElementById('scanner-screen').classList.add('hidden');
+                document.getElementById('setup-screen').classList.remove('hidden');
+
+                console.log('🛑 Sistema detenido');
+            }
+        }
+
+        // Inicializar el escáner diagnóstico
+        const diagnosticScanner = new DiagnosticQRScanner();
+        
+        console.log('🎯 ESCÁNER QR MEJORADO CON DIAGNÓSTICO LISTO');
+    </script>
+</body>
+</html>
