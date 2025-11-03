@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎯 Control de Entradas VYTMUSIC</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            background: linear-gradient(135deg, #1e293b, #0f172a); 
+            color: white; 
+        }
+        .hidden { display: none !important; }
+        
+        /* Escáner pantalla completa */
+        #scanner-area { 
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+            background: #000; z-index: 50; 
+        }
+        #qr-reader { width: 100vw; height: 100vh; }
+        
+        /* Confirmación grande */
+        .confirmacion {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 100; display: flex; align-items: center; justify-content: center;
+            text-align: center; pointer-events: none;
+        }
+        
+        .exito { background: rgba(16, 185, 129, 0.95); }
+        .usado { background: rgba(245, 158, 11, 0.95); }
+        .error { background: rgba(239, 68, 68, 0.95); }
+        
+        /* Búsqueda simple */
+        .search-result {
+            padding: 15px; margin: 10px 0; border-radius: 10px;
+            background: rgba(255, 255, 255, 0.1); border: 1px solid #475569;
+            cursor: pointer; transition: all 0.2s ease;
+        }
+        .search-result:hover {
+            background: rgba(34, 197, 94, 0.3); border-color: #22c55e;
+        }
+        .search-result.usado {
+            background: rgba(239, 68, 68, 0.2); cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+    <!-- Pantalla principal -->
+    <div id="main-screen" class="min-h-screen p-6">
+        <div class="max-w-2xl mx-auto">
+            <!-- Header -->
+            <div class="text-center mb-8">
+                <h1 class="text-4xl font-bold text-yellow-400 mb-2">🎯 CONTROL DE ENTRADAS</h1>
+                <h2 class="text-2xl text-emerald-400" id="event-name">VYTMUSIC</h2>
+                <div class="flex justify-center items-center gap-4 mt-4">
+                    <div id="status-indicator" class="flex items-center gap-2">
+                        <div class="w-3 h-3 bg-emerald-400 rounded-full animate-pulse"></div>
+                        <span class="text-emerald-400">En línea</span>
+                    </div>
+                    <div id="counter" class="text-lg font-bold">
+                        Ingresos: <span id="count">0</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Botón principal del escáner -->
+            <button id="start-scanner" class="w-full p-6 bg-gradient-to-r from-emerald-500 to-green-600 text-white text-2xl font-bold rounded-2xl mb-6 shadow-2xl hover:scale-105 transition-all">
+                📱 INICIAR ESCÁNER QR
+            </button>
+
+            <!-- Lista de invitados -->
+            <div class="bg-slate-800 rounded-2xl p-6 mb-6">
+                <h3 class="text-xl font-bold text-yellow-400 mb-4">🔍 BUSCAR INVITADO</h3>
+                <input type="text" id="search-input" 
+                       class="w-full p-4 rounded-xl bg-slate-700 text-white text-lg border-2 border-slate-600 focus:border-emerald-400 focus:outline-none" 
+                       placeholder="Escribir nombre del invitado...">
+                <div id="search-results" class="mt-4">
+                    <p class="text-gray-400 text-center py-4">Escribir para buscar...</p>
+                </div>
+            </div>
+
+            <!-- Crear nueva entrada -->
+            <div class="bg-slate-800 rounded-2xl p-6">
+                <h3 class="text-xl font-bold text-orange-400 mb-4">➕ CREAR ENTRADA EN PUERTA</h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    <input type="text" id="new-name" 
+                           class="p-3 rounded-xl bg-slate-700 text-white border-2 border-slate-600 focus:border-orange-400 focus:outline-none" 
+                           placeholder="Nombre completo">
+                    <select id="new-group" class="p-3 rounded-xl bg-slate-700 text-white border-2 border-slate-600 focus:border-orange-400">
+                        <option value="VIP">VIP</option>
+                        <option value="General">General</option>
+                        <option value="Prensa">Prensa</option>
+                        <option value="Staff">Staff</option>
+                    </select>
+                </div>
+                <button id="create-entry" class="w-full p-4 bg-gradient-to-r from-orange-500 to-red-500 text-white font-bold rounded-xl">
+                    ✅ CREAR Y DAR ACCESO
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Escáner QR -->
+    <div id="scanner-area" class="hidden">
+        <div id="qr-reader"></div>
+        <button id="close-scanner" class="fixed bottom-6 left-6 right-6 p-4 bg-red-600 text-white font-bold rounded-xl z-60">
+            ❌ CERRAR ESCÁNER
+        </button>
+    </div>
+
+    <!-- Confirmaciones -->
+    <div id="confirmation" class="confirmacion hidden">
+        <div id="confirmation-content" class="p-8 rounded-2xl max-w-md mx-auto">
+            <div class="text-6xl mb-4">✅</div>
+            <div class="text-3xl font-bold mb-2">ENTRADA VÁLIDA</div>
+            <div class="text-xl">Juan Pérez - VIP</div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+    <script type="module">
+        import { db } from './firebase_config.js';
+        import { doc, getDoc, updateDoc, setDoc, collection, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        class SimpleScanner {
+            constructor() {
+                this.eventId = 'evento_' + new Date().getFullYear();
+                this.html5QrCode = null;
+                this.isOnline = true;
+                this.invitados = new Map();
+                this.counter = 0;
+                this.init();
+            }
+
+            async init() {
+                this.setupEvents();
+                await this.loadInvitados();
+                this.checkConnection();
+                console.log('🎯 Sistema iniciado - Organizador autorizado');
+            }
+
+            setupEvents() {
+                document.getElementById('start-scanner').onclick = () => this.startScanner();
+                document.getElementById('close-scanner').onclick = () => this.stopScanner();
+                document.getElementById('search-input').oninput = (e) => this.searchInvitados(e.target.value);
+                document.getElementById('create-entry').onclick = () => this.createEntry();
+            }
+
+            async checkConnection() {
+                try {
+                    await getDocs(collection(db, 'test'));
+                    this.isOnline = true;
+                    document.getElementById('status-indicator').innerHTML = `
+                        <div class="w-3 h-3 bg-emerald-400 rounded-full animate-pulse"></div>
+                        <span class="text-emerald-400">En línea</span>
+                    `;
+                } catch (error) {
+                    this.isOnline = false;
+                    document.getElementById('status-indicator').innerHTML = `
+                        <div class="w-3 h-3 bg-orange-400 rounded-full"></div>
+                        <span class="text-orange-400">Sin conexión</span>
+                    `;
+                }
+            }
+
+            async loadInvitados() {
+                try {
+                    const snapshot = await getDocs(collection(db, `entradas_${this.eventId}`));
+                    snapshot.forEach(doc => {
+                        this.invitados.set(doc.id, { id: doc.id, ...doc.data() });
+                    });
+                    console.log(`📋 Cargados ${this.invitados.size} invitados`);
+                } catch (error) {
+                    console.log('📱 Modo offline - usando datos locales');
+                }
+            }
+
+            async startScanner() {
+                document.getElementById('main-screen').classList.add('hidden');
+                document.getElementById('scanner-area').classList.remove('hidden');
+
+                this.html5QrCode = new Html5Qrcode("qr-reader");
+                
+                try {
+                    await this.html5QrCode.start(
+                        { facingMode: "environment" },
+                        {
+                            fps: 30,
+                            qrbox: { width: 250, height: 250 }
+                        },
+                        (decodedText) => this.processCode(decodedText),
+                        (error) => { /* silenciar errores de escaneo */ }
+                    );
+                } catch (error) {
+                    alert('❌ Error: No se puede acceder a la cámara');
+                    this.stopScanner();
+                }
+            }
+
+            async stopScanner() {
+                if (this.html5QrCode) {
+                    await this.html5QrCode.stop();
+                }
+                document.getElementById('scanner-area').classList.add('hidden');
+                document.getElementById('main-screen').classList.remove('hidden');
+            }
+
+            async processCode(code) {
+                const invitado = this.invitados.get(code);
+                
+                if (!invitado) {
+                    this.showConfirmation('❌', 'ENTRADA NO VÁLIDA', 'Código no encontrado', 'error');
+                    return;
+                }
+
+                if (invitado.usado) {
+                    this.showConfirmation('⚠️', 'YA INGRESÓ', `${invitado.nombre} - ${invitado.grupo}`, 'usado');
+                    return;
+                }
+
+                // Marcar como usado
+                invitado.usado = true;
+                invitado.fechaIngreso = new Date().toISOString();
+                
+                // Guardar en Firebase si hay conexión
+                if (this.isOnline) {
+                    try {
+                        await updateDoc(doc(db, `entradas_${this.eventId}`, code), {
+                            usado: true,
+                            fechaIngreso: invitado.fechaIngreso
+                        });
+                    } catch (error) {
+                        console.log('📱 Guardado localmente');
+                    }
+                }
+
+                this.counter++;
+                document.getElementById('count').textContent = this.counter;
+                
+                this.showConfirmation('✅', 'ENTRADA VÁLIDA', `${invitado.nombre} - ${invitado.grupo}`, 'exito');
+                
+                await this.stopScanner();
+            }
+
+            searchInvitados(query) {
+                const results = document.getElementById('search-results');
+                
+                if (!query || query.length < 2) {
+                    results.innerHTML = '<p class="text-gray-400 text-center py-4">Escribir al menos 2 caracteres...</p>';
+                    return;
+                }
+
+                const found = [];
+                this.invitados.forEach(invitado => {
+                    if (invitado.nombre && invitado.nombre.toLowerCase().includes(query.toLowerCase())) {
+                        found.push(invitado);
+                    }
+                });
+
+                if (found.length === 0) {
+                    results.innerHTML = `<p class="text-gray-400 text-center py-4">No se encontró "${query}"</p>`;
+                    return;
+                }
+
+                results.innerHTML = found.map(inv => {
+                    const estado = inv.usado ? 'usado' : '';
+                    const texto = inv.usado ? '❌ YA INGRESÓ' : '✅ DAR ACCESO';
+                    return `
+                        <div class="search-result ${estado}" onclick="scanner.processManual('${inv.id}')">
+                            <div class="font-bold text-lg">${inv.nombre}</div>
+                            <div class="text-sm text-gray-300">${inv.grupo}</div>
+                            <div class="text-sm mt-1 ${inv.usado ? 'text-red-400' : 'text-emerald-400'}">${texto}</div>
+                        </div>
+                    `;
+                }).join('');
+            }
+
+            async processManual(id) {
+                const invitado = this.invitados.get(id);
+                if (!invitado || invitado.usado) return;
+
+                await this.processCode(id);
+                document.getElementById('search-input').value = '';
+                document.getElementById('search-results').innerHTML = '<p class="text-gray-400 text-center py-4">Escribir para buscar...</p>';
+            }
+
+            async createEntry() {
+                const nombre = document.getElementById('new-name').value.trim();
+                const grupo = document.getElementById('new-group').value;
+
+                if (!nombre) {
+                    alert('❌ Escribir el nombre completo');
+                    return;
+                }
+
+                const id = 'entrada_' + Date.now();
+                const nuevaEntrada = {
+                    id,
+                    nombre,
+                    grupo,
+                    creadoPorOrganizador: true,
+                    fechaCreacion: new Date().toISOString(),
+                    usado: false,
+                    puedeVotar: true // AUTOMÁTICO: puede votar
+                };
+
+                // Agregar a memoria local
+                this.invitados.set(id, nuevaEntrada);
+
+                // Guardar en Firebase si hay conexión
+                if (this.isOnline) {
+                    try {
+                        await setDoc(doc(db, `entradas_${this.eventId}`, id), nuevaEntrada);
+                        await setDoc(doc(db, `votantes_${this.eventId}`, id), {
+                            nombre,
+                            grupo,
+                            habilitado: true,
+                            fechaHabilitacion: nuevaEntrada.fechaCreacion
+                        });
+                    } catch (error) {
+                        console.log('📱 Entrada creada localmente');
+                    }
+                }
+
+                this.showConfirmation('🎉', 'ENTRADA CREADA', `${nombre} - ${grupo}<br>Ya puede votar`, 'exito');
+                
+                // Limpiar campos
+                document.getElementById('new-name').value = '';
+                document.getElementById('new-group').value = 'VIP';
+            }
+
+            showConfirmation(icono, titulo, detalle, tipo) {
+                const confirmation = document.getElementById('confirmation');
+                const content = document.getElementById('confirmation-content');
+                
+                content.innerHTML = `
+                    <div class="text-6xl mb-4">${icono}</div>
+                    <div class="text-3xl font-bold mb-2">${titulo}</div>
+                    <div class="text-xl">${detalle}</div>
+                `;
+                
+                confirmation.className = `confirmacion ${tipo}`;
+                confirmation.classList.remove('hidden');
+                
+                setTimeout(() => {
+                    confirmation.classList.add('hidden');
+                }, tipo === 'exito' ? 3000 : 2000);
+            }
+        }
+
+        // Inicializar sistema
+        const scanner = new SimpleScanner();
+        window.scanner = scanner; // Para acceso global
+    </script>
+</body>
+</html>
