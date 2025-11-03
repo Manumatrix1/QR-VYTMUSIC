@@ -91,11 +91,10 @@
     <!-- Panel principal -->
     <div id="main-panel" class="min-h-screen p-4">
         <div class="max-w-6xl mx-auto">
-            <!-- Header con estado -->
-            <div class="text-center mb-6">
-                <h1 class="text-4xl font-bold text-blue-400 mb-2">🎯 ESCÁNER VYTMUSIC</h1>
-                <h2 class="text-xl text-gray-300" id="event-title">CORAZÓN DEL SISTEMA</h2>
-                <div class="flex justify-center items-center gap-4 mt-4">
+            <!-- Header -->
+            <div class="text-center mb-4">
+                <h1 class="text-3xl font-bold text-blue-400 mb-2">🎯 ESCÁNER VYTMUSIC</h1>
+                <div class="flex justify-center items-center gap-4">
                     <div id="connection-status" class="flex items-center gap-2">
                         <div class="w-3 h-3 bg-yellow-400 rounded-full animate-pulse"></div>
                         <span class="status-offline">Verificando conexión...</span>
@@ -106,20 +105,20 @@
                 </div>
             </div>
 
-            <!-- CONTADORES PRINCIPALES (MUY IMPORTANTES) -->
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                <div class="counter-card counter-info">
-                    <div class="text-3xl font-bold text-blue-400" id="total-entradas">--</div>
-                    <div class="text-sm text-gray-300">ENTRADAS VENDIDAS</div>
-                </div>
-                <div class="counter-card counter-success">
-                    <div class="text-3xl font-bold text-emerald-400" id="escaneadas">0</div>
-                    <div class="text-sm text-gray-300">ESCANEADAS AHORA</div>
-                </div>
-                <div class="counter-card counter-warning">
-                    <div class="text-3xl font-bold text-orange-400" id="pendientes">--</div>
-                    <div class="text-sm text-gray-300">PENDIENTES</div>
-                </div>
+            <!-- Contadores pequeños arriba del escáner -->
+            <div class="grid grid-cols-3 gap-2 mb-4">
+                <button class="bg-blue-600 p-3 rounded-xl text-center">
+                    <div class="text-lg font-bold" id="total-entradas">--</div>
+                    <div class="text-xs">VENDIDAS</div>
+                </button>
+                <button class="bg-emerald-600 p-3 rounded-xl text-center">
+                    <div class="text-lg font-bold" id="escaneadas">0</div>
+                    <div class="text-xs">ESCANEADAS</div>
+                </button>
+                <button class="bg-orange-600 p-3 rounded-xl text-center">
+                    <div class="text-lg font-bold" id="pendientes">--</div>
+                    <div class="text-xs">PENDIENTES</div>
+                </button>
             </div>
 
             <!-- Botón principal del escáner -->
@@ -130,7 +129,7 @@
             <!-- Panel de búsqueda manual -->
             <div class="bg-slate-800 rounded-2xl p-6 mb-6">
                 <h3 class="text-xl font-bold text-yellow-400 mb-4">🔍 BÚSQUEDA MANUAL (Backup QR)</h3>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                     <div>
                         <input type="text" id="search-artista" 
                                class="w-full p-3 rounded-xl bg-slate-700 text-white border-2 border-slate-600 focus:border-yellow-400 focus:outline-none" 
@@ -142,8 +141,11 @@
                                placeholder="Buscar INVITADO por nombre...">
                     </div>
                 </div>
-                <div id="search-results" class="mt-4">
-                    <p class="text-gray-400 text-center py-4">Escribir nombre para buscar...</p>
+                <button id="show-all-list" class="w-full p-3 bg-yellow-600 text-white font-bold rounded-xl mb-4">
+                    📋 MOSTRAR LISTA COMPLETA ALFABÉTICA
+                </button>
+                <div id="search-results" class="max-h-80 overflow-y-auto">
+                    <p class="text-gray-400 text-center py-4">Escribir nombre para buscar o mostrar lista completa...</p>
                 </div>
             </div>
 
@@ -242,6 +244,7 @@
                 document.getElementById('manual-search-btn').onclick = () => this.showManualSearch();
                 document.getElementById('search-artista').oninput = (e) => this.searchEntradas(e.target.value, 'artista');
                 document.getElementById('search-invitado').oninput = (e) => this.searchEntradas(e.target.value, 'invitado');
+                document.getElementById('show-all-list').onclick = () => this.showCompleteList();
                 document.getElementById('create-entry').onclick = () => this.createEntryAtDoor();
             }
 
@@ -411,11 +414,43 @@
                 }
             }
 
+            showCompleteList() {
+                const results = document.getElementById('search-results');
+                
+                if (this.entradas.size === 0) {
+                    results.innerHTML = '<p class="text-gray-400 text-center py-4">No hay entradas cargadas</p>';
+                    return;
+                }
+
+                // Convertir a array y ordenar alfabéticamente
+                const entradasArray = Array.from(this.entradas.values()).sort((a, b) => {
+                    return a.nombre.localeCompare(b.nombre);
+                });
+
+                results.innerHTML = entradasArray.map(entrada => {
+                    const estado = entrada.usado ? 'usado' : '';
+                    const texto = entrada.usado ? '❌ YA INGRESÓ' : '✅ MARCAR INGRESO';
+                    const tipoEmoji = entrada.tipo === 'artista' ? '🎤' : '👤';
+                    const fechaIngreso = entrada.usado && entrada.fechaIngreso ? 
+                        `<br><span class="text-xs">Ingresó: ${new Date(entrada.fechaIngreso).toLocaleString()}</span>` : '';
+                    
+                    return `
+                        <div class="search-result ${estado}" onclick="corazon.processManual('${entrada.id}')">
+                            <div class="font-bold text-lg">${tipoEmoji} ${entrada.nombre}</div>
+                            <div class="text-sm text-gray-300">${entrada.tipo || 'Invitado'} - ${entrada.grupo || 'General'}${fechaIngreso}</div>
+                            <div class="text-sm mt-1 ${entrada.usado ? 'text-red-400' : 'text-emerald-400'}">${texto}</div>
+                        </div>
+                    `;
+                }).join('');
+                
+                console.log(`📋 Mostrando lista completa: ${entradasArray.length} entradas`);
+            }
+
             searchEntradas(query, tipo) {
                 const results = document.getElementById('search-results');
                 
-                if (!query || query.length < 2) {
-                    results.innerHTML = '<p class="text-gray-400 text-center py-4">Escribir al menos 2 caracteres...</p>';
+                if (!query || query.length < 1) {
+                    results.innerHTML = '<p class="text-gray-400 text-center py-4">Escribir nombre para buscar o mostrar lista completa...</p>';
                     return;
                 }
 
@@ -433,6 +468,9 @@
                     results.innerHTML = `<p class="text-gray-400 text-center py-4">No se encontró "${query}" en ${tipo || 'entradas'}</p>`;
                     return;
                 }
+
+                // Ordenar resultados alfabéticamente
+                found.sort((a, b) => a.nombre.localeCompare(b.nombre));
 
                 results.innerHTML = found.map(entrada => {
                     const estado = entrada.usado ? 'usado' : '';
@@ -460,7 +498,7 @@
                 // Limpiar búsqueda
                 document.getElementById('search-artista').value = '';
                 document.getElementById('search-invitado').value = '';
-                document.getElementById('search-results').innerHTML = '<p class="text-gray-400 text-center py-4">Escribir nombre para buscar...</p>';
+                document.getElementById('search-results').innerHTML = '<p class="text-gray-400 text-center py-4">Escribir nombre para buscar o mostrar lista completa...</p>';
             }
 
             async createEntryAtDoor() {
