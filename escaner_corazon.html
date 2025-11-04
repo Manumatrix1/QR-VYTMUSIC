@@ -70,6 +70,66 @@
         .status-offline { color: #f59e0b; }
         .status-error { color: #ef4444; }
         
+        /* Artistas de la gala */
+        .artist-card {
+            background: linear-gradient(135deg, #1e293b, #334155);
+            border: 2px solid #475569;
+            border-radius: 12px;
+            padding: 15px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+        
+        .artist-card:hover {
+            border-color: #3b82f6;
+            background: linear-gradient(135deg, #1e40af, #1e3a8a);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(59, 130, 246, 0.3);
+        }
+        
+        .artist-card.selected {
+            border-color: #22c55e;
+            background: linear-gradient(135deg, #16a34a, #15803d);
+        }
+        
+        .artist-badge {
+            position: absolute;
+            top: -8px;
+            right: -8px;
+            background: #3b82f6;
+            color: white;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        
+        .guest-item {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid #475569;
+            border-radius: 8px;
+            padding: 12px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .guest-item:hover {
+            background: rgba(34, 197, 94, 0.2);
+            border-color: #22c55e;
+        }
+        
+        .guest-item.usado {
+            background: rgba(239, 68, 68, 0.2);
+            border-color: #ef4444;
+            cursor: not-allowed;
+        }
+        
         /* Botones grandes y claros */
         .btn-primary {
             background: linear-gradient(135deg, #3b82f6, #1d4ed8);
@@ -149,6 +209,26 @@
                 </div>
             </div>
 
+            <!-- Lista de Artistas por Gala -->
+            <div class="bg-slate-800 rounded-2xl p-6 mb-6">
+                <h3 class="text-xl font-bold text-blue-400 mb-4">🎤 ARTISTAS DE ESTA GALA</h3>
+                <p class="text-sm text-gray-400 mb-4">Haz clic en un artista para ver sus invitados y marcar ingreso rápido</p>
+                <div id="artists-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    <p class="text-gray-400 text-center py-4 col-span-full">Cargando artistas...</p>
+                </div>
+                
+                <!-- Panel expandido de invitados del artista -->
+                <div id="artist-guests-panel" class="hidden mt-6 p-4 bg-slate-700 rounded-xl">
+                    <div class="flex justify-between items-center mb-4">
+                        <h4 id="selected-artist-name" class="text-lg font-bold text-blue-300"></h4>
+                        <button id="close-artist-panel" class="text-red-400 hover:text-red-300 text-xl">&times;</button>
+                    </div>
+                    <div id="artist-guests-list" class="max-h-60 overflow-y-auto space-y-2">
+                        <!-- Los invitados del artista aparecerán aquí -->
+                    </div>
+                </div>
+            </div>
+
             <!-- Crear entrada en puerta -->
             <div class="bg-slate-800 rounded-2xl p-6">
                 <h3 class="text-xl font-bold text-emerald-400 mb-4">➕ CREAR ENTRADA EN PUERTA</h3>
@@ -213,6 +293,8 @@
                 this.eventId = this.getEventId();
                 this.html5QrCode = null;
                 this.entradas = new Map();
+                this.artistas = new Map(); // Agrupación por artista/prefijo
+                this.selectedArtist = null;
                 this.escaneadasLocal = 0;
                 this.totalEntradas = 0;
                 this.connectionState = 'checking';
@@ -234,6 +316,7 @@
                 await this.checkConnection();
                 await this.loadEntradas();
                 this.setupRealTimeSync();
+                this.buildArtistsList();
                 this.updateCounters();
                 console.log('✅ Sistema listo - Modo organizador autorizado');
             }
@@ -246,6 +329,7 @@
                 document.getElementById('search-invitado').oninput = (e) => this.searchEntradas(e.target.value, 'invitado');
                 document.getElementById('show-all-list').onclick = () => this.showCompleteList();
                 document.getElementById('create-entry').onclick = () => this.createEntryAtDoor();
+                document.getElementById('close-artist-panel').onclick = () => this.closeArtistPanel();
             }
 
             async checkConnection() {
@@ -323,6 +407,7 @@
                                 
                                 this.totalEntradas = this.entradas.size;
                                 this.escaneadasLocal = escaneadas;
+                                this.buildArtistsList(); // Actualizar lista de artistas
                                 this.updateCounters();
                                 this.updateSyncTime();
                                 console.log('🔄 Sync automático completado');
@@ -611,6 +696,115 @@
                 } catch (error) {
                     console.log('🔇 Audio no disponible');
                 }
+            }
+
+            buildArtistsList() {
+                this.artistas.clear();
+                
+                // Agrupar entradas por prefijo/artista
+                this.entradas.forEach(entrada => {
+                    const prefix = entrada.prefix || 'Sin_Grupo';
+                    
+                    if (!this.artistas.has(prefix)) {
+                        this.artistas.set(prefix, {
+                            nombre: entrada.artistName || prefix,
+                            prefix: prefix,
+                            entradas: [],
+                            total: 0,
+                            escaneadas: 0
+                        });
+                    }
+                    
+                    const grupo = this.artistas.get(prefix);
+                    grupo.entradas.push(entrada);
+                    grupo.total++;
+                    if (entrada.usado) grupo.escaneadas++;
+                });
+                
+                this.renderArtistsList();
+            }
+
+            renderArtistsList() {
+                const container = document.getElementById('artists-list');
+                
+                if (this.artistas.size === 0) {
+                    container.innerHTML = '<p class="text-gray-400 text-center py-4 col-span-full">No hay artistas cargados</p>';
+                    return;
+                }
+
+                // Convertir a array y ordenar por nombre
+                const artistasArray = Array.from(this.artistas.values()).sort((a, b) => {
+                    return a.nombre.localeCompare(b.nombre);
+                });
+
+                container.innerHTML = artistasArray.map(artista => {
+                    const pendientes = artista.total - artista.escaneadas;
+                    const porcentaje = artista.total > 0 ? Math.round((artista.escaneadas / artista.total) * 100) : 0;
+                    
+                    return `
+                        <div class="artist-card" onclick="corazon.showArtistGuests('${artista.prefix}')">
+                            <div class="artist-badge">${artista.total}</div>
+                            <div class="text-lg font-bold text-blue-300 mb-2">🎤 ${artista.nombre}</div>
+                            <div class="text-sm text-gray-300">
+                                <div>✅ ${artista.escaneadas} ingresaron</div>
+                                <div>⏳ ${pendientes} pendientes</div>
+                                <div class="text-xs mt-1 ${porcentaje === 100 ? 'text-green-400' : porcentaje > 50 ? 'text-yellow-400' : 'text-red-400'}">
+                                    ${porcentaje}% completado
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+                
+                console.log(`🎤 Lista de artistas actualizada: ${artistasArray.length} artistas`);
+            }
+
+            showArtistGuests(prefix) {
+                const artista = this.artistas.get(prefix);
+                if (!artista) return;
+
+                this.selectedArtist = prefix;
+                document.getElementById('selected-artist-name').textContent = `🎤 ${artista.nombre} (${artista.total} invitados)`;
+                
+                // Ordenar invitados por nombre
+                const invitadosOrdenados = artista.entradas.sort((a, b) => a.nombre.localeCompare(b.nombre));
+                
+                const guestsList = document.getElementById('artist-guests-list');
+                guestsList.innerHTML = invitadosOrdenados.map(entrada => {
+                    const estado = entrada.usado ? 'usado' : '';
+                    const texto = entrada.usado ? '❌ YA INGRESÓ' : '✅ MARCAR INGRESO';
+                    const fechaIngreso = entrada.usado && entrada.fechaIngreso ? 
+                        `<br><span class="text-xs text-gray-400">Ingresó: ${new Date(entrada.fechaIngreso).toLocaleString()}</span>` : '';
+                    
+                    return `
+                        <div class="guest-item ${estado}" onclick="corazon.processManual('${entrada.id}')">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <div class="font-bold text-white">${entrada.nombre}</div>
+                                    <div class="text-sm text-gray-300">${entrada.grupo || 'General'}${fechaIngreso}</div>
+                                </div>
+                                <div class="text-sm ${entrada.usado ? 'text-red-400' : 'text-emerald-400'} font-bold">
+                                    ${texto}
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+                
+                // Mostrar panel y actualizar estilos
+                document.getElementById('artist-guests-panel').classList.remove('hidden');
+                
+                // Marcar tarjeta como seleccionada
+                document.querySelectorAll('.artist-card').forEach(card => card.classList.remove('selected'));
+                event.target.closest('.artist-card').classList.add('selected');
+                
+                console.log(`👥 Mostrando ${invitadosOrdenados.length} invitados de ${artista.nombre}`);
+            }
+
+            closeArtistPanel() {
+                document.getElementById('artist-guests-panel').classList.add('hidden');
+                document.querySelectorAll('.artist-card').forEach(card => card.classList.remove('selected'));
+                this.selectedArtist = null;
             }
         }
 
