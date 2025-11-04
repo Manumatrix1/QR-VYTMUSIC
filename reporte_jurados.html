@@ -308,12 +308,37 @@
             try {
                 showLoading(true);
 
-                // Load all data
-                const [artistsSnapshot, jurorsSnapshot, votesSnapshot] = await Promise.all([
+                // Load all data - CORREGIR RUTAS PARA COMPATIBILIDAD
+                const [artistsSnapshot, jurorsSnapshot] = await Promise.all([
                     getDocs(collection(db, `events/${eventId}/artists`)),
-                    getDocs(collection(db, `events/${eventId}/jurors`)),
-                    getDocs(collection(db, `events/${eventId}/jury-votes`))
+                    getDocs(collection(db, `events/${eventId}/jurors`))
                 ]);
+
+                // Buscar votos en múltiples ubicaciones posibles
+                let votesSnapshot;
+                const posibleRutas = [
+                    `events/${eventId}/jury_evaluations`,
+                    `events/${eventId}/jury-votes`, 
+                    `events/${eventId}/votes`,
+                    `events/${eventId}/jury_votes`
+                ];
+
+                for (const ruta of posibleRutas) {
+                    try {
+                        const snapshot = await getDocs(collection(db, ruta));
+                        if (!snapshot.empty) {
+                            votesSnapshot = snapshot;
+                            console.log(`✅ Votos encontrados en: ${ruta}`);
+                            break;
+                        }
+                    } catch (error) {
+                        console.log(`❌ No encontrado en: ${ruta}`);
+                    }
+                }
+
+                if (!votesSnapshot || votesSnapshot.empty) {
+                    throw new Error('No se encontraron votos de jurados en ninguna ubicación');
+                }
 
                 artists = artistsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                 jurors = jurorsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));

@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>👥 Gestión Detallada de Invitados - VYTMUSIC</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background: linear-gradient(135deg, #1e3a8a, #1e40af); color: white; }
+        .card { background: rgba(255,255,255,0.1); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.2); border-radius: 15px; }
+        .status-ingresado { background: rgba(34, 197, 94, 0.2); border: 1px solid #22c55e; }
+        .status-pendiente { background: rgba(245, 158, 11, 0.2); border: 1px solid #f59e0b; }
+        .btn { padding: 8px 16px; border-radius: 8px; font-weight: bold; cursor: pointer; transition: all 0.3s; border: none; }
+        .btn-green { background: #16a34a; color: white; }
+        .btn-red { background: #dc2626; color: white; }
+        .btn-blue { background: #2563eb; color: white; }
+        .btn-yellow { background: #eab308; color: white; }
+    </style>
+</head>
+<body class="min-h-screen p-4">
+    <div class="container mx-auto max-w-6xl">
+        <!-- Header -->
+        <header class="text-center mb-8">
+            <a href="#" id="back-link" class="text-sky-400 hover:underline mb-4 inline-block">&larr; Volver a Lista de Artistas</a>
+            <h1 class="text-4xl font-bold mb-4">👥 Gestión Detallada de Invitados</h1>
+            <p id="artist-name-display" class="text-xl text-gray-300"></p>
+            <p id="event-name-display" class="text-lg text-gray-400"></p>
+        </header>
+
+        <!-- Estadísticas Rápidas -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+            <div class="card p-4 text-center">
+                <div class="text-3xl font-bold text-green-400" id="count-ingresados">0</div>
+                <div class="text-sm text-gray-300">Ya Ingresaron</div>
+            </div>
+            <div class="card p-4 text-center">
+                <div class="text-3xl font-bold text-yellow-400" id="count-pendientes">0</div>
+                <div class="text-sm text-gray-300">Pendientes</div>
+            </div>
+            <div class="card p-4 text-center">
+                <div class="text-3xl font-bold text-blue-400" id="count-total">0</div>
+                <div class="text-sm text-gray-300">Total Invitados</div>
+            </div>
+            <div class="card p-4 text-center">
+                <div class="text-3xl font-bold text-purple-400" id="porcentaje-ingreso">0%</div>
+                <div class="text-sm text-gray-300">% Ingreso</div>
+            </div>
+        </div>
+
+        <!-- Búsqueda -->
+        <div class="card p-6 mb-6">
+            <div class="flex gap-4 items-center">
+                <div class="flex-1">
+                    <input type="text" id="search-input" 
+                           placeholder="Buscar invitado por nombre..."
+                           class="w-full p-3 rounded-lg bg-white text-black border-2 border-gray-300 focus:border-blue-500">
+                </div>
+                <button id="clear-search" class="btn btn-yellow">Limpiar</button>
+                <button id="refresh-data" class="btn btn-blue">🔄 Actualizar</button>
+            </div>
+        </div>
+
+        <!-- Lista de Invitados -->
+        <div class="card p-6">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-2xl font-bold">📋 Lista Completa de Invitados</h2>
+                <div class="flex gap-2">
+                    <button id="btn-ingreso-manual" class="btn btn-green">➕ Ingreso Manual</button>
+                    <button id="btn-export-list" class="btn btn-blue">📊 Exportar Lista</button>
+                </div>
+            </div>
+
+            <div id="invitados-list" class="space-y-3">
+                <div class="text-center py-8">
+                    <div class="text-4xl mb-4">⏳</div>
+                    <p class="text-gray-400">Cargando lista de invitados...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal de Ingreso Manual -->
+        <div id="modal-ingreso-manual" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+            <div class="card p-8 max-w-md w-full mx-4">
+                <h3 class="text-xl font-bold mb-4">➕ Ingreso Manual</h3>
+                <p class="text-gray-300 mb-4">Marcar manualmente el ingreso de un invitado</p>
+                
+                <div class="mb-4">
+                    <label class="block text-sm font-bold mb-2">Seleccionar Invitado:</label>
+                    <select id="select-invitado-manual" class="w-full p-3 rounded-lg bg-white text-black">
+                        <option value="">Cargando invitados...</option>
+                    </select>
+                </div>
+                
+                <div class="flex gap-3">
+                    <button id="btn-cancelar-manual" class="btn btn-red flex-1">Cancelar</button>
+                    <button id="btn-confirmar-manual" class="btn btn-green flex-1">✅ Confirmar Ingreso</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { db } from './firebase_config.js';
+        import { collection, getDocs, doc, updateDoc, query, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Obtener parámetros de URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const eventId = urlParams.get('eventId');
+        const artistPrefix = urlParams.get('artist');
+        const eventName = urlParams.get('eventName') || 'Evento';
+
+        if (!eventId || !artistPrefix) {
+            alert('Error: Parámetros faltantes');
+            window.location.href = 'lista_artistas_qr.html';
+        }
+
+        // Configurar navegación
+        document.getElementById('back-link').href = `lista_artistas_qr.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`;
+        document.getElementById('artist-name-display').textContent = `Artista/Grupo: ${artistPrefix}`;
+        document.getElementById('event-name-display').textContent = `Evento: ${eventName}`;
+
+        // Variables globales
+        let invitados = [];
+        let invitadosFiltrados = [];
+
+        // Cargar invitados del artista
+        async function cargarInvitados() {
+            try {
+                console.log(`🔍 Cargando invitados para ${artistPrefix} en evento ${eventId}`);
+                
+                const ticketsQuery = query(
+                    collection(db, `events/${eventId}/tickets`),
+                    where("prefix", "==", artistPrefix)
+                );
+                
+                const snapshot = await getDocs(ticketsQuery);
+                invitados = [];
+                
+                snapshot.forEach(doc => {
+                    const ticket = doc.data();
+                    invitados.push({
+                        id: doc.id,
+                        name: ticket.name || 'Sin nombre',
+                        prefix: ticket.prefix,
+                        used: ticket.used || false,
+                        usedAt: ticket.usedAt,
+                        usedBy: ticket.usedBy,
+                        paymentStatus: ticket.paymentStatus || 'pendiente',
+                        isDoorSale: ticket.isDoorSale || false
+                    });
+                });
+
+                console.log(`✅ ${invitados.length} invitados cargados para ${artistPrefix}`);
+                
+                if (invitados.length === 0) {
+                    document.getElementById('invitados-list').innerHTML = `
+                        <div class="text-center py-8">
+                            <div class="text-4xl mb-4">❌</div>
+                            <p class="text-gray-400">No se encontraron invitados para este artista</p>
+                            <p class="text-sm text-gray-500 mt-2">Verifica que el código QR sea correcto</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                actualizarEstadisticas();
+                mostrarInvitados();
+                llenarSelectIngresoManual();
+
+            } catch (error) {
+                console.error('❌ Error cargando invitados:', error);
+                document.getElementById('invitados-list').innerHTML = `
+                    <div class="text-center py-8">
+                        <div class="text-4xl mb-4">⚠️</div>
+                        <p class="text-red-400">Error cargando datos</p>
+                        <p class="text-sm text-gray-500">${error.message}</p>
+                    </div>
+                `;
+            }
+        }
+
+        // Actualizar estadísticas
+        function actualizarEstadisticas() {
+            const ingresados = invitados.filter(inv => inv.used).length;
+            const pendientes = invitados.length - ingresados;
+            const porcentaje = invitados.length > 0 ? Math.round((ingresados / invitados.length) * 100) : 0;
+
+            document.getElementById('count-ingresados').textContent = ingresados;
+            document.getElementById('count-pendientes').textContent = pendientes;
+            document.getElementById('count-total').textContent = invitados.length;
+            document.getElementById('porcentaje-ingreso').textContent = `${porcentaje}%`;
+        }
+
+        // Mostrar lista de invitados
+        function mostrarInvitados() {
+            const lista = invitadosFiltrados.length > 0 ? invitadosFiltrados : invitados;
+            
+            const html = lista.map(invitado => {
+                const statusClass = invitado.used ? 'status-ingresado' : 'status-pendiente';
+                const statusIcon = invitado.used ? '✅' : '⏳';
+                const statusText = invitado.used ? 'YA INGRESÓ' : 'PENDIENTE DE INGRESO';
+                
+                return `
+                    <div class="card p-4 ${statusClass}">
+                        <div class="flex justify-between items-center">
+                            <div class="flex-1">
+                                <div class="flex items-center gap-3 mb-2">
+                                    <span class="text-2xl">${statusIcon}</span>
+                                    <div>
+                                        <h3 class="text-lg font-bold">${invitado.name}</h3>
+                                        <p class="text-sm opacity-75">${statusText}</p>
+                                    </div>
+                                </div>
+                                
+                                ${invitado.used ? `
+                                    <div class="text-xs space-y-1 opacity-75">
+                                        <p>📅 Ingresó: ${invitado.usedAt ? new Date(invitado.usedAt).toLocaleString() : 'Fecha desconocida'}</p>
+                                        <p>👤 Registrado por: ${invitado.usedBy || 'Desconocido'}</p>
+                                    </div>
+                                ` : ''}
+                                
+                                <div class="flex gap-2 mt-2">
+                                    <span class="px-2 py-1 bg-blue-600 text-white text-xs rounded">
+                                        💳 ${invitado.paymentStatus === 'Paga' ? 'PAGADO' : 'PENDIENTE PAGO'}
+                                    </span>
+                                    ${invitado.isDoorSale ? '<span class="px-2 py-1 bg-orange-600 text-white text-xs rounded">🚪 PUERTA</span>' : ''}
+                                </div>
+                            </div>
+                            
+                            <div class="flex flex-col gap-2">
+                                ${!invitado.used ? `
+                                    <button onclick="marcarIngreso('${invitado.id}', '${invitado.name}')" 
+                                            class="btn btn-green text-sm">
+                                        ✅ Marcar Ingreso
+                                    </button>
+                                ` : `
+                                    <button onclick="deshacerIngreso('${invitado.id}', '${invitado.name}')" 
+                                            class="btn btn-yellow text-sm">
+                                        ↩️ Deshacer
+                                    </button>
+                                `}
+                                <button onclick="verDetalles('${invitado.id}')" 
+                                        class="btn btn-blue text-sm">
+                                    👁️ Detalles
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            document.getElementById('invitados-list').innerHTML = html;
+        }
+
+        // Filtrar invitados
+        function filtrarInvitados(termino) {
+            if (!termino.trim()) {
+                invitadosFiltrados = [];
+            } else {
+                invitadosFiltrados = invitados.filter(invitado => 
+                    invitado.name.toLowerCase().includes(termino.toLowerCase())
+                );
+            }
+            mostrarInvitados();
+        }
+
+        // Marcar ingreso manual
+        window.marcarIngreso = async function(ticketId, nombre) {
+            if (!confirm(`¿Confirmar ingreso manual de "${nombre}"?`)) return;
+
+            try {
+                const ticketRef = doc(db, `events/${eventId}/tickets`, ticketId);
+                await updateDoc(ticketRef, {
+                    used: true,
+                    usedAt: new Date().toISOString(),
+                    usedBy: 'Ingreso Manual desde Lista',
+                    assistantCode: 'Manual'
+                });
+
+                // Actualizar localmente
+                const invitado = invitados.find(inv => inv.id === ticketId);
+                if (invitado) {
+                    invitado.used = true;
+                    invitado.usedAt = new Date().toISOString();
+                    invitado.usedBy = 'Ingreso Manual desde Lista';
+                }
+
+                actualizarEstadisticas();
+                mostrarInvitados();
+                
+                alert(`✅ ${nombre} marcado como ingresado exitosamente`);
+
+            } catch (error) {
+                console.error('Error marcando ingreso:', error);
+                alert('❌ Error al marcar ingreso: ' + error.message);
+            }
+        };
+
+        // Deshacer ingreso
+        window.deshacerIngreso = async function(ticketId, nombre) {
+            if (!confirm(`¿Deshacer ingreso de "${nombre}"? Volverá a estado pendiente.`)) return;
+
+            try {
+                const ticketRef = doc(db, `events/${eventId}/tickets`, ticketId);
+                await updateDoc(ticketRef, {
+                    used: false,
+                    usedAt: null,
+                    usedBy: null,
+                    assistantCode: null
+                });
+
+                // Actualizar localmente
+                const invitado = invitados.find(inv => inv.id === ticketId);
+                if (invitado) {
+                    invitado.used = false;
+                    invitado.usedAt = null;
+                    invitado.usedBy = null;
+                }
+
+                actualizarEstadisticas();
+                mostrarInvitados();
+                
+                alert(`↩️ Ingreso de ${nombre} deshecho exitosamente`);
+
+            } catch (error) {
+                console.error('Error deshaciendo ingreso:', error);
+                alert('❌ Error al deshacer ingreso: ' + error.message);
+            }
+        };
+
+        // Ver detalles de invitado
+        window.verDetalles = function(ticketId) {
+            const invitado = invitados.find(inv => inv.id === ticketId);
+            if (!invitado) return;
+
+            const detalles = `
+📋 DETALLES COMPLETOS DEL INVITADO
+
+👤 Nombre: ${invitado.name}
+🎭 Artista/Grupo: ${invitado.prefix}
+🎫 ID Ticket: ${ticketId}
+
+📊 ESTADO:
+${invitado.used ? '✅ YA INGRESÓ AL EVENTO' : '⏳ PENDIENTE DE INGRESO'}
+
+💰 PAGO:
+Estado: ${invitado.paymentStatus === 'Paga' ? '✅ PAGADO' : '⚠️ PENDIENTE'}
+Tipo: ${invitado.isDoorSale ? '🚪 Venta en puerta' : '💻 Venta anticipada'}
+
+${invitado.used ? `
+📅 INFORMACIÓN DE INGRESO:
+Fecha: ${invitado.usedAt ? new Date(invitado.usedAt).toLocaleString() : 'No registrada'}
+Registrado por: ${invitado.usedBy || 'Desconocido'}
+Método: ${invitado.assistantCode === 'Manual' ? 'Ingreso manual' : 'Escáner QR'}
+` : ''}
+            `;
+
+            alert(detalles);
+        };
+
+        // Llenar select para ingreso manual
+        function llenarSelectIngresoManual() {
+            const select = document.getElementById('select-invitado-manual');
+            const pendientes = invitados.filter(inv => !inv.used);
+            
+            select.innerHTML = '<option value="">Seleccionar invitado pendiente...</option>';
+            
+            pendientes.forEach(invitado => {
+                select.innerHTML += `<option value="${invitado.id}">${invitado.name}</option>`;
+            });
+        }
+
+        // Event Listeners
+        document.getElementById('search-input').addEventListener('input', (e) => {
+            filtrarInvitados(e.target.value);
+        });
+
+        document.getElementById('clear-search').addEventListener('click', () => {
+            document.getElementById('search-input').value = '';
+            filtrarInvitados('');
+        });
+
+        document.getElementById('refresh-data').addEventListener('click', cargarInvitados);
+
+        document.getElementById('btn-ingreso-manual').addEventListener('click', () => {
+            llenarSelectIngresoManual();
+            document.getElementById('modal-ingreso-manual').classList.remove('hidden');
+        });
+
+        document.getElementById('btn-cancelar-manual').addEventListener('click', () => {
+            document.getElementById('modal-ingreso-manual').classList.add('hidden');
+        });
+
+        document.getElementById('btn-confirmar-manual').addEventListener('click', async () => {
+            const ticketId = document.getElementById('select-invitado-manual').value;
+            if (!ticketId) {
+                alert('Selecciona un invitado');
+                return;
+            }
+
+            const invitado = invitados.find(inv => inv.id === ticketId);
+            await marcarIngreso(ticketId, invitado.name);
+            
+            document.getElementById('modal-ingreso-manual').classList.add('hidden');
+        });
+
+        document.getElementById('btn-export-list').addEventListener('click', () => {
+            const data = {
+                evento: eventName,
+                artista: artistPrefix,
+                fecha: new Date().toLocaleString(),
+                invitados: invitados.map(inv => ({
+                    nombre: inv.name,
+                    estado: inv.used ? 'Ingresó' : 'Pendiente',
+                    fechaIngreso: inv.usedAt ? new Date(inv.usedAt).toLocaleString() : 'N/A',
+                    registradoPor: inv.usedBy || 'N/A',
+                    estadoPago: inv.paymentStatus,
+                    tipoVenta: inv.isDoorSale ? 'Puerta' : 'Anticipada'
+                }))
+            };
+
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `invitados_${artistPrefix}_${eventName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+        });
+
+        // Inicializar
+        cargarInvitados();
+    </script>
+</body>
+</html>
