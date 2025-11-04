@@ -1,0 +1,759 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mi Evaluación - VYTMUSIC</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#8B5CF6',
+                        secondary: '#06B6D4'
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- Iconos -->
+    <link rel="icon" type="image/png" sizes="512x512" href="imagenes/logo-512x512.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="imagenes/logo-192x192.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="imagenes/logo-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="imagenes/logo-16x16.png">
+    
+    <style>
+        .card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 15px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+            color: white;
+        }
+        
+        .criteria-card {
+            background: linear-gradient(135deg, #8B5CF6 0%, #06B6D4 100%);
+            border-radius: 10px;
+            transition: transform 0.3s ease;
+        }
+        
+        .criteria-card:hover {
+            transform: translateY(-5px);
+        }
+        
+        .score-bar {
+            background: linear-gradient(90deg, #ef4444 0%, #f59e0b 25%, #eab308 50%, #22c55e 75%, #8b5cf6 100%);
+            border-radius: 20px;
+            height: 12px;
+        }
+        
+        .feedback-positive { 
+            background: linear-gradient(135deg, #10b981, #34d399);
+            border-left: 5px solid #059669;
+        }
+        .feedback-improvement { 
+            background: linear-gradient(135deg, #f59e0b, #fbbf24);
+            border-left: 5px solid #d97706;
+        }
+        .feedback-critical { 
+            background: linear-gradient(135deg, #ef4444, #f87171);
+            border-left: 5px solid #dc2626;
+        }
+        
+        .score-excellent { color: #8b5cf6; font-weight: bold; }
+        .score-good { color: #22c55e; font-weight: bold; }
+        .score-average { color: #eab308; font-weight: bold; }
+        .score-poor { color: #f59e0b; font-weight: bold; }
+        .score-critical { color: #ef4444; font-weight: bold; }
+        
+        @media print {
+            .no-print { display: none !important; }
+            .card { box-shadow: none; border: 1px solid #ccc; }
+        }
+        
+        .watermark {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            opacity: 0.1;
+            font-size: 3rem;
+            color: white;
+            pointer-events: none;
+            z-index: 0;
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 min-h-screen p-4">
+    <div class="watermark">VYTMUSIC</div>
+    
+    <div class="container mx-auto max-w-4xl relative z-10">
+        <!-- Header -->
+        <div class="card p-6 mb-6 text-center">
+            <h1 class="text-4xl font-bold mb-2">🎤 MI EVALUACIÓN</h1>
+            <p class="text-xl opacity-90">Feedback personalizado para tu crecimiento artístico</p>
+            <div id="loading" class="mt-4">
+                <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
+                <p class="mt-2">Cargando tu evaluación...</p>
+            </div>
+        </div>
+
+        <!-- Contenido del Reporte -->
+        <div id="report-content" style="display: none;">
+            <!-- Información del Artista -->
+            <div class="card p-6 mb-6">
+                <div class="text-center mb-6">
+                    <h2 class="text-3xl font-bold mb-2" id="artist-name">Tu Nombre</h2>
+                    <p class="text-lg opacity-90" id="event-info">Información del evento</p>
+                    <div class="mt-4">
+                        <div class="inline-block text-center">
+                            <div class="text-5xl font-bold mb-2" id="overall-score">0.0</div>
+                            <div class="text-lg opacity-75">Puntuación Promedio</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
+                    <div class="bg-white bg-opacity-20 p-4 rounded">
+                        <div class="text-2xl font-bold" id="total-evaluations">0</div>
+                        <div class="text-sm opacity-75">Evaluaciones Recibidas</div>
+                    </div>
+                    <div class="bg-white bg-opacity-20 p-4 rounded">
+                        <div class="text-2xl font-bold" id="strongest-criteria">-</div>
+                        <div class="text-sm opacity-75">Tu Fortaleza Principal</div>
+                    </div>
+                    <div class="bg-white bg-opacity-20 p-4 rounded">
+                        <div class="text-2xl font-bold" id="improvement-area">-</div>
+                        <div class="text-sm opacity-75">Área de Mejora</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tu Perfil Artístico -->
+            <div class="card p-6 mb-6">
+                <h3 class="text-2xl font-bold mb-4 text-center">🎯 Tu Perfil Artístico</h3>
+                <div class="bg-white bg-opacity-90 p-4 rounded">
+                    <canvas id="radarChart" width="400" height="400"></canvas>
+                </div>
+            </div>
+
+            <!-- Análisis Detallado por Criterios -->
+            <div class="card p-6 mb-6">
+                <h3 class="text-2xl font-bold mb-4">📊 Análisis Detallado</h3>
+                <div id="criteria-analysis" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <!-- Se llenarán dinámicamente -->
+                </div>
+            </div>
+
+            <!-- Feedback Personalizado -->
+            <div class="card p-6 mb-6">
+                <h3 class="text-2xl font-bold mb-4">💡 Feedback Personalizado</h3>
+                <div id="feedback-section" class="space-y-4">
+                    <!-- Se llenarán dinámicamente -->
+                </div>
+            </div>
+
+            <!-- Recomendaciones de Mejora -->
+            <div class="card p-6 mb-6">
+                <h3 class="text-2xl font-bold mb-4">🚀 Plan de Mejora</h3>
+                <div id="improvement-plan" class="space-y-3">
+                    <!-- Se llenarán dinámicamente -->
+                </div>
+            </div>
+
+            <!-- Mensajes de los Jurados -->
+            <div class="card p-6 mb-6" id="comments-section" style="display: none;">
+                <h3 class="text-2xl font-bold mb-4">💭 Comentarios de los Jurados</h3>
+                <div id="juror-comments" class="space-y-4">
+                    <!-- Se llenarán dinámicamente -->
+                </div>
+            </div>
+
+            <!-- Botones de Acción -->
+            <div class="card p-6 mb-6 text-center no-print">
+                <h3 class="text-xl font-bold mb-4">📤 Compartir tu Evaluación</h3>
+                <div class="flex flex-wrap justify-center gap-4">
+                    <button onclick="window.print()" class="btn bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded font-bold">
+                        🖨️ Descargar PDF
+                    </button>
+                    <button onclick="shareReport()" class="btn bg-purple-600 hover:bg-purple-700 text-white px-6 py-3 rounded font-bold">
+                        📤 Compartir
+                    </button>
+                    <button onclick="requestDetailedFeedback()" class="btn bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded font-bold">
+                        💬 Solicitar Feedback Adicional
+                    </button>
+                </div>
+            </div>
+
+            <!-- Motivación Final -->
+            <div class="card p-6 text-center">
+                <h3 class="text-2xl font-bold mb-3">✨ ¡Sigue Brillando!</h3>
+                <p class="text-lg opacity-90 mb-4">Cada evaluación es una oportunidad de crecimiento. Tu talento es único y tu dedicación es admirable.</p>
+                <div class="text-sm opacity-75">
+                    <p>🎵 Recuerda: Los grandes artistas nunca dejan de aprender</p>
+                    <p class="mt-2">Generado el <span id="report-date"></span> por VYTMUSIC</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase -->
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
+        import { getFirestore, collection, getDocs, doc, getDoc } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+        
+        // Configuración de Firebase
+        const firebaseConfig = {
+            apiKey: "AIzaSyDUKQ0F1PJ8v2SudfKyQvHK8G7OL-sLwb0",
+            authDomain: "vyt-music.firebaseapp.com",
+            projectId: "vyt-music",
+            storageBucket: "vyt-music.appspot.com",
+            messagingSenderId: "147059879896",
+            appId: "1:147059879896:web:e3f0b11f38fdbc6b997fef"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        
+        // Criterios de evaluación
+        const CRITERIA = [
+            { id: 'tecnica_vocal', name: '🎵 Técnica Vocal', description: 'Control vocal, respiración y técnica' },
+            { id: 'melodia_interpretacion', name: '🎼 Melodía e Interpretación', description: 'Conexión emocional y estilo' },
+            { id: 'gestualidad_expresion', name: '😊 Gestualidad y Expresión', description: 'Expresión facial y corporal' },
+            { id: 'diccion_articulacion', name: '🗣️ Dicción y Articulación', description: 'Claridad en la pronunciación' },
+            { id: 'dinamica_espacio', name: '🏃 Dinámica y Uso del Espacio', description: 'Movimiento y presencia escénica' },
+            { id: 'repertorio_seleccion', name: '🎶 Repertorio', description: 'Selección y conocimiento musical' },
+            { id: 'presencia_escenica', name: '🎭 Presencia Escénica', description: 'Seguridad y carisma en el escenario' },
+            { id: 'originalidad_creatividad', name: '💡 Originalidad y Creatividad', description: 'Propuesta artística única' },
+            { id: 'vestuario_presentacion', name: '👔 Vestuario y Presentación', description: 'Imagen y presentación personal' },
+            { id: 'puntualidad_profesionalismo', name: '⭐ Profesionalismo', description: 'Actitud profesional y compromiso' }
+        ];
+
+        // Variables globales
+        let artistEvaluations = [];
+        let artistData = null;
+
+        // Cargar evaluación al iniciar
+        window.addEventListener('load', loadArtistEvaluation);
+
+        // Función para obtener parámetros de URL
+        function getUrlParams() {
+            const urlParams = new URLSearchParams(window.location.search);
+            return {
+                eventId: urlParams.get('event') || urlParams.get('eventId'),
+                artistId: urlParams.get('artist') || urlParams.get('artistId'),
+                artistName: urlParams.get('name') || urlParams.get('artistName')
+            };
+        }
+
+        // Cargar evaluación del artista
+        async function loadArtistEvaluation() {
+            try {
+                const { eventId, artistId, artistName } = getUrlParams();
+                
+                if (!eventId || !artistId) {
+                    showError('❌ Enlace incompleto. Faltan parámetros del evento o artista.');
+                    return;
+                }
+
+                console.log('🔍 Cargando evaluación para:', { eventId, artistId, artistName });
+                
+                // Cargar evaluaciones
+                await loadEvaluationsForArtist(eventId, artistId);
+                
+                // Cargar información del artista
+                await loadArtistInfo(eventId, artistId, artistName);
+                
+                if (artistEvaluations.length === 0) {
+                    showError('📝 Aún no tienes evaluaciones disponibles. ¡Vuelve pronto!');
+                    return;
+                }
+                
+                // Mostrar reporte
+                displayArtistReport();
+                
+            } catch (error) {
+                console.error('❌ Error cargando evaluación:', error);
+                showError('❌ Error al cargar tu evaluación. Por favor, intenta más tarde.');
+            }
+        }
+
+        // Cargar evaluaciones para el artista
+        async function loadEvaluationsForArtist(eventId, artistId) {
+            console.log('🔍 Buscando evaluaciones...');
+            artistEvaluations = [];
+            
+            const collections = ['jury_evaluations', 'jury_votes', 'votes'];
+            
+            for (const collectionName of collections) {
+                try {
+                    const evaluationsSnapshot = await getDocs(collection(db, `events/${eventId}/${collectionName}`));
+                    
+                    evaluationsSnapshot.forEach(doc => {
+                        const evaluation = doc.data();
+                        if (evaluation.artistId === artistId) {
+                            // Solo incluir datos no sensibles
+                            artistEvaluations.push({
+                                id: doc.id,
+                                scores: evaluation.scores || {},
+                                score: evaluation.score || evaluation.average || 0,
+                                timestamp: evaluation.timestamp,
+                                autoFeedback: evaluation.autoFeedback || [],
+                                judgeComments: evaluation.judgeComments || '',
+                                additionalNotes: evaluation.additionalNotes || '',
+                                jurorType: evaluation.jurorType || 'individual',
+                                // NO incluir nombres de jurados para mantener privacidad
+                                collection: collectionName
+                            });
+                        }
+                    });
+                } catch (error) {
+                    console.warn(`⚠️ Error en colección ${collectionName}:`, error);
+                }
+            }
+
+            console.log('✅ Evaluaciones cargadas:', artistEvaluations.length);
+        }
+
+        // Cargar información del artista
+        async function loadArtistInfo(eventId, artistId, artistName) {
+            try {
+                const artistDoc = await getDoc(doc(db, `events/${eventId}/participants`, artistId));
+                
+                artistData = {
+                    id: artistId,
+                    name: artistName || (artistDoc.exists() ? artistDoc.data().name : 'Tu nombre'),
+                    eventId: eventId
+                };
+                
+                // Obtener nombre del evento
+                try {
+                    const eventDoc = await getDoc(doc(db, 'events', eventId));
+                    artistData.eventName = eventDoc.exists() ? eventDoc.data().name : 'Tu evento';
+                } catch (error) {
+                    artistData.eventName = 'Tu evento';
+                }
+                
+            } catch (error) {
+                console.warn('⚠️ Error cargando info del artista:', error);
+                artistData = {
+                    id: artistId,
+                    name: artistName || 'Tu nombre',
+                    eventId: eventId,
+                    eventName: 'Tu evento'
+                };
+            }
+        }
+
+        // Mostrar error
+        function showError(message) {
+            document.getElementById('loading').innerHTML = `
+                <div class="text-center p-6">
+                    <div class="text-6xl mb-4">😔</div>
+                    <h3 class="text-xl font-bold mb-2">Oops...</h3>
+                    <p class="opacity-90">${message}</p>
+                </div>
+            `;
+        }
+
+        // Mostrar reporte del artista
+        function displayArtistReport() {
+            // Ocultar loading y mostrar contenido
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('report-content').style.display = 'block';
+            
+            // Información básica
+            document.getElementById('artist-name').textContent = artistData.name;
+            document.getElementById('event-info').textContent = `${artistData.eventName} | ${new Date().toLocaleDateString()}`;
+            document.getElementById('report-date').textContent = new Date().toLocaleDateString();
+            
+            // Estadísticas
+            const scores = artistEvaluations.map(e => e.score);
+            const avgScore = scores.reduce((a, b) => a + b, 0) / scores.length;
+            
+            document.getElementById('overall-score').textContent = avgScore.toFixed(1);
+            document.getElementById('overall-score').className = getScoreClass(avgScore);
+            document.getElementById('total-evaluations').textContent = artistEvaluations.length;
+            
+            // Análisis por criterios
+            const criteriaAverages = calculateCriteriaAverages();
+            
+            // Encontrar fortaleza y área de mejora
+            const sortedCriteria = Object.entries(criteriaAverages)
+                .sort(([,a], [,b]) => b - a)
+                .filter(([,score]) => score > 0);
+                
+            if (sortedCriteria.length > 0) {
+                const strongest = CRITERIA.find(c => c.id === sortedCriteria[0][0]);
+                const weakest = sortedCriteria[sortedCriteria.length - 1];
+                const weakestCriteria = CRITERIA.find(c => c.id === weakest[0]);
+                
+                document.getElementById('strongest-criteria').textContent = strongest?.name || '-';
+                document.getElementById('improvement-area').textContent = weakestCriteria?.name || '-';
+            }
+            
+            // Generar análisis detallado
+            generateCriteriaAnalysis(criteriaAverages);
+            
+            // Generar gráfico radar
+            generateRadarChart(criteriaAverages);
+            
+            // Generar feedback
+            generatePersonalizedFeedback(criteriaAverages);
+            
+            // Generar plan de mejora
+            generateImprovementPlan(criteriaAverages);
+            
+            // Mostrar comentarios si existen
+            displayComments();
+        }
+
+        // Calcular promedios por criterio
+        function calculateCriteriaAverages() {
+            const criteriaAverages = {};
+            
+            CRITERIA.forEach(criteria => {
+                const scores = [];
+                artistEvaluations.forEach(evaluation => {
+                    if (evaluation.scores && evaluation.scores[criteria.id]) {
+                        scores.push(evaluation.scores[criteria.id]);
+                    }
+                });
+                criteriaAverages[criteria.id] = scores.length > 0 ? 
+                    scores.reduce((a, b) => a + b, 0) / scores.length : 0;
+            });
+            
+            return criteriaAverages;
+        }
+
+        // Obtener clase CSS según puntuación
+        function getScoreClass(score) {
+            if (score >= 90) return 'score-excellent';
+            if (score >= 80) return 'score-good';
+            if (score >= 70) return 'score-average';
+            if (score >= 60) return 'score-poor';
+            return 'score-critical';
+        }
+
+        // Generar análisis por criterios
+        function generateCriteriaAnalysis(criteriaAverages) {
+            const container = document.getElementById('criteria-analysis');
+            container.innerHTML = '';
+            
+            CRITERIA.forEach(criteria => {
+                const score = criteriaAverages[criteria.id];
+                if (score === 0) return;
+                
+                const card = document.createElement('div');
+                card.className = 'criteria-card p-4 text-white';
+                card.innerHTML = `
+                    <h4 class="font-bold mb-2">${criteria.name}</h4>
+                    <p class="text-sm opacity-80 mb-3">${criteria.description}</p>
+                    <div class="flex items-center mb-2">
+                        <div class="text-3xl font-bold mr-3 ${getScoreClass(score)}">${score.toFixed(1)}</div>
+                        <div class="flex-1">
+                            <div class="score-bar relative">
+                                <div class="bg-white bg-opacity-80 h-full rounded transition-all duration-1000" 
+                                     style="width: ${(score / 100) * 100}%"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="text-sm opacity-90">
+                        ${getScoreDescription(score)}
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        // Descripción según puntuación
+        function getScoreDescription(score) {
+            if (score >= 90) return '🌟 ¡Excelente! Fortaleza destacada';
+            if (score >= 80) return '👍 Muy bueno, sigue así';
+            if (score >= 70) return '✅ Bien, con potencial de mejora';
+            if (score >= 60) return '📈 Área de desarrollo identificada';
+            return '🎯 Oportunidad de crecimiento importante';
+        }
+
+        // Generar gráfico radar
+        function generateRadarChart(criteriaAverages) {
+            const ctx = document.getElementById('radarChart').getContext('2d');
+            
+            const criteriaData = CRITERIA.map(criteria => criteriaAverages[criteria.id] || 0);
+
+            new Chart(ctx, {
+                type: 'radar',
+                data: {
+                    labels: CRITERIA.map(c => c.name),
+                    datasets: [{
+                        label: 'Tu Evaluación',
+                        data: criteriaData,
+                        backgroundColor: 'rgba(139, 92, 246, 0.2)',
+                        borderColor: 'rgba(139, 92, 246, 1)',
+                        borderWidth: 3,
+                        pointBackgroundColor: 'rgba(139, 92, 246, 1)',
+                        pointBorderColor: '#fff',
+                        pointBorderWidth: 2,
+                        pointRadius: 6,
+                        pointHoverBackgroundColor: '#fff',
+                        pointHoverBorderColor: 'rgba(139, 92, 246, 1)'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        r: {
+                            beginAtZero: true,
+                            max: 100,
+                            ticks: {
+                                stepSize: 20,
+                                font: { size: 12 }
+                            },
+                            pointLabels: {
+                                font: { size: 11 }
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    }
+                }
+            });
+        }
+
+        // Generar feedback personalizado
+        function generatePersonalizedFeedback(criteriaAverages) {
+            const container = document.getElementById('feedback-section');
+            container.innerHTML = '';
+            
+            const strengths = [];
+            const improvements = [];
+            const critical = [];
+
+            Object.entries(criteriaAverages).forEach(([criteriaId, score]) => {
+                const criteria = CRITERIA.find(c => c.id === criteriaId);
+                if (score >= 85) {
+                    strengths.push({ criteria, score });
+                } else if (score >= 70) {
+                    improvements.push({ criteria, score });
+                } else if (score > 0) {
+                    critical.push({ criteria, score });
+                }
+            });
+
+            // Fortalezas
+            if (strengths.length > 0) {
+                const strengthsCard = document.createElement('div');
+                strengthsCard.className = 'feedback-positive p-6 rounded-lg text-white';
+                strengthsCard.innerHTML = `
+                    <h4 class="font-bold text-lg mb-3">🌟 Tus Fortalezas</h4>
+                    <p class="mb-3 opacity-90">¡Estas son las áreas donde realmente brillaste!</p>
+                    <ul class="space-y-2">
+                        ${strengths.map(s => `
+                            <li class="flex justify-between items-center">
+                                <span>• ${s.criteria.name}</span>
+                                <span class="font-bold">${s.score.toFixed(1)}</span>
+                            </li>
+                        `).join('')}
+                    </ul>
+                `;
+                container.appendChild(strengthsCard);
+            }
+
+            // Áreas de mejora
+            if (improvements.length > 0) {
+                const improvementsCard = document.createElement('div');
+                improvementsCard.className = 'feedback-improvement p-6 rounded-lg text-white';
+                improvementsCard.innerHTML = `
+                    <h4 class="font-bold text-lg mb-3">💡 Oportunidades de Crecimiento</h4>
+                    <p class="mb-3 opacity-90">Con un poco más de práctica, estas áreas pueden convertirse en fortalezas:</p>
+                    <ul class="space-y-2">
+                        ${improvements.map(i => `
+                            <li class="flex justify-between items-center">
+                                <span>• ${i.criteria.name}</span>
+                                <span class="font-bold">${i.score.toFixed(1)}</span>
+                            </li>
+                        `).join('')}
+                    </ul>
+                `;
+                container.appendChild(improvementsCard);
+            }
+
+            // Áreas críticas (presentado de forma motivadora)
+            if (critical.length > 0) {
+                const criticalCard = document.createElement('div');
+                criticalCard.className = 'feedback-critical p-6 rounded-lg text-white';
+                criticalCard.innerHTML = `
+                    <h4 class="font-bold text-lg mb-3">🎯 Tu Próximo Desafío</h4>
+                    <p class="mb-3 opacity-90">Estas áreas tienen el mayor potencial de crecimiento. ¡Son tu oportunidad dorada!</p>
+                    <ul class="space-y-2">
+                        ${critical.map(c => `
+                            <li class="flex justify-between items-center">
+                                <span>• ${c.criteria.name}</span>
+                                <span class="font-bold">${c.score.toFixed(1)}</span>
+                            </li>
+                        `).join('')}
+                    </ul>
+                `;
+                container.appendChild(criticalCard);
+            }
+        }
+
+        // Generar plan de mejora
+        function generateImprovementPlan(criteriaAverages) {
+            const container = document.getElementById('improvement-plan');
+            container.innerHTML = '';
+            
+            const recommendations = generateRecommendations(criteriaAverages);
+            
+            recommendations.forEach((rec, index) => {
+                const recCard = document.createElement('div');
+                recCard.className = 'bg-white bg-opacity-10 p-4 rounded-lg';
+                recCard.innerHTML = `
+                    <div class="flex items-start">
+                        <div class="bg-purple-500 text-white rounded-full w-8 h-8 flex items-center justify-center font-bold mr-4 flex-shrink-0">
+                            ${index + 1}
+                        </div>
+                        <div>
+                            <h5 class="font-bold mb-1">${rec.title}</h5>
+                            <p class="text-sm opacity-90">${rec.description}</p>
+                        </div>
+                    </div>
+                `;
+                container.appendChild(recCard);
+            });
+        }
+
+        // Generar recomendaciones específicas
+        function generateRecommendations(averages) {
+            const recommendations = [];
+            
+            // Recomendaciones basadas en puntuaciones
+            if (averages.tecnica_vocal < 75) {
+                recommendations.push({
+                    title: '🎵 Fortalece tu Técnica Vocal',
+                    description: 'Dedica 15 minutos diarios a ejercicios de respiración y vocalización. Considera clases con un instructor vocal.'
+                });
+            }
+            
+            if (averages.presencia_escenica < 75) {
+                recommendations.push({
+                    title: '🎭 Desarrolla tu Presencia Escénica',
+                    description: 'Practica frente al espejo y graba videos de tus presentaciones. Trabaja en tu lenguaje corporal y conexión visual.'
+                });
+            }
+            
+            if (averages.diccion_articulacion < 75) {
+                recommendations.push({
+                    title: '🗣️ Mejora tu Dicción',
+                    description: 'Realiza ejercicios de articulación diarios y practica lectura en voz alta. Graba y escucha tus interpretaciones.'
+                });
+            }
+            
+            if (averages.originalidad_creatividad < 75) {
+                recommendations.push({
+                    title: '💡 Explora tu Creatividad',
+                    description: 'Experimenta con diferentes arreglos, incorpora elementos únicos y desarrolla tu estilo personal distintivo.'
+                });
+            }
+            
+            // Recomendaciones generales
+            recommendations.push({
+                title: '📚 Continúa Aprendiendo',
+                description: 'Mantente al día con nuevas técnicas, estudia a otros artistas y nunca dejes de experimentar con tu arte.'
+            });
+            
+            recommendations.push({
+                title: '🤝 Busca Feedback Regular',
+                description: 'Solicita opiniones constructivas de mentores, compañeros y audiencia para seguir creciendo.'
+            });
+            
+            return recommendations.slice(0, 5); // Limitar a 5 recomendaciones
+        }
+
+        // Mostrar comentarios de jurados (sin identificar quién los hizo)
+        function displayComments() {
+            const commentsWithText = artistEvaluations.filter(e => 
+                (e.judgeComments && e.judgeComments.trim()) || 
+                (e.additionalNotes && e.additionalNotes.trim())
+            );
+            
+            if (commentsWithText.length === 0) return;
+            
+            document.getElementById('comments-section').style.display = 'block';
+            const container = document.getElementById('juror-comments');
+            container.innerHTML = '';
+            
+            commentsWithText.forEach((evaluation, index) => {
+                const commentCard = document.createElement('div');
+                commentCard.className = 'bg-white bg-opacity-10 p-4 rounded-lg';
+                commentCard.innerHTML = `
+                    <div class="flex items-start">
+                        <div class="bg-blue-500 text-white rounded-full w-8 h-8 flex items-center justify-center font-bold mr-4 flex-shrink-0">
+                            💬
+                        </div>
+                        <div class="flex-1">
+                            <h5 class="font-bold mb-2">Comentario de Evaluación #${index + 1}</h5>
+                            ${evaluation.judgeComments ? `
+                                <div class="mb-3">
+                                    <h6 class="font-semibold text-sm mb-1">Observaciones:</h6>
+                                    <p class="text-sm opacity-90">${evaluation.judgeComments}</p>
+                                </div>
+                            ` : ''}
+                            ${evaluation.additionalNotes ? `
+                                <div>
+                                    <h6 class="font-semibold text-sm mb-1">Notas adicionales:</h6>
+                                    <p class="text-sm opacity-90">${evaluation.additionalNotes}</p>
+                                </div>
+                            ` : ''}
+                        </div>
+                    </div>
+                `;
+                container.appendChild(commentCard);
+            });
+        }
+
+        // Compartir reporte
+        window.shareReport = function() {
+            const url = window.location.href;
+            const text = `¡Mira mi evaluación artística de ${artistData?.name || 'mi presentación'}!`;
+            
+            if (navigator.share) {
+                navigator.share({
+                    title: 'Mi Evaluación Artística - VYTMUSIC',
+                    text: text,
+                    url: url
+                });
+            } else {
+                navigator.clipboard.writeText(url).then(() => {
+                    alert('✅ Enlace copiado al portapapeles');
+                }).catch(() => {
+                    prompt('Copia este enlace:', url);
+                });
+            }
+        };
+
+        // Solicitar feedback adicional
+        window.requestDetailedFeedback = function() {
+            const message = `Hola! Soy ${artistData?.name || 'un artista'} y me gustaría recibir feedback adicional sobre mi presentación en ${artistData?.eventName || 'el evento'}. ¿Podrían proporcionarme más detalles sobre cómo puedo mejorar?`;
+            
+            // Crear enlace para WhatsApp o email
+            const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
+            const emailUrl = `mailto:?subject=${encodeURIComponent('Solicitud de Feedback Adicional - VYTMUSIC')}&body=${encodeURIComponent(message)}`;
+            
+            if (confirm('¿Cómo te gustaría solicitar feedback adicional?\\n\\nOK = WhatsApp\\nCancelar = Email')) {
+                window.open(whatsappUrl, '_blank');
+            } else {
+                window.open(emailUrl, '_blank');
+            }
+        };
+    </script>
+</body>
+</html>

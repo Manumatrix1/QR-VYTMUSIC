@@ -131,11 +131,32 @@
                     <label class="block mb-2 font-bold">Nombre del Jurado:</label>
                     <input type="text" id="juror-name" class="w-full p-3 rounded bg-white text-black" placeholder="Escribe tu nombre">
                 </div>
-                <button onclick="login()" class="btn btn-primary w-full">INGRESAR</button>
+                
+                <!-- Selector de Tipo de Jurado -->
+                <div>
+                    <label class="block mb-2 font-bold">Tipo de Jurado:</label>
+                    <select id="juror-type" class="w-full p-3 rounded bg-white text-black">
+                        <option value="">Selecciona el tipo de jurado</option>
+                        <option value="individual">🎯 Individual - Evaluación independiente</option>
+                        <option value="grupal">👥 Grupal - Evaluación colaborativa</option>
+                        <option value="secreto">🔒 Secreto - Evaluación anónima</option>
+                        <option value="principal">⭐ Principal - Jurado principal</option>
+                        <option value="invitado">🎭 Invitado - Jurado invitado</option>
+                    </select>
+                </div>
+                
+                <!-- Campo opcional para identificación adicional -->
+                <div id="additional-info" style="display: none;">
+                    <label class="block mb-2 font-bold">Información Adicional:</label>
+                    <input type="text" id="juror-additional" class="w-full p-3 rounded bg-white text-black" 
+                           placeholder="Institución, especialidad, etc.">
+                </div>
+                
+                <button onclick="login()" class="btn btn-primary w-full">INGRESAR COMO JURADO</button>
             </div>
             <div class="mt-4 text-sm text-center opacity-75">
-                <p>📝 Solo ingresa tu nombre</p>
-                <p>🎭 <span id="available-jurors">Cargando jurados disponibles...</span></p>
+                <p>📝 Ingresa tu nombre y selecciona tu tipo de jurado</p>
+                <p>🎭 <span id="available-jurors">Diferentes tipos de evaluación disponibles</span></p>
             </div>
         </div>
 
@@ -641,28 +662,57 @@ Formato de respuesta:
 
         // === FUNCIONES PRINCIPALES ===
 
+        // Función para obtener etiqueta del tipo de jurado
+        function getJurorTypeLabel(type) {
+            const labels = {
+                'individual': '🎯 Individual',
+                'grupal': '👥 Grupal', 
+                'secreto': '🔒 Secreto',
+                'principal': '⭐ Principal',
+                'invitado': '🎭 Invitado'
+            };
+            return labels[type] || '🎭 Jurado';
+        }
+
         window.login = async function() {
             const name = document.getElementById('juror-name').value.trim();
+            const type = document.getElementById('juror-type').value;
+            const additional = document.getElementById('juror-additional').value.trim();
             
-            console.log('🔐 Login SIMPLE - cualquier nombre funciona');
-            console.log('🔐 Nombre ingresado:', name);
+            console.log('🔐 Login con tipo de jurado');
+            console.log('🔐 Datos ingresados:', { name, type, additional });
 
             if (!name) {
                 alert('❌ Por favor ingresa tu nombre');
                 return;
             }
 
-            // SOLUCIÓN SIMPLE: ACEPTAR CUALQUIER NOMBRE
-            const jurorId = `jurado_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            if (!type) {
+                alert('❌ Por favor selecciona el tipo de jurado');
+                return;
+            }
+
+            // Crear ID único para el jurado con tipo
+            const jurorId = `${type}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            
+            // Objeto jurado expandido con tipo y metadata
             currentJuror = {
                 id: jurorId,
                 name: name.trim(),
-                type: 'jurado',
-                loginTime: new Date().toISOString()
+                type: type,
+                typeLabel: getJurorTypeLabel(type),
+                additional: additional || '',
+                loginTime: new Date().toISOString(),
+                isAnonymous: type === 'secreto',
+                displayName: type === 'secreto' ? 'Jurado Anónimo' : name.trim()
             };
             
-            console.log('✅ Login exitoso automático:', JSON.stringify(currentJuror, null, 2));
-            document.getElementById('juror-display').textContent = currentJuror.name;
+            console.log('✅ Login exitoso:', JSON.stringify(currentJuror, null, 2));
+            
+            // Mostrar información del jurado según el tipo
+            const displayText = `${currentJuror.displayName} (${currentJuror.typeLabel})`;
+            document.getElementById('juror-display').textContent = displayText;
+            
             document.getElementById('auth-section').style.display = 'none';
             document.getElementById('main-content').style.display = 'block';
             
@@ -1055,17 +1105,31 @@ Formato de respuesta:
                 );
                 console.log('🔗 GlobalArtistId asignado:', globalArtistId);
                 
+                // 🤖 GENERAR FEEDBACK AUTOMÁTICO
+                console.log('🤖 Generando feedback automático...');
+                const autoFeedback = generateFallbackFeedback(artistVotes);
+                console.log('✅ Feedback generado:', autoFeedback);
+                
                 const voteData = {
                     artistId: String(artistId),
                     artistName: String(artist.name || 'Artista'),
                     globalArtistId: String(globalArtistId), // ← NUEVO CAMPO CLAVE
-                    jurorName: String(jurorName),
+                    jurorName: String(currentJuror.displayName || currentJuror.name || 'Jurado Anónimo'),
                     jurorId: String(currentJuror.id),
+                    jurorType: String(currentJuror.type || 'individual'),
+                    jurorTypeLabel: String(currentJuror.typeLabel || 'Jurado'),
+                    jurorAdditional: String(currentJuror.additional || ''),
+                    isAnonymous: Boolean(currentJuror.isAnonymous || false),
                     scores: artistVotes,
                     score: Number(average),
                     average: Number(average),
                     timestamp: new Date().toISOString(),
                     eventId: String(eventId || 'default-event'),
+                    loginTime: String(currentJuror.loginTime || ''),
+                    // ➕ FEEDBACK AUTOMÁTICO GENERADO
+                    autoFeedback: autoFeedback,
+                    feedbackGenerated: true,
+                    feedbackTimestamp: new Date().toISOString(),
                     // ➕ NUEVOS CAMPOS ADICIONALES PARA SEGUIMIENTO COMPLETO
                     songPerformed: String(document.getElementById('modal-song-performed')?.value || ''),
                     judgeComments: String(document.getElementById('modal-judge-comments')?.value || ''),
@@ -1264,16 +1328,28 @@ Formato de respuesta:
 
             const average = Object.values(artistVotes).reduce((sum, val) => sum + val, 0) / Object.keys(artistVotes).length;
 
+            // 🤖 GENERAR FEEDBACK AUTOMÁTICO
+            const autoFeedback = generateFallbackFeedback(artistVotes);
+
             const voteData = {
                 eventId: eventId,
                 artistId: artistId,
                 artistName: artist.name,
-                jurorName: currentJuror.name,
+                jurorName: currentJuror.displayName || currentJuror.name,
                 jurorId: currentJuror.id,
+                jurorType: currentJuror.type || 'individual',
+                jurorTypeLabel: currentJuror.typeLabel || 'Jurado',
+                jurorAdditional: currentJuror.additional || '',
+                isAnonymous: currentJuror.isAnonymous || false,
                 scores: artistVotes,
                 score: average,
                 timestamp: new Date().toISOString(),
                 forceSubmitted: true, // Marcar como forzado
+                loginTime: currentJuror.loginTime || '',
+                // ➕ FEEDBACK AUTOMÁTICO GENERADO
+                autoFeedback: autoFeedback,
+                feedbackGenerated: true,
+                feedbackTimestamp: new Date().toISOString(),
                 // ➕ NUEVOS CAMPOS ADICIONALES PARA SEGUIMIENTO COMPLETO
                 songPerformed: String(document.getElementById('modal-song-performed')?.value || ''),
                 judgeComments: String(document.getElementById('modal-judge-comments')?.value || ''),

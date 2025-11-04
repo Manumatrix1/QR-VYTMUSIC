@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reporte Individual - VYTMUSIC</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#8B5CF6',
+                        secondary: '#06B6D4'
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- Iconos -->
+    <link rel="icon" type="image/png" sizes="512x512" href="imagenes/logo-512x512.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="imagenes/logo-192x192.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="imagenes/logo-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="imagenes/logo-16x16.png">
+    
+    <style>
+        .card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 15px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+            color: white;
+        }
+        
+        .criteria-card {
+            background: linear-gradient(135deg, #8B5CF6 0%, #06B6D4 100%);
+            border-radius: 10px;
+            transition: transform 0.3s ease;
+        }
+        
+        .criteria-card:hover {
+            transform: translateY(-5px);
+        }
+        
+        .score-bar {
+            background: linear-gradient(90deg, #ef4444 0%, #f59e0b 25%, #eab308 50%, #22c55e 75%, #8b5cf6 100%);
+            border-radius: 20px;
+            height: 8px;
+        }
+        
+        .feedback-positive { background: linear-gradient(135deg, #10b981, #34d399); }
+        .feedback-improvement { background: linear-gradient(135deg, #f59e0b, #fbbf24); }
+        .feedback-critical { background: linear-gradient(135deg, #ef4444, #f87171); }
+        
+        .juror-type-individual { border-left: 5px solid #8B5CF6; }
+        .juror-type-grupal { border-left: 5px solid #06B6D4; }
+        .juror-type-secreto { border-left: 5px solid #6B7280; }
+        .juror-type-principal { border-left: 5px solid #F59E0B; }
+        .juror-type-invitado { border-left: 5px solid #EF4444; }
+        
+        @media print {
+            .no-print { display: none !important; }
+            .card { box-shadow: none; border: 1px solid #ccc; }
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 min-h-screen p-4">
+    <div class="container mx-auto max-w-4xl">
+        <!-- Header -->
+        <div class="card p-6 mb-6 text-center">
+            <h1 class="text-4xl font-bold mb-2">🎤 REPORTE INDIVIDUAL</h1>
+            <p class="text-xl opacity-90">Evaluación detallada por artista</p>
+        </div>
+
+        <!-- Selector de Artista -->
+        <div class="card p-6 mb-6 no-print">
+            <h2 class="text-2xl font-bold mb-4">📋 Seleccionar Artista</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label class="block mb-2 font-bold">Evento:</label>
+                    <select id="event-selector" class="w-full p-3 rounded bg-white text-black">
+                        <option value="">Selecciona un evento</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block mb-2 font-bold">Artista:</label>
+                    <select id="artist-selector" class="w-full p-3 rounded bg-white text-black">
+                        <option value="">Primero selecciona un evento</option>
+                    </select>
+                </div>
+            </div>
+            <div class="mt-4 flex gap-4">
+                <button onclick="generateReport()" class="btn bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded font-bold">
+                    📊 Generar Reporte
+                </button>
+                <button onclick="window.print()" class="btn bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded font-bold">
+                    🖨️ Imprimir/PDF
+                </button>
+                <button onclick="shareReport()" class="btn bg-purple-600 hover:bg-purple-700 text-white px-6 py-3 rounded font-bold">
+                    📤 Compartir
+                </button>
+            </div>
+        </div>
+
+        <!-- Contenido del Reporte -->
+        <div id="report-content" style="display: none;">
+            <!-- Información del Artista -->
+            <div class="card p-6 mb-6">
+                <div class="flex items-center justify-between mb-4">
+                    <div>
+                        <h2 class="text-3xl font-bold" id="artist-name">Nombre del Artista</h2>
+                        <p class="text-lg opacity-90" id="artist-info">Información del evento</p>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-4xl font-bold" id="overall-score">0.0</div>
+                        <div class="text-sm opacity-75">Puntuación Promedio</div>
+                    </div>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
+                    <div>
+                        <div class="text-2xl font-bold" id="total-evaluations">0</div>
+                        <div class="text-sm opacity-75">Evaluaciones</div>
+                    </div>
+                    <div>
+                        <div class="text-2xl font-bold" id="highest-score">0</div>
+                        <div class="text-sm opacity-75">Puntuación Más Alta</div>
+                    </div>
+                    <div>
+                        <div class="text-2xl font-bold" id="lowest-score">0</div>
+                        <div class="text-sm opacity-75">Puntuación Más Baja</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Análisis por Criterios -->
+            <div class="card p-6 mb-6">
+                <h3 class="text-2xl font-bold mb-4">📊 Análisis por Criterios</h3>
+                <div id="criteria-analysis" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <!-- Se llenarán dinámicamente -->
+                </div>
+            </div>
+
+            <!-- Gráfico de Radar -->
+            <div class="card p-6 mb-6">
+                <h3 class="text-2xl font-bold mb-4">🎯 Perfil de Puntuaciones</h3>
+                <div class="bg-white bg-opacity-90 p-4 rounded">
+                    <canvas id="radarChart" width="400" height="400"></canvas>
+                </div>
+            </div>
+
+            <!-- Evaluaciones por Jurado -->
+            <div class="card p-6 mb-6">
+                <h3 class="text-2xl font-bold mb-4">👥 Evaluaciones por Jurado</h3>
+                <div id="juror-evaluations" class="space-y-4">
+                    <!-- Se llenarán dinámicamente -->
+                </div>
+            </div>
+
+            <!-- Feedback y Recomendaciones -->
+            <div class="card p-6 mb-6">
+                <h3 class="text-2xl font-bold mb-4">💡 Feedback y Recomendaciones</h3>
+                <div id="feedback-section" class="space-y-4">
+                    <!-- Se llenarán dinámicamente -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase -->
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
+        import { getFirestore, collection, getDocs, doc, getDoc, query, where, orderBy } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+        
+        // Configuración de Firebase
+        const firebaseConfig = {
+            apiKey: "AIzaSyDUKQ0F1PJ8v2SudfKyQvHK8G7OL-sLwb0",
+            authDomain: "vyt-music.firebaseapp.com",
+            projectId: "vyt-music",
+            storageBucket: "vyt-music.appspot.com",
+            messagingSenderId: "147059879896",
+            appId: "1:147059879896:web:e3f0b11f38fdbc6b997fef"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        
+        // Criterios de evaluación
+        const CRITERIA = [
+            { id: 'tecnica_vocal', name: '🎵 Técnica Vocal' },
+            { id: 'melodia_interpretacion', name: '🎼 Melodía e Interpretación' },
+            { id: 'gestualidad_expresion', name: '😊 Gestualidad y Expresión Facial' },
+            { id: 'diccion_articulacion', name: '🗣️ Dicción y Articulación' },
+            { id: 'dinamica_espacio', name: '🏃 Dinámica y Uso del Espacio' },
+            { id: 'repertorio_seleccion', name: '🎶 Repertorio: Selección' },
+            { id: 'presencia_escenica', name: '🎭 Presencia Escénica: Seguridad' },
+            { id: 'originalidad_creatividad', name: '💡 Originalidad y Creatividad' },
+            { id: 'vestuario_presentacion', name: '👔 Vestuario y Presentación' },
+            { id: 'puntualidad_profesionalismo', name: '⭐ Puntualidad y Profesionalismo' }
+        ];
+
+        // Variables globales
+        let allEvents = [];
+        let allEvaluations = [];
+        let selectedArtist = null;
+
+        // Cargar eventos al iniciar
+        window.addEventListener('load', loadEvents);
+
+        // Función para cargar eventos
+        async function loadEvents() {
+            try {
+                console.log('🔍 Cargando eventos disponibles...');
+                const eventsSnapshot = await getDocs(collection(db, 'events'));
+                allEvents = [];
+                
+                eventsSnapshot.forEach(doc => {
+                    const eventData = doc.data();
+                    allEvents.push({
+                        id: doc.id,
+                        name: eventData.name || doc.id,
+                        date: eventData.date || ''
+                    });
+                });
+
+                console.log('📋 Eventos encontrados:', allEvents.length);
+                populateEventSelector();
+            } catch (error) {
+                console.error('❌ Error cargando eventos:', error);
+                alert('Error al cargar eventos: ' + error.message);
+            }
+        }
+
+        // Poblar selector de eventos
+        function populateEventSelector() {
+            const selector = document.getElementById('event-selector');
+            selector.innerHTML = '<option value="">Selecciona un evento</option>';
+            
+            allEvents.forEach(event => {
+                const option = document.createElement('option');
+                option.value = event.id;
+                option.textContent = `${event.name} ${event.date ? '(' + event.date + ')' : ''}`;
+                selector.appendChild(option);
+            });
+        }
+
+        // Manejar cambio de evento
+        document.getElementById('event-selector').addEventListener('change', async function() {
+            const eventId = this.value;
+            if (!eventId) {
+                document.getElementById('artist-selector').innerHTML = '<option value="">Primero selecciona un evento</option>';
+                return;
+            }
+            
+            await loadArtistsForEvent(eventId);
+        });
+
+        // Cargar artistas para un evento específico
+        async function loadArtistsForEvent(eventId) {
+            try {
+                console.log('🎤 Cargando artistas para evento:', eventId);
+                const artistsSnapshot = await getDocs(collection(db, `events/${eventId}/participants`));
+                const artists = [];
+                
+                artistsSnapshot.forEach(doc => {
+                    const artistData = doc.data();
+                    artists.push({
+                        id: doc.id,
+                        name: artistData.name || 'Artista sin nombre'
+                    });
+                });
+
+                console.log('🎤 Artistas encontrados:', artists.length);
+                populateArtistSelector(artists);
+            } catch (error) {
+                console.error('❌ Error cargando artistas:', error);
+                document.getElementById('artist-selector').innerHTML = '<option value="">Error cargando artistas</option>';
+            }
+        }
+
+        // Poblar selector de artistas
+        function populateArtistSelector(artists) {
+            const selector = document.getElementById('artist-selector');
+            selector.innerHTML = '<option value="">Selecciona un artista</option>';
+            
+            artists.forEach(artist => {
+                const option = document.createElement('option');
+                option.value = artist.id;
+                option.textContent = artist.name;
+                selector.appendChild(option);
+            });
+        }
+
+        // Generar reporte
+        window.generateReport = async function() {
+            const eventId = document.getElementById('event-selector').value;
+            const artistId = document.getElementById('artist-selector').value;
+            
+            if (!eventId || !artistId) {
+                alert('❌ Por favor selecciona un evento y un artista');
+                return;
+            }
+            
+            try {
+                console.log('📊 Generando reporte para:', { eventId, artistId });
+                await loadEvaluationsForArtist(eventId, artistId);
+                displayReport();
+            } catch (error) {
+                console.error('❌ Error generando reporte:', error);
+                alert('Error generando reporte: ' + error.message);
+            }
+        };
+
+        // Cargar evaluaciones para un artista específico
+        async function loadEvaluationsForArtist(eventId, artistId) {
+            console.log('🔍 Buscando evaluaciones...');
+            allEvaluations = [];
+            
+            // Buscar en múltiples colecciones
+            const collections = ['jury_evaluations', 'jury_votes', 'votes'];
+            
+            for (const collectionName of collections) {
+                try {
+                    const evaluationsSnapshot = await getDocs(collection(db, `events/${eventId}/${collectionName}`));
+                    
+                    evaluationsSnapshot.forEach(doc => {
+                        const evaluation = doc.data();
+                        if (evaluation.artistId === artistId) {
+                            allEvaluations.push({
+                                id: doc.id,
+                                ...evaluation,
+                                collection: collectionName
+                            });
+                        }
+                    });
+                } catch (error) {
+                    console.warn(`⚠️ Error en colección ${collectionName}:`, error);
+                }
+            }
+
+            // Obtener información del artista
+            try {
+                const artistDoc = await getDoc(doc(db, `events/${eventId}/participants`, artistId));
+                selectedArtist = {
+                    id: artistId,
+                    name: artistDoc.exists() ? artistDoc.data().name : 'Artista sin nombre',
+                    eventId: eventId,
+                    eventName: allEvents.find(e => e.id === eventId)?.name || eventId
+                };
+            } catch (error) {
+                selectedArtist = {
+                    id: artistId,
+                    name: 'Artista sin nombre',
+                    eventId: eventId,
+                    eventName: eventId
+                };
+            }
+
+            console.log('✅ Evaluaciones cargadas:', allEvaluations.length);
+        }
+
+        // Mostrar reporte
+        function displayReport() {
+            if (!selectedArtist || allEvaluations.length === 0) {
+                alert('❌ No se encontraron evaluaciones para este artista');
+                return;
+            }
+
+            // Mostrar información básica
+            document.getElementById('artist-name').textContent = selectedArtist.name;
+            document.getElementById('artist-info').textContent = `Evento: ${selectedArtist.eventName} | Fecha: ${new Date().toLocaleDateString()}`;
+            
+            // Calcular estadísticas
+            const scores = allEvaluations.map(e => e.score || e.average || 0);
+            const avgScore = scores.reduce((a, b) => a + b, 0) / scores.length;
+            const maxScore = Math.max(...scores);
+            const minScore = Math.min(...scores);
+            
+            document.getElementById('overall-score').textContent = avgScore.toFixed(1);
+            document.getElementById('total-evaluations').textContent = allEvaluations.length;
+            document.getElementById('highest-score').textContent = maxScore.toFixed(1);
+            document.getElementById('lowest-score').textContent = minScore.toFixed(1);
+            
+            // Generar análisis por criterios
+            generateCriteriaAnalysis();
+            
+            // Generar gráfico radar
+            generateRadarChart();
+            
+            // Mostrar evaluaciones por jurado
+            displayJurorEvaluations();
+            
+            // Generar feedback
+            generateFeedback();
+            
+            // Mostrar el reporte
+            document.getElementById('report-content').style.display = 'block';
+            document.getElementById('report-content').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        // Análisis por criterios
+        function generateCriteriaAnalysis() {
+            const criteriaContainer = document.getElementById('criteria-analysis');
+            criteriaContainer.innerHTML = '';
+            
+            CRITERIA.forEach(criteria => {
+                const scores = [];
+                allEvaluations.forEach(evaluation => {
+                    if (evaluation.scores && evaluation.scores[criteria.id]) {
+                        scores.push(evaluation.scores[criteria.id]);
+                    }
+                });
+                
+                if (scores.length === 0) return;
+                
+                const avgScore = scores.reduce((a, b) => a + b, 0) / scores.length;
+                const maxScore = Math.max(...scores);
+                const minScore = Math.min(...scores);
+                
+                const card = document.createElement('div');
+                card.className = 'criteria-card p-4 text-white';
+                card.innerHTML = `
+                    <h4 class="font-bold mb-2">${criteria.name}</h4>
+                    <div class="flex items-center mb-2">
+                        <div class="text-2xl font-bold mr-2">${avgScore.toFixed(1)}</div>
+                        <div class="flex-1">
+                            <div class="score-bar">
+                                <div class="bg-white bg-opacity-80 h-full rounded" 
+                                     style="width: ${(avgScore / 100) * 100}%"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="text-sm opacity-90">
+                        Rango: ${minScore} - ${maxScore} | Evaluaciones: ${scores.length}
+                    </div>
+                `;
+                criteriaContainer.appendChild(card);
+            });
+        }
+
+        // Gráfico radar
+        function generateRadarChart() {
+            const ctx = document.getElementById('radarChart').getContext('2d');
+            
+            const criteriaData = CRITERIA.map(criteria => {
+                const scores = [];
+                allEvaluations.forEach(evaluation => {
+                    if (evaluation.scores && evaluation.scores[criteria.id]) {
+                        scores.push(evaluation.scores[criteria.id]);
+                    }
+                });
+                return scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
+            });
+
+            new Chart(ctx, {
+                type: 'radar',
+                data: {
+                    labels: CRITERIA.map(c => c.name),
+                    datasets: [{
+                        label: selectedArtist.name,
+                        data: criteriaData,
+                        backgroundColor: 'rgba(139, 92, 246, 0.2)',
+                        borderColor: 'rgba(139, 92, 246, 1)',
+                        borderWidth: 2,
+                        pointBackgroundColor: 'rgba(139, 92, 246, 1)',
+                        pointBorderColor: '#fff',
+                        pointHoverBackgroundColor: '#fff',
+                        pointHoverBorderColor: 'rgba(139, 92, 246, 1)'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        r: {
+                            beginAtZero: true,
+                            max: 100,
+                            ticks: {
+                                stepSize: 20
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'top'
+                        }
+                    }
+                }
+            });
+        }
+
+        // Mostrar evaluaciones por jurado
+        function displayJurorEvaluations() {
+            const container = document.getElementById('juror-evaluations');
+            container.innerHTML = '';
+            
+            allEvaluations.forEach(evaluation => {
+                const jurorType = evaluation.jurorType || 'individual';
+                const typeClass = `juror-type-${jurorType}`;
+                
+                const evaluationCard = document.createElement('div');
+                evaluationCard.className = `bg-white bg-opacity-10 p-4 rounded ${typeClass}`;
+                evaluationCard.innerHTML = `
+                    <div class="flex justify-between items-start mb-2">
+                        <div>
+                            <h4 class="font-bold">${evaluation.jurorName || 'Jurado Anónimo'}</h4>
+                            <p class="text-sm opacity-75">${evaluation.jurorTypeLabel || 'Jurado'}</p>
+                            ${evaluation.jurorAdditional ? `<p class="text-xs opacity-60">${evaluation.jurorAdditional}</p>` : ''}
+                        </div>
+                        <div class="text-right">
+                            <div class="text-2xl font-bold">${(evaluation.score || evaluation.average || 0).toFixed(1)}</div>
+                            <div class="text-xs opacity-75">${new Date(evaluation.timestamp).toLocaleDateString()}</div>
+                        </div>
+                    </div>
+                    ${evaluation.judgeComments ? `
+                        <div class="mt-3 p-3 bg-black bg-opacity-20 rounded">
+                            <h5 class="font-bold text-sm mb-1">💭 Comentarios:</h5>
+                            <p class="text-sm">${evaluation.judgeComments}</p>
+                        </div>
+                    ` : ''}
+                    ${evaluation.additionalNotes ? `
+                        <div class="mt-2 p-3 bg-black bg-opacity-20 rounded">
+                            <h5 class="font-bold text-sm mb-1">📝 Notas adicionales:</h5>
+                            <p class="text-sm">${evaluation.additionalNotes}</p>
+                        </div>
+                    ` : ''}
+                `;
+                container.appendChild(evaluationCard);
+            });
+        }
+
+        // Generar feedback automático
+        function generateFeedback() {
+            const container = document.getElementById('feedback-section');
+            container.innerHTML = '';
+            
+            // Calcular promedios por criterio
+            const criteriaAverages = {};
+            CRITERIA.forEach(criteria => {
+                const scores = [];
+                allEvaluations.forEach(evaluation => {
+                    if (evaluation.scores && evaluation.scores[criteria.id]) {
+                        scores.push(evaluation.scores[criteria.id]);
+                    }
+                });
+                criteriaAverages[criteria.id] = scores.length > 0 ? 
+                    scores.reduce((a, b) => a + b, 0) / scores.length : 0;
+            });
+
+            // Separar en categorías
+            const strengths = [];
+            const improvements = [];
+            const critical = [];
+
+            Object.entries(criteriaAverages).forEach(([criteriaId, score]) => {
+                const criteria = CRITERIA.find(c => c.id === criteriaId);
+                if (score >= 80) {
+                    strengths.push({ criteria, score });
+                } else if (score >= 60) {
+                    improvements.push({ criteria, score });
+                } else if (score > 0) {
+                    critical.push({ criteria, score });
+                }
+            });
+
+            // Mostrar fortalezas
+            if (strengths.length > 0) {
+                const strengthsCard = document.createElement('div');
+                strengthsCard.className = 'feedback-positive p-4 rounded text-white';
+                strengthsCard.innerHTML = `
+                    <h4 class="font-bold mb-3">🌟 Fortalezas (Puntuación ≥ 80)</h4>
+                    <ul class="space-y-1">
+                        ${strengths.map(s => `<li>• ${s.criteria.name}: ${s.score.toFixed(1)} puntos</li>`).join('')}
+                    </ul>
+                `;
+                container.appendChild(strengthsCard);
+            }
+
+            // Mostrar áreas de mejora
+            if (improvements.length > 0) {
+                const improvementsCard = document.createElement('div');
+                improvementsCard.className = 'feedback-improvement p-4 rounded text-white';
+                improvementsCard.innerHTML = `
+                    <h4 class="font-bold mb-3">💡 Áreas de Mejora (Puntuación 60-79)</h4>
+                    <ul class="space-y-1">
+                        ${improvements.map(i => `<li>• ${i.criteria.name}: ${i.score.toFixed(1)} puntos</li>`).join('')}
+                    </ul>
+                `;
+                container.appendChild(improvementsCard);
+            }
+
+            // Mostrar áreas críticas
+            if (critical.length > 0) {
+                const criticalCard = document.createElement('div');
+                criticalCard.className = 'feedback-critical p-4 rounded text-white';
+                criticalCard.innerHTML = `
+                    <h4 class="font-bold mb-3">🚨 Requiere Atención Inmediata (Puntuación < 60)</h4>
+                    <ul class="space-y-1">
+                        ${critical.map(c => `<li>• ${c.criteria.name}: ${c.score.toFixed(1)} puntos</li>`).join('')}
+                    </ul>
+                `;
+                container.appendChild(criticalCard);
+            }
+
+            // Recomendaciones específicas
+            const recommendationsCard = document.createElement('div');
+            recommendationsCard.className = 'bg-white bg-opacity-10 p-4 rounded';
+            recommendationsCard.innerHTML = `
+                <h4 class="font-bold mb-3">📋 Recomendaciones de Mejora</h4>
+                <div class="space-y-2 text-sm">
+                    ${generateSpecificRecommendations(criteriaAverages)}
+                </div>
+            `;
+            container.appendChild(recommendationsCard);
+        }
+
+        // Generar recomendaciones específicas
+        function generateSpecificRecommendations(averages) {
+            const recommendations = [];
+            
+            if (averages.tecnica_vocal < 70) {
+                recommendations.push('🎵 Practicar ejercicios de respiración diafragmática diariamente');
+                recommendations.push('🎵 Trabajar técnicas de vocalización con un instructor profesional');
+            }
+            
+            if (averages.presencia_escenica < 70) {
+                recommendations.push('🎭 Practicar frente al espejo para mejorar gestualidad');
+                recommendations.push('🎭 Tomar clases de actuación o expresión corporal');
+            }
+            
+            if (averages.diccion_articulacion < 70) {
+                recommendations.push('🗣️ Realizar ejercicios de dicción y articulación');
+                recommendations.push('🗣️ Practicar lectura en voz alta con grabaciones');
+            }
+            
+            if (averages.repertorio_seleccion < 70) {
+                recommendations.push('🎶 Diversificar el repertorio con diferentes géneros');
+                recommendations.push('🎶 Estudiar la historia y contexto de las canciones seleccionadas');
+            }
+            
+            if (recommendations.length === 0) {
+                recommendations.push('✨ ¡Excelente trabajo! Continúa manteniendo este nivel de calidad');
+                recommendations.push('📈 Explora nuevas técnicas para seguir creciendo artísticamente');
+            }
+            
+            return recommendations.map(r => `<p>• ${r}</p>`).join('');
+        }
+
+        // Compartir reporte
+        window.shareReport = function() {
+            if (!selectedArtist) {
+                alert('❌ Primero genera un reporte');
+                return;
+            }
+            
+            const url = window.location.href + `?event=${selectedArtist.eventId}&artist=${selectedArtist.id}`;
+            
+            if (navigator.share) {
+                navigator.share({
+                    title: `Reporte de ${selectedArtist.name}`,
+                    text: `Reporte individual de evaluación para ${selectedArtist.name}`,
+                    url: url
+                });
+            } else {
+                navigator.clipboard.writeText(url).then(() => {
+                    alert('✅ Enlace copiado al portapapeles');
+                }).catch(() => {
+                    prompt('Copia este enlace:', url);
+                });
+            }
+        };
+
+        // Cargar reporte desde URL si hay parámetros
+        window.addEventListener('load', () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            const eventId = urlParams.get('event');
+            const artistId = urlParams.get('artist');
+            
+            if (eventId && artistId) {
+                setTimeout(() => {
+                    document.getElementById('event-selector').value = eventId;
+                    loadArtistsForEvent(eventId).then(() => {
+                        document.getElementById('artist-selector').value = artistId;
+                        generateReport();
+                    });
+                }, 1000);
+            }
+        });
+    </script>
+</body>
+</html>
