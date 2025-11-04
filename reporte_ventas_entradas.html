@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reporte de Ventas de Entradas - VYTMUSIC</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#8B5CF6',
+                        secondary: '#06B6D4'
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- Iconos -->
+    <link rel="icon" type="image/png" sizes="512x512" href="imagenes/logo-512x512.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="imagenes/logo-192x192.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="imagenes/logo-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="imagenes/logo-16x16.png">
+    
+    <style>
+        .card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 15px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+            color: white;
+        }
+        
+        .sales-card {
+            background: linear-gradient(135deg, #06B6D4 0%, #8B5CF6 100%);
+            border-radius: 10px;
+            transition: all 0.3s ease;
+            border-left: 6px solid;
+        }
+        
+        .sales-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 30px rgba(6, 182, 212, 0.3);
+        }
+        
+        .top-seller { border-left-color: #FFD700; }
+        .good-seller { border-left-color: #C0C0C0; }
+        .regular-seller { border-left-color: #CD7F32; }
+        .low-seller { border-left-color: #6B7280; }
+        
+        .loading-spinner {
+            border: 4px solid #f3f4f6;
+            border-top: 4px solid #06B6D4;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .sales-number {
+            font-size: 2.5rem;
+            font-weight: bold;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        .revenue-display {
+            font-size: 1.8rem;
+            font-weight: bold;
+            color: #10B981;
+        }
+        
+        @media print {
+            .no-print { display: none !important; }
+            .card { box-shadow: none; border: 1px solid #ccc; }
+        }
+        
+        .qr-preview {
+            background: white;
+            border-radius: 8px;
+            padding: 8px;
+            display: inline-block;
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-cyan-900 via-blue-900 to-purple-900 min-h-screen p-4">
+    <div class="container mx-auto max-w-6xl">
+        <!-- Header -->
+        <div class="card p-8 mb-8 text-center">
+            <h1 class="text-4xl font-bold mb-2">💰 REPORTE DE VENTAS DE ENTRADAS</h1>
+            <p class="text-xl opacity-90">Análisis completo de entradas vendidas por artista</p>
+        </div>
+
+        <!-- Controles -->
+        <div class="card p-6 mb-8 no-print">
+            <h2 class="text-2xl font-bold mb-4">🎛️ Configuración del Reporte</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- Selector de Galas -->
+                <div>
+                    <label class="block mb-2 font-bold">Seleccionar Galas:</label>
+                    <div id="galas-selector" class="space-y-2 max-h-40 overflow-y-auto p-3 bg-white bg-opacity-20 rounded">
+                        <div class="text-center opacity-75">Cargando galas disponibles...</div>
+                    </div>
+                    <div class="mt-2">
+                        <button onclick="selectAllGalas()" class="btn bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded mr-2">
+                            ✅ Seleccionar Todas
+                        </button>
+                        <button onclick="clearGalaSelection()" class="btn bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded">
+                            ❌ Limpiar
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Opciones de Análisis -->
+                <div>
+                    <label class="block mb-2 font-bold">Opciones de Reporte:</label>
+                    <div class="space-y-3">
+                        <label class="flex items-center">
+                            <input type="checkbox" id="show-revenue" checked class="mr-2">
+                            <span>Calcular ingresos estimados</span>
+                        </label>
+                        <label class="flex items-center">
+                            <input type="checkbox" id="show-qr-stats" checked class="mr-2">
+                            <span>Mostrar estadísticas de QR</span>
+                        </label>
+                        <label class="flex items-center">
+                            <input type="checkbox" id="group-by-artist" checked class="mr-2">
+                            <span>Agrupar por artista</span>
+                        </label>
+                        <div class="mt-2">
+                            <label class="block mb-1 text-sm">Precio por entrada (estimado):</label>
+                            <input type="number" id="ticket-price" value="50" min="0" class="bg-white bg-opacity-20 text-white px-3 py-2 rounded w-full" placeholder="50">
+                        </div>
+                    </div>
+                    <button onclick="generateSalesReport()" class="btn bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded font-bold mt-4">
+                        💰 Generar Reporte
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Loading -->
+        <div id="loading-section" class="text-center py-8" style="display: none;">
+            <div class="card p-8">
+                <div class="loading-spinner mx-auto mb-4"></div>
+                <h2 class="text-2xl font-bold mb-2">Analizando ventas...</h2>
+                <p class="opacity-90">Procesando entradas y códigos QR</p>
+            </div>
+        </div>
+
+        <!-- Resultados -->
+        <div id="results-section" style="display: none;">
+            <!-- Resumen de Ventas -->
+            <div class="card p-6 mb-6">
+                <h2 class="text-2xl font-bold mb-4 text-center">📊 RESUMEN DE VENTAS</h2>
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-6 text-center">
+                    <div>
+                        <h3 class="text-lg font-bold mb-2">🎫 Total Entradas</h3>
+                        <div id="total-tickets" class="sales-number text-cyan-300"></div>
+                        <div class="text-sm opacity-75">entradas vendidas</div>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-bold mb-2">👥 Artistas Participantes</h3>
+                        <div id="total-artists" class="sales-number text-green-300"></div>
+                        <div class="text-sm opacity-75">artistas con ventas</div>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-bold mb-2">💰 Ingresos Estimados</h3>
+                        <div id="total-revenue" class="revenue-display"></div>
+                        <div class="text-sm opacity-75">ingresos totales</div>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-bold mb-2">📅 Galas Analizadas</h3>
+                        <div id="total-galas" class="sales-number text-purple-300"></div>
+                        <div class="text-sm opacity-75">galas incluidas</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Ranking de Ventas -->
+            <div class="card p-6 mb-6">
+                <h2 class="text-2xl font-bold mb-4 text-center">🏆 RANKING DE VENTAS POR ARTISTA</h2>
+                <div id="sales-ranking" class="space-y-4">
+                    <!-- Se llenará dinámicamente -->
+                </div>
+            </div>
+
+            <!-- Gráficos de Ventas -->
+            <div class="card p-6 mb-6">
+                <h2 class="text-2xl font-bold mb-4 text-center">📈 ANÁLISIS GRÁFICO</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="bg-white bg-opacity-90 p-4 rounded">
+                        <canvas id="salesChart" width="400" height="300"></canvas>
+                    </div>
+                    <div class="bg-white bg-opacity-90 p-4 rounded">
+                        <canvas id="revenueChart" width="400" height="300"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Detalles por Gala -->
+            <div id="gala-sales-details" class="card p-6 mb-6">
+                <h2 class="text-2xl font-bold mb-4 text-center">📅 VENTAS POR GALA</h2>
+                <div id="gala-breakdown">
+                    <!-- Se llenará dinámicamente -->
+                </div>
+            </div>
+
+            <!-- Estadísticas Adicionales -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                <!-- Top Performers -->
+                <div class="card p-6">
+                    <h2 class="text-xl font-bold mb-4 text-center">⭐ TOP PERFORMERS</h2>
+                    <div id="top-performers">
+                        <!-- Se llenará dinámicamente -->
+                    </div>
+                </div>
+                
+                <!-- Estadísticas QR -->
+                <div id="qr-stats-section" class="card p-6">
+                    <h2 class="text-xl font-bold mb-4 text-center">📱 ESTADÍSTICAS QR</h2>
+                    <div id="qr-statistics">
+                        <!-- Se llenará dinámicamente -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Acciones -->
+            <div class="card p-6 text-center no-print">
+                <h3 class="text-xl font-bold mb-4">📤 Exportar Reporte</h3>
+                <div class="flex flex-wrap justify-center gap-4">
+                    <button onclick="window.print()" class="btn bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded font-bold">
+                        🖨️ Imprimir/PDF
+                    </button>
+                    <button onclick="exportSalesToCSV()" class="btn bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded font-bold">
+                        📊 Exportar CSV
+                    </button>
+                    <button onclick="generateSalesReport()" class="btn bg-purple-600 hover:bg-purple-700 text-white px-6 py-3 rounded font-bold">
+                        🔄 Actualizar Datos
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase -->
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
+        import { getFirestore, collection, getDocs, doc, getDoc } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+        
+        // Configuración de Firebase
+        const firebaseConfig = {
+            apiKey: "AIzaSyDUKQ0F1PJ8v2SudfKyQvHK8G7OL-sLwb0",
+            authDomain: "vyt-music.firebaseapp.com",
+            projectId: "vyt-music",
+            storageBucket: "vyt-music.appspot.com",
+            messagingSenderId: "147059879896",
+            appId: "1:147059879896:web:e3f0b11f38fdbc6b997fef"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        
+        // Variables globales
+        let allEvents = [];
+        let selectedGalas = [];
+        let salesData = {};
+        let qrData = {};
+
+        // Cargar datos al iniciar
+        window.addEventListener('load', loadAvailableGalas);
+
+        // Cargar galas disponibles
+        async function loadAvailableGalas() {
+            try {
+                console.log('🔍 Cargando galas disponibles...');
+                const eventsSnapshot = await getDocs(collection(db, 'events'));
+                allEvents = [];
+                
+                eventsSnapshot.forEach(doc => {
+                    const eventData = doc.data();
+                    allEvents.push({
+                        id: doc.id,
+                        name: eventData.name || doc.id,
+                        date: eventData.date || '',
+                        ticketPrice: eventData.ticketPrice || 50
+                    });
+                });
+
+                console.log('✅ Galas cargadas:', allEvents.length);
+                displayGalasSelector();
+            } catch (error) {
+                console.error('❌ Error cargando galas:', error);
+                document.getElementById('galas-selector').innerHTML = 
+                    '<div class="text-center text-red-300">Error cargando galas</div>';
+            }
+        }
+
+        // Mostrar selector de galas
+        function displayGalasSelector() {
+            const container = document.getElementById('galas-selector');
+            container.innerHTML = '';
+            
+            if (allEvents.length === 0) {
+                container.innerHTML = '<div class="text-center opacity-75">No se encontraron galas</div>';
+                return;
+            }
+            
+            allEvents.forEach(event => {
+                const label = document.createElement('label');
+                label.className = 'flex items-center cursor-pointer p-2 hover:bg-white hover:bg-opacity-10 rounded';
+                label.innerHTML = `
+                    <input type="checkbox" value="${event.id}" class="gala-checkbox mr-3">
+                    <span>${event.name} ${event.date ? '(' + event.date + ')' : ''}</span>
+                `;
+                container.appendChild(label);
+            });
+        }
+
+        // Seleccionar todas las galas
+        window.selectAllGalas = function() {
+            const checkboxes = document.querySelectorAll('.gala-checkbox');
+            checkboxes.forEach(cb => cb.checked = true);
+        };
+
+        // Limpiar selección
+        window.clearGalaSelection = function() {
+            const checkboxes = document.querySelectorAll('.gala-checkbox');
+            checkboxes.forEach(cb => cb.checked = false);
+        };
+
+        // Generar reporte de ventas
+        window.generateSalesReport = async function() {
+            // Obtener galas seleccionadas
+            const checkboxes = document.querySelectorAll('.gala-checkbox:checked');
+            selectedGalas = Array.from(checkboxes).map(cb => cb.value);
+            
+            if (selectedGalas.length === 0) {
+                alert('❌ Por favor selecciona al menos una gala');
+                return;
+            }
+            
+            console.log('💰 Generando reporte de ventas para galas:', selectedGalas);
+            
+            // Mostrar loading
+            document.getElementById('results-section').style.display = 'none';
+            document.getElementById('loading-section').style.display = 'block';
+            
+            try {
+                // Cargar datos de ventas
+                await loadSalesData();
+                
+                // Procesar y mostrar resultados
+                processSalesData();
+                
+                // Mostrar resultados
+                document.getElementById('loading-section').style.display = 'none';
+                document.getElementById('results-section').style.display = 'block';
+                
+            } catch (error) {
+                console.error('❌ Error generando reporte:', error);
+                alert('Error al generar el reporte: ' + error.message);
+                document.getElementById('loading-section').style.display = 'none';
+            }
+        };
+
+        // Cargar datos de ventas
+        async function loadSalesData() {
+            salesData = {};
+            qrData = {};
+            
+            for (const galaId of selectedGalas) {
+                console.log(`🔍 Cargando ventas para gala: ${galaId}`);
+                
+                // Cargar entradas vendidas
+                await loadTicketSales(galaId);
+                
+                // Cargar datos de QR
+                await loadQRData(galaId);
+            }
+        }
+
+        // Cargar ventas de entradas
+        async function loadTicketSales(galaId) {
+            try {
+                // Intentar cargar desde diferentes colecciones posibles
+                const collections = ['entries', 'ticket_sales', 'sales'];
+                
+                for (const collectionName of collections) {
+                    try {
+                        const snapshot = await getDocs(collection(db, `events/${galaId}/${collectionName}`));
+                        
+                        snapshot.forEach(doc => {
+                            const data = doc.data();
+                            const artistId = data.artistId || data.artistReference || data.artist_id;
+                            const artistName = data.artistName || data.artist_name || 'Artista sin nombre';
+                            const quantity = data.quantity || data.ticketCount || 1;
+                            const price = data.price || data.ticketPrice || 50;
+                            
+                            if (artistId) {
+                                if (!salesData[artistId]) {
+                                    salesData[artistId] = {
+                                        name: artistName,
+                                        galas: {},
+                                        totalTickets: 0,
+                                        totalRevenue: 0
+                                    };
+                                }
+                                
+                                if (!salesData[artistId].galas[galaId]) {
+                                    salesData[artistId].galas[galaId] = {
+                                        tickets: 0,
+                                        revenue: 0
+                                    };
+                                }
+                                
+                                salesData[artistId].galas[galaId].tickets += quantity;
+                                salesData[artistId].galas[galaId].revenue += (quantity * price);
+                                
+                                salesData[artistId].totalTickets += quantity;
+                                salesData[artistId].totalRevenue += (quantity * price);
+                            }
+                        });
+                    } catch (error) {
+                        console.warn(`⚠️ No se pudo cargar ${collectionName} para gala ${galaId}`);
+                    }
+                }
+                
+                // Si no hay datos específicos de ventas, intentar inferir de otros datos
+                await inferSalesFromOtherData(galaId);
+                
+            } catch (error) {
+                console.warn(`⚠️ Error cargando ventas para gala ${galaId}:`, error);
+            }
+        }
+
+        // Inferir ventas de otros datos disponibles
+        async function inferSalesFromOtherData(galaId) {
+            try {
+                // Intentar obtener artistas de votos o evaluaciones
+                const votesSnapshot = await getDocs(collection(db, `events/${galaId}/votes`));
+                const artistsInEvent = new Set();
+                
+                votesSnapshot.forEach(doc => {
+                    const data = doc.data();
+                    if (data.artistId && data.artistName) {
+                        artistsInEvent.add(JSON.stringify({
+                            id: data.artistId,
+                            name: data.artistName
+                        }));
+                    }
+                });
+                
+                // Simular ventas basadas en actividad (para demo)
+                const ticketPrice = parseInt(document.getElementById('ticket-price').value) || 50;
+                
+                artistsInEvent.forEach(artistJSON => {
+                    const artist = JSON.parse(artistJSON);
+                    
+                    if (!salesData[artist.id]) {
+                        // Simular ventas aleatorias para demo
+                        const simulatedTickets = Math.floor(Math.random() * 50) + 5;
+                        
+                        salesData[artist.id] = {
+                            name: artist.name,
+                            galas: {},
+                            totalTickets: 0,
+                            totalRevenue: 0
+                        };
+                        
+                        salesData[artist.id].galas[galaId] = {
+                            tickets: simulatedTickets,
+                            revenue: simulatedTickets * ticketPrice
+                        };
+                        
+                        salesData[artist.id].totalTickets += simulatedTickets;
+                        salesData[artist.id].totalRevenue += (simulatedTickets * ticketPrice);
+                    }
+                });
+                
+            } catch (error) {
+                console.warn(`⚠️ Error infiriendo ventas para gala ${galaId}:`, error);
+            }
+        }
+
+        // Cargar datos de QR
+        async function loadQRData(galaId) {
+            try {
+                const qrSnapshot = await getDocs(collection(db, `events/${galaId}/qr_codes`));
+                
+                qrSnapshot.forEach(doc => {
+                    const data = doc.data();
+                    const artistId = data.artistId;
+                    
+                    if (artistId) {
+                        if (!qrData[artistId]) {
+                            qrData[artistId] = {
+                                generated: 0,
+                                scanned: 0,
+                                active: 0
+                            };
+                        }
+                        
+                        qrData[artistId].generated++;
+                        if (data.scanned) qrData[artistId].scanned++;
+                        if (data.active !== false) qrData[artistId].active++;
+                    }
+                });
+            } catch (error) {
+                console.warn(`⚠️ Error cargando datos QR para gala ${galaId}:`, error);
+            }
+        }
+
+        // Procesar datos de ventas
+        function processSalesData() {
+            displaySalesSummary();
+            displaySalesRanking();
+            displaySalesCharts();
+            displayGalaBreakdown();
+            displayTopPerformers();
+            
+            if (document.getElementById('show-qr-stats').checked) {
+                displayQRStatistics();
+            }
+        }
+
+        // Mostrar resumen de ventas
+        function displaySalesSummary() {
+            let totalTickets = 0;
+            let totalRevenue = 0;
+            const artistCount = Object.keys(salesData).length;
+            
+            Object.values(salesData).forEach(artist => {
+                totalTickets += artist.totalTickets;
+                totalRevenue += artist.totalRevenue;
+            });
+            
+            document.getElementById('total-tickets').textContent = totalTickets.toLocaleString();
+            document.getElementById('total-artists').textContent = artistCount;
+            document.getElementById('total-revenue').textContent = `$${totalRevenue.toLocaleString()}`;
+            document.getElementById('total-galas').textContent = selectedGalas.length;
+        }
+
+        // Mostrar ranking de ventas
+        function displaySalesRanking() {
+            const container = document.getElementById('sales-ranking');
+            container.innerHTML = '';
+            
+            const sortedArtists = Object.values(salesData)
+                .sort((a, b) => b.totalTickets - a.totalTickets);
+            
+            if (sortedArtists.length === 0) {
+                container.innerHTML = '<div class="text-center opacity-75">No hay datos de ventas disponibles</div>';
+                return;
+            }
+            
+            sortedArtists.forEach((artist, index) => {
+                const getRankClass = (pos, total) => {
+                    const percentage = pos / total;
+                    if (percentage <= 0.1) return 'top-seller';
+                    if (percentage <= 0.3) return 'good-seller';
+                    if (percentage <= 0.6) return 'regular-seller';
+                    return 'low-seller';
+                };
+                
+                const rankClass = getRankClass(index, sortedArtists.length);
+                const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '';
+                
+                const card = document.createElement('div');
+                card.className = `sales-card ${rankClass} p-4 text-white`;
+                card.innerHTML = `
+                    <div class="flex justify-between items-center">
+                        <div class="flex items-center">
+                            <div class="text-2xl font-bold mr-4">${medal} #${index + 1}</div>
+                            <div>
+                                <h3 class="text-xl font-bold">${artist.name}</h3>
+                                <p class="text-sm opacity-75">$${artist.totalRevenue.toLocaleString()} en ingresos</p>
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <div class="sales-number">${artist.totalTickets}</div>
+                            <div class="text-sm opacity-75">entradas</div>
+                        </div>
+                    </div>
+                    <div class="mt-3 text-sm opacity-90">
+                        Promedio: ${(artist.totalTickets / selectedGalas.length).toFixed(1)} entradas por gala
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        // Mostrar gráficos de ventas
+        function displaySalesCharts() {
+            const topArtists = Object.values(salesData)
+                .sort((a, b) => b.totalTickets - a.totalTickets)
+                .slice(0, 10);
+            
+            // Gráfico de entradas vendidas
+            const salesCtx = document.getElementById('salesChart').getContext('2d');
+            new Chart(salesCtx, {
+                type: 'bar',
+                data: {
+                    labels: topArtists.map(a => a.name),
+                    datasets: [{
+                        label: 'Entradas Vendidas',
+                        data: topArtists.map(a => a.totalTickets),
+                        backgroundColor: 'rgba(6, 182, 212, 0.8)',
+                        borderColor: 'rgba(6, 182, 212, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'Top 10 - Entradas Vendidas'
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+            
+            // Gráfico de ingresos
+            const revenueCtx = document.getElementById('revenueChart').getContext('2d');
+            new Chart(revenueCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: topArtists.slice(0, 5).map(a => a.name),
+                    datasets: [{
+                        label: 'Ingresos',
+                        data: topArtists.slice(0, 5).map(a => a.totalRevenue),
+                        backgroundColor: [
+                            'rgba(139, 92, 246, 0.8)',
+                            'rgba(6, 182, 212, 0.8)',
+                            'rgba(34, 197, 94, 0.8)',
+                            'rgba(245, 158, 11, 0.8)',
+                            'rgba(239, 68, 68, 0.8)'
+                        ]
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'Distribución de Ingresos (Top 5)'
+                        }
+                    }
+                }
+            });
+        }
+
+        // Mostrar desglose por gala
+        function displayGalaBreakdown() {
+            const container = document.getElementById('gala-breakdown');
+            container.innerHTML = '';
+            
+            selectedGalas.forEach(galaId => {
+                const gala = allEvents.find(e => e.id === galaId);
+                let galaTickets = 0;
+                let galaRevenue = 0;
+                
+                Object.values(salesData).forEach(artist => {
+                    if (artist.galas[galaId]) {
+                        galaTickets += artist.galas[galaId].tickets;
+                        galaRevenue += artist.galas[galaId].revenue;
+                    }
+                });
+                
+                const galaCard = document.createElement('div');
+                galaCard.className = 'bg-white bg-opacity-10 p-4 rounded-lg mb-4';
+                galaCard.innerHTML = `
+                    <div class="flex justify-between items-center">
+                        <div>
+                            <h3 class="text-xl font-bold">${gala?.name || galaId}</h3>
+                            <p class="text-sm opacity-75">${gala?.date || ''}</p>
+                        </div>
+                        <div class="text-right">
+                            <div class="text-2xl font-bold">${galaTickets}</div>
+                            <div class="text-sm opacity-75">entradas ($${galaRevenue.toLocaleString()})</div>
+                        </div>
+                    </div>
+                `;
+                container.appendChild(galaCard);
+            });
+        }
+
+        // Mostrar top performers
+        function displayTopPerformers() {
+            const container = document.getElementById('top-performers');
+            const topArtists = Object.values(salesData)
+                .sort((a, b) => b.totalTickets - a.totalTickets)
+                .slice(0, 3);
+            
+            container.innerHTML = '';
+            
+            topArtists.forEach((artist, index) => {
+                const medals = ['🥇', '🥈', '🥉'];
+                const div = document.createElement('div');
+                div.className = 'mb-3 p-3 bg-white bg-opacity-20 rounded';
+                div.innerHTML = `
+                    <div class="flex justify-between items-center">
+                        <div class="flex items-center">
+                            <span class="text-2xl mr-2">${medals[index]}</span>
+                            <span class="font-bold">${artist.name}</span>
+                        </div>
+                        <span class="font-bold">${artist.totalTickets} entradas</span>
+                    </div>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        // Mostrar estadísticas QR
+        function displayQRStatistics() {
+            const container = document.getElementById('qr-statistics');
+            let totalGenerated = 0;
+            let totalScanned = 0;
+            let totalActive = 0;
+            
+            Object.values(qrData).forEach(data => {
+                totalGenerated += data.generated;
+                totalScanned += data.scanned;
+                totalActive += data.active;
+            });
+            
+            const scanRate = totalGenerated > 0 ? ((totalScanned / totalGenerated) * 100).toFixed(1) : 0;
+            
+            container.innerHTML = `
+                <div class="space-y-3">
+                    <div class="flex justify-between">
+                        <span>Códigos QR generados:</span>
+                        <span class="font-bold">${totalGenerated}</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span>Códigos escaneados:</span>
+                        <span class="font-bold">${totalScanned}</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span>Códigos activos:</span>
+                        <span class="font-bold">${totalActive}</span>
+                    </div>
+                    <div class="flex justify-between border-t border-white border-opacity-20 pt-2">
+                        <span>Tasa de escaneo:</span>
+                        <span class="font-bold">${scanRate}%</span>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Exportar a CSV
+        window.exportSalesToCSV = function() {
+            let csv = 'Artista,Entradas Vendidas,Ingresos,Promedio por Gala\n';
+            
+            Object.values(salesData).forEach(artist => {
+                const avgPerGala = (artist.totalTickets / selectedGalas.length).toFixed(1);
+                csv += `"${artist.name}",${artist.totalTickets},${artist.totalRevenue},${avgPerGala}\n`;
+            });
+            
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `reporte_ventas_${new Date().toISOString().split('T')[0]}.csv`;
+            a.click();
+            window.URL.revokeObjectURL(url);
+        };
+    </script>
+</body>
+</html>

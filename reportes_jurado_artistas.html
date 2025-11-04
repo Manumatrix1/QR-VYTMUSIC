@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reportes del Jurado - VYTMUSIC</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#8B5CF6',
+                        secondary: '#06B6D4'
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <!-- Iconos -->
+    <link rel="icon" type="image/png" sizes="512x512" href="imagenes/logo-512x512.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="imagenes/logo-192x192.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="imagenes/logo-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="imagenes/logo-16x16.png">
+    
+    <style>
+        .card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 15px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+            color: white;
+        }
+        
+        .artist-card {
+            background: linear-gradient(135deg, #8B5CF6 0%, #06B6D4 100%);
+            border-radius: 15px;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            border: 3px solid transparent;
+        }
+        
+        .artist-card:hover {
+            transform: translateY(-10px);
+            box-shadow: 0 20px 40px rgba(139, 92, 246, 0.3);
+            border-color: #ffffff;
+        }
+        
+        .loading-spinner {
+            border: 4px solid #f3f4f6;
+            border-top: 4px solid #8B5CF6;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .watermark {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            opacity: 0.1;
+            font-size: 3rem;
+            color: white;
+            pointer-events: none;
+            z-index: 0;
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 min-h-screen p-4">
+    <div class="watermark">VYTMUSIC</div>
+    
+    <div class="container mx-auto max-w-6xl relative z-10">
+        <!-- Header -->
+        <div class="card p-8 mb-8 text-center">
+            <h1 class="text-5xl font-bold mb-4">🎭 REPORTES DEL JURADO</h1>
+            <p class="text-xl opacity-90 mb-2">Selecciona tu nombre para ver tu evaluación detallada</p>
+            <p class="text-lg opacity-75">Feedback personalizado de todos los jurados</p>
+        </div>
+
+        <!-- Selector de Evento -->
+        <div class="card p-6 mb-8">
+            <h2 class="text-2xl font-bold mb-4 text-center">📅 Selecciona el Evento</h2>
+            <div class="max-w-md mx-auto">
+                <select id="event-selector" class="w-full p-4 rounded-lg bg-white text-black text-lg font-semibold">
+                    <option value="">Cargando eventos...</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Loading -->
+        <div id="loading-section" class="text-center py-8" style="display: none;">
+            <div class="loading-spinner mx-auto mb-4"></div>
+            <p class="text-xl text-white">Cargando artistas...</p>
+        </div>
+
+        <!-- Lista de Artistas -->
+        <div id="artists-section" style="display: none;">
+            <div class="card p-6 mb-4">
+                <h2 class="text-2xl font-bold text-center mb-4">🎤 Artistas Participantes</h2>
+                <p class="text-center opacity-90">Haz clic en tu nombre para ver tu reporte del jurado</p>
+            </div>
+            
+            <div id="artists-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <!-- Los artistas se cargarán aquí dinámicamente -->
+            </div>
+        </div>
+
+        <!-- Mensaje de Error -->
+        <div id="error-section" style="display: none;" class="card p-8 text-center">
+            <div class="text-6xl mb-4">😞</div>
+            <h2 class="text-2xl font-bold mb-4">No se encontraron artistas</h2>
+            <p class="text-lg opacity-90" id="error-message">Selecciona un evento para ver los artistas participantes.</p>
+        </div>
+
+        <!-- Footer -->
+        <div class="card p-6 mt-8 text-center opacity-75">
+            <p class="text-sm">
+                💡 <strong>¿Tienes dudas sobre tu evaluación?</strong><br>
+                Contacta al organizador del evento para más información
+            </p>
+            <p class="text-xs mt-2 opacity-60">
+                Sistema VYTMUSIC © 2025 - Reporte generado el <span id="current-date"></span>
+            </p>
+        </div>
+    </div>
+
+    <!-- Firebase -->
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
+        import { getFirestore, collection, getDocs, doc, getDoc } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+        
+        // Configuración de Firebase
+        const firebaseConfig = {
+            apiKey: "AIzaSyDUKQ0F1PJ8v2SudfKyQvHK8G7OL-sLwb0",
+            authDomain: "vyt-music.firebaseapp.com",
+            projectId: "vyt-music",
+            storageBucket: "vyt-music.appspot.com",
+            messagingSenderId: "147059879896",
+            appId: "1:147059879896:web:e3f0b11f38fdbc6b997fef"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        
+        // Variables globales
+        let allEvents = [];
+        let currentEventId = null;
+
+        // Cargar eventos al iniciar
+        window.addEventListener('load', () => {
+            document.getElementById('current-date').textContent = new Date().toLocaleDateString();
+            loadEvents();
+        });
+
+        // Cargar eventos disponibles
+        async function loadEvents() {
+            try {
+                console.log('🔍 Cargando eventos...');
+                const eventsSnapshot = await getDocs(collection(db, 'events'));
+                allEvents = [];
+                
+                eventsSnapshot.forEach(doc => {
+                    const eventData = doc.data();
+                    allEvents.push({
+                        id: doc.id,
+                        name: eventData.name || doc.id,
+                        date: eventData.date || ''
+                    });
+                });
+
+                console.log('✅ Eventos cargados:', allEvents.length);
+                populateEventSelector();
+            } catch (error) {
+                console.error('❌ Error cargando eventos:', error);
+                showError('Error al cargar eventos. Por favor, recarga la página.');
+            }
+        }
+
+        // Poblar selector de eventos
+        function populateEventSelector() {
+            const selector = document.getElementById('event-selector');
+            selector.innerHTML = '<option value="">Selecciona un evento</option>';
+            
+            allEvents.forEach(event => {
+                const option = document.createElement('option');
+                option.value = event.id;
+                option.textContent = `${event.name} ${event.date ? '(' + event.date + ')' : ''}`;
+                selector.appendChild(option);
+            });
+
+            // Auto-seleccionar si hay parámetro en URL
+            const urlParams = new URLSearchParams(window.location.search);
+            const eventId = urlParams.get('eventId') || urlParams.get('event');
+            if (eventId && allEvents.find(e => e.id === eventId)) {
+                selector.value = eventId;
+                loadArtistsForEvent(eventId);
+            }
+        }
+
+        // Manejar cambio de evento
+        document.getElementById('event-selector').addEventListener('change', function() {
+            const eventId = this.value;
+            if (!eventId) {
+                hideAllSections();
+                return;
+            }
+            
+            currentEventId = eventId;
+            loadArtistsForEvent(eventId);
+        });
+
+        // Cargar artistas para un evento
+        async function loadArtistsForEvent(eventId) {
+            showLoading();
+            
+            try {
+                console.log('🎤 Cargando artistas para evento:', eventId);
+                
+                // Cargar artistas desde participants
+                const artistsSnapshot = await getDocs(collection(db, `events/${eventId}/participants`));
+                const artists = [];
+                
+                artistsSnapshot.forEach(doc => {
+                    const artistData = doc.data();
+                    artists.push({
+                        id: doc.id,
+                        name: artistData.name || 'Artista sin nombre',
+                        hasEvaluations: false // Lo verificaremos después
+                    });
+                });
+
+                console.log('🎤 Artistas encontrados:', artists.length);
+                
+                if (artists.length === 0) {
+                    showError('No se encontraron artistas para este evento.');
+                    return;
+                }
+
+                // Verificar cuáles artistas tienen evaluaciones
+                await checkArtistEvaluations(eventId, artists);
+                
+                // Mostrar artistas
+                displayArtists(artists, eventId);
+                
+            } catch (error) {
+                console.error('❌ Error cargando artistas:', error);
+                showError('Error al cargar artistas. Por favor, intenta de nuevo.');
+            }
+        }
+
+        // Verificar si los artistas tienen evaluaciones
+        async function checkArtistEvaluations(eventId, artists) {
+            const collections = ['jury_evaluations', 'jury_votes', 'votes'];
+            
+            for (const artist of artists) {
+                for (const collectionName of collections) {
+                    try {
+                        const evaluationsSnapshot = await getDocs(collection(db, `events/${eventId}/${collectionName}`));
+                        
+                        evaluationsSnapshot.forEach(doc => {
+                            const evaluation = doc.data();
+                            if (evaluation.artistId === artist.id) {
+                                artist.hasEvaluations = true;
+                            }
+                        });
+                        
+                        if (artist.hasEvaluations) break; // Si ya encontró evaluaciones, no sigue buscando
+                    } catch (error) {
+                        console.warn(`⚠️ Error verificando ${collectionName} para ${artist.name}:`, error);
+                    }
+                }
+            }
+        }
+
+        // Mostrar artistas
+        function displayArtists(artists, eventId) {
+            const grid = document.getElementById('artists-grid');
+            grid.innerHTML = '';
+            
+            // Ordenar artistas: primero los que tienen evaluaciones
+            artists.sort((a, b) => {
+                if (a.hasEvaluations && !b.hasEvaluations) return -1;
+                if (!a.hasEvaluations && b.hasEvaluations) return 1;
+                return a.name.localeCompare(b.name);
+            });
+            
+            artists.forEach(artist => {
+                const artistCard = document.createElement('div');
+                artistCard.className = `artist-card p-6 text-white text-center ${!artist.hasEvaluations ? 'opacity-60' : ''}`;
+                
+                artistCard.innerHTML = `
+                    <div class="text-4xl mb-4">🎤</div>
+                    <h3 class="text-xl font-bold mb-2">${artist.name}</h3>
+                    <p class="text-sm opacity-90 mb-4">
+                        ${artist.hasEvaluations ? 
+                            '✅ Evaluación disponible' : 
+                            '⏳ Sin evaluaciones aún'
+                        }
+                    </p>
+                    <div class="text-sm opacity-75">
+                        ${artist.hasEvaluations ? 
+                            'Haz clic para ver tu reporte' : 
+                            'Las evaluaciones aparecerán pronto'
+                        }
+                    </div>
+                `;
+                
+                if (artist.hasEvaluations) {
+                    artistCard.style.cursor = 'pointer';
+                    artistCard.addEventListener('click', () => {
+                        // Ir al reporte individual del artista
+                        const reportUrl = `reporte_jurado_individual.html?eventId=${eventId}&artistId=${artist.id}&artistName=${encodeURIComponent(artist.name)}`;
+                        window.location.href = reportUrl;
+                    });
+                } else {
+                    artistCard.style.cursor = 'not-allowed';
+                }
+                
+                grid.appendChild(artistCard);
+            });
+            
+            showArtists();
+        }
+
+        // Funciones de UI
+        function showLoading() {
+            hideAllSections();
+            document.getElementById('loading-section').style.display = 'block';
+        }
+
+        function showArtists() {
+            hideAllSections();
+            document.getElementById('artists-section').style.display = 'block';
+        }
+
+        function showError(message) {
+            hideAllSections();
+            document.getElementById('error-message').textContent = message;
+            document.getElementById('error-section').style.display = 'block';
+        }
+
+        function hideAllSections() {
+            document.getElementById('loading-section').style.display = 'none';
+            document.getElementById('artists-section').style.display = 'none';
+            document.getElementById('error-section').style.display = 'none';
+        }
+    </script>
+</body>
+</html>

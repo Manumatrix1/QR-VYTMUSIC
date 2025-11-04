@@ -1,0 +1,869 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reporte Administrativo Completo - VYTMUSIC</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#8B5CF6',
+                        secondary: '#06B6D4'
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- Iconos -->
+    <link rel="icon" type="image/png" sizes="512x512" href="imagenes/logo-512x512.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="imagenes/logo-192x192.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="imagenes/logo-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="imagenes/logo-16x16.png">
+    
+    <style>
+        .card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 15px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+            color: white;
+        }
+        
+        .ranking-card {
+            background: linear-gradient(135deg, #8B5CF6 0%, #06B6D4 100%);
+            border-radius: 10px;
+            transition: all 0.3s ease;
+        }
+        
+        .ranking-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 30px rgba(139, 92, 246, 0.3);
+        }
+        
+        .gold { border-left: 6px solid #FFD700; }
+        .silver { border-left: 6px solid #C0C0C0; }
+        .bronze { border-left: 6px solid #CD7F32; }
+        .regular { border-left: 6px solid #6B7280; }
+        
+        .loading-spinner {
+            border: 4px solid #f3f4f6;
+            border-top: 4px solid #8B5CF6;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .score-display {
+            font-size: 2.5rem;
+            font-weight: bold;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        @media print {
+            .no-print { display: none !important; }
+            .card { box-shadow: none; border: 1px solid #ccc; }
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 min-h-screen p-4">
+    <div class="container mx-auto max-w-6xl">
+        <!-- Header -->
+        <div class="card p-8 mb-8 text-center">
+            <h1 class="text-4xl font-bold mb-2">📊 REPORTE ADMINISTRATIVO COMPLETO</h1>
+            <p class="text-xl opacity-90">Análisis completo para determinar ganadores del certamen</p>
+        </div>
+
+        <!-- Controles -->
+        <div class="card p-6 mb-8 no-print">
+            <h2 class="text-2xl font-bold mb-4">🎛️ Configuración del Reporte</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- Selector de Galas -->
+                <div>
+                    <label class="block mb-2 font-bold">Seleccionar Galas:</label>
+                    <div id="galas-selector" class="space-y-2 max-h-40 overflow-y-auto p-3 bg-white bg-opacity-20 rounded">
+                        <div class="text-center opacity-75">Cargando galas disponibles...</div>
+                    </div>
+                    <div class="mt-2">
+                        <button onclick="selectAllGalas()" class="btn bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded mr-2">
+                            ✅ Seleccionar Todas
+                        </button>
+                        <button onclick="clearGalaSelection()" class="btn bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded">
+                            ❌ Limpiar
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Opciones de Reporte -->
+                <div>
+                    <label class="block mb-2 font-bold">Opciones de Análisis:</label>
+                    <div class="space-y-3">
+                        <label class="flex items-center">
+                            <input type="checkbox" id="include-secret" checked class="mr-2">
+                            <span>Incluir voto secreto en cálculos</span>
+                        </label>
+                        <label class="flex items-center">
+                            <input type="checkbox" id="show-details" checked class="mr-2">
+                            <span>Mostrar detalles por gala</span>
+                        </label>
+                        <label class="flex items-center">
+                            <input type="checkbox" id="show-public-votes" checked class="mr-2">
+                            <span>Incluir análisis de votos del público</span>
+                        </label>
+                    </div>
+                    <button onclick="generateReport()" class="btn bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded font-bold mt-4">
+                        📊 Generar Reporte
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Loading -->
+        <div id="loading-section" class="text-center py-8" style="display: none;">
+            <div class="card p-8">
+                <div class="loading-spinner mx-auto mb-4"></div>
+                <h2 class="text-2xl font-bold mb-2">Procesando datos...</h2>
+                <p class="opacity-90">Analizando todas las evaluaciones</p>
+            </div>
+        </div>
+
+        <!-- Resultados -->
+        <div id="results-section" style="display: none;">
+            <!-- Resumen Ejecutivo -->
+            <div class="card p-6 mb-6">
+                <h2 class="text-2xl font-bold mb-4 text-center">🏆 RESUMEN EJECUTIVO</h2>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 text-center">
+                    <div>
+                        <h3 class="text-lg font-bold mb-2">🥇 Ganador por Jurado</h3>
+                        <div id="winner-jury" class="text-xl font-bold"></div>
+                        <div id="winner-jury-score" class="text-sm opacity-75"></div>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-bold mb-2">❤️ Favorito del Público</h3>
+                        <div id="winner-public" class="text-xl font-bold"></div>
+                        <div id="winner-public-score" class="text-sm opacity-75"></div>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-bold mb-2">💰 Más Entradas Vendidas</h3>
+                        <div id="winner-sales" class="text-xl font-bold"></div>
+                        <div id="winner-sales-score" class="text-sm opacity-75"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Ranking del Jurado -->
+            <div class="card p-6 mb-6">
+                <h2 class="text-2xl font-bold mb-4 text-center">🎭 RANKING FINAL DEL JURADO</h2>
+                <p class="text-center opacity-90 mb-4">Incluye evaluaciones de todos los tipos de jurado (incluyendo voto secreto)</p>
+                <div id="jury-ranking" class="space-y-4">
+                    <!-- Se llenará dinámicamente -->
+                </div>
+            </div>
+
+            <!-- Ranking del Público -->
+            <div id="public-ranking-section" class="card p-6 mb-6">
+                <h2 class="text-2xl font-bold mb-4 text-center">❤️ RANKING DEL PÚBLICO</h2>
+                <div id="public-ranking" class="space-y-4">
+                    <!-- Se llenará dinámicamente -->
+                </div>
+            </div>
+
+            <!-- Ranking de Ventas -->
+            <div id="sales-ranking-section" class="card p-6 mb-6">
+                <h2 class="text-2xl font-bold mb-4 text-center">💰 RANKING DE VENTAS</h2>
+                <div id="sales-ranking" class="space-y-4">
+                    <!-- Se llenará dinámicamente -->
+                </div>
+            </div>
+
+            <!-- Gráficos Comparativos -->
+            <div class="card p-6 mb-6">
+                <h2 class="text-2xl font-bold mb-4 text-center">📈 ANÁLISIS COMPARATIVO</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="bg-white bg-opacity-90 p-4 rounded">
+                        <canvas id="juryChart" width="400" height="300"></canvas>
+                    </div>
+                    <div class="bg-white bg-opacity-90 p-4 rounded">
+                        <canvas id="comparisonChart" width="400" height="300"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Detalles por Gala -->
+            <div id="gala-details-section" class="card p-6 mb-6">
+                <h2 class="text-2xl font-bold mb-4 text-center">📅 DETALLES POR GALA</h2>
+                <div id="gala-details">
+                    <!-- Se llenará dinámicamente -->
+                </div>
+            </div>
+
+            <!-- Acciones -->
+            <div class="card p-6 text-center no-print">
+                <h3 class="text-xl font-bold mb-4">📤 Exportar Reporte</h3>
+                <div class="flex flex-wrap justify-center gap-4">
+                    <button onclick="window.print()" class="btn bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded font-bold">
+                        🖨️ Imprimir/PDF
+                    </button>
+                    <button onclick="exportToCSV()" class="btn bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded font-bold">
+                        📊 Exportar CSV
+                    </button>
+                    <button onclick="shareReport()" class="btn bg-purple-600 hover:bg-purple-700 text-white px-6 py-3 rounded font-bold">
+                        📤 Compartir
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase -->
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
+        import { getFirestore, collection, getDocs, doc, getDoc } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+        
+        // Configuración de Firebase
+        const firebaseConfig = {
+            apiKey: "AIzaSyDUKQ0F1PJ8v2SudfKyQvHK8G7OL-sLwb0",
+            authDomain: "vyt-music.firebaseapp.com",
+            projectId: "vyt-music",
+            storageBucket: "vyt-music.appspot.com",
+            messagingSenderId: "147059879896",
+            appId: "1:147059879896:web:e3f0b11f38fdbc6b997fef"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        
+        // Variables globales
+        let allEvents = [];
+        let selectedGalas = [];
+        let allJuryData = {};
+        let allPublicData = {};
+        let allSalesData = {};
+
+        // Cargar datos al iniciar
+        window.addEventListener('load', loadAvailableGalas);
+
+        // Cargar galas disponibles
+        async function loadAvailableGalas() {
+            try {
+                console.log('🔍 Cargando galas disponibles...');
+                const eventsSnapshot = await getDocs(collection(db, 'events'));
+                allEvents = [];
+                
+                eventsSnapshot.forEach(doc => {
+                    const eventData = doc.data();
+                    allEvents.push({
+                        id: doc.id,
+                        name: eventData.name || doc.id,
+                        date: eventData.date || ''
+                    });
+                });
+
+                console.log('✅ Galas cargadas:', allEvents.length);
+                displayGalasSelector();
+            } catch (error) {
+                console.error('❌ Error cargando galas:', error);
+                document.getElementById('galas-selector').innerHTML = 
+                    '<div class="text-center text-red-300">Error cargando galas</div>';
+            }
+        }
+
+        // Mostrar selector de galas
+        function displayGalasSelector() {
+            const container = document.getElementById('galas-selector');
+            container.innerHTML = '';
+            
+            if (allEvents.length === 0) {
+                container.innerHTML = '<div class="text-center opacity-75">No se encontraron galas</div>';
+                return;
+            }
+            
+            allEvents.forEach(event => {
+                const label = document.createElement('label');
+                label.className = 'flex items-center cursor-pointer p-2 hover:bg-white hover:bg-opacity-10 rounded';
+                label.innerHTML = `
+                    <input type="checkbox" value="${event.id}" class="gala-checkbox mr-3">
+                    <span>${event.name} ${event.date ? '(' + event.date + ')' : ''}</span>
+                `;
+                container.appendChild(label);
+            });
+        }
+
+        // Seleccionar todas las galas
+        window.selectAllGalas = function() {
+            const checkboxes = document.querySelectorAll('.gala-checkbox');
+            checkboxes.forEach(cb => cb.checked = true);
+        };
+
+        // Limpiar selección
+        window.clearGalaSelection = function() {
+            const checkboxes = document.querySelectorAll('.gala-checkbox');
+            checkboxes.forEach(cb => cb.checked = false);
+        };
+
+        // Generar reporte
+        window.generateReport = async function() {
+            // Obtener galas seleccionadas
+            const checkboxes = document.querySelectorAll('.gala-checkbox:checked');
+            selectedGalas = Array.from(checkboxes).map(cb => cb.value);
+            
+            if (selectedGalas.length === 0) {
+                alert('❌ Por favor selecciona al menos una gala');
+                return;
+            }
+            
+            console.log('📊 Generando reporte para galas:', selectedGalas);
+            
+            // Mostrar loading
+            document.getElementById('results-section').style.display = 'none';
+            document.getElementById('loading-section').style.display = 'block';
+            
+            try {
+                // Cargar todos los datos
+                await loadAllData();
+                
+                // Procesar y mostrar resultados
+                processAndDisplayResults();
+                
+                // Mostrar resultados
+                document.getElementById('loading-section').style.display = 'none';
+                document.getElementById('results-section').style.display = 'block';
+                
+            } catch (error) {
+                console.error('❌ Error generando reporte:', error);
+                alert('Error al generar el reporte: ' + error.message);
+                document.getElementById('loading-section').style.display = 'none';
+            }
+        };
+
+        // Cargar todos los datos necesarios
+        async function loadAllData() {
+            allJuryData = {};
+            allPublicData = {};
+            allSalesData = {};
+            
+            for (const galaId of selectedGalas) {
+                console.log(`🔍 Procesando gala: ${galaId}`);
+                
+                // Cargar datos del jurado
+                await loadJuryData(galaId);
+                
+                // Cargar datos del público
+                await loadPublicData(galaId);
+                
+                // Cargar datos de ventas
+                await loadSalesData(galaId);
+            }
+        }
+
+        // Cargar datos del jurado para una gala
+        async function loadJuryData(galaId) {
+            const collections = ['jury_evaluations', 'jury_votes', 'votes'];
+            
+            for (const collectionName of collections) {
+                try {
+                    const snapshot = await getDocs(collection(db, `events/${galaId}/${collectionName}`));
+                    
+                    snapshot.forEach(doc => {
+                        const data = doc.data();
+                        const artistId = data.artistId;
+                        const artistName = data.artistName || 'Artista sin nombre';
+                        
+                        if (!allJuryData[artistId]) {
+                            allJuryData[artistId] = {
+                                name: artistName,
+                                galas: {},
+                                totalScore: 0,
+                                totalEvaluations: 0,
+                                averageScore: 0
+                            };
+                        }
+                        
+                        if (!allJuryData[artistId].galas[galaId]) {
+                            allJuryData[artistId].galas[galaId] = {
+                                scores: [],
+                                evaluations: []
+                            };
+                        }
+                        
+                        const score = data.score || data.average || 0;
+                        allJuryData[artistId].galas[galaId].scores.push(score);
+                        allJuryData[artistId].galas[galaId].evaluations.push(data);
+                        
+                        allJuryData[artistId].totalScore += score;
+                        allJuryData[artistId].totalEvaluations++;
+                    });
+                } catch (error) {
+                    console.warn(`⚠️ Error cargando ${collectionName} para gala ${galaId}:`, error);
+                }
+            }
+        }
+
+        // Cargar datos del público para una gala
+        async function loadPublicData(galaId) {
+            try {
+                const snapshot = await getDocs(collection(db, `events/${galaId}/votes`));
+                
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+                    
+                    // Solo contar votos del público (no del jurado)
+                    if (data.voterName && !data.jurorId && !data.jurorName) {
+                        const artistId = data.artistId;
+                        const artistName = data.artistName || 'Artista sin nombre';
+                        
+                        if (!allPublicData[artistId]) {
+                            allPublicData[artistId] = {
+                                name: artistName,
+                                galas: {},
+                                totalVotes: 0,
+                                totalPoints: 0
+                            };
+                        }
+                        
+                        if (!allPublicData[artistId].galas[galaId]) {
+                            allPublicData[artistId].galas[galaId] = {
+                                votes: 0,
+                                points: 0
+                            };
+                        }
+                        
+                        allPublicData[artistId].galas[galaId].votes++;
+                        allPublicData[artistId].galas[galaId].points += data.score || 1;
+                        
+                        allPublicData[artistId].totalVotes++;
+                        allPublicData[artistId].totalPoints += data.score || 1;
+                    }
+                });
+            } catch (error) {
+                console.warn(`⚠️ Error cargando votos públicos para gala ${galaId}:`, error);
+            }
+        }
+
+        // Cargar datos de ventas para una gala
+        async function loadSalesData(galaId) {
+            try {
+                // Aquí deberías cargar datos de ventas desde donde los tengas almacenados
+                // Por ahora, vamos a simular datos basados en entradas
+                const snapshot = await getDocs(collection(db, `events/${galaId}/entries`));
+                
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+                    const artistId = data.artistId || data.artistReference;
+                    
+                    if (artistId) {
+                        if (!allSalesData[artistId]) {
+                            allSalesData[artistId] = {
+                                name: data.artistName || 'Artista sin nombre',
+                                galas: {},
+                                totalSales: 0
+                            };
+                        }
+                        
+                        if (!allSalesData[artistId].galas[galaId]) {
+                            allSalesData[artistId].galas[galaId] = 0;
+                        }
+                        
+                        allSalesData[artistId].galas[galaId]++;
+                        allSalesData[artistId].totalSales++;
+                    }
+                });
+            } catch (error) {
+                console.warn(`⚠️ Error cargando ventas para gala ${galaId}:`, error);
+            }
+        }
+
+        // Procesar y mostrar resultados
+        function processAndDisplayResults() {
+            // Calcular promedios finales
+            Object.values(allJuryData).forEach(artist => {
+                artist.averageScore = artist.totalEvaluations > 0 ? 
+                    artist.totalScore / artist.totalEvaluations : 0;
+            });
+            
+            // Mostrar resumen ejecutivo
+            displayExecutiveSummary();
+            
+            // Mostrar rankings
+            displayJuryRanking();
+            
+            if (document.getElementById('show-public-votes').checked) {
+                displayPublicRanking();
+            }
+            
+            displaySalesRanking();
+            
+            // Mostrar gráficos
+            displayCharts();
+            
+            // Mostrar detalles por gala si está activado
+            if (document.getElementById('show-details').checked) {
+                displayGalaDetails();
+            }
+        }
+
+        // Mostrar resumen ejecutivo
+        function displayExecutiveSummary() {
+            // Ganador por jurado
+            const juryWinner = Object.values(allJuryData)
+                .sort((a, b) => b.averageScore - a.averageScore)[0];
+            
+            if (juryWinner) {
+                document.getElementById('winner-jury').textContent = juryWinner.name;
+                document.getElementById('winner-jury-score').textContent = 
+                    `${juryWinner.averageScore.toFixed(1)} puntos promedio`;
+            }
+            
+            // Favorito del público
+            const publicWinner = Object.values(allPublicData)
+                .sort((a, b) => b.totalVotes - a.totalVotes)[0];
+            
+            if (publicWinner) {
+                document.getElementById('winner-public').textContent = publicWinner.name;
+                document.getElementById('winner-public-score').textContent = 
+                    `${publicWinner.totalVotes} votos`;
+            }
+            
+            // Más ventas
+            const salesWinner = Object.values(allSalesData)
+                .sort((a, b) => b.totalSales - a.totalSales)[0];
+            
+            if (salesWinner) {
+                document.getElementById('winner-sales').textContent = salesWinner.name;
+                document.getElementById('winner-sales-score').textContent = 
+                    `${salesWinner.totalSales} entradas`;
+            }
+        }
+
+        // Mostrar ranking del jurado
+        function displayJuryRanking() {
+            const container = document.getElementById('jury-ranking');
+            container.innerHTML = '';
+            
+            const sortedArtists = Object.values(allJuryData)
+                .sort((a, b) => b.averageScore - a.averageScore);
+            
+            sortedArtists.forEach((artist, index) => {
+                const rankClass = index === 0 ? 'gold' : index === 1 ? 'silver' : index === 2 ? 'bronze' : 'regular';
+                const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '';
+                
+                const card = document.createElement('div');
+                card.className = `ranking-card ${rankClass} p-4 text-white`;
+                card.innerHTML = `
+                    <div class="flex justify-between items-center">
+                        <div class="flex items-center">
+                            <div class="text-2xl font-bold mr-4">${medal} #${index + 1}</div>
+                            <div>
+                                <h3 class="text-xl font-bold">${artist.name}</h3>
+                                <p class="text-sm opacity-75">${artist.totalEvaluations} evaluaciones</p>
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <div class="score-display">${artist.averageScore.toFixed(1)}</div>
+                            <div class="text-sm opacity-75">puntos promedio</div>
+                        </div>
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        // Mostrar ranking del público
+        function displayPublicRanking() {
+            const container = document.getElementById('public-ranking');
+            container.innerHTML = '';
+            
+            const sortedArtists = Object.values(allPublicData)
+                .sort((a, b) => b.totalVotes - a.totalVotes);
+            
+            sortedArtists.forEach((artist, index) => {
+                const rankClass = index === 0 ? 'gold' : index === 1 ? 'silver' : index === 2 ? 'bronze' : 'regular';
+                const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '';
+                
+                const card = document.createElement('div');
+                card.className = `ranking-card ${rankClass} p-4 text-white`;
+                card.innerHTML = `
+                    <div class="flex justify-between items-center">
+                        <div class="flex items-center">
+                            <div class="text-2xl font-bold mr-4">${medal} #${index + 1}</div>
+                            <div>
+                                <h3 class="text-xl font-bold">${artist.name}</h3>
+                                <p class="text-sm opacity-75">${artist.totalPoints} puntos totales</p>
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <div class="score-display">${artist.totalVotes}</div>
+                            <div class="text-sm opacity-75">votos</div>
+                        </div>
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        // Mostrar ranking de ventas
+        function displaySalesRanking() {
+            const container = document.getElementById('sales-ranking');
+            container.innerHTML = '';
+            
+            const sortedArtists = Object.values(allSalesData)
+                .sort((a, b) => b.totalSales - a.totalSales);
+            
+            if (sortedArtists.length === 0) {
+                container.innerHTML = '<div class="text-center opacity-75">No hay datos de ventas disponibles</div>';
+                return;
+            }
+            
+            sortedArtists.forEach((artist, index) => {
+                const rankClass = index === 0 ? 'gold' : index === 1 ? 'silver' : index === 2 ? 'bronze' : 'regular';
+                const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '';
+                
+                const card = document.createElement('div');
+                card.className = `ranking-card ${rankClass} p-4 text-white`;
+                card.innerHTML = `
+                    <div class="flex justify-between items-center">
+                        <div class="flex items-center">
+                            <div class="text-2xl font-bold mr-4">${medal} #${index + 1}</div>
+                            <div>
+                                <h3 class="text-xl font-bold">${artist.name}</h3>
+                                <p class="text-sm opacity-75">Ventas por gala</p>
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <div class="score-display">${artist.totalSales}</div>
+                            <div class="text-sm opacity-75">entradas</div>
+                        </div>
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        // Mostrar gráficos
+        function displayCharts() {
+            // Gráfico del jurado
+            const juryCtx = document.getElementById('juryChart').getContext('2d');
+            const topJuryArtists = Object.values(allJuryData)
+                .sort((a, b) => b.averageScore - a.averageScore)
+                .slice(0, 10);
+            
+            new Chart(juryCtx, {
+                type: 'bar',
+                data: {
+                    labels: topJuryArtists.map(a => a.name),
+                    datasets: [{
+                        label: 'Puntuación Promedio del Jurado',
+                        data: topJuryArtists.map(a => a.averageScore),
+                        backgroundColor: 'rgba(139, 92, 246, 0.8)',
+                        borderColor: 'rgba(139, 92, 246, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'Top 10 - Evaluación del Jurado'
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 100
+                        }
+                    }
+                }
+            });
+            
+            // Gráfico comparativo
+            const compCtx = document.getElementById('comparisonChart').getContext('2d');
+            const artistsForComparison = Object.keys(allJuryData).slice(0, 5);
+            
+            new Chart(compCtx, {
+                type: 'radar',
+                data: {
+                    labels: ['Jurado', 'Público', 'Ventas'],
+                    datasets: artistsForComparison.map((artistId, index) => {
+                        const artist = allJuryData[artistId];
+                        const publicData = allPublicData[artistId] || { totalVotes: 0 };
+                        const salesData = allSalesData[artistId] || { totalSales: 0 };
+                        
+                        const colors = [
+                            'rgba(139, 92, 246, 0.6)',
+                            'rgba(6, 182, 212, 0.6)',
+                            'rgba(34, 197, 94, 0.6)',
+                            'rgba(245, 158, 11, 0.6)',
+                            'rgba(239, 68, 68, 0.6)'
+                        ];
+                        
+                        return {
+                            label: artist.name,
+                            data: [
+                                artist.averageScore,
+                                Math.min(publicData.totalVotes * 10, 100), // Normalizar a 100
+                                Math.min(salesData.totalSales * 20, 100)   // Normalizar a 100
+                            ],
+                            backgroundColor: colors[index],
+                            borderColor: colors[index].replace('0.6', '1'),
+                            borderWidth: 2
+                        };
+                    })
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'Comparación Multi-criterio'
+                        }
+                    },
+                    scales: {
+                        r: {
+                            beginAtZero: true,
+                            max: 100
+                        }
+                    }
+                }
+            });
+        }
+
+        // Mostrar detalles por gala
+        function displayGalaDetails() {
+            const container = document.getElementById('gala-details');
+            container.innerHTML = '';
+            
+            selectedGalas.forEach(galaId => {
+                const gala = allEvents.find(e => e.id === galaId);
+                
+                const galaCard = document.createElement('div');
+                galaCard.className = 'bg-white bg-opacity-10 p-4 rounded-lg mb-4';
+                galaCard.innerHTML = `
+                    <h3 class="text-xl font-bold mb-3">${gala?.name || galaId}</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                        <div>
+                            <h4 class="font-bold mb-2">🎭 Evaluaciones del Jurado</h4>
+                            <div id="gala-jury-${galaId}"></div>
+                        </div>
+                        <div>
+                            <h4 class="font-bold mb-2">❤️ Votos del Público</h4>
+                            <div id="gala-public-${galaId}"></div>
+                        </div>
+                        <div>
+                            <h4 class="font-bold mb-2">💰 Ventas de Entradas</h4>
+                            <div id="gala-sales-${galaId}"></div>
+                        </div>
+                    </div>
+                `;
+                container.appendChild(galaCard);
+                
+                // Llenar datos de cada sección
+                fillGalaJuryDetails(galaId);
+                fillGalaPublicDetails(galaId);
+                fillGalaSalesDetails(galaId);
+            });
+        }
+
+        // Llenar detalles del jurado por gala
+        function fillGalaJuryDetails(galaId) {
+            const container = document.getElementById(`gala-jury-${galaId}`);
+            let juryCount = 0;
+            
+            Object.values(allJuryData).forEach(artist => {
+                if (artist.galas[galaId]) {
+                    juryCount += artist.galas[galaId].evaluations.length;
+                }
+            });
+            
+            container.innerHTML = `<p>${juryCount} evaluaciones registradas</p>`;
+        }
+
+        // Llenar detalles del público por gala
+        function fillGalaPublicDetails(galaId) {
+            const container = document.getElementById(`gala-public-${galaId}`);
+            let publicCount = 0;
+            
+            Object.values(allPublicData).forEach(artist => {
+                if (artist.galas[galaId]) {
+                    publicCount += artist.galas[galaId].votes;
+                }
+            });
+            
+            container.innerHTML = `<p>${publicCount} votos del público</p>`;
+        }
+
+        // Llenar detalles de ventas por gala
+        function fillGalaSalesDetails(galaId) {
+            const container = document.getElementById(`gala-sales-${galaId}`);
+            let salesCount = 0;
+            
+            Object.values(allSalesData).forEach(artist => {
+                if (artist.galas[galaId]) {
+                    salesCount += artist.galas[galaId];
+                }
+            });
+            
+            container.innerHTML = `<p>${salesCount} entradas vendidas</p>`;
+        }
+
+        // Exportar a CSV
+        window.exportToCSV = function() {
+            let csv = 'Artista,Puntuación Jurado,Votos Público,Entradas Vendidas\n';
+            
+            const allArtistIds = new Set([
+                ...Object.keys(allJuryData),
+                ...Object.keys(allPublicData),
+                ...Object.keys(allSalesData)
+            ]);
+            
+            allArtistIds.forEach(artistId => {
+                const jury = allJuryData[artistId] || { name: 'Desconocido', averageScore: 0 };
+                const publicData = allPublicData[artistId] || { totalVotes: 0 };
+                const sales = allSalesData[artistId] || { totalSales: 0 };
+                
+                csv += `"${jury.name}",${jury.averageScore.toFixed(1)},${publicData.totalVotes},${sales.totalSales}\n`;
+            });
+            
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `reporte_certamen_${new Date().toISOString().split('T')[0]}.csv`;
+            a.click();
+            window.URL.revokeObjectURL(url);
+        };
+
+        // Compartir reporte
+        window.shareReport = function() {
+            const url = window.location.href;
+            
+            if (navigator.share) {
+                navigator.share({
+                    title: 'Reporte Administrativo Completo - VYTMUSIC',
+                    text: 'Análisis completo del certamen con todos los rankings',
+                    url: url
+                });
+            } else {
+                navigator.clipboard.writeText(url).then(() => {
+                    alert('✅ Enlace copiado al portapapeles');
+                }).catch(() => {
+                    prompt('Copia este enlace:', url);
+                });
+            }
+        };
+    </script>
+</body>
+</html>

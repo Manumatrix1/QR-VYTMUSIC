@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mi Reporte del Jurado - VYTMUSIC</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#8B5CF6',
+                        secondary: '#06B6D4'
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <!-- Iconos -->
+    <link rel="icon" type="image/png" sizes="512x512" href="imagenes/logo-512x512.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="imagenes/logo-192x192.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="imagenes/logo-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="imagenes/logo-16x16.png">
+    
+    <style>
+        .card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 15px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+            color: white;
+        }
+        
+        .juror-card {
+            background: linear-gradient(135deg, #8B5CF6 0%, #06B6D4 100%);
+            border-radius: 10px;
+            margin-bottom: 1rem;
+            padding: 1.5rem;
+            border-left: 6px solid #ffffff;
+        }
+        
+        .juror-individual { border-left-color: #10b981; }
+        .juror-grupal { border-left-color: #f59e0b; }
+        .juror-secreto { 
+            border-left-color: #6b7280; 
+            background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
+        }
+        .juror-principal { border-left-color: #ef4444; }
+        .juror-invitado { border-left-color: #8b5cf6; }
+        
+        .score-display {
+            font-size: 2rem;
+            font-weight: bold;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        .loading-spinner {
+            border: 4px solid #f3f4f6;
+            border-top: 4px solid #8B5CF6;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .watermark {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            opacity: 0.1;
+            font-size: 3rem;
+            color: white;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        @media print {
+            .no-print { display: none !important; }
+            .card { box-shadow: none; border: 1px solid #ccc; }
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 min-h-screen p-4">
+    <div class="watermark">VYTMUSIC</div>
+    
+    <div class="container mx-auto max-w-4xl relative z-10">
+        <!-- Loading -->
+        <div id="loading-section" class="text-center py-8">
+            <div class="card p-8">
+                <div class="loading-spinner mx-auto mb-4"></div>
+                <h2 class="text-2xl font-bold mb-2">Cargando tu reporte...</h2>
+                <p class="opacity-90">Obteniendo las evaluaciones del jurado</p>
+            </div>
+        </div>
+
+        <!-- Contenido del Reporte -->
+        <div id="report-content" style="display: none;">
+            <!-- Header del Artista -->
+            <div class="card p-8 mb-6 text-center">
+                <h1 class="text-4xl font-bold mb-2">🎭 TU REPORTE DEL JURADO</h1>
+                <h2 class="text-2xl mb-2" id="artist-name">Nombre del Artista</h2>
+                <p class="text-lg opacity-90" id="event-info">Información del evento</p>
+                
+                <!-- Resumen de Puntuación Total VISIBLE (sin voto secreto) -->
+                <div class="mt-6 bg-white bg-opacity-20 p-6 rounded-lg">
+                    <h3 class="text-xl font-bold mb-2">📊 Tu Puntuación Total Visible</h3>
+                    <div class="score-display" id="total-visible-score">0</div>
+                    <p class="text-sm opacity-75">Suma de evaluaciones públicas del jurado</p>
+                    <p class="text-xs opacity-60 mt-2">* No incluye voto secreto</p>
+                </div>
+            </div>
+
+            <!-- Evaluaciones del Jurado -->
+            <div class="card p-6 mb-6">
+                <h3 class="text-2xl font-bold mb-4 text-center">🎯 Evaluaciones Detalladas</h3>
+                <div id="jury-evaluations">
+                    <!-- Se llenarán dinámicamente -->
+                </div>
+            </div>
+
+            <!-- Resumen de Comentarios -->
+            <div class="card p-6 mb-6" id="comments-summary" style="display: none;">
+                <h3 class="text-2xl font-bold mb-4 text-center">💭 Resumen de Comentarios</h3>
+                <div id="all-comments" class="space-y-4">
+                    <!-- Se llenarán dinámicamente -->
+                </div>
+            </div>
+
+            <!-- Botones de Acción -->
+            <div class="card p-6 mb-6 text-center no-print">
+                <h3 class="text-xl font-bold mb-4">📤 Acciones</h3>
+                <div class="flex flex-wrap justify-center gap-4">
+                    <button onclick="window.print()" class="btn bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded font-bold">
+                        🖨️ Imprimir/PDF
+                    </button>
+                    <button onclick="goBack()" class="btn bg-purple-600 hover:bg-purple-700 text-white px-6 py-3 rounded font-bold">
+                        ← Volver a Lista
+                    </button>
+                    <button onclick="shareReport()" class="btn bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded font-bold">
+                        📤 Compartir
+                    </button>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="card p-6 text-center opacity-75">
+                <p class="text-sm mb-2">
+                    💡 <strong>Este reporte te ayuda a mejorar para próximas presentaciones</strong>
+                </p>
+                <p class="text-xs opacity-60">
+                    Reporte generado el <span id="report-date"></span> | Sistema VYTMUSIC © 2025
+                </p>
+            </div>
+        </div>
+
+        <!-- Error -->
+        <div id="error-section" style="display: none;" class="card p-8 text-center">
+            <div class="text-6xl mb-4">😞</div>
+            <h2 class="text-2xl font-bold mb-4">No se pudo cargar tu reporte</h2>
+            <p class="text-lg opacity-90 mb-4" id="error-message">Mensaje de error</p>
+            <button onclick="goBack()" class="btn bg-purple-600 hover:bg-purple-700 text-white px-6 py-3 rounded font-bold">
+                ← Volver a Lista
+            </button>
+        </div>
+    </div>
+
+    <!-- Firebase -->
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
+        import { getFirestore, collection, getDocs, doc, getDoc } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+        
+        // Configuración de Firebase
+        const firebaseConfig = {
+            apiKey: "AIzaSyDUKQ0F1PJ8v2SudfKyQvHK8G7OL-sLwb0",
+            authDomain: "vyt-music.firebaseapp.com",
+            projectId: "vyt-music",
+            storageBucket: "vyt-music.appspot.com",
+            messagingSenderId: "147059879896",
+            appId: "1:147059879896:web:e3f0b11f38fdbc6b997fef"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        
+        // Variables globales
+        let artistData = null;
+        let allEvaluations = [];
+
+        // Cargar reporte al iniciar
+        window.addEventListener('load', () => {
+            document.getElementById('report-date').textContent = new Date().toLocaleDateString();
+            loadArtistReport();
+        });
+
+        // Función para obtener parámetros de URL
+        function getUrlParams() {
+            const urlParams = new URLSearchParams(window.location.search);
+            return {
+                eventId: urlParams.get('eventId'),
+                artistId: urlParams.get('artistId'),
+                artistName: urlParams.get('artistName')
+            };
+        }
+
+        // Cargar reporte del artista
+        async function loadArtistReport() {
+            try {
+                const { eventId, artistId, artistName } = getUrlParams();
+                
+                if (!eventId || !artistId) {
+                    showError('Enlace incompleto. Faltan parámetros del evento o artista.');
+                    return;
+                }
+
+                console.log('🔍 Cargando reporte para:', { eventId, artistId, artistName });
+                
+                // Configurar información del artista
+                artistData = {
+                    id: artistId,
+                    name: artistName || 'Tu nombre',
+                    eventId: eventId
+                };
+
+                // Obtener nombre del evento
+                try {
+                    const eventDoc = await getDoc(doc(db, 'events', eventId));
+                    artistData.eventName = eventDoc.exists() ? eventDoc.data().name : 'Tu evento';
+                } catch (error) {
+                    artistData.eventName = 'Tu evento';
+                }
+                
+                // Cargar evaluaciones
+                await loadEvaluationsForArtist(eventId, artistId);
+                
+                if (allEvaluations.length === 0) {
+                    showError('Aún no tienes evaluaciones del jurado disponibles. ¡Vuelve pronto!');
+                    return;
+                }
+                
+                // Mostrar reporte
+                displayReport();
+                
+            } catch (error) {
+                console.error('❌ Error cargando reporte:', error);
+                showError('Error al cargar tu reporte. Por favor, intenta más tarde.');
+            }
+        }
+
+        // Cargar evaluaciones para el artista
+        async function loadEvaluationsForArtist(eventId, artistId) {
+            console.log('🔍 Buscando evaluaciones del jurado...');
+            allEvaluations = [];
+            
+            const collections = ['jury_evaluations', 'jury_votes', 'votes'];
+            
+            for (const collectionName of collections) {
+                try {
+                    const evaluationsSnapshot = await getDocs(collection(db, `events/${eventId}/${collectionName}`));
+                    
+                    evaluationsSnapshot.forEach(doc => {
+                        const evaluation = doc.data();
+                        if (evaluation.artistId === artistId) {
+                            allEvaluations.push({
+                                id: doc.id,
+                                ...evaluation,
+                                collection: collectionName
+                            });
+                        }
+                    });
+                } catch (error) {
+                    console.warn(`⚠️ Error en colección ${collectionName}:`, error);
+                }
+            }
+
+            console.log('✅ Evaluaciones del jurado cargadas:', allEvaluations.length);
+        }
+
+        // Mostrar reporte
+        function displayReport() {
+            // Información básica
+            document.getElementById('artist-name').textContent = artistData.name;
+            document.getElementById('event-info').textContent = `${artistData.eventName} | ${new Date().toLocaleDateString()}`;
+            
+            // Calcular puntuación total visible (SIN voto secreto)
+            let totalVisibleScore = 0;
+            let visibleEvaluations = 0;
+            
+            allEvaluations.forEach(evaluation => {
+                if (evaluation.jurorType !== 'secreto' && !evaluation.isAnonymous) {
+                    totalVisibleScore += evaluation.score || evaluation.average || 0;
+                    visibleEvaluations++;
+                }
+            });
+            
+            const averageVisibleScore = visibleEvaluations > 0 ? totalVisibleScore / visibleEvaluations : 0;
+            document.getElementById('total-visible-score').textContent = averageVisibleScore.toFixed(1);
+            
+            // Mostrar evaluaciones detalladas
+            displayJuryEvaluations();
+            
+            // Mostrar resumen de comentarios
+            displayCommentsSummary();
+            
+            // Mostrar el reporte
+            document.getElementById('loading-section').style.display = 'none';
+            document.getElementById('report-content').style.display = 'block';
+        }
+
+        // Mostrar evaluaciones del jurado
+        function displayJuryEvaluations() {
+            const container = document.getElementById('jury-evaluations');
+            container.innerHTML = '';
+            
+            // Agrupar evaluaciones por tipo
+            const groupedEvaluations = {
+                individual: [],
+                grupal: [],
+                secreto: [],
+                principal: [],
+                invitado: []
+            };
+            
+            allEvaluations.forEach(evaluation => {
+                const type = evaluation.jurorType || 'individual';
+                if (groupedEvaluations[type]) {
+                    groupedEvaluations[type].push(evaluation);
+                } else {
+                    groupedEvaluations.individual.push(evaluation);
+                }
+            });
+            
+            // Mostrar cada grupo
+            Object.entries(groupedEvaluations).forEach(([type, evaluations]) => {
+                if (evaluations.length === 0) return;
+                
+                evaluations.forEach(evaluation => {
+                    const card = createJurorCard(evaluation);
+                    container.appendChild(card);
+                });
+            });
+        }
+
+        // Crear tarjeta de jurado
+        function createJurorCard(evaluation) {
+            const isSecret = evaluation.jurorType === 'secreto' || evaluation.isAnonymous;
+            const jurorType = evaluation.jurorType || 'individual';
+            
+            const card = document.createElement('div');
+            card.className = `juror-card juror-${jurorType} text-white`;
+            
+            // Título del jurado
+            let jurorTitle = '';
+            let jurorName = '';
+            
+            if (isSecret) {
+                jurorTitle = '🔒 Voto Secreto';
+                jurorName = 'Evaluación Anónima';
+            } else if (jurorType === 'grupal') {
+                jurorTitle = '👥 Jurado Grupal';
+                jurorName = evaluation.jurorName || 'Evaluación Grupal';
+            } else if (jurorType === 'principal') {
+                jurorTitle = '⭐ Jurado Principal';
+                jurorName = evaluation.jurorName || 'Jurado Principal';
+            } else if (jurorType === 'invitado') {
+                jurorTitle = '🎭 Jurado Invitado';
+                jurorName = evaluation.jurorName || 'Jurado Invitado';
+            } else {
+                jurorTitle = '🎯 Jurado Individual';
+                jurorName = evaluation.jurorName || 'Jurado Individual';
+            }
+            
+            card.innerHTML = `
+                <div class="flex justify-between items-start mb-4">
+                    <div>
+                        <h4 class="text-xl font-bold">${jurorTitle}</h4>
+                        <p class="text-lg opacity-90">${jurorName}</p>
+                        ${evaluation.jurorAdditional ? `<p class="text-sm opacity-75">${evaluation.jurorAdditional}</p>` : ''}
+                    </div>
+                    <div class="text-right">
+                        ${!isSecret ? `
+                            <div class="score-display">${(evaluation.score || evaluation.average || 0).toFixed(1)}</div>
+                            <div class="text-sm opacity-75">puntos</div>
+                        ` : `
+                            <div class="text-lg font-bold opacity-75">CONFIDENCIAL</div>
+                            <div class="text-sm opacity-60">Puntuación reservada</div>
+                        `}
+                        <div class="text-xs opacity-60 mt-1">${new Date(evaluation.timestamp).toLocaleDateString()}</div>
+                    </div>
+                </div>
+                
+                ${evaluation.judgeComments || evaluation.additionalNotes ? `
+                    <div class="mt-4 p-4 bg-black bg-opacity-30 rounded-lg">
+                        <h5 class="font-bold text-sm mb-2">💭 Comentarios y Observaciones:</h5>
+                        ${evaluation.judgeComments ? `
+                            <div class="mb-3">
+                                <h6 class="font-semibold text-xs mb-1 opacity-75">Comentarios del jurado:</h6>
+                                <p class="text-sm">${evaluation.judgeComments}</p>
+                            </div>
+                        ` : ''}
+                        ${evaluation.additionalNotes ? `
+                            <div>
+                                <h6 class="font-semibold text-xs mb-1 opacity-75">Notas adicionales:</h6>
+                                <p class="text-sm">${evaluation.additionalNotes}</p>
+                            </div>
+                        ` : ''}
+                    </div>
+                ` : `
+                    <div class="mt-4 p-4 bg-black bg-opacity-30 rounded-lg text-center opacity-75">
+                        <p class="text-sm">Este jurado no dejó comentarios escritos</p>
+                    </div>
+                `}
+                
+                ${evaluation.autoFeedback && evaluation.autoFeedback.length > 0 ? `
+                    <div class="mt-4 p-4 bg-white bg-opacity-20 rounded-lg">
+                        <h5 class="font-bold text-sm mb-2">🤖 Sugerencias Automáticas:</h5>
+                        <div class="text-sm space-y-1">
+                            ${evaluation.autoFeedback.slice(0, 3).map(feedback => `
+                                <p>• ${feedback.suggestion || feedback.text || feedback}</p>
+                            `).join('')}
+                        </div>
+                    </div>
+                ` : ''}
+            `;
+            
+            return card;
+        }
+
+        // Mostrar resumen de comentarios
+        function displayCommentsSummary() {
+            const allComments = [];
+            
+            allEvaluations.forEach(evaluation => {
+                if (evaluation.judgeComments && evaluation.judgeComments.trim()) {
+                    allComments.push({
+                        type: evaluation.jurorType || 'individual',
+                        juror: evaluation.jurorType === 'secreto' ? 'Jurado Anónimo' : (evaluation.jurorName || 'Jurado'),
+                        comment: evaluation.judgeComments.trim()
+                    });
+                }
+                
+                if (evaluation.additionalNotes && evaluation.additionalNotes.trim()) {
+                    allComments.push({
+                        type: evaluation.jurorType || 'individual',
+                        juror: evaluation.jurorType === 'secreto' ? 'Jurado Anónimo' : (evaluation.jurorName || 'Jurado'),
+                        comment: evaluation.additionalNotes.trim()
+                    });
+                }
+            });
+            
+            if (allComments.length === 0) return;
+            
+            document.getElementById('comments-summary').style.display = 'block';
+            const container = document.getElementById('all-comments');
+            container.innerHTML = '';
+            
+            allComments.forEach((comment, index) => {
+                const commentCard = document.createElement('div');
+                commentCard.className = 'bg-white bg-opacity-10 p-4 rounded-lg';
+                commentCard.innerHTML = `
+                    <div class="flex items-start">
+                        <div class="bg-purple-500 text-white rounded-full w-8 h-8 flex items-center justify-center font-bold mr-4 flex-shrink-0">
+                            ${index + 1}
+                        </div>
+                        <div class="flex-1">
+                            <h5 class="font-bold mb-1">${comment.juror}</h5>
+                            <p class="text-sm opacity-90">${comment.comment}</p>
+                        </div>
+                    </div>
+                `;
+                container.appendChild(commentCard);
+            });
+        }
+
+        // Mostrar error
+        function showError(message) {
+            document.getElementById('loading-section').style.display = 'none';
+            document.getElementById('error-message').textContent = message;
+            document.getElementById('error-section').style.display = 'block';
+        }
+
+        // Volver a la lista
+        window.goBack = function() {
+            const { eventId } = getUrlParams();
+            window.location.href = `reportes_jurado_artistas.html${eventId ? '?eventId=' + eventId : ''}`;
+        };
+
+        // Compartir reporte
+        window.shareReport = function() {
+            const url = window.location.href;
+            const text = `¡Mira mi reporte del jurado de ${artistData?.name || 'mi presentación'}!`;
+            
+            if (navigator.share) {
+                navigator.share({
+                    title: 'Mi Reporte del Jurado - VYTMUSIC',
+                    text: text,
+                    url: url
+                });
+            } else {
+                navigator.clipboard.writeText(url).then(() => {
+                    alert('✅ Enlace copiado al portapapeles');
+                }).catch(() => {
+                    prompt('Copia este enlace:', url);
+                });
+            }
+        };
+    </script>
+</body>
+</html>
