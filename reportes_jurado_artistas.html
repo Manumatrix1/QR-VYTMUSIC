@@ -224,31 +224,78 @@
             try {
                 console.log('🎤 Cargando artistas para evento:', eventId);
                 
-                // Cargar artistas desde participants
-                const artistsSnapshot = await getDocs(collection(db, `events/${eventId}/participants`));
-                const artists = [];
+                const artists = new Map(); // Usar Map para evitar duplicados
                 
-                artistsSnapshot.forEach(doc => {
-                    const artistData = doc.data();
-                    artists.push({
-                        id: doc.id,
-                        name: artistData.name || 'Artista sin nombre',
-                        hasEvaluations: false // Lo verificaremos después
-                    });
-                });
-
-                console.log('🎤 Artistas encontrados:', artists.length);
+                // Buscar artistas en múltiples colecciones
+                const collectionsToCheck = [
+                    'participants',
+                    'artists', 
+                    'jury_evaluations',
+                    'jury_votes',
+                    'votes'
+                ];
                 
-                if (artists.length === 0) {
+                for (const collectionName of collectionsToCheck) {
+                    try {
+                        console.log(`🔍 Buscando en colección: ${collectionName}`);
+                        const snapshot = await getDocs(collection(db, `events/${eventId}/${collectionName}`));
+                        console.log(`📄 Documentos en ${collectionName}:`, snapshot.size);
+                        
+                        snapshot.forEach(doc => {
+                            const data = doc.data();
+                            console.log(`📝 Documento en ${collectionName}:`, doc.id, data);
+                            let artistId, artistName;
+                            
+                            // Diferentes formas de encontrar el ID y nombre del artista
+                            if (collectionName === 'participants' || collectionName === 'artists') {
+                                artistId = doc.id;
+                                artistName = data.name || data.artistName || 'Artista sin nombre';
+                            } else {
+                                // Para evaluaciones y votos
+                                artistId = data.artistId;
+                                artistName = data.artistName || 'Artista sin nombre';
+                            }
+                            
+                            console.log(`🎯 Procesando: ID=${artistId}, Nombre=${artistName}`);
+                            
+                            if (artistId && artistName) {
+                                if (!artists.has(artistId)) {
+                                    artists.set(artistId, {
+                                        id: artistId,
+                                        name: artistName,
+                                        hasEvaluations: false
+                                    });
+                                    console.log(`➕ Agregado nuevo artista: ${artistName}`);
+                                }
+                                // Si encontramos datos en evaluaciones/votos, marcar que tiene evaluaciones
+                                if (collectionName !== 'participants' && collectionName !== 'artists') {
+                                    const artist = artists.get(artistId);
+                                    if (artist) {
+                                        artist.hasEvaluations = true;
+                                        console.log(`✅ Marcado con evaluaciones: ${artistName}`);
+                                    }
+                                }
+                            }
+                        });
+                    } catch (error) {
+                        console.warn(`⚠️ No se pudo acceder a la colección ${collectionName}:`, error);
+                    }
+                }
+                
+                const artistsArray = Array.from(artists.values());
+                console.log('📋 Artistas encontrados:', artistsArray.length);
+                console.log('🎯 Artistas con evaluaciones:', artistsArray.filter(a => a.hasEvaluations).length);
+                
+                if (artistsArray.length === 0) {
                     showError('No se encontraron artistas para este evento.');
                     return;
                 }
 
-                // Verificar cuáles artistas tienen evaluaciones
-                await checkArtistEvaluations(eventId, artists);
+                // Verificar evaluaciones adicionales para los que no las tienen marcadas
+                await checkArtistEvaluations(eventId, artistsArray);
                 
                 // Mostrar artistas
-                displayArtists(artists, eventId);
+                displayArtists(artistsArray, eventId);
                 
             } catch (error) {
                 console.error('❌ Error cargando artistas:', error);
