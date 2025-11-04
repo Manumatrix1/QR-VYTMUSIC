@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🚨 VERIFICADOR DE DATOS CRÍTICOS - VYTMUSIC</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .status-ok { background-color: #10b981; }
+        .status-warning { background-color: #f59e0b; }
+        .status-error { background-color: #ef4444; }
+        .data-grid { font-family: monospace; font-size: 12px; }
+    </style>
+</head>
+<body class="bg-gray-900 text-white min-h-screen">
+    <div class="container mx-auto p-6">
+        <div class="text-center mb-8">
+            <h1 class="text-4xl font-bold mb-4">🚨 VERIFICADOR DE DATOS CRÍTICOS</h1>
+            <p class="text-xl text-gray-300">Sistema de auditoría de datos vitales del certamen</p>
+            <div id="event-info" class="mt-4 p-4 bg-blue-900 rounded-lg">
+                <strong>Evento ID:</strong> <span id="current-event-id">Cargando...</span>
+            </div>
+        </div>
+
+        <!-- Panel de Control -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            <button onclick="verificarDatos()" class="bg-green-600 hover:bg-green-700 p-6 rounded-lg font-bold text-xl">
+                🔍 VERIFICAR DATOS
+            </button>
+            <button onclick="exportarRespaldo()" class="bg-blue-600 hover:bg-blue-700 p-6 rounded-lg font-bold text-xl">
+                💾 EXPORTAR RESPALDO
+            </button>
+            <button onclick="limpiarConsola()" class="bg-gray-600 hover:bg-gray-700 p-6 rounded-lg font-bold text-xl">
+                🧹 LIMPIAR CONSOLA
+            </button>
+        </div>
+
+        <!-- Dashboard de Estado -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            <div id="status-jurados" class="p-6 rounded-lg text-center">
+                <h3 class="text-xl font-bold mb-2">👨‍⚖️ VOTACIONES JURADOS</h3>
+                <div id="count-jurados" class="text-3xl font-bold">-</div>
+                <div id="detail-jurados" class="text-sm mt-2">Verificando...</div>
+            </div>
+            
+            <div id="status-publico" class="p-6 rounded-lg text-center">
+                <h3 class="text-xl font-bold mb-2">🎭 VOTOS PÚBLICO</h3>
+                <div id="count-publico" class="text-3xl font-bold">-</div>
+                <div id="detail-publico" class="text-sm mt-2">Verificando...</div>
+            </div>
+            
+            <div id="status-asistentes" class="p-6 rounded-lg text-center">
+                <h3 class="text-xl font-bold mb-2">🎫 ASISTENTES</h3>
+                <div id="count-asistentes" class="text-3xl font-bold">-</div>
+                <div id="detail-asistentes" class="text-sm mt-2">Verificando...</div>
+            </div>
+        </div>
+
+        <!-- Log de Verificación -->
+        <div class="bg-gray-800 rounded-lg p-6">
+            <h2 class="text-2xl font-bold mb-4">📋 LOG DE VERIFICACIÓN</h2>
+            <div id="verification-log" class="data-grid bg-black p-4 rounded max-h-96 overflow-y-auto">
+                <div class="text-green-400">✅ Sistema iniciado - Esperando verificación...</div>
+            </div>
+        </div>
+
+        <!-- Datos Críticos Encontrados -->
+        <div class="mt-8 bg-gray-800 rounded-lg p-6">
+            <h2 class="text-2xl font-bold mb-4">📊 DATOS CRÍTICOS ENCONTRADOS</h2>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div>
+                    <h3 class="text-xl font-bold mb-2 text-green-400">VOTACIONES DEL JURADO</h3>
+                    <div id="jurado-data" class="bg-black p-4 rounded data-grid max-h-64 overflow-y-auto">
+                        <div class="text-gray-400">Ejecutar verificación para ver datos...</div>
+                    </div>
+                </div>
+                <div>
+                    <h3 class="text-xl font-bold mb-2 text-blue-400">VOTOS DEL PÚBLICO</h3>
+                    <div id="publico-data" class="bg-black p-4 rounded data-grid max-h-64 overflow-y-auto">
+                        <div class="text-gray-400">Ejecutar verificación para ver datos...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Resumen de Integridad -->
+        <div class="mt-8 bg-gray-800 rounded-lg p-6">
+            <h2 class="text-2xl font-bold mb-4">🛡️ RESUMEN DE INTEGRIDAD</h2>
+            <div id="integrity-summary" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="text-center">
+                    <div class="text-3xl">❓</div>
+                    <div class="text-sm text-gray-400">Ejecutar verificación</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { db } from './firebase_config.js';
+        import { collection, getDocs, query, where, doc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Configuración del evento
+        const urlParams = new URLSearchParams(window.location.search);
+        const eventId = urlParams.get('eventId') || 'gmxINHvzSJ18Zt3SNeW7';
+        
+        document.getElementById('current-event-id').textContent = eventId;
+
+        let verificationData = {
+            jurados: {},
+            publico: {},
+            asistentes: {},
+            integrity: {}
+        };
+
+        function log(message, type = 'info') {
+            const logContainer = document.getElementById('verification-log');
+            const timestamp = new Date().toLocaleTimeString();
+            const color = type === 'error' ? 'text-red-400' : 
+                         type === 'warning' ? 'text-yellow-400' : 
+                         type === 'success' ? 'text-green-400' : 'text-gray-300';
+            
+            logContainer.innerHTML += `<div class="${color}">[${timestamp}] ${message}</div>`;
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+
+        function updateStatus(section, count, detail, status = 'ok') {
+            const statusElement = document.getElementById(`status-${section}`);
+            const countElement = document.getElementById(`count-${section}`);
+            const detailElement = document.getElementById(`detail-${section}`);
+            
+            statusElement.className = statusElement.className.replace(/status-\w+/, `status-${status}`);
+            countElement.textContent = count;
+            detailElement.textContent = detail;
+        }
+
+        window.verificarDatos = async function() {
+            log("🚀 INICIANDO VERIFICACIÓN CRÍTICA DE DATOS...", 'info');
+            
+            // Reset UI
+            document.getElementById('jurado-data').innerHTML = '<div class="text-yellow-400">Verificando...</div>';
+            document.getElementById('publico-data').innerHTML = '<div class="text-yellow-400">Verificando...</div>';
+            
+            try {
+                // 1. VERIFICAR VOTACIONES DEL JURADO
+                log("🔍 Verificando votaciones del jurado...", 'info');
+                await verificarVotacionesJurado();
+                
+                // 2. VERIFICAR VOTOS DEL PÚBLICO
+                log("🔍 Verificando votos del público...", 'info');
+                await verificarVotosPublico();
+                
+                // 3. VERIFICAR ASISTENTES
+                log("🔍 Verificando registro de asistentes...", 'info');
+                await verificarAsistentes();
+                
+                // 4. GENERAR RESUMEN DE INTEGRIDAD
+                log("🔍 Generando resumen de integridad...", 'info');
+                generarResumenIntegridad();
+                
+                log("✅ VERIFICACIÓN COMPLETADA", 'success');
+                
+            } catch (error) {
+                log(`❌ ERROR CRÍTICO: ${error.message}`, 'error');
+                console.error(error);
+            }
+        };
+
+        async function verificarVotacionesJurado() {
+            const rutasJurado = [
+                `events/${eventId}/jury_evaluations`,
+                `events/${eventId}/jury_votes`,
+                `events/${eventId}/votes`,
+                'jury_evaluations',
+                'jury_votes'
+            ];
+            
+            let totalVotosJurado = 0;
+            let datosJurado = [];
+            let rutasConDatos = [];
+            
+            for (const ruta of rutasJurado) {
+                try {
+                    log(`📂 Verificando ruta: ${ruta}`, 'info');
+                    const snapshot = await getDocs(collection(db, ruta));
+                    
+                    if (!snapshot.empty) {
+                        rutasConDatos.push(ruta);
+                        
+                        snapshot.docs.forEach(doc => {
+                            const data = doc.data();
+                            // Filtrar por eventId si no está en la ruta
+                            if (ruta.includes(eventId) || data.eventId === eventId) {
+                                totalVotosJurado++;
+                                datosJurado.push({
+                                    id: doc.id,
+                                    ruta: ruta,
+                                    data: data
+                                });
+                            }
+                        });
+                        
+                        log(`✅ ${ruta}: ${snapshot.docs.length} documentos encontrados`, 'success');
+                    } else {
+                        log(`⚠️ ${ruta}: Sin datos`, 'warning');
+                    }
+                } catch (error) {
+                    log(`❌ ${ruta}: Error - ${error.message}`, 'error');
+                }
+            }
+            
+            verificationData.jurados = {
+                total: totalVotosJurado,
+                rutas: rutasConDatos,
+                datos: datosJurado
+            };
+            
+            // Actualizar UI
+            const status = totalVotosJurado > 0 ? 'ok' : 'error';
+            updateStatus('jurados', totalVotosJurado, `${rutasConDatos.length} rutas con datos`, status);
+            
+            // Mostrar datos en la interfaz
+            const juradoDataContainer = document.getElementById('jurado-data');
+            if (datosJurado.length > 0) {
+                juradoDataContainer.innerHTML = datosJurado.slice(0, 10).map(item => 
+                    `<div class="mb-2 p-2 border-l-2 border-green-400">
+                        <div class="text-green-300">${item.ruta}/${item.id}</div>
+                        <div class="text-xs text-gray-400">Jurado: ${item.data.jurorName || 'N/A'} | Artista: ${item.data.artistName || item.data.artistId || 'N/A'}</div>
+                        <div class="text-xs text-gray-400">Score: ${item.data.average || item.data.score || 'N/A'} | Timestamp: ${item.data.timestamp || 'N/A'}</div>
+                    </div>`
+                ).join('') + (datosJurado.length > 10 ? `<div class="text-yellow-400">... y ${datosJurado.length - 10} más</div>` : '');
+            } else {
+                juradoDataContainer.innerHTML = '<div class="text-red-400">❌ NO SE ENCONTRARON VOTACIONES DEL JURADO</div>';
+            }
+            
+            log(`📊 TOTAL VOTACIONES JURADO: ${totalVotosJurado}`, totalVotosJurado > 0 ? 'success' : 'error');
+        }
+
+        async function verificarVotosPublico() {
+            const rutasPublico = [
+                `events/${eventId}/ticket_votes`,
+                `events/${eventId}/votes`,
+                'votes'
+            ];
+            
+            let totalVotosPublico = 0;
+            let datosPublico = [];
+            let rutasConDatos = [];
+            
+            for (const ruta of rutasPublico) {
+                try {
+                    log(`📂 Verificando ruta pública: ${ruta}`, 'info');
+                    const snapshot = await getDocs(collection(db, ruta));
+                    
+                    if (!snapshot.empty) {
+                        rutasConDatos.push(ruta);
+                        
+                        snapshot.docs.forEach(doc => {
+                            const data = doc.data();
+                            // Filtrar por eventId si no está en la ruta
+                            if (ruta.includes(eventId) || data.eventId === eventId) {
+                                totalVotosPublico++;
+                                datosPublico.push({
+                                    id: doc.id,
+                                    ruta: ruta,
+                                    data: data
+                                });
+                            }
+                        });
+                        
+                        log(`✅ ${ruta}: ${snapshot.docs.length} documentos encontrados`, 'success');
+                    } else {
+                        log(`⚠️ ${ruta}: Sin datos`, 'warning');
+                    }
+                } catch (error) {
+                    log(`❌ ${ruta}: Error - ${error.message}`, 'error');
+                }
+            }
+            
+            verificationData.publico = {
+                total: totalVotosPublico,
+                rutas: rutasConDatos,
+                datos: datosPublico
+            };
+            
+            // Actualizar UI
+            const status = totalVotosPublico > 0 ? 'ok' : 'warning';
+            updateStatus('publico', totalVotosPublico, `${rutasConDatos.length} rutas con datos`, status);
+            
+            // Mostrar datos en la interfaz
+            const publicoDataContainer = document.getElementById('publico-data');
+            if (datosPublico.length > 0) {
+                publicoDataContainer.innerHTML = datosPublico.slice(0, 10).map(item => 
+                    `<div class="mb-2 p-2 border-l-2 border-blue-400">
+                        <div class="text-blue-300">${item.ruta}/${item.id}</div>
+                        <div class="text-xs text-gray-400">Votante: ${item.data.voterName || item.data.personaId || 'N/A'} | Artista: ${item.data.artistId || 'N/A'}</div>
+                        <div class="text-xs text-gray-400">Timestamp: ${item.data.timestamp || 'N/A'}</div>
+                    </div>`
+                ).join('') + (datosPublico.length > 10 ? `<div class="text-yellow-400">... y ${datosPublico.length - 10} más</div>` : '');
+            } else {
+                publicoDataContainer.innerHTML = '<div class="text-yellow-400">⚠️ NO SE ENCONTRARON VOTOS DEL PÚBLICO</div>';
+            }
+            
+            log(`📊 TOTAL VOTOS PÚBLICO: ${totalVotosPublico}`, 'info');
+        }
+
+        async function verificarAsistentes() {
+            const rutasAsistentes = [
+                `events/${eventId}/participants`,
+                `events/${eventId}/entries`,
+                `events/${eventId}/attendees`
+            ];
+            
+            let totalAsistentes = 0;
+            let rutasConDatos = [];
+            
+            for (const ruta of rutasAsistentes) {
+                try {
+                    log(`📂 Verificando asistentes: ${ruta}`, 'info');
+                    const snapshot = await getDocs(collection(db, ruta));
+                    
+                    if (!snapshot.empty) {
+                        rutasConDatos.push(ruta);
+                        totalAsistentes += snapshot.docs.length;
+                        log(`✅ ${ruta}: ${snapshot.docs.length} asistentes`, 'success');
+                    } else {
+                        log(`⚠️ ${ruta}: Sin datos`, 'warning');
+                    }
+                } catch (error) {
+                    log(`❌ ${ruta}: Error - ${error.message}`, 'error');
+                }
+            }
+            
+            verificationData.asistentes = {
+                total: totalAsistentes,
+                rutas: rutasConDatos
+            };
+            
+            // Actualizar UI
+            const status = totalAsistentes > 0 ? 'ok' : 'warning';
+            updateStatus('asistentes', totalAsistentes, `${rutasConDatos.length} rutas con datos`, status);
+            
+            log(`📊 TOTAL ASISTENTES: ${totalAsistentes}`, 'info');
+        }
+
+        function generarResumenIntegridad() {
+            const summaryContainer = document.getElementById('integrity-summary');
+            
+            const totalJurados = verificationData.jurados.total || 0;
+            const totalPublico = verificationData.publico.total || 0;
+            const totalAsistentes = verificationData.asistentes.total || 0;
+            
+            const statusJurados = totalJurados > 0 ? '✅' : '❌';
+            const statusPublico = totalPublico > 0 ? '✅' : '⚠️';
+            const statusAsistentes = totalAsistentes > 0 ? '✅' : '⚠️';
+            
+            summaryContainer.innerHTML = `
+                <div class="text-center">
+                    <div class="text-3xl">${statusJurados}</div>
+                    <div class="font-bold">Jurados</div>
+                    <div class="text-sm text-gray-400">${totalJurados} votos encontrados</div>
+                </div>
+                <div class="text-center">
+                    <div class="text-3xl">${statusPublico}</div>
+                    <div class="font-bold">Público</div>
+                    <div class="text-sm text-gray-400">${totalPublico} votos encontrados</div>
+                </div>
+                <div class="text-center">
+                    <div class="text-3xl">${statusAsistentes}</div>
+                    <div class="font-bold">Asistentes</div>
+                    <div class="text-sm text-gray-400">${totalAsistentes} registros encontrados</div>
+                </div>
+            `;
+            
+            // Log resumen final
+            if (totalJurados === 0) {
+                log("🚨 CRÍTICO: NO SE ENCONTRARON VOTACIONES DEL JURADO", 'error');
+            }
+            if (totalPublico === 0) {
+                log("⚠️ ADVERTENCIA: NO SE ENCONTRARON VOTOS DEL PÚBLICO", 'warning');
+            }
+            if (totalAsistentes === 0) {
+                log("⚠️ ADVERTENCIA: NO SE ENCONTRARON REGISTROS DE ASISTENTES", 'warning');
+            }
+        }
+
+        window.exportarRespaldo = function() {
+            const respaldo = {
+                timestamp: new Date().toISOString(),
+                eventId: eventId,
+                verificacion: verificationData
+            };
+            
+            const blob = new Blob([JSON.stringify(respaldo, null, 2)], {type: 'application/json'});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `respaldo_datos_criticos_${eventId}_${new Date().toISOString().split('T')[0]}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+            
+            log("💾 Respaldo exportado exitosamente", 'success');
+        };
+
+        window.limpiarConsola = function() {
+            document.getElementById('verification-log').innerHTML = '<div class="text-green-400">✅ Consola limpiada - Lista para nueva verificación...</div>';
+        };
+
+        // Auto-verificar al cargar
+        setTimeout(() => {
+            log("🔄 Ejecutando verificación automática...", 'info');
+            verificarDatos();
+        }, 1000);
+    </script>
+</body>
+</html>
