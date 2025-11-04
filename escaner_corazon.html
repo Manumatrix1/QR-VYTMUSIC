@@ -271,7 +271,8 @@
 
             async loadEntradas() {
                 try {
-                    const snapshot = await getDocs(collection(db, `entradas_${this.eventId}`));
+                    // BUSCAR EN LA COLECCIÓN CORRECTA: events/{eventId}/tickets
+                    const snapshot = await getDocs(collection(db, `events/${this.eventId}/tickets`));
                     let escaneadas = 0;
                     
                     snapshot.forEach(doc => {
@@ -283,6 +284,23 @@
                     this.totalEntradas = this.entradas.size;
                     this.escaneadasLocal = escaneadas;
                     console.log(`📊 Cargadas ${this.totalEntradas} entradas, ${escaneadas} ya escaneadas`);
+                    
+                    // Si no hay entradas en la nueva estructura, buscar en la antigua por compatibilidad
+                    if (this.totalEntradas === 0) {
+                        console.log('🔄 Buscando en estructura antigua...');
+                        const oldSnapshot = await getDocs(collection(db, `entradas_${this.eventId}`));
+                        escaneadas = 0;
+                        
+                        oldSnapshot.forEach(doc => {
+                            const data = { id: doc.id, ...doc.data() };
+                            this.entradas.set(doc.id, data);
+                            if (data.usado) escaneadas++;
+                        });
+                        
+                        this.totalEntradas = this.entradas.size;
+                        this.escaneadasLocal = escaneadas;
+                        console.log(`📊 [Estructura antigua] Cargadas ${this.totalEntradas} entradas, ${escaneadas} ya escaneadas`);
+                    }
                 } catch (error) {
                     console.log('📱 Error cargando entradas:', error);
                     this.totalEntradas = 0;
@@ -292,8 +310,9 @@
             setupRealTimeSync() {
                 if (this.connectionState === 'online') {
                     try {
+                        // ESCUCHAR LA COLECCIÓN CORRECTA: events/{eventId}/tickets
                         this.realTimeListener = onSnapshot(
-                            collection(db, `entradas_${this.eventId}`),
+                            collection(db, `events/${this.eventId}/tickets`),
                             (snapshot) => {
                                 let escaneadas = 0;
                                 snapshot.forEach(doc => {
@@ -399,7 +418,8 @@
             async saveToFirebase(code, entrada) {
                 if (this.connectionState === 'online') {
                     try {
-                        await updateDoc(doc(db, `entradas_${this.eventId}`, code), {
+                        // GUARDAR EN LA COLECCIÓN CORRECTA: events/{eventId}/tickets
+                        await updateDoc(doc(db, `events/${this.eventId}/tickets`, code), {
                             usado: true,
                             fechaIngreso: entrada.fechaIngreso,
                             escaneadoPor: entrada.escaneadoPor
@@ -532,7 +552,8 @@
                 // Guardar en Firebase
                 if (this.connectionState === 'online') {
                     try {
-                        await setDoc(doc(db, `entradas_${this.eventId}`, id), nuevaEntrada);
+                        // GUARDAR EN LA COLECCIÓN CORRECTA: events/{eventId}/tickets
+                        await setDoc(doc(db, `events/${this.eventId}/tickets`, id), nuevaEntrada);
                         
                         // TAMBIÉN HABILITAR PARA VOTAR
                         await setDoc(doc(db, `votantes_${this.eventId}`, id), {
