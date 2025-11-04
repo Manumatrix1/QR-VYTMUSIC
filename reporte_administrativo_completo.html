@@ -422,39 +422,71 @@
         // Cargar datos del público para una gala
         async function loadPublicData(galaId) {
             try {
-                const snapshot = await getDocs(collection(db, `events/${galaId}/votes`));
+                console.log(`❤️ Cargando votos del público para gala: ${galaId}`);
                 
-                snapshot.forEach(doc => {
-                    const data = doc.data();
-                    
-                    // Solo contar votos del público (no del jurado)
-                    if (data.voterName && !data.jurorId && !data.jurorName) {
-                        const artistId = data.artistId;
-                        const artistName = data.artistName || 'Artista sin nombre';
+                // Buscar en múltiples colecciones que podrían contener votos del público
+                const collectionsToCheck = ['votes', 'public_votes', 'votacion', 'votaciones'];
+                
+                for (const collectionName of collectionsToCheck) {
+                    try {
+                        const snapshot = await getDocs(collection(db, `events/${galaId}/${collectionName}`));
+                        console.log(`📊 Documentos en ${collectionName}:`, snapshot.size);
                         
-                        if (!allPublicData[artistId]) {
-                            allPublicData[artistId] = {
-                                name: artistName,
-                                galas: {},
-                                totalVotes: 0,
-                                totalPoints: 0
-                            };
-                        }
-                        
-                        if (!allPublicData[artistId].galas[galaId]) {
-                            allPublicData[artistId].galas[galaId] = {
-                                votes: 0,
-                                points: 0
-                            };
-                        }
-                        
-                        allPublicData[artistId].galas[galaId].votes++;
-                        allPublicData[artistId].galas[galaId].points += data.score || 1;
-                        
-                        allPublicData[artistId].totalVotes++;
-                        allPublicData[artistId].totalPoints += data.score || 1;
+                        snapshot.forEach(doc => {
+                            const data = doc.data();
+                            
+                            // Determinar si es voto del público (múltiples criterios)
+                            const isPublicVote = (
+                                // Tiene voterName pero no jurorId/jurorName
+                                (data.voterName && !data.jurorId && !data.jurorName) ||
+                                // No tiene campos de jurado
+                                (!data.jurorId && !data.jurorName && !data.jurorType) ||
+                                // Tiene tipo específico de público
+                                (data.voteType === 'public' || data.type === 'public') ||
+                                // Cualquier voto que no sea específicamente de jurado
+                                (!data.jurorId && data.artistId)
+                            );
+                            
+                            if (isPublicVote) {
+                                const artistId = data.artistId || data.artist_id || data.artistReference;
+                                const artistName = data.artistName || data.artist_name || 'Artista sin nombre';
+                                const score = data.score || data.points || data.rating || 1;
+                                
+                                if (artistId) {
+                                    console.log(`👤 Voto público encontrado para: ${artistName}`);
+                                    
+                                    if (!allPublicData[artistId]) {
+                                        allPublicData[artistId] = {
+                                            name: artistName,
+                                            galas: {},
+                                            totalVotes: 0,
+                                            totalPoints: 0
+                                        };
+                                    }
+                                    
+                                    if (!allPublicData[artistId].galas[galaId]) {
+                                        allPublicData[artistId].galas[galaId] = {
+                                            votes: 0,
+                                            points: 0
+                                        };
+                                    }
+                                    
+                                    allPublicData[artistId].galas[galaId].votes++;
+                                    allPublicData[artistId].galas[galaId].points += score;
+                                    
+                                    allPublicData[artistId].totalVotes++;
+                                    allPublicData[artistId].totalPoints += score;
+                                }
+                            }
+                        });
+                    } catch (error) {
+                        console.warn(`⚠️ No se pudo cargar ${collectionName}:`, error);
                     }
-                });
+                }
+                
+                const publicCount = Object.keys(allPublicData).length;
+                console.log(`✅ Total artistas con votos del público: ${publicCount}`);
+                
             } catch (error) {
                 console.warn(`⚠️ Error cargando votos públicos para gala ${galaId}:`, error);
             }
@@ -463,31 +495,73 @@
         // Cargar datos de ventas para una gala
         async function loadSalesData(galaId) {
             try {
-                // Aquí deberías cargar datos de ventas desde donde los tengas almacenados
-                // Por ahora, vamos a simular datos basados en entradas
-                const snapshot = await getDocs(collection(db, `events/${galaId}/entries`));
+                console.log(`💰 Cargando datos de ventas para gala: ${galaId}`);
                 
-                snapshot.forEach(doc => {
-                    const data = doc.data();
-                    const artistId = data.artistId || data.artistReference;
-                    
-                    if (artistId) {
-                        if (!allSalesData[artistId]) {
-                            allSalesData[artistId] = {
-                                name: data.artistName || 'Artista sin nombre',
-                                galas: {},
-                                totalSales: 0
-                            };
-                        }
+                // Buscar en múltiples colecciones que podrían contener datos de ventas
+                const collectionsToCheck = [
+                    'entries', 'ticket_sales', 'sales', 'entradas', 
+                    'tickets', 'participants', 'artists'
+                ];
+                
+                for (const collectionName of collectionsToCheck) {
+                    try {
+                        const snapshot = await getDocs(collection(db, `events/${galaId}/${collectionName}`));
+                        console.log(`🎫 Documentos en ${collectionName}:`, snapshot.size);
                         
-                        if (!allSalesData[artistId].galas[galaId]) {
-                            allSalesData[artistId].galas[galaId] = 0;
-                        }
-                        
-                        allSalesData[artistId].galas[galaId]++;
-                        allSalesData[artistId].totalSales++;
+                        snapshot.forEach(doc => {
+                            const data = doc.data();
+                            let artistId, artistName, quantity = 1;
+                            
+                            // Diferentes formas de encontrar datos de ventas
+                            if (collectionName === 'participants' || collectionName === 'artists') {
+                                // Para artistas registrados, asumir al menos 1 entrada
+                                artistId = doc.id;
+                                artistName = data.name || data.artistName || 'Artista sin nombre';
+                                quantity = data.ticketsSold || data.entradas || 1;
+                            } else {
+                                // Para datos específicos de ventas
+                                artistId = data.artistId || data.artistReference || data.artist_id || doc.id;
+                                artistName = data.artistName || data.artist_name || data.name || 'Artista sin nombre';
+                                quantity = data.quantity || data.ticketCount || data.amount || data.entradas || 1;
+                            }
+                            
+                            if (artistId && artistName) {
+                                console.log(`🎪 Entrada encontrada para: ${artistName} (${quantity} entradas)`);
+                                
+                                if (!allSalesData[artistId]) {
+                                    allSalesData[artistId] = {
+                                        name: artistName,
+                                        galas: {},
+                                        totalSales: 0
+                                    };
+                                }
+                                
+                                if (!allSalesData[artistId].galas[galaId]) {
+                                    allSalesData[artistId].galas[galaId] = 0;
+                                }
+                                
+                                // Solo agregar si no hemos contado este artista en esta colección
+                                if (collectionName === 'participants' || collectionName === 'artists') {
+                                    // Para participantes, solo contar una vez por gala
+                                    if (allSalesData[artistId].galas[galaId] === 0) {
+                                        allSalesData[artistId].galas[galaId] += quantity;
+                                        allSalesData[artistId].totalSales += quantity;
+                                    }
+                                } else {
+                                    // Para datos específicos de ventas, sumar todo
+                                    allSalesData[artistId].galas[galaId] += quantity;
+                                    allSalesData[artistId].totalSales += quantity;
+                                }
+                            }
+                        });
+                    } catch (error) {
+                        console.warn(`⚠️ No se pudo cargar ${collectionName}:`, error);
                     }
-                });
+                }
+                
+                const salesCount = Object.keys(allSalesData).length;
+                console.log(`✅ Total artistas con datos de ventas: ${salesCount}`);
+                
             } catch (error) {
                 console.warn(`⚠️ Error cargando ventas para gala ${galaId}:`, error);
             }
@@ -500,6 +574,12 @@
                 artist.averageScore = artist.totalEvaluations > 0 ? 
                     artist.totalScore / artist.totalEvaluations : 0;
             });
+            
+            // Mostrar estadísticas en consola
+            console.log('📊 RESUMEN DE DATOS CARGADOS:');
+            console.log(`🎭 Datos del jurado: ${Object.keys(allJuryData).length} artistas`);
+            console.log(`❤️ Datos del público: ${Object.keys(allPublicData).length} artistas`);
+            console.log(`💰 Datos de ventas: ${Object.keys(allSalesData).length} artistas`);
             
             // Mostrar resumen ejecutivo
             displayExecutiveSummary();
@@ -532,6 +612,9 @@
                 document.getElementById('winner-jury').textContent = juryWinner.name;
                 document.getElementById('winner-jury-score').textContent = 
                     `${juryWinner.averageScore.toFixed(1)} puntos promedio`;
+            } else {
+                document.getElementById('winner-jury').textContent = 'Sin datos';
+                document.getElementById('winner-jury-score').textContent = 'No hay evaluaciones';
             }
             
             // Favorito del público
@@ -542,6 +625,9 @@
                 document.getElementById('winner-public').textContent = publicWinner.name;
                 document.getElementById('winner-public-score').textContent = 
                     `${publicWinner.totalVotes} votos`;
+            } else {
+                document.getElementById('winner-public').textContent = 'Sin datos';
+                document.getElementById('winner-public-score').textContent = 'No hay votos del público';
             }
             
             // Más ventas
@@ -552,7 +638,11 @@
                 document.getElementById('winner-sales').textContent = salesWinner.name;
                 document.getElementById('winner-sales-score').textContent = 
                     `${salesWinner.totalSales} entradas`;
+            } else {
+                document.getElementById('winner-sales').textContent = 'Sin datos';
+                document.getElementById('winner-sales-score').textContent = 'No hay datos de ventas';
             }
+        }
         }
 
         // Mostrar ranking del jurado
