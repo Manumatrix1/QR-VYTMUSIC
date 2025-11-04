@@ -159,9 +159,6 @@
                         <div class="w-3 h-3 bg-yellow-400 rounded-full animate-pulse"></div>
                         <span class="status-offline">Verificando conexión...</span>
                     </div>
-                    <div id="sync-status" class="text-sm">
-                        <span>Última sync: <span id="last-sync">--:--</span></span>
-                    </div>
                 </div>
             </div>
 
@@ -334,14 +331,15 @@
 
             async checkConnection() {
                 try {
-                    await getDocs(collection(db, 'test').limit(1));
+                    // Probar conexión usando la colección real de entradas
+                    await getDocs(collection(db, `events/${this.eventId}/tickets`).limit(1));
                     this.connectionState = 'online';
                     this.updateConnectionStatus('🟢 CONECTADO', 'status-online');
                     console.log('🌐 Conexión Firebase: OK');
                 } catch (error) {
                     this.connectionState = 'offline';
                     this.updateConnectionStatus('🟡 SIN CONEXIÓN', 'status-offline');
-                    console.log('📱 Modo offline activado');
+                    console.log('📱 Modo offline activado:', error);
                 }
             }
 
@@ -540,13 +538,23 @@
                         `<br><span class="text-xs">Ingresó: ${new Date(entrada.fechaIngreso).toLocaleString()}</span>` : '';
                     
                     return `
-                        <div class="search-result ${estado}" onclick="corazon.processManual('${entrada.id}')">
+                        <div class="search-result ${estado}" data-entry-id="${entrada.id}">
                             <div class="font-bold text-lg">${tipoEmoji} ${entrada.nombre}</div>
                             <div class="text-sm text-gray-300">${entrada.tipo || 'Invitado'} - ${entrada.grupo || 'General'}${fechaIngreso}</div>
                             <div class="text-sm mt-1 ${entrada.usado ? 'text-red-400' : 'text-emerald-400'}">${texto}</div>
                         </div>
                     `;
                 }).join('');
+                
+                // Agregar event listeners
+                results.querySelectorAll('.search-result').forEach(item => {
+                    if (!item.classList.contains('usado')) {
+                        item.addEventListener('click', () => {
+                            const entryId = item.getAttribute('data-entry-id');
+                            this.processManual(entryId);
+                        });
+                    }
+                });
                 
                 console.log(`📋 Mostrando lista completa: ${entradasArray.length} entradas`);
             }
@@ -583,13 +591,23 @@
                     const tipoEmoji = entrada.tipo === 'artista' ? '🎤' : '👤';
                     
                     return `
-                        <div class="search-result ${estado}" onclick="corazon.processManual('${entrada.id}')">
+                        <div class="search-result ${estado}" data-entry-id="${entrada.id}">
                             <div class="font-bold text-lg">${tipoEmoji} ${entrada.nombre}</div>
                             <div class="text-sm text-gray-300">${entrada.tipo || 'Invitado'} - ${entrada.grupo || 'General'}</div>
                             <div class="text-sm mt-1 ${entrada.usado ? 'text-red-400' : 'text-emerald-400'}">${texto}</div>
                         </div>
                     `;
                 }).join('');
+                
+                // Agregar event listeners
+                results.querySelectorAll('.search-result').forEach(item => {
+                    if (!item.classList.contains('usado')) {
+                        item.addEventListener('click', () => {
+                            const entryId = item.getAttribute('data-entry-id');
+                            this.processManual(entryId);
+                        });
+                    }
+                });
                 
                 console.log(`🔍 Encontrados ${found.length} resultados para "${query}"`);
             }
@@ -742,7 +760,7 @@
                     const porcentaje = artista.total > 0 ? Math.round((artista.escaneadas / artista.total) * 100) : 0;
                     
                     return `
-                        <div class="artist-card" onclick="corazon.showArtistGuests('${artista.prefix}')">
+                        <div class="artist-card" data-prefix="${artista.prefix}">
                             <div class="artist-badge">${artista.total}</div>
                             <div class="text-lg font-bold text-blue-300 mb-2">🎤 ${artista.nombre}</div>
                             <div class="text-sm text-gray-300">
@@ -755,6 +773,14 @@
                         </div>
                     `;
                 }).join('');
+                
+                // Agregar event listeners después de crear el HTML
+                container.querySelectorAll('.artist-card').forEach(card => {
+                    card.addEventListener('click', () => {
+                        const prefix = card.getAttribute('data-prefix');
+                        this.showArtistGuests(prefix);
+                    });
+                });
                 
                 console.log(`🎤 Lista de artistas actualizada: ${artistasArray.length} artistas`);
             }
@@ -777,7 +803,7 @@
                         `<br><span class="text-xs text-gray-400">Ingresó: ${new Date(entrada.fechaIngreso).toLocaleString()}</span>` : '';
                     
                     return `
-                        <div class="guest-item ${estado}" onclick="corazon.processManual('${entrada.id}')">
+                        <div class="guest-item ${estado}" data-entry-id="${entrada.id}">
                             <div class="flex justify-between items-start">
                                 <div>
                                     <div class="font-bold text-white">${entrada.nombre}</div>
@@ -791,12 +817,26 @@
                     `;
                 }).join('');
                 
+                // Agregar event listeners para los invitados
+                guestsList.querySelectorAll('.guest-item').forEach(item => {
+                    if (!item.classList.contains('usado')) {
+                        item.addEventListener('click', () => {
+                            const entryId = item.getAttribute('data-entry-id');
+                            this.processManual(entryId);
+                        });
+                    }
+                });
+                
                 // Mostrar panel y actualizar estilos
                 document.getElementById('artist-guests-panel').classList.remove('hidden');
                 
                 // Marcar tarjeta como seleccionada
-                document.querySelectorAll('.artist-card').forEach(card => card.classList.remove('selected'));
-                event.target.closest('.artist-card').classList.add('selected');
+                document.querySelectorAll('.artist-card').forEach(card => {
+                    card.classList.remove('selected');
+                    if (card.getAttribute('data-prefix') === prefix) {
+                        card.classList.add('selected');
+                    }
+                });
                 
                 console.log(`👥 Mostrando ${invitadosOrdenados.length} invitados de ${artista.nombre}`);
             }
