@@ -316,50 +316,118 @@
 
                 // Buscar votos en múltiples ubicaciones posibles
                 let votesSnapshot;
+                let votesFound = false;
                 const posibleRutas = [
                     `events/${eventId}/jury_evaluations`,
                     `events/${eventId}/jury-votes`, 
                     `events/${eventId}/votes`,
-                    `events/${eventId}/jury_votes`
+                    `events/${eventId}/jury_votes`,
+                    `events/${eventId}/evaluations`,
+                    `events/${eventId}/juror_votes`,
+                    `events/${eventId}/ratings`
                 ];
 
+                console.log(`🔍 Buscando evaluaciones de jurados para evento: ${eventId}`);
+                
                 for (const ruta of posibleRutas) {
                     try {
+                        console.log(`🔍 Probando ruta: ${ruta}`);
                         const snapshot = await getDocs(collection(db, ruta));
+                        console.log(`📊 Documentos en ${ruta}: ${snapshot.size}`);
+                        
                         if (!snapshot.empty) {
                             votesSnapshot = snapshot;
-                            console.log(`✅ Votos encontrados en: ${ruta}`);
+                            votesFound = true;
+                            console.log(`✅ Votos encontrados en: ${ruta} (${snapshot.size} documentos)`);
                             break;
                         }
                     } catch (error) {
-                        console.log(`❌ No encontrado en: ${ruta}`);
+                        console.log(`❌ Error accediendo a ${ruta}:`, error.message);
                     }
                 }
 
-                if (!votesSnapshot || votesSnapshot.empty) {
-                    throw new Error('No se encontraron votos de jurados en ninguna ubicación');
+                if (!votesFound) {
+                    console.warn('⚠️ No se encontraron votos de jurados, generando reporte con datos disponibles');
+                    // Crear un snapshot vacío para continuar
+                    votes = [];
+                } else {
+                    votes = votesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    console.log(`✅ ${votes.length} votos cargados`);
                 }
 
                 artists = artistsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                 jurors = jurorsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                votes = votesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                
+                console.log(`✅ Datos cargados: ${artists.length} artistas, ${jurors.length} jurados, ${votes.length} evaluaciones`);
 
+                // Generar reporte siempre, incluso sin votos
                 generateReport();
 
             } catch (error) {
-                console.error('Error loading data:', error);
-                alert('Error al cargar los datos del reporte');
+                console.error('❌ Error loading data:', error);
+                
+                // Mostrar mensaje de error más informativo
+                ui.resultsTableBody.innerHTML = `
+                    <tr>
+                        <td colspan="15" class="text-center text-red-400 py-8">
+                            <div class="text-4xl mb-4">⚠️</div>
+                            <div class="text-lg font-bold mb-2">Error cargando datos del reporte</div>
+                            <div class="text-sm">${error.message}</div>
+                            <div class="text-xs mt-2 text-gray-400">
+                                Verifica que el evento tenga evaluaciones de jurados registradas
+                            </div>
+                        </td>
+                    </tr>
+                `;
+                
+                ui.jurorsTableBody.innerHTML = `
+                    <tr>
+                        <td colspan="6" class="text-center text-gray-400 py-4">
+                            No se pudieron cargar datos de jurados
+                        </td>
+                    </tr>
+                `;
             } finally {
                 showLoading(false);
             }
         }
 
         function generateReport() {
+            console.log(`📊 Generando reporte con ${artists.length} artistas, ${jurors.length} jurados, ${votes.length} votos`);
+            
             calculateBasicStats();
             calculateAdvancedStats();
             generateCharts();
             generateResultsTable();
             generateJurorsTable();
+            
+            // Mostrar mensaje si no hay datos
+            if (votes.length === 0) {
+                const noDataMessage = `
+                    <div class="bg-yellow-800 border border-yellow-600 p-6 rounded-lg mb-6">
+                        <div class="flex items-center mb-3">
+                            <span class="text-3xl mr-3">⚠️</span>
+                            <h3 class="text-lg font-bold text-yellow-200">Sin Evaluaciones de Jurados</h3>
+                        </div>
+                        <p class="text-yellow-100 mb-2">
+                            No se encontraron evaluaciones de jurados para este evento.
+                        </p>
+                        <p class="text-sm text-yellow-200">
+                            Posibles causas:
+                        </p>
+                        <ul class="text-sm text-yellow-200 ml-4 mt-2">
+                            <li>• Los jurados aún no han realizado evaluaciones</li>
+                            <li>• Las evaluaciones están en una estructura diferente en Firebase</li>
+                            <li>• Hay un problema de conectividad</li>
+                        </ul>
+                    </div>
+                `;
+                
+                // Insertar el mensaje después del header
+                const container = document.querySelector('.container');
+                const header = container.querySelector('header');
+                header.insertAdjacentHTML('afterend', noDataMessage);
+            }
         }
 
         function calculateBasicStats() {
@@ -376,9 +444,17 @@
         }
 
         function calculateAdvancedStats() {
-            if (votes.length === 0) return;
+            if (votes.length === 0) {
+                ui.highestAvgStat.textContent = '0';
+                ui.lowestAvgStat.textContent = '0';
+                ui.stdDeviationStat.textContent = '0';
+                ui.mostVotesStat.textContent = '0';
+                ui.consensusStat.textContent = '0%';
+                ui.bestCriteriaStat.textContent = 'Sin datos';
+                return;
+            }
 
-            const scores = votes.map(v => v.averageScore);
+            const scores = votes.map(v => v.averageScore || v.average || v.score || 0);
             const highest = Math.max(...scores);
             const lowest = Math.min(...scores);
             const mean = scores.reduce((sum, score) => sum + score, 0) / scores.length;
@@ -388,19 +464,23 @@
             // Vote counts per artist
             const artistVoteCounts = {};
             votes.forEach(vote => {
-                artistVoteCounts[vote.artistId] = (artistVoteCounts[vote.artistId] || 0) + 1;
+                const artistId = vote.artistId || vote.artist_id || vote.artist;
+                if (artistId) {
+                    artistVoteCounts[artistId] = (artistVoteCounts[artistId] || 0) + 1;
+                }
             });
-            const maxVotes = Math.max(...Object.values(artistVoteCounts));
+            
+            const maxVotes = Object.keys(artistVoteCounts).length > 0 ? Math.max(...Object.values(artistVoteCounts)) : 0;
 
             // Consensus calculation (simplified)
-            const consensus = 100 - (stdDev / mean * 100);
+            const consensus = mean > 0 ? Math.max(0, 100 - (stdDev / mean * 100)) : 0;
 
             // Best evaluated criteria
             const criteriaAverages = {};
             CRITERIA.forEach(criteria => {
                 const criteriaScores = votes
                     .filter(vote => vote.scores && vote.scores[criteria.id])
-                    .map(vote => RATING_VALUES[vote.scores[criteria.id]]);
+                    .map(vote => RATING_VALUES[vote.scores[criteria.id]] || 0);
                 
                 if (criteriaScores.length > 0) {
                     criteriaAverages[criteria.id] = criteriaScores.reduce((sum, score) => sum + score, 0) / criteriaScores.length;
@@ -413,9 +493,9 @@
             ui.highestAvgStat.textContent = highest.toFixed(1);
             ui.lowestAvgStat.textContent = lowest.toFixed(1);
             ui.stdDeviationStat.textContent = stdDev.toFixed(2);
-            ui.mostVotesStat.textContent = maxVotes || 0;
+            ui.mostVotesStat.textContent = maxVotes;
             ui.consensusStat.textContent = consensus.toFixed(1) + '%';
-            ui.bestCriteriaStat.textContent = bestCriteria ? CRITERIA.find(c => c.id === bestCriteria[0])?.name : '-';
+            ui.bestCriteriaStat.textContent = bestCriteria ? CRITERIA.find(c => c.id === bestCriteria[0])?.name : 'Sin datos';
         }
 
         function generateCharts() {
@@ -585,8 +665,23 @@
         }
 
         function generateResultsTable() {
+            if (artists.length === 0) {
+                ui.resultsTableBody.innerHTML = `
+                    <tr>
+                        <td colspan="15" class="text-center text-gray-400 py-8">
+                            <div class="text-2xl mb-2">📭</div>
+                            <div>No hay artistas registrados en este evento</div>
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
             const artistResults = artists.map(artist => {
-                const artistVotes = votes.filter(vote => vote.artistId === artist.id);
+                const artistVotes = votes.filter(vote => {
+                    const artistId = vote.artistId || vote.artist_id || vote.artist;
+                    return artistId === artist.id;
+                });
                 
                 if (artistVotes.length === 0) {
                     return {
@@ -601,14 +696,17 @@
                 CRITERIA.forEach(criteria => {
                     const criteriaScores = artistVotes
                         .filter(vote => vote.scores && vote.scores[criteria.id])
-                        .map(vote => RATING_VALUES[vote.scores[criteria.id]]);
+                        .map(vote => RATING_VALUES[vote.scores[criteria.id]] || 0);
                     
                     criteriaAverages[criteria.id] = criteriaScores.length > 0 
                         ? criteriaScores.reduce((sum, score) => sum + score, 0) / criteriaScores.length
                         : 0;
                 });
 
-                const average = artistVotes.reduce((sum, vote) => sum + vote.averageScore, 0) / artistVotes.length;
+                const average = artistVotes.reduce((sum, vote) => {
+                    const score = vote.averageScore || vote.average || vote.score || 0;
+                    return sum + score;
+                }, 0) / artistVotes.length;
 
                 return {
                     ...artist,
@@ -620,25 +718,35 @@
 
             artistResults.sort((a, b) => b.average - a.average);
 
-            ui.resultsTableBody.innerHTML = artistResults.map((artist, index) => `
-                <tr>
-                    <td class="font-bold">${index + 1}</td>
-                    <td class="font-semibold">${artist.name}</td>
-                    <td class="font-bold text-green-400">${artist.average.toFixed(1)}</td>
-                    <td>${(artist.criteriaAverages['afinacion'] || 0).toFixed(1)}</td>
-                    <td>${(artist.criteriaAverages['ritmo-tempo'] || 0).toFixed(1)}</td>
-                    <td>${(artist.criteriaAverages['tecnica-vocal'] || 0).toFixed(1)}</td>
-                    <td>${(artist.criteriaAverages['expresion-interpretacion'] || 0).toFixed(1)}</td>
-                    <td>${(artist.criteriaAverages['presencia-escenica'] || 0).toFixed(1)}</td>
-                    <td>${(artist.criteriaAverages['originalidad-estilo'] || 0).toFixed(1)}</td>
-                    <td>${(artist.criteriaAverages['diccion-claridad'] || 0).toFixed(1)}</td>
-                    <td>${(artist.criteriaAverages['conexion-publico'] || 0).toFixed(1)}</td>
-                    <td>${(artist.criteriaAverages['actitud-compromiso'] || 0).toFixed(1)}</td>
-                    <td>${(artist.criteriaAverages['evolucion-certamen'] || 0).toFixed(1)}</td>
-                    <td>${artist.voteCount}</td>
-                    <td>Todas</td>
-                </tr>
-            `).join('');
+            if (votes.length === 0) {
+                ui.resultsTableBody.innerHTML = artistResults.map((artist, index) => `
+                    <tr>
+                        <td class="font-bold">${index + 1}</td>
+                        <td class="font-semibold">${artist.name}</td>
+                        <td colspan="13" class="text-center text-gray-400">Sin evaluaciones de jurados</td>
+                    </tr>
+                `).join('');
+            } else {
+                ui.resultsTableBody.innerHTML = artistResults.map((artist, index) => `
+                    <tr>
+                        <td class="font-bold">${index + 1}</td>
+                        <td class="font-semibold">${artist.name}</td>
+                        <td class="font-bold text-green-400">${artist.average.toFixed(1)}</td>
+                        <td>${(artist.criteriaAverages['afinacion'] || 0).toFixed(1)}</td>
+                        <td>${(artist.criteriaAverages['ritmo-tempo'] || 0).toFixed(1)}</td>
+                        <td>${(artist.criteriaAverages['tecnica-vocal'] || 0).toFixed(1)}</td>
+                        <td>${(artist.criteriaAverages['expresion-interpretacion'] || 0).toFixed(1)}</td>
+                        <td>${(artist.criteriaAverages['presencia-escenica'] || 0).toFixed(1)}</td>
+                        <td>${(artist.criteriaAverages['originalidad-estilo'] || 0).toFixed(1)}</td>
+                        <td>${(artist.criteriaAverages['diccion-claridad'] || 0).toFixed(1)}</td>
+                        <td>${(artist.criteriaAverages['conexion-publico'] || 0).toFixed(1)}</td>
+                        <td>${(artist.criteriaAverages['actitud-compromiso'] || 0).toFixed(1)}</td>
+                        <td>${(artist.criteriaAverages['evolucion-certamen'] || 0).toFixed(1)}</td>
+                        <td>${artist.voteCount}</td>
+                        <td>Todas</td>
+                    </tr>
+                `).join('');
+            }
         }
 
         function generateJurorsTable() {
