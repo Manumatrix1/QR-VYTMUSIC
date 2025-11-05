@@ -481,7 +481,7 @@
     
     <script type="module">
         import { db, auth } from './firebase_config.js';
-        import { collection, onSnapshot, query, doc, updateDoc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { collection, onSnapshot, query, doc, updateDoc, getDoc, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         
         class ImprovedQRScanner {
@@ -531,33 +531,68 @@
             }
             
             async checkUserType() {
+                console.log('🔍 Iniciando verificación de tipo de usuario...');
+                
                 // Verificar si el usuario está autenticado
                 onAuthStateChanged(auth, async (user) => {
                     this.currentUser = user;
                     
                     if (user) {
-                        // Usuario autenticado - verificar si es organizador
-                        await this.verifyOrganizer(user);
+                        console.log('✅ Usuario autenticado:', user.email);
+                        // Usuario autenticado - verificar si es organizador con múltiples métodos
+                        await this.smartOrganizerDetection(user);
                     } else {
+                        console.log('❌ Usuario no autenticado - configurando como asistente');
                         // Usuario no autenticado - debe ser asistente
                         this.setupAsAssistant();
                     }
                 });
             }
             
-            async verifyOrganizer(user) {
+            async smartOrganizerDetection(user) {
+                console.log('🧠 Detección inteligente de organizador iniciada...');
+                
                 try {
-                    console.log('🔍 Verificando si es organizador...');
-                    console.log('👤 Usuario actual:', user.uid, user.email);
-                    console.log('🎫 Event ID:', this.eventId);
-                    
-                    if (!this.eventId) {
-                        console.log('❌ No hay eventId - configurando como asistente');
-                        this.setupAsAssistant();
+                    // Método 1: Verificar por ownerId del evento
+                    const isOwnerByEvent = await this.verifyEventOwner(user);
+                    if (isOwnerByEvent) {
+                        console.log('✅ MÉTODO 1: Detectado como organizador por ownerId del evento');
+                        this.setupAsOrganizer(user);
                         return;
                     }
                     
-                    // Verificar si el usuario es el propietario del evento
+                    // Método 2: Si viene desde el panel principal autenticado, muy probablemente es organizador
+                    const isFromMainPanel = this.isComingFromMainPanel();
+                    if (isFromMainPanel) {
+                        console.log('✅ MÉTODO 2: Detectado como organizador - viene del panel principal autenticado');
+                        this.setupAsOrganizer(user);
+                        return;
+                    }
+                    
+                    // Método 3: Verificar si es el único usuario que ha creado eventos
+                    const isMainUser = await this.verifyMainUser(user);
+                    if (isMainUser) {
+                        console.log('✅ MÉTODO 3: Detectado como organizador - usuario principal del sistema');
+                        this.setupAsOrganizer(user);
+                        return;
+                    }
+                    
+                    console.log('❌ No se pudo detectar como organizador - configurando como asistente');
+                    this.setupAsAssistant();
+                    
+                } catch (error) {
+                    console.error('❌ Error en detección inteligente:', error);
+                    this.setupAsAssistant();
+                }
+            }
+            
+            async verifyEventOwner(user) {
+                try {
+                    if (!this.eventId) {
+                        console.log('⚠️ No hay eventId para verificar ownership');
+                        return false;
+                    }
+                    
                     const eventRef = doc(db, 'events', this.eventId);
                     const eventDoc = await getDoc(eventRef);
                     
@@ -567,22 +602,57 @@
                         console.log('👑 Owner ID del evento:', eventData.ownerId);
                         console.log('🆔 User ID actual:', user.uid);
                         
-                        // Si el ownerId coincide con el usuario actual, es organizador
-                        if (eventData.ownerId === user.uid) {
-                            console.log('✅ ¡ES ORGANIZADOR! Configurando acceso completo');
-                            this.setupAsOrganizer(user);
-                        } else {
-                            console.log('❌ No es organizador - configurando como asistente');
-                            console.log(`Comparación: "${eventData.ownerId}" !== "${user.uid}"`);
-                            this.setupAsAssistant();
-                        }
-                    } else {
-                        console.log('❌ Evento no encontrado - configurando como asistente');
-                        this.setupAsAssistant();
+                        return eventData.ownerId === user.uid;
                     }
+                    
+                    return false;
                 } catch (error) {
-                    console.error('❌ Error verificando organizador:', error);
-                    this.setupAsAssistant();
+                    console.error('Error verificando event owner:', error);
+                    return false;
+                }
+            }
+            
+            isComingFromMainPanel() {
+                // Si viene con parámetros de evento desde el panel principal, es muy probable que sea organizador
+                const referrer = document.referrer;
+                const hasEventParams = this.eventId && this.eventName;
+                
+                console.log('🔗 Referrer:', referrer);
+                console.log('📋 Tiene parámetros de evento:', hasEventParams);
+                
+                // Si viene del panel de eventos o tiene parámetros completos, probablemente es organizador
+                return hasEventParams && (
+                    referrer.includes('eventos.html') || 
+                    referrer.includes('panel_evento') ||
+                    !referrer || // Acceso directo con parámetros
+                    referrer.includes(window.location.origin)
+                );
+            }
+            
+            async verifyMainUser(user) {
+                try {
+                    // Verificar si este usuario ha creado eventos en el sistema
+                    const eventsQuery = query(collection(db, 'events'));
+                    const eventsSnapshot = await getDocs(eventsQuery);
+                    
+                    let userEventCount = 0;
+                    let totalEvents = eventsSnapshot.size;
+                    
+                    eventsSnapshot.docs.forEach(doc => {
+                        const eventData = doc.data();
+                        if (eventData.ownerId === user.uid) {
+                            userEventCount++;
+                        }
+                    });
+                    
+                    console.log(`📊 Usuario ha creado ${userEventCount} de ${totalEvents} eventos`);
+                    
+                    // Si ha creado más del 50% de los eventos o es el único que ha creado eventos
+                    return userEventCount > 0 && (userEventCount >= totalEvents * 0.5 || totalEvents <= 3);
+                    
+                } catch (error) {
+                    console.error('Error verificando main user:', error);
+                    return false;
                 }
             }
             
@@ -591,8 +661,9 @@
                 this.assistantName = `Organizador: ${user.email}`;
                 this.assistantCode = 'ORG-ADMIN';
                 
+                console.log('👑 CONFIGURADO COMO ORGANIZADOR:', user.email);
+                
                 // Actualizar la UI para organizador
-                const userStatus = document.getElementById('user-status');
                 const userDisplay = document.getElementById('user-info-display');
                 
                 userDisplay.innerHTML = `
@@ -602,7 +673,7 @@
                             <div>
                                 <p class="text-green-200 font-semibold">Organizador del Evento</p>
                                 <p class="text-white">${user.email}</p>
-                                <p class="text-green-300 text-sm mt-1">Acceso completo autorizado</p>
+                                <p class="text-green-300 text-sm mt-1">Acceso completo autorizado automáticamente</p>
                             </div>
                         </div>
                     </div>
@@ -619,11 +690,13 @@
                 // Validar automáticamente
                 this.validateSetup();
                 
-                console.log('✅ Configurado como organizador del evento');
+                console.log('✅ Configurado como organizador del evento - acceso directo habilitado');
             }
             
             setupAsAssistant() {
                 this.isOrganizer = false;
+                
+                console.log('📝 Configurando como asistente...');
                 
                 // Actualizar la UI para asistente
                 const userDisplay = document.getElementById('user-info-display');
@@ -631,43 +704,24 @@
                     <div class="bg-orange-900 border border-orange-600 rounded-lg p-4">
                         <div class="flex items-center space-x-3">
                             <span class="text-2xl">👤</span>
-                            <div class="flex-grow">
+                            <div>
                                 <p class="text-orange-200 font-semibold">Modo Asistente</p>
                                 <p class="text-white">Configura tus datos abajo</p>
                                 <p class="text-orange-300 text-sm mt-1">Se requiere información del asistente</p>
                             </div>
-                            <button id="force-organizer-btn" class="bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded text-sm font-bold">
-                                🔧 Forzar Modo Organizador
-                            </button>
                         </div>
                     </div>
                 `;
-                
-                // Agregar event listener para el botón de forzar organizador
-                document.getElementById('force-organizer-btn').onclick = () => {
-                    if (confirm('¿Eres el organizador de este evento y quieres forzar el acceso de organizador?')) {
-                        this.forceOrganizerMode();
-                    }
-                };
                 
                 // Mostrar sección de asistente
                 document.getElementById('assistant-setup').classList.remove('hidden');
                 
                 // Actualizar nota del botón
                 const startNote = document.getElementById('start-scanner-note');
-                startNote.textContent = 'Completa la configuración de asistente o usa el botón de forzar organizador';
+                startNote.textContent = 'Completa la configuración de asistente';
                 startNote.className = 'text-sm text-gray-400 mt-2';
                 
                 console.log('📝 Configurado como asistente - requiere datos');
-            }
-            
-            forceOrganizerMode() {
-                console.log('🔧 FORZANDO MODO ORGANIZADOR');
-                const currentUser = this.currentUser || { 
-                    email: 'Organizador (Modo Forzado)', 
-                    uid: 'forced-organizer' 
-                };
-                this.setupAsOrganizer(currentUser);
             }
             
             parseUrlParams() {
