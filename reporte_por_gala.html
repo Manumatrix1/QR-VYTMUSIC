@@ -350,9 +350,25 @@
                     console.log(`${artist.name}: ${publicScore} puntos de ${ratingsCount} votos`);
                 });
 
-                // NO cargar jurados de la colección (puede tener datos incorrectos)
-                // Los jurados reales se extraerán de las evaluaciones existentes
+                // Cargar jurados registrados desde la colección juries
+                console.log('👨‍⚖️ Cargando jurados registrados...');
+                const juriesQuery = query(collection(db, `events/${eventId}/juries`));
+                const juriesSnapshot = await getDocs(juriesQuery);
+                
                 galaData.jurors = [];
+                juriesSnapshot.docs.forEach(juryDoc => {
+                    const juryData = juryDoc.data();
+                    // Solo incluir jurados que NO sean secretos
+                    if (juryData.type !== 'secreto') {
+                        galaData.jurors.push({
+                            id: juryDoc.id,
+                            name: juryData.name,
+                            type: juryData.type
+                        });
+                    }
+                });
+                
+                console.log(`📊 Jurados no secretos encontrados: ${galaData.jurors.length}`);
 
                 // Cargar votos de jurados desde jury_evaluations
                 console.log('🔍 Buscando evaluaciones de jurado para eventId:', eventId);
@@ -493,10 +509,10 @@
             updatePublicAnalysis(); // NUEVO: Análisis detallado del público
             updateRanking();
             
-            // Solo mostrar secciones de jurados si hay datos
-            const hasJuryVotes = Object.values(galaData.juryVotes).some(votes => votes.length > 0);
+            // Solo mostrar secciones de jurados si hay jurados no secretos
+            const hasJuryData = galaData.jurors.length > 0;
             
-            if (hasJuryVotes) {
+            if (hasJuryData) {
                 document.getElementById('jury-analysis-section').classList.remove('hidden');
                 document.getElementById('comparison-section').classList.remove('hidden');
                 updateJuryAnalysis();
@@ -734,25 +750,73 @@
             const container = document.getElementById('jury-analysis-container');
             container.innerHTML = '';
 
+            if (galaData.jurors.length === 0) {
+                container.innerHTML = '<p class="text-center text-gray-400">No hay jurados no secretos para mostrar calificaciones.</p>';
+                return;
+            }
+
+            // Introducción explicativa
+            const introDiv = document.createElement('div');
+            introDiv.className = 'bg-purple-900 p-4 rounded-lg mb-6 border border-purple-600';
+            introDiv.innerHTML = `
+                <h3 class="text-lg font-bold text-purple-300 mb-2">📊 ¿Qué vieron los jurados?</h3>
+                <p class="text-purple-200 text-sm">
+                    Estas son las calificaciones que dieron los jurados no secretos. 
+                    Los artistas pueden ver estas puntuaciones para entender qué aspectos destacar y mejorar.
+                    <strong class="text-purple-100">Nota:</strong> Los jurados con voto secreto no aparecen aquí para mantener la confidencialidad.
+                </p>
+            `;
+            container.appendChild(introDiv);
+
             galaData.jurors.forEach(juror => {
                 const juryCard = document.createElement('div');
-                juryCard.className = 'bg-gray-800 p-4 rounded-lg';
+                juryCard.className = 'bg-gray-800 p-6 rounded-lg border border-gray-600';
                 
                 let votesHtml = '';
+                let totalVotes = 0;
+                let totalScore = 0;
+                
                 galaData.artists.forEach(artist => {
                     const vote = galaData.juryVotes[artist.id]?.find(v => v.jurorName === juror.name);
-                    const score = vote ? vote.score : 'No votó';
-                    votesHtml += `
-                        <div class="flex justify-between py-1">
-                            <span>${artist.name}</span>
-                            <span class="font-bold ${vote ? 'text-green-400' : 'text-red-400'}">${score}</span>
-                        </div>
-                    `;
+                    if (vote) {
+                        totalVotes++;
+                        totalScore += vote.score;
+                        votesHtml += `
+                            <div class="flex justify-between items-center py-2 border-b border-gray-700 last:border-b-0">
+                                <span class="font-medium">${artist.name}</span>
+                                <div class="text-right">
+                                    <span class="font-bold text-lg text-green-400">${vote.score}/10</span>
+                                    ${vote.comments ? `<p class="text-xs text-gray-400 mt-1">"${vote.comments}"</p>` : ''}
+                                </div>
+                            </div>
+                        `;
+                    } else {
+                        votesHtml += `
+                            <div class="flex justify-between py-2 border-b border-gray-700 last:border-b-0">
+                                <span class="text-gray-400">${artist.name}</span>
+                                <span class="text-red-400 font-bold">No votó</span>
+                            </div>
+                        `;
+                    }
                 });
 
+                const avgScore = totalVotes > 0 ? (totalScore / totalVotes).toFixed(1) : 'N/A';
+                const typeIcon = juror.type === 'individual' ? '🧑' : '👥';
+
                 juryCard.innerHTML = `
-                    <h4 class="text-lg font-bold mb-3 text-purple-400">👨‍⚖️ ${juror.name}</h4>
-                    <div class="space-y-1 text-sm">${votesHtml}</div>
+                    <div class="flex justify-between items-center mb-4">
+                        <h4 class="text-xl font-bold text-purple-400">${typeIcon} ${juror.name}</h4>
+                        <div class="text-right">
+                            <p class="text-sm text-gray-400">Promedio</p>
+                            <p class="text-2xl font-bold text-purple-300">${avgScore}</p>
+                        </div>
+                    </div>
+                    <div class="space-y-1">${votesHtml}</div>
+                    <div class="mt-4 pt-4 border-t border-gray-600 text-center">
+                        <p class="text-sm text-gray-400">
+                            Votó a <strong class="text-white">${totalVotes}</strong> de <strong class="text-white">${galaData.artists.length}</strong> artistas
+                        </p>
+                    </div>
                 `;
                 container.appendChild(juryCard);
             });
