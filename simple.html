@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Cámara Simple</title>
+    <style>
+        body { margin: 0; padding: 20px; background: #000; color: #fff; font-family: Arial; text-align: center; }
+        button { padding: 20px; font-size: 18px; margin: 10px; border: none; border-radius: 10px; cursor: pointer; }
+        .test { background: #007bff; color: white; }
+        video { width: 100%; max-width: 400px; height: 300px; background: #333; }
+        .info { background: #333; padding: 15px; margin: 10px 0; border-radius: 5px; text-align: left; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <h1>🔥 TEST SÚPER SIMPLE</h1>
+    
+    <button class="test" onclick="testCamera()">📱 PROBAR CÁMARA</button>
+    
+    <div id="info" class="info">
+        <strong>Info del navegador:</strong><br>
+        User Agent: <span id="ua"></span><br>
+        Protocolo: <span id="protocol"></span><br>
+        Host: <span id="host"></span>
+    </div>
+    
+    <div id="result" style="margin: 20px 0; padding: 15px; border-radius: 5px;">
+        Presiona el botón para probar
+    </div>
+    
+    <video id="video" autoplay muted playsinline style="display: none;"></video>
+    
+    <button onclick="stopCamera()" style="display: none; background: red; color: white;" id="stopBtn">❌ PARAR</button>
+
+    <script>
+        // Mostrar info del navegador
+        document.getElementById('ua').textContent = navigator.userAgent;
+        document.getElementById('protocol').textContent = location.protocol;
+        document.getElementById('host').textContent = location.host;
+        
+        let currentStream = null;
+        
+        async function testCamera() {
+            const result = document.getElementById('result');
+            const video = document.getElementById('video');
+            const stopBtn = document.getElementById('stopBtn');
+            
+            result.style.background = '#ffa500';
+            result.textContent = '🔄 Probando acceso a cámara...';
+            
+            try {
+                console.log('Solicitando cámara...');
+                
+                currentStream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: 'environment'  // Cámara trasera
+                    }
+                });
+                
+                console.log('✅ Cámara obtenida');
+                
+                video.srcObject = currentStream;
+                video.style.display = 'block';
+                stopBtn.style.display = 'inline-block';
+                
+                result.style.background = '#28a745';
+                result.textContent = '✅ ¡ÉXITO! La cámara funciona perfectamente';
+                
+            } catch (error) {
+                console.error('❌ Error:', error);
+                
+                result.style.background = '#dc3545';
+                result.innerHTML = `
+                    ❌ ERROR: ${error.name}<br>
+                    Mensaje: ${error.message}<br>
+                    <small>Revisa la consola para más detalles</small>
+                `;
+                
+                // Intentar con cámara frontal como backup
+                if (error.name === 'OverconstrainedError') {
+                    try {
+                        console.log('Intentando con cámara frontal...');
+                        currentStream = await navigator.mediaDevices.getUserMedia({ video: true });
+                        video.srcObject = currentStream;
+                        video.style.display = 'block';
+                        stopBtn.style.display = 'inline-block';
+                        result.style.background = '#28a745';
+                        result.textContent = '✅ Funciona con cámara frontal';
+                    } catch (error2) {
+                        console.error('❌ Error también con cámara frontal:', error2);
+                    }
+                }
+            }
+        }
+        
+        function stopCamera() {
+            if (currentStream) {
+                currentStream.getTracks().forEach(track => track.stop());
+                document.getElementById('video').style.display = 'none';
+                document.getElementById('stopBtn').style.display = 'none';
+                document.getElementById('result').style.background = '#333';
+                document.getElementById('result').textContent = 'Cámara detenida. Presiona el botón para probar de nuevo.';
+            }
+        }
+    </script>
+</body>
+</html>
