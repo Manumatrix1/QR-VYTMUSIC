@@ -430,9 +430,6 @@
             <button id="stop-scanner" class="control-btn btn-stop">
                 ❌ Cerrar
             </button>
-            <button id="camera-test" class="control-btn" style="background: linear-gradient(135deg, #10b981, #059669); color: white;">
-                📷 Test
-            </button>
             <button id="force-sync" class="control-btn btn-sync">
                 🔄 Sync
             </button>
@@ -554,7 +551,6 @@
             initializeEvents() {
                 document.getElementById('start-scanner').onclick = () => this.startSystem();
                 document.getElementById('stop-scanner').onclick = () => this.stopSystem();
-                document.getElementById('camera-test').onclick = () => this.testCameraAccess();
                 document.getElementById('search-toggle').onclick = () => this.toggleManualSearch();
                 document.getElementById('close-search').onclick = () => this.hideManualSearch();
                 document.getElementById('force-sync').onclick = () => this.forceSyncNow();
@@ -911,215 +907,108 @@
             }
 
             async initializeScanner() {
+                console.log('🔄 Iniciando escáner...');
+                
+                // Verificar protocolo seguro
+                if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
+                    this.showProtocolError();
+                    return;
+                }
+                
                 try {
-                    console.log('🔄 === DIAGNÓSTICO COMPLETO DE CÁMARA ===');
-                    
-                    // 1. Verificar HTTPS
-                    if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
-                        throw new Error('❌ Cámara requiere HTTPS. Actual: ' + location.protocol);
-                    }
-                    console.log('✅ Protocolo correcto:', location.protocol);
-                    
-                    // 2. Verificar elemento HTML
-                    const qrReaderElement = document.getElementById("qr-reader");
-                    if (!qrReaderElement) {
-                        throw new Error('❌ Elemento qr-reader no encontrado');
-                    }
-                    console.log('✅ Elemento qr-reader encontrado');
-                    
-                    // 3. Verificar librería Html5Qrcode
-                    if (typeof Html5Qrcode === 'undefined') {
-                        throw new Error('❌ Librería Html5Qrcode no cargada. Recarga la página.');
-                    }
-                    console.log('✅ Librería Html5Qrcode disponible');
-                    
-                    // 4. Verificar MediaDevices API
+                    // Verificar soporte del navegador
                     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-                        throw new Error('❌ Tu navegador no soporta acceso a cámara');
-                    }
-                    console.log('✅ MediaDevices API disponible');
-                    
-                    // 5. Verificar permisos de cámara explícitamente
-                    console.log('🎥 Solicitando permisos de cámara...');
-                    try {
-                        const stream = await navigator.mediaDevices.getUserMedia({ 
-                            video: { facingMode: "environment" } 
-                        });
-                        console.log('✅ Permisos de cámara otorgados');
-                        // Detener el stream de prueba
-                        stream.getTracks().forEach(track => track.stop());
-                    } catch (permissionError) {
-                        console.error('❌ Error de permisos:', permissionError);
-                        throw new Error(`❌ Sin permisos de cámara: ${permissionError.message}`);
+                        throw new Error('Tu navegador no soporta acceso a cámara');
                     }
                     
-                    // 6. Inicializar Html5Qrcode
-                    console.log('🔧 Inicializando Html5Qrcode...');
+                    // Solicitar permisos explícitamente
+                    console.log('📷 Solicitando acceso a cámara...');
+                    const stream = await navigator.mediaDevices.getUserMedia({ 
+                        video: { facingMode: "environment" } 
+                    });
+                    
+                    // Detener el stream de prueba
+                    stream.getTracks().forEach(track => track.stop());
+                    console.log('✅ Permisos de cámara obtenidos');
+                    
+                    // Ahora inicializar el escáner
                     this.html5QrCode = new Html5Qrcode("qr-reader");
                     
-                    // 7. Configuración optimizada
-                    const config = {
-                        fps: 10,
-                        qrbox: { width: 250, height: 250 },
-                        aspectRatio: 1.0,
-                        disableFlip: false,
-                        experimentalFeatures: {
-                            useBarCodeDetectorIfSupported: true
-                        }
-                    };
-
-                    console.log('📷 Iniciando escáner con cámara trasera...');
-                    
-                    // 8. Iniciar escáner
                     await this.html5QrCode.start(
                         { facingMode: "environment" },
-                        config,
+                        {
+                            fps: 10,
+                            qrbox: { width: 250, height: 250 },
+                            aspectRatio: 1.0
+                        },
                         (decodedText) => {
-                            console.log(`🔍 Código escaneado: ${decodedText}`);
+                            console.log(`📱 QR escaneado: ${decodedText}`);
                             this.onScanSuccess(decodedText);
                         },
-                        (errorMessage) => {
-                            // Solo loguear errores importantes
-                            if (!errorMessage.includes('No QR code found') && 
-                                !errorMessage.includes('QR code parse error') &&
-                                !errorMessage.includes('Unable to find or decode QR-code')) {
-                                console.warn('⚠️ Error de escaneo:', errorMessage);
-                            }
-                        }
+                        () => {} // Ignorar errores menores de escaneo
                     );
 
                     this.isActive = true;
-                    console.log('✅ === ESCÁNER INICIADO CORRECTAMENTE ===');
+                    console.log('✅ Escáner iniciado correctamente');
+                    this.hideError();
                     
                 } catch (error) {
-                    console.error('❌ === ERROR INICIANDO ESCÁNER ===');
-                    console.error('Error completo:', error);
-                    
-                    // Intentar diagnóstico adicional
-                    this.diagnosticoCamara();
-                    
-                    // Mostrar error específico
+                    console.error('❌ Error de cámara:', error);
                     this.showCameraError(error.message);
                 }
             }
 
-            async testCameraAccess() {
-                console.log('🧪 === TEST MANUAL DE CÁMARA ===');
-                
-                const testDiv = document.createElement('div');
-                testDiv.className = 'fixed inset-0 bg-black bg-opacity-95 flex items-center justify-center z-50 p-4';
-                testDiv.innerHTML = `
-                    <div class="bg-gray-800 p-6 rounded-xl text-white max-w-md w-full">
-                        <h3 class="text-xl font-bold mb-4">📷 Test de Cámara</h3>
-                        <div id="test-status" class="mb-4">
-                            <p>🔄 Ejecutando diagnóstico...</p>
+            showProtocolError() {
+                const errorDiv = document.createElement('div');
+                errorDiv.id = 'camera-error';
+                errorDiv.className = 'fixed inset-0 bg-red-900 bg-opacity-95 flex items-center justify-center z-50 p-4';
+                errorDiv.innerHTML = `
+                    <div class="bg-red-800 p-6 rounded-xl text-white text-center max-w-sm">
+                        <h3 class="text-lg font-bold mb-4">🔒 Protocolo Inseguro</h3>
+                        <p class="mb-4 text-sm">La cámara requiere HTTPS</p>
+                        <div class="text-xs mb-4 text-left">
+                            <p><strong>Soluciones:</strong></p>
+                            <p>• Accede desde un servidor HTTPS</p>
+                            <p>• Usa localhost para desarrollo</p>
                         </div>
-                        <div id="test-results" class="text-sm space-y-2 hidden">
-                        </div>
-                        <button onclick="this.parentElement.parentElement.remove()" class="w-full bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded font-bold mt-4">
-                            ✅ Cerrar
+                        <button onclick="location.reload()" class="w-full bg-red-600 px-4 py-2 rounded font-bold">
+                            🔄 Reintentar
                         </button>
                     </div>
                 `;
-                document.body.appendChild(testDiv);
-                
-                const statusEl = testDiv.querySelector('#test-status');
-                const resultsEl = testDiv.querySelector('#test-results');
-                
-                try {
-                    // Test 1: Protocolo
-                    statusEl.innerHTML = '<p>🔍 1/6 Verificando protocolo...</p>';
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                    
-                    const protocolOk = location.protocol === 'https:' || location.hostname === 'localhost';
-                    resultsEl.innerHTML += `<p>${protocolOk ? '✅' : '❌'} Protocolo: ${location.protocol}</p>`;
-                    
-                    // Test 2: MediaDevices
-                    statusEl.innerHTML = '<p>🔍 2/6 Verificando MediaDevices API...</p>';
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                    
-                    const mediaOk = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
-                    resultsEl.innerHTML += `<p>${mediaOk ? '✅' : '❌'} MediaDevices API: ${mediaOk ? 'Disponible' : 'No disponible'}</p>`;
-                    
-                    // Test 3: Permisos
-                    statusEl.innerHTML = '<p>🔍 3/6 Verificando permisos...</p>';
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                    
-                    let permissionStatus = 'Desconocido';
-                    if (navigator.permissions) {
-                        try {
-                            const permission = await navigator.permissions.query({name: 'camera'});
-                            permissionStatus = permission.state;
-                        } catch (e) {
-                            permissionStatus = 'Error al consultar';
-                        }
-                    }
-                    resultsEl.innerHTML += `<p>🔐 Permisos: ${permissionStatus}</p>`;
-                    
-                    // Test 4: Dispositivos
-                    statusEl.innerHTML = '<p>🔍 4/6 Detectando cámaras...</p>';
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                    
-                    try {
-                        const devices = await navigator.mediaDevices.enumerateDevices();
-                        const cameras = devices.filter(d => d.kind === 'videoinput');
-                        resultsEl.innerHTML += `<p>📹 Cámaras: ${cameras.length} detectadas</p>`;
-                        cameras.forEach((cam, i) => {
-                            resultsEl.innerHTML += `<p class="text-xs ml-4">• ${cam.label || `Cámara ${i+1}`}</p>`;
-                        });
-                    } catch (e) {
-                        resultsEl.innerHTML += `<p>❌ Error detectando cámaras: ${e.message}</p>`;
-                    }
-                    
-                    // Test 5: Acceso real
-                    statusEl.innerHTML = '<p>🔍 5/6 Probando acceso a cámara...</p>';
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                    
-                    try {
-                        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-                        resultsEl.innerHTML += `<p>✅ Acceso a cámara: Exitoso</p>`;
-                        stream.getTracks().forEach(track => track.stop());
-                    } catch (e) {
-                        resultsEl.innerHTML += `<p>❌ Acceso a cámara: ${e.message}</p>`;
-                    }
-                    
-                    // Test 6: Html5Qrcode
-                    statusEl.innerHTML = '<p>🔍 6/6 Verificando librería...</p>';
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                    
-                    const libOk = typeof Html5Qrcode !== 'undefined';
-                    resultsEl.innerHTML += `<p>${libOk ? '✅' : '❌'} Html5Qrcode: ${libOk ? 'Cargada' : 'No cargada'}</p>`;
-                    
-                    statusEl.innerHTML = '<p>✅ Diagnóstico completado</p>';
-                    resultsEl.classList.remove('hidden');
-                    
-                } catch (error) {
-                    statusEl.innerHTML = '<p>❌ Error en diagnóstico</p>';
-                    resultsEl.innerHTML = `<p class="text-red-400">Error: ${error.message}</p>`;
-                    resultsEl.classList.remove('hidden');
-                }
+                document.body.appendChild(errorDiv);
             }
 
-            async diagnosticoCamara() {
-                console.log('🔍 === DIAGNÓSTICO ADICIONAL ===');
+            showCameraError(message) {
+                // Remover error anterior si existe
+                this.hideError();
                 
-                try {
-                    // Verificar dispositivos disponibles
-                    const devices = await navigator.mediaDevices.enumerateDevices();
-                    const videoDevices = devices.filter(device => device.kind === 'videoinput');
-                    console.log(`📹 Cámaras detectadas: ${videoDevices.length}`);
-                    videoDevices.forEach((device, index) => {
-                        console.log(`  ${index + 1}. ${device.label || 'Cámara ' + (index + 1)}`);
-                    });
-                    
-                    // Verificar estado de permisos
-                    if (navigator.permissions) {
-                        const permission = await navigator.permissions.query({name: 'camera'});
-                        console.log(`🔐 Estado de permisos: ${permission.state}`);
-                    }
-                    
-                } catch (diagError) {
-                    console.error('❌ Error en diagnóstico:', diagError);
+                const errorDiv = document.createElement('div');
+                errorDiv.id = 'camera-error';
+                errorDiv.className = 'fixed inset-0 bg-red-900 bg-opacity-95 flex items-center justify-center z-50 p-4';
+                errorDiv.innerHTML = `
+                    <div class="bg-red-800 p-6 rounded-xl text-white text-center max-w-sm">
+                        <h3 class="text-lg font-bold mb-4">❌ Error de Cámara</h3>
+                        <p class="mb-4 text-sm">${message}</p>
+                        <p class="mb-4 text-xs text-gray-300">El navegador necesita permisos para acceder a la cámara</p>
+                        
+                        <div class="space-y-3">
+                            <button onclick="window.location.href='/solucion_camara.html'" class="w-full bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded font-bold">
+                                🔧 Ver Solución
+                            </button>
+                            <button onclick="location.reload()" class="w-full bg-red-600 hover:bg-red-700 px-4 py-2 rounded font-bold">
+                                🔄 Reintentar
+                            </button>
+                        </div>
+                    </div>
+                `;
+                document.body.appendChild(errorDiv);
+            }
+
+            hideError() {
+                const existingError = document.getElementById('camera-error');
+                if (existingError) {
+                    existingError.remove();
                 }
             }
 
