@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎤 Votación del Público - VYTMUSIC</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background: linear-gradient(135deg, #0f172a, #1e293b); color: #f8fafc; }
+        .artist-card { transition: all 0.3s ease; transform: scale(1); }
+        .artist-card:hover { transform: scale(1.02); }
+        .voted { background: linear-gradient(135deg, #10b981, #059669); transform: scale(0.98); }
+        .vote-button { transition: all 0.2s ease; }
+        .vote-button:active { transform: scale(0.95); }
+        .stars { font-size: 2rem; color: #fbbf24; text-shadow: 0 0 10px #fbbf24; }
+    </style>
+</head>
+<body class="min-h-screen p-4">
+    <div class="container mx-auto max-w-6xl">
+        <!-- Header -->
+        <div class="text-center mb-8">
+            <h1 class="text-4xl font-bold mb-2">🎤 Votación del Público</h1>
+            <p class="text-xl text-gray-300" id="event-name">Cargando evento...</p>
+            <div class="mt-4 p-4 bg-blue-900 rounded-lg">
+                <p class="text-blue-200">¡Tu voto cuenta! Selecciona tu artista favorito de esta gala.</p>
+            </div>
+        </div>
+
+        <!-- Input de datos del votante -->
+        <div id="voter-info-section" class="bg-gray-800 p-6 rounded-lg mb-8">
+            <h2 class="text-2xl font-bold mb-4">👤 Información del Votante</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-semibold text-gray-300 mb-2">Nombre Completo</label>
+                    <input type="text" id="voter-name" placeholder="Tu nombre completo" 
+                           class="w-full p-3 bg-gray-700 text-white rounded-lg focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-300 mb-2">Código de Entrada (opcional)</label>
+                    <input type="text" id="voter-ticket" placeholder="Código de tu entrada" 
+                           class="w-full p-3 bg-gray-700 text-white rounded-lg focus:ring-2 focus:ring-blue-500">
+                </div>
+            </div>
+        </div>
+
+        <!-- Estadísticas de votación -->
+        <div id="voting-stats" class="grid grid-cols-3 gap-4 mb-8">
+            <div class="bg-gray-800 p-4 rounded-lg text-center">
+                <div class="text-2xl font-bold text-blue-400" id="total-votes">0</div>
+                <div class="text-sm text-gray-400">Votos totales</div>
+            </div>
+            <div class="bg-gray-800 p-4 rounded-lg text-center">
+                <div class="text-2xl font-bold text-green-400" id="total-artists">0</div>
+                <div class="text-sm text-gray-400">Artistas</div>
+            </div>
+            <div class="bg-gray-800 p-4 rounded-lg text-center">
+                <div class="text-2xl font-bold text-purple-400" id="your-votes">0</div>
+                <div class="text-sm text-gray-400">Tus votos</div>
+            </div>
+        </div>
+
+        <!-- Lista de artistas -->
+        <div id="artists-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+            <div class="text-center text-gray-400 col-span-full">
+                <div class="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-4"></div>
+                Cargando artistas...
+            </div>
+        </div>
+
+        <!-- Resultados en tiempo real -->
+        <div id="live-results" class="bg-gray-800 p-6 rounded-lg">
+            <h2 class="text-2xl font-bold mb-4">📊 Resultados en Tiempo Real</h2>
+            <div id="results-container">
+                <p class="text-center text-gray-400">Los resultados se mostrarán aquí...</p>
+            </div>
+        </div>
+
+        <!-- Navegación -->
+        <div class="mt-8 text-center">
+            <a href="eventos.html" class="text-blue-400 hover:text-blue-300">
+                ← Volver al Gestor de Eventos
+            </a>
+        </div>
+    </div>
+
+    <!-- Modal de confirmación -->
+    <div id="vote-confirmation-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 hidden">
+        <div class="bg-gray-800 p-8 rounded-lg max-w-md w-full mx-4 text-center">
+            <div class="text-6xl mb-4">🎉</div>
+            <h3 class="text-2xl font-bold mb-4">¡Voto Registrado!</h3>
+            <p class="text-gray-300 mb-4">Has votado por <span id="voted-artist-name" class="font-bold text-blue-400"></span></p>
+            <p class="text-sm text-gray-400 mb-6">¡Gracias por participar!</p>
+            <button onclick="closeVoteModal()" class="px-6 py-3 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700">
+                Continuar
+            </button>
+        </div>
+    </div>
+
+    <script type="module">
+        import { db } from './firebase_config.js';
+        import { collection, getDocs, doc, setDoc, onSnapshot, query, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Configuración
+        const urlParams = new URLSearchParams(window.location.search);
+        const eventId = urlParams.get('eventId') || 'gmxINHvzSJ18Zt3SNeW7';
+        const eventName = urlParams.get('eventName') || 'Evento';
+        
+        document.getElementById('event-name').textContent = eventName;
+
+        // Estado de la aplicación
+        let artists = [];
+        let votes = [];
+        let userVotes = new Set(); // Para trackear votos del usuario actual
+        let currentVoterName = '';
+
+        // Cargar artistas
+        async function loadArtists() {
+            try {
+                const artistsSnapshot = await getDocs(collection(db, `events/${eventId}/artists`));
+                artists = artistsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                
+                if (artists.length === 0) {
+                    document.getElementById('artists-container').innerHTML = 
+                        '<div class="col-span-full text-center text-red-400">No se encontraron artistas para este evento</div>';
+                    return;
+                }
+                
+                renderArtists();
+                updateStats();
+                console.log(`✅ Cargados ${artists.length} artistas`);
+            } catch (error) {
+                console.error('Error cargando artistas:', error);
+                document.getElementById('artists-container').innerHTML = 
+                    '<div class="col-span-full text-center text-red-400">Error cargando artistas</div>';
+            }
+        }
+
+        // Renderizar artistas
+        function renderArtists() {
+            const container = document.getElementById('artists-container');
+            container.innerHTML = '';
+
+            artists.forEach(artist => {
+                const hasVoted = userVotes.has(artist.id);
+                const artistVotes = votes.filter(vote => vote.artistId === artist.id).length;
+
+                const artistCard = document.createElement('div');
+                artistCard.className = `artist-card bg-gray-800 p-6 rounded-lg shadow-xl border-2 ${hasVoted ? 'voted border-green-500' : 'border-gray-600 hover:border-blue-500'}`;
+                
+                artistCard.innerHTML = `
+                    <div class="text-center">
+                        ${artist.photoURL ? 
+                            `<img src="${artist.photoURL}" alt="${artist.name}" class="w-24 h-24 rounded-full mx-auto mb-4 object-cover border-4 border-gray-600">` :
+                            `<div class="w-24 h-24 rounded-full mx-auto mb-4 bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-3xl font-bold">
+                                ${artist.name.charAt(0)}
+                            </div>`
+                        }
+                        <h3 class="text-xl font-bold mb-2">${artist.name}</h3>
+                        <p class="text-gray-400 mb-2">${artist.city || 'Ciudad no especificada'}</p>
+                        <p class="text-gray-400 mb-4 text-sm">${artist.song || 'Canción no especificada'}</p>
+                        
+                        <div class="mb-4">
+                            <div class="stars">⭐</div>
+                            <div class="text-sm text-gray-400">${artistVotes} voto${artistVotes !== 1 ? 's' : ''}</div>
+                        </div>
+                        
+                        ${hasVoted ? 
+                            `<div class="px-4 py-2 bg-green-600 text-white font-bold rounded-lg">
+                                ✅ Ya votaste
+                            </div>` :
+                            `<button onclick="voteForArtist('${artist.id}', '${artist.name}')" 
+                                     class="vote-button w-full px-4 py-3 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700">
+                                🗳️ Votar por ${artist.name}
+                            </button>`
+                        }
+                    </div>
+                `;
+                
+                container.appendChild(artistCard);
+            });
+        }
+
+        // Votar por artista
+        window.voteForArtist = async function(artistId, artistName) {
+            const voterName = document.getElementById('voter-name').value.trim();
+            const voterTicket = document.getElementById('voter-ticket').value.trim();
+            
+            if (!voterName) {
+                alert('Por favor ingresa tu nombre antes de votar');
+                document.getElementById('voter-name').focus();
+                return;
+            }
+
+            if (userVotes.has(artistId)) {
+                alert('Ya has votado por este artista');
+                return;
+            }
+
+            try {
+                currentVoterName = voterName;
+                
+                // Crear registro de voto
+                const voteData = {
+                    artistId: artistId,
+                    artistName: artistName,
+                    voterName: voterName,
+                    voterTicket: voterTicket || 'Sin código',
+                    eventId: eventId,
+                    eventName: eventName,
+                    timestamp: new Date().toISOString(),
+                    timestampLocal: new Date().toLocaleString(),
+                    ipAddress: 'web-vote', // Identificador para votos web
+                    verified: !!voterTicket // Verificado si tiene código de entrada
+                };
+
+                // Guardar en Firebase
+                const voteRef = doc(collection(db, `events/${eventId}/public_votes`));
+                await setDoc(voteRef, voteData);
+                
+                // Actualizar estado local
+                userVotes.add(artistId);
+                votes.push(voteData);
+                
+                // Mostrar confirmación
+                document.getElementById('voted-artist-name').textContent = artistName;
+                document.getElementById('vote-confirmation-modal').classList.remove('hidden');
+                
+                // Re-renderizar
+                renderArtists();
+                updateStats();
+                updateLiveResults();
+                
+                console.log(`✅ Voto registrado: ${voterName} -> ${artistName}`);
+                
+            } catch (error) {
+                console.error('Error registrando voto:', error);
+                alert('Error al registrar el voto. Por favor intenta nuevamente.');
+            }
+        };
+
+        // Cerrar modal de confirmación
+        window.closeVoteModal = function() {
+            document.getElementById('vote-confirmation-modal').classList.add('hidden');
+        };
+
+        // Actualizar estadísticas
+        function updateStats() {
+            document.getElementById('total-votes').textContent = votes.length;
+            document.getElementById('total-artists').textContent = artists.length;
+            document.getElementById('your-votes').textContent = userVotes.size;
+        }
+
+        // Actualizar resultados en tiempo real
+        function updateLiveResults() {
+            const resultsContainer = document.getElementById('results-container');
+            
+            // Contar votos por artista
+            const votesByArtist = {};
+            artists.forEach(artist => {
+                votesByArtist[artist.id] = {
+                    artist: artist,
+                    votes: votes.filter(vote => vote.artistId === artist.id).length
+                };
+            });
+            
+            // Ordenar por votos
+            const sortedResults = Object.values(votesByArtist)
+                .sort((a, b) => b.votes - a.votes)
+                .slice(0, 5); // Top 5
+            
+            if (sortedResults.length === 0) {
+                resultsContainer.innerHTML = '<p class="text-center text-gray-400">Aún no hay votos registrados</p>';
+                return;
+            }
+            
+            resultsContainer.innerHTML = sortedResults.map((result, index) => {
+                const percentage = votes.length > 0 ? ((result.votes / votes.length) * 100).toFixed(1) : 0;
+                const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${index + 1}°`;
+                
+                return `
+                    <div class="flex items-center justify-between p-3 mb-2 bg-gray-700 rounded-lg">
+                        <div class="flex items-center">
+                            <span class="text-2xl mr-3">${medal}</span>
+                            <div>
+                                <div class="font-bold">${result.artist.name}</div>
+                                <div class="text-sm text-gray-400">${result.artist.city || 'Sin ciudad'}</div>
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <div class="font-bold text-blue-400">${result.votes} votos</div>
+                            <div class="text-sm text-gray-400">${percentage}%</div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Escuchar votos en tiempo real
+        function setupRealtimeVotes() {
+            const votesQuery = query(collection(db, `events/${eventId}/public_votes`));
+            onSnapshot(votesQuery, (snapshot) => {
+                votes = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                updateStats();
+                updateLiveResults();
+                console.log(`📊 Actualizados ${votes.length} votos en tiempo real`);
+            });
+        }
+
+        // Inicializar aplicación
+        async function initialize() {
+            await loadArtists();
+            setupRealtimeVotes();
+            
+            // Auto-guardar nombre del votante
+            const savedVoterName = localStorage.getItem(`voter_${eventId}`);
+            if (savedVoterName) {
+                document.getElementById('voter-name').value = savedVoterName;
+            }
+            
+            // Guardar nombre cuando cambie
+            document.getElementById('voter-name').addEventListener('change', (e) => {
+                localStorage.setItem(`voter_${eventId}`, e.target.value);
+            });
+        }
+
+        // Iniciar
+        initialize();
+    </script>
+</body>
+</html>
