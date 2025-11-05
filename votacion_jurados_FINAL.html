@@ -389,7 +389,7 @@
     <script type="module">
         // === CONFIGURACIÓN ===
         import { db } from './firebase_config.js';
-        import { collection, getDocs, query, orderBy, doc, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { collection, getDocs, query, orderBy, doc, setDoc, deleteDoc, limit, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         
         // INICIALIZAR GESTOR DE ARTISTAS GLOBALES
         const globalArtistsManager = new GlobalArtistsManager();
@@ -2290,11 +2290,12 @@ Formato de respuesta:
                 
                 try {
                     // Buscar nombres similares en la base de datos
-                    const querySnapshot = await db.collection('jury_evaluations')
-                        .where('judgeName', '>=', value)
-                        .where('judgeName', '<=', value + '\uf8ff')
-                        .limit(5)
-                        .get();
+                    const querySnapshot = await getDocs(query(
+                        collection(db, 'jury_evaluations'),
+                        where('judgeName', '>=', value),
+                        where('judgeName', '<=', value + '\uf8ff'),
+                        limit(5)
+                    ));
                     
                     const names = new Set();
                     querySnapshot.forEach(doc => {
@@ -2338,9 +2339,9 @@ Formato de respuesta:
             try {
                 // Cargar galas desde los votos existentes (tanto jurados como público)
                 const [juryVotesSnapshot, publicVotesSnapshot, juryEvaluationsSnapshot] = await Promise.all([
-                    db.collection(`events/${eventId}/jury_votes`).get(),
-                    db.collection(`events/${eventId}/votes`).get(),
-                    db.collection(`events/${eventId}/jury_evaluations`).get()
+                    getDocs(collection(db, `events/${eventId}/jury_votes`)),
+                    getDocs(collection(db, `events/${eventId}/votes`)),
+                    getDocs(collection(db, `events/${eventId}/jury_evaluations`))
                 ]);
                 
                 console.log('📊 Votos jurados encontrados:', juryVotesSnapshot.docs.length);
