@@ -237,7 +237,7 @@
 
         async function verificarVotosPublico() {
             const rutasPublico = [
-                `events/${eventId}/ticket_votes`,
+                `events/${eventId}/ticket_votes`,  // ← RUTA CORRECTA PRINCIPAL
                 `events/${eventId}/votes`,
                 'votes'
             ];
@@ -249,27 +249,53 @@
             for (const ruta of rutasPublico) {
                 try {
                     log(`📂 Verificando ruta pública: ${ruta}`, 'info');
-                    const snapshot = await getDocs(collection(db, ruta));
                     
-                    if (!snapshot.empty) {
-                        rutasConDatos.push(ruta);
+                    if (ruta === `events/${eventId}/ticket_votes`) {
+                        // BÚSQUEDA ESPECÍFICA PARA TICKET_VOTES (estructura anidada)
+                        const ticketVotesSnapshot = await getDocs(collection(db, ruta));
+                        log(`🎫 Tickets encontrados: ${ticketVotesSnapshot.docs.length}`, 'info');
                         
-                        snapshot.docs.forEach(doc => {
-                            const data = doc.data();
-                            // Filtrar por eventId si no está en la ruta
-                            if (ruta.includes(eventId) || data.eventId === eventId) {
-                                totalVotosPublico++;
-                                datosPublico.push({
-                                    id: doc.id,
-                                    ruta: ruta,
-                                    data: data
+                        if (ticketVotesSnapshot.docs.length > 0) {
+                            rutasConDatos.push(ruta);
+                            
+                            for (const ticketDoc of ticketVotesSnapshot.docs) {
+                                const votesSnapshot = await getDocs(collection(db, `${ruta}/${ticketDoc.id}/votes`));
+                                log(`🗳️ Votos en ticket ${ticketDoc.id}: ${votesSnapshot.docs.length}`, 'info');
+                                
+                                votesSnapshot.docs.forEach(voteDoc => {
+                                    totalVotosPublico++;
+                                    datosPublico.push({
+                                        id: voteDoc.id,
+                                        ruta: `${ruta}/${ticketDoc.id}/votes`,
+                                        data: voteDoc.data()
+                                    });
                                 });
                             }
-                        });
-                        
-                        log(`✅ ${ruta}: ${snapshot.docs.length} documentos encontrados`, 'success');
+                        }
                     } else {
-                        log(`⚠️ ${ruta}: Sin datos`, 'warning');
+                        // BÚSQUEDA NORMAL PARA OTRAS RUTAS
+                        const snapshot = await getDocs(collection(db, ruta));
+                        
+                        if (!snapshot.empty) {
+                            rutasConDatos.push(ruta);
+                            
+                            snapshot.docs.forEach(doc => {
+                                const data = doc.data();
+                                // Filtrar por eventId si no está en la ruta
+                                if (ruta.includes(eventId) || data.eventId === eventId) {
+                                    totalVotosPublico++;
+                                    datosPublico.push({
+                                        id: doc.id,
+                                        ruta: ruta,
+                                        data: data
+                                    });
+                                }
+                            });
+                            
+                            log(`✅ ${ruta}: ${snapshot.docs.length} documentos encontrados`, 'success');
+                        } else {
+                            log(`⚠️ ${ruta}: Sin datos`, 'warning');
+                        }
                     }
                 } catch (error) {
                     log(`❌ ${ruta}: Error - ${error.message}`, 'error');
@@ -292,8 +318,9 @@
                 publicoDataContainer.innerHTML = datosPublico.slice(0, 10).map(item => 
                     `<div class="mb-2 p-2 border-l-2 border-blue-400">
                         <div class="text-blue-300">${item.ruta}/${item.id}</div>
-                        <div class="text-xs text-gray-400">Votante: ${item.data.voterName || item.data.personaId || 'N/A'} | Artista: ${item.data.artistId || 'N/A'}</div>
-                        <div class="text-xs text-gray-400">Timestamp: ${item.data.timestamp || 'N/A'}</div>
+                        <div class="text-xs text-gray-400">Ticket: ${item.data.ticketName || 'N/A'} | Artista: ${item.data.artistId || 'N/A'}</div>
+                        <div class="text-xs text-gray-400">Votado: ${item.data.votedAt || item.data.timestamp || 'N/A'}</div>
+                        <div class="text-xs text-gray-500">Scores: Canto=${item.data.singingScore || 'N/A'}, Transmisión=${item.data.transmissionScore || 'N/A'}</div>
                     </div>`
                 ).join('') + (datosPublico.length > 10 ? `<div class="text-yellow-400">... y ${datosPublico.length - 10} más</div>` : '');
             } else {
