@@ -127,17 +127,33 @@
         <div id="auth-section" class="card p-8 max-w-md mx-auto mb-8">
             <h2 class="text-2xl font-bold mb-6 text-center">Ingreso de Jurado</h2>
             
-            <!-- LINK COMPARTIBLE -->
-            <div class="bg-blue-900/50 p-4 rounded-lg mb-6 border border-blue-500">
-                <h3 class="text-lg font-bold text-blue-300 mb-2">📎 Link para Compartir</h3>
-                <div class="flex gap-2">
-                    <input type="text" id="shareable-link" readonly class="flex-1 p-2 bg-gray-800 text-gray-300 rounded text-sm" 
-                           value="Cargando link...">
-                    <button id="copy-link-btn" class="px-3 py-2 bg-blue-600 text-white rounded text-sm hover:bg-blue-700">
-                        📋 Copiar
-                    </button>
+            <!-- GENERADOR DE LINKS (SOLO ORGANIZADORES) -->
+            <div id="admin-section" class="bg-green-900/50 p-4 rounded-lg mb-6 border border-green-500 hidden">
+                <h3 class="text-lg font-bold text-green-300 mb-3">� Panel de Administración</h3>
+                
+                <!-- Selector de Gala para Generar Link -->
+                <div class="mb-4">
+                    <label class="block text-green-200 mb-2">Selecciona Gala para Generar Link:</label>
+                    <select id="admin-gala-select" class="w-full p-3 rounded bg-gray-800 text-white border border-green-400">
+                        <option value="">🎭 Selecciona gala para generar link...</option>
+                    </select>
                 </div>
-                <p class="text-blue-200 text-xs mt-2">Comparte este link con todos los jurados</p>
+                
+                <!-- Botón Generar Link -->
+                <button onclick="generateShareableLink()" class="w-full px-4 py-3 bg-green-600 text-white rounded font-bold hover:bg-green-700 mb-3">
+                    📤 Generar Link para Jurados
+                </button>
+                
+                <!-- Link Generado -->
+                <div id="generated-link-section" class="hidden">
+                    <label class="block text-green-200 mb-2">Link Generado:</label>
+                    <div class="flex gap-2">
+                        <input type="text" id="generated-link" readonly class="flex-1 p-2 bg-gray-800 text-gray-300 rounded text-sm">
+                        <button onclick="copyGeneratedLink()" class="px-3 py-2 bg-blue-600 text-white rounded text-sm hover:bg-blue-700">
+                            📋 Copiar
+                        </button>
+                    </div>
+                </div>
             </div>
 
             <!-- SELECTOR DE GALA ACTIVA (SOLO ORGANIZADORES) -->
@@ -2113,6 +2129,72 @@ Formato de respuesta:
             }
         });
 
+        // === FUNCIÓN DE LOGIN ===
+        async function login() {
+            const judgeName = document.getElementById('judge-name').value.trim();
+            const judgeType = document.getElementById('judge-type').value;
+
+            if (!judgeName) {
+                alert('⚠️ Ingresa tu nombre como jurado');
+                return;
+            }
+
+            if (!judgeType) {
+                alert('⚠️ Selecciona el tipo de jurado');
+                return;
+            }
+
+            try {
+                currentJuror = {
+                    name: judgeName,
+                    type: judgeType,
+                    id: `${judgeName.toLowerCase().replace(/\s+/g, '_')}_${Date.now()}`
+                };
+
+                console.log('✅ Jurado autenticado:', currentJuror);
+
+                // Mostrar contenido principal
+                document.getElementById('login-section').style.display = 'none';
+                document.getElementById('main-content').style.display = 'block';
+                document.getElementById('juror-display').textContent = `${judgeName} (${judgeType})`;
+
+                // Verificar si es organizador y mostrar sección de administración
+                checkAdminAccess(judgeName);
+
+                // Cargar artistas
+                await loadArtists();
+
+            } catch (error) {
+                console.error('❌ Error en login:', error);
+                alert('❌ Error al ingresar. Intenta nuevamente.');
+            }
+        }
+
+        // Verificar acceso de administrador
+        function checkAdminAccess(judgeName) {
+            // Lista de emails/nombres de organizadores
+            const organizers = [
+                'lucia',
+                'organizador',
+                'admin',
+                'administrador'
+            ];
+
+            const isOrganizer = organizers.some(org => 
+                judgeName.toLowerCase().includes(org.toLowerCase())
+            );
+
+            if (isOrganizer) {
+                console.log('🔧 Acceso de administrador detectado');
+                document.getElementById('admin-section').classList.remove('hidden');
+                document.getElementById('admin-gala-selector').classList.remove('hidden');
+            } else {
+                console.log('👨‍⚖️ Acceso de jurado regular');
+                document.getElementById('admin-section').classList.add('hidden');
+                document.getElementById('admin-gala-selector').classList.add('hidden');
+            }
+        }
+
         // === FUNCIONALIDADES DE ADMINISTRACIÓN ===
         
         // Generar link compartible
@@ -2126,11 +2208,29 @@ Formato de respuesta:
             const baseUrl = window.location.origin + window.location.pathname;
             const shareableLink = `${baseUrl}?gala=${selectedGala}&mode=judge`;
             
-            navigator.clipboard.writeText(shareableLink).then(() => {
-                alert(`🔗 Link copiado al portapapeles:\n\n${shareableLink}\n\n📤 Compártelo con los jurados para que voten en "${selectedGala}"`);
+            // Mostrar el link generado
+            document.getElementById('generated-link').value = shareableLink;
+            document.getElementById('generated-link-section').classList.remove('hidden');
+            
+            console.log('🔗 Link generado:', shareableLink);
+            alert(`✅ Link generado exitosamente\n\n🎭 Gala: ${document.getElementById('admin-gala-select').selectedOptions[0].text}\n📤 Ahora puedes copiarlo y compartirlo`);
+        };
+        
+        // Copiar link generado
+        window.copyGeneratedLink = function() {
+            const linkInput = document.getElementById('generated-link');
+            const link = linkInput.value;
+            
+            if (!link || link === '') {
+                alert('⚠️ No hay link para copiar. Genera uno primero.');
+                return;
+            }
+            
+            navigator.clipboard.writeText(link).then(() => {
+                alert(`🔗 Link copiado al portapapeles:\n\n${link}\n\n📤 Compártelo con los jurados`);
             }).catch(() => {
                 // Fallback si no funciona el clipboard
-                prompt('🔗 Copia este link para los jurados:', shareableLink);
+                prompt('🔗 Copia este link para los jurados:', link);
             });
         };
         
@@ -2237,6 +2337,21 @@ Formato de respuesta:
         initializeAutocomplete();
         loadAdminGalas();
         checkUrlParameters();
+        
+        // Verificar si se debe mostrar el panel de admin desde el inicio
+        checkInitialAdminAccess();
+        
+        // Función para verificar acceso admin inicial
+        function checkInitialAdminAccess() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const adminParam = urlParams.get('admin');
+            
+            if (adminParam === 'true') {
+                console.log('🔧 Modo administrador activado por URL');
+                document.getElementById('admin-section').classList.remove('hidden');
+                document.getElementById('admin-gala-selector').classList.remove('hidden');
+            }
+        }
     </script>
 </body>
 </html>
