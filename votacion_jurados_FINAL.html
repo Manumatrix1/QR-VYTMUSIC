@@ -406,7 +406,7 @@
         console.log('📋 Usando fallback?', !urlParams.get('eventId'));
 
         // Configurar enlaces de navegación
-        document.getElementById('back-to-panel-btn').href = `panel_evento.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`;
+        document.getElementById('back-to-panel-btn').href = `panel_evento_mejorado.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`;
         document.getElementById('feedback-btn').href = `feedback_en_vivo.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`;
 
         // CRITERIOS DE VOTACIÓN
@@ -2332,23 +2332,84 @@ Formato de respuesta:
         
         // Cargar galas en selector de administrador
         async function loadAdminGalas() {
+            console.log('🎭 Iniciando carga de galas...');
+            console.log('📍 EventId:', eventId);
+            
             try {
-                const galasSnapshot = await db.collection('galas').orderBy('name').get();
-                const select = document.getElementById('admin-gala-select');
+                // Cargar galas desde los votos existentes (tanto jurados como público)
+                const [juryVotesSnapshot, publicVotesSnapshot, juryEvaluationsSnapshot] = await Promise.all([
+                    db.collection(`events/${eventId}/jury_votes`).get(),
+                    db.collection(`events/${eventId}/votes`).get(),
+                    db.collection(`events/${eventId}/jury_evaluations`).get()
+                ]);
                 
+                console.log('📊 Votos jurados encontrados:', juryVotesSnapshot.docs.length);
+                console.log('📊 Votos públicos encontrados:', publicVotesSnapshot.docs.length);
+                console.log('📊 Evaluaciones encontradas:', juryEvaluationsSnapshot.docs.length);
+                
+                // Extraer galas únicas
+                const galaIds = new Set();
+                
+                juryVotesSnapshot.forEach(doc => {
+                    const vote = doc.data();
+                    if (vote.galaId) {
+                        galaIds.add(vote.galaId);
+                        console.log('🎭 Gala de jury_votes:', vote.galaId);
+                    }
+                });
+                
+                publicVotesSnapshot.forEach(doc => {
+                    const vote = doc.data();
+                    if (vote.galaId) {
+                        galaIds.add(vote.galaId);
+                        console.log('🎭 Gala de votes:', vote.galaId);
+                    }
+                });
+                
+                juryEvaluationsSnapshot.forEach(doc => {
+                    const evaluation = doc.data();
+                    if (evaluation.galaId) {
+                        galaIds.add(evaluation.galaId);
+                        console.log('🎭 Gala de jury_evaluations:', evaluation.galaId);
+                    }
+                });
+                
+                const select = document.getElementById('admin-gala-select');
                 select.innerHTML = '<option value="">🎭 Selecciona gala para generar link...</option>';
                 
-                galasSnapshot.forEach(doc => {
-                    const gala = doc.data();
+                if (galaIds.size === 0) {
+                    console.log('⚠️ No se encontraron galas en las votaciones');
+                    select.innerHTML = '<option value="">❌ No hay galas con votaciones</option>';
+                    
+                    // Agregar galas de prueba si no hay nada
+                    const testGalas = ['Gala 1', 'Gala 2', 'Gala 3', 'Semifinal', 'Final'];
+                    testGalas.forEach(galaName => {
+                        const option = document.createElement('option');
+                        option.value = galaName.toLowerCase().replace(/\s+/g, '_');
+                        option.textContent = `🎭 ${galaName}`;
+                        select.appendChild(option);
+                    });
+                    console.log('✅ Galas de prueba agregadas');
+                    return;
+                }
+                
+                // Ordenar y agregar galas encontradas
+                const sortedGalas = Array.from(galaIds).sort();
+                sortedGalas.forEach(galaId => {
                     const option = document.createElement('option');
-                    option.value = doc.id;
-                    option.textContent = `🎭 ${gala.name}`;
+                    option.value = galaId;
+                    option.textContent = `🎭 ${galaId}`;
                     select.appendChild(option);
                 });
                 
-                console.log('✅ Galas cargadas en selector admin');
+                console.log(`✅ ${galaIds.size} galas cargadas en selector admin:`, Array.from(galaIds));
             } catch (error) {
                 console.error('❌ Error cargando galas admin:', error);
+                const select = document.getElementById('admin-gala-select');
+                select.innerHTML = '<option value="">❌ Error cargando galas</option>';
+                
+                // Mensaje más informativo
+                alert(`❌ Error cargando galas:\n\n${error.message}\n\nVerifica:\n• Conexión a Firebase\n• EventID: ${eventId}\n• Colecciones de votos`);
             }
         }
         
