@@ -123,13 +123,45 @@
             <p id="status" class="text-xl">Iniciando sistema...</p>
         </div>
 
-        <!-- AUTENTICACIÓN SIMPLE -->
+        <!-- AUTENTICACIÓN SIMPLE CON MEJORAS -->
         <div id="auth-section" class="card p-8 max-w-md mx-auto mb-8">
             <h2 class="text-2xl font-bold mb-6 text-center">Ingreso de Jurado</h2>
+            
+            <!-- LINK COMPARTIBLE -->
+            <div class="bg-blue-900/50 p-4 rounded-lg mb-6 border border-blue-500">
+                <h3 class="text-lg font-bold text-blue-300 mb-2">📎 Link para Compartir</h3>
+                <div class="flex gap-2">
+                    <input type="text" id="shareable-link" readonly class="flex-1 p-2 bg-gray-800 text-gray-300 rounded text-sm" 
+                           value="Cargando link...">
+                    <button id="copy-link-btn" class="px-3 py-2 bg-blue-600 text-white rounded text-sm hover:bg-blue-700">
+                        📋 Copiar
+                    </button>
+                </div>
+                <p class="text-blue-200 text-xs mt-2">Comparte este link con todos los jurados</p>
+            </div>
+
+            <!-- SELECTOR DE GALA ACTIVA (SOLO ORGANIZADORES) -->
+            <div id="admin-gala-selector" class="bg-purple-900/50 p-4 rounded-lg mb-6 border border-purple-500 hidden">
+                <h3 class="text-lg font-bold text-purple-300 mb-2">🎭 Gala Activa para Votación</h3>
+                <select id="active-gala-selector" class="w-full p-3 rounded bg-gray-800 text-white border border-purple-400">
+                    <option value="">Selecciona la gala activa para votación...</option>
+                </select>
+                <button id="set-active-gala-btn" class="w-full mt-2 px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700">
+                    ✅ Activar Gala para Votación
+                </button>
+            </div>
+
             <div class="space-y-4">
                 <div>
                     <label class="block mb-2 font-bold">Nombre del Jurado:</label>
-                    <input type="text" id="juror-name" class="w-full p-3 rounded bg-white text-black" placeholder="Escribe tu nombre">
+                    <div class="relative">
+                        <input type="text" id="juror-name" class="w-full p-3 rounded bg-white text-black" 
+                               placeholder="Escribe tu nombre" autocomplete="off">
+                        <div id="juror-suggestions" class="absolute top-full left-0 right-0 bg-white border border-gray-300 rounded-b max-h-48 overflow-y-auto hidden z-10">
+                            <!-- Sugerencias aparecerán aquí -->
+                        </div>
+                    </div>
+                    <p class="text-sm text-gray-400 mt-1">💡 Se autocompleta con jurados registrados</p>
                 </div>
                 
                 <!-- Selector de Tipo de Jurado -->
@@ -2081,9 +2113,130 @@ Formato de respuesta:
             }
         });
 
+        // === FUNCIONALIDADES DE ADMINISTRACIÓN ===
+        
+        // Generar link compartible
+        window.generateShareableLink = function() {
+            const selectedGala = document.getElementById('admin-gala-select').value;
+            if (!selectedGala) {
+                alert('⚠️ Selecciona una gala para generar el link');
+                return;
+            }
+            
+            const baseUrl = window.location.origin + window.location.pathname;
+            const shareableLink = `${baseUrl}?gala=${selectedGala}&mode=judge`;
+            
+            navigator.clipboard.writeText(shareableLink).then(() => {
+                alert(`🔗 Link copiado al portapapeles:\n\n${shareableLink}\n\n📤 Compártelo con los jurados para que voten en "${selectedGala}"`);
+            }).catch(() => {
+                // Fallback si no funciona el clipboard
+                prompt('🔗 Copia este link para los jurados:', shareableLink);
+            });
+        };
+        
+        // Inicializar sistema de autocompletado
+        function initializeAutocomplete() {
+            const input = document.getElementById('judge-name');
+            const suggestions = document.getElementById('name-suggestions');
+            
+            input.addEventListener('input', async function() {
+                const value = this.value.trim();
+                suggestions.innerHTML = '';
+                
+                if (value.length < 2) return;
+                
+                try {
+                    // Buscar nombres similares en la base de datos
+                    const querySnapshot = await db.collection('jury_evaluations')
+                        .where('judgeName', '>=', value)
+                        .where('judgeName', '<=', value + '\uf8ff')
+                        .limit(5)
+                        .get();
+                    
+                    const names = new Set();
+                    querySnapshot.forEach(doc => {
+                        const data = doc.data();
+                        if (data.judgeName && data.judgeName.toLowerCase().includes(value.toLowerCase())) {
+                            names.add(data.judgeName);
+                        }
+                    });
+                    
+                    names.forEach(name => {
+                        const suggestion = document.createElement('div');
+                        suggestion.className = 'p-2 hover:bg-blue-100 cursor-pointer border-b border-gray-200';
+                        suggestion.textContent = name;
+                        suggestion.onclick = () => {
+                            input.value = name;
+                            suggestions.innerHTML = '';
+                            suggestions.style.display = 'none';
+                        };
+                        suggestions.appendChild(suggestion);
+                    });
+                    
+                    suggestions.style.display = names.size > 0 ? 'block' : 'none';
+                } catch (error) {
+                    console.error('❌ Error en autocompletado:', error);
+                }
+            });
+            
+            // Ocultar sugerencias al hacer clic fuera
+            document.addEventListener('click', function(e) {
+                if (!input.contains(e.target) && !suggestions.contains(e.target)) {
+                    suggestions.style.display = 'none';
+                }
+            });
+        }
+        
+        // Cargar galas en selector de administrador
+        async function loadAdminGalas() {
+            try {
+                const galasSnapshot = await db.collection('galas').orderBy('name').get();
+                const select = document.getElementById('admin-gala-select');
+                
+                select.innerHTML = '<option value="">🎭 Selecciona gala para generar link...</option>';
+                
+                galasSnapshot.forEach(doc => {
+                    const gala = doc.data();
+                    const option = document.createElement('option');
+                    option.value = doc.id;
+                    option.textContent = `🎭 ${gala.name}`;
+                    select.appendChild(option);
+                });
+                
+                console.log('✅ Galas cargadas en selector admin');
+            } catch (error) {
+                console.error('❌ Error cargando galas admin:', error);
+            }
+        }
+        
+        // Detectar parámetros de URL para acceso directo
+        function checkUrlParameters() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const galaParam = urlParams.get('gala');
+            const modeParam = urlParams.get('mode');
+            
+            if (galaParam && modeParam === 'judge') {
+                // Auto-seleccionar la gala del link
+                setTimeout(() => {
+                    const galaSelect = document.getElementById('gala-select');
+                    if (galaSelect) {
+                        galaSelect.value = galaParam;
+                        currentGala = galaParam;
+                        loadArtists(); // Cargar artistas automáticamente
+                        console.log(`🔗 Acceso directo a gala: ${galaParam}`);
+                    }
+                }, 1000);
+            }
+        }
+
         // === INICIALIZACIÓN ===
         console.log('🚀 Sistema iniciado');
         document.getElementById('status').textContent = 'Sistema listo - Ingresa como jurado';
+        
+        // Inicializar funcionalidades
+        initializeAutocomplete();
+        loadAdminGalas();
+        checkUrlParameters();
     </script>
 </body>
 </html>
