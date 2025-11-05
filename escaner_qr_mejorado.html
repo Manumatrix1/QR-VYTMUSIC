@@ -1,0 +1,939 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🚀 Escáner QR Mejorado - VYTMUSIC</title>
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    
+    <!-- PWA Support -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="mobile-web-app-capable" content="yes">
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+    
+    <style>
+        body { 
+            font-family: 'Inter', sans-serif; 
+            background: linear-gradient(135deg, #0f172a, #1e293b); 
+            color: #f8fafc; 
+            overflow-x: hidden;
+        }
+        
+        .hidden { display: none !important; }
+        
+        /* Scanner UI */
+        #scanner-container { 
+            position: fixed; 
+            top: 0; 
+            left: 0; 
+            width: 100vw; 
+            height: 100vh; 
+            background: #000; 
+            z-index: 50; 
+            display: flex;
+            flex-direction: column;
+        }
+        
+        #qr-reader { 
+            flex: 1;
+            width: 100%;
+            height: 100%;
+            position: relative;
+        }
+        
+        /* Scanner controls overlay */
+        .scanner-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            pointer-events: none;
+            z-index: 60;
+        }
+        
+        .scanner-controls {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 1rem;
+            pointer-events: auto;
+        }
+        
+        .control-btn {
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+        }
+        
+        .control-btn:hover {
+            background: rgba(0, 0, 0, 0.9);
+            border-color: #38bdf8;
+            transform: scale(1.1);
+        }
+        
+        .btn-stop { border-color: #ef4444; }
+        .btn-stop:hover { border-color: #ef4444; background: rgba(239, 68, 68, 0.2); }
+        
+        .btn-flash { border-color: #f59e0b; }
+        .btn-flash:hover { border-color: #f59e0b; background: rgba(245, 158, 11, 0.2); }
+        
+        .btn-camera { border-color: #10b981; }
+        .btn-camera:hover { border-color: #10b981; background: rgba(16, 185, 129, 0.2); }
+        
+        /* Status overlay */
+        .status-overlay {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            border-radius: 1rem;
+            padding: 1rem;
+            pointer-events: none;
+            backdrop-filter: blur(15px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 0.5rem;
+            text-align: center;
+        }
+        
+        .stat-item {
+            padding: 0.5rem;
+            border-radius: 0.5rem;
+            background: rgba(255, 255, 255, 0.1);
+        }
+        
+        .stat-number {
+            font-size: 1.5rem;
+            font-weight: 900;
+            line-height: 1;
+        }
+        
+        .stat-label {
+            font-size: 0.6rem;
+            font-weight: 600;
+            opacity: 0.9;
+            margin-top: 2px;
+            text-transform: uppercase;
+        }
+        
+        /* Success/Error animations */
+        .scan-feedback {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            z-index: 100;
+            pointer-events: none;
+        }
+        
+        .feedback-success {
+            background: linear-gradient(135deg, rgba(34, 197, 94, 0.95), rgba(22, 163, 74, 0.95));
+            animation: feedbackSuccess 2s ease-out;
+        }
+        
+        .feedback-warning {
+            background: linear-gradient(135deg, rgba(245, 158, 11, 0.95), rgba(217, 119, 6, 0.95));
+            animation: feedbackWarning 2s ease-out;
+        }
+        
+        .feedback-error {
+            background: linear-gradient(135deg, rgba(239, 68, 68, 0.95), rgba(220, 38, 38, 0.95));
+            animation: feedbackError 2s ease-out;
+        }
+        
+        @keyframes feedbackSuccess {
+            0% { opacity: 0; transform: scale(0.5); }
+            15% { opacity: 1; transform: scale(1.1); }
+            85% { opacity: 1; transform: scale(1); }
+            100% { opacity: 0; transform: scale(1); }
+        }
+        
+        @keyframes feedbackWarning {
+            0% { opacity: 0; transform: scale(0.5); }
+            20% { opacity: 1; transform: scale(1.05); }
+            80% { opacity: 1; transform: scale(1); }
+            100% { opacity: 0; transform: scale(1); }
+        }
+        
+        @keyframes feedbackError {
+            0% { opacity: 0; transform: scale(0.5); }
+            25% { opacity: 1; transform: scale(1.02); }
+            75% { opacity: 1; transform: scale(1); }
+            100% { opacity: 0; transform: scale(1); }
+        }
+        
+        /* Setup screen */
+        .setup-section {
+            background: rgba(31, 41, 55, 0.9);
+            border: 1px solid #4b5563;
+            border-radius: 1rem;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            backdrop-filter: blur(10px);
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #2563eb, #1d4ed8);
+            color: white;
+            padding: 1rem 2rem;
+            border-radius: 0.75rem;
+            font-weight: 700;
+            font-size: 1.1rem;
+            transition: all 0.3s ease;
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            width: 100%;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 15px 30px rgba(37, 99, 235, 0.3);
+        }
+        
+        .btn-secondary {
+            background: rgba(55, 65, 81, 0.8);
+            color: #f9fafb;
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem;
+            font-weight: 600;
+            transition: all 0.2s ease;
+            border: 1px solid #4b5563;
+            cursor: pointer;
+            width: 100%;
+        }
+        
+        .btn-secondary:hover {
+            background: rgba(75, 85, 99, 0.9);
+            border-color: #6b7280;
+        }
+        
+        /* Manual search */
+        .search-section {
+            background: rgba(31, 41, 55, 0.95);
+            border: 1px solid #4b5563;
+            border-radius: 1rem;
+            padding: 1.5rem;
+            backdrop-filter: blur(15px);
+        }
+        
+        .search-input {
+            background: rgba(17, 24, 39, 0.8);
+            border: 1px solid #4b5563;
+            border-radius: 0.5rem;
+            padding: 1rem;
+            color: white;
+            font-size: 1.1rem;
+            width: 100%;
+            margin-bottom: 1rem;
+        }
+        
+        .search-result {
+            background: rgba(55, 65, 81, 0.8);
+            border: 1px solid #4b5563;
+            border-radius: 0.5rem;
+            padding: 1rem;
+            margin-bottom: 0.5rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .search-result:hover {
+            background: rgba(75, 85, 99, 0.9);
+            border-color: #38bdf8;
+        }
+        
+        .search-result.used {
+            opacity: 0.6;
+            background: rgba(239, 68, 68, 0.2);
+            border-color: #ef4444;
+        }
+        
+        /* Responsive */
+        @media (max-width: 640px) {
+            .status-overlay {
+                top: 10px;
+                left: 10px;
+                right: 10px;
+                padding: 0.75rem;
+            }
+            
+            .stats-grid {
+                gap: 0.25rem;
+            }
+            
+            .stat-item {
+                padding: 0.25rem;
+            }
+            
+            .stat-number {
+                font-size: 1.25rem;
+            }
+            
+            .stat-label {
+                font-size: 0.5rem;
+            }
+            
+            .scanner-controls {
+                bottom: 15px;
+                gap: 0.75rem;
+            }
+            
+            .control-btn {
+                width: 50px;
+                height: 50px;
+                font-size: 1.25rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Setup Screen -->
+    <div id="setup-screen" class="container mx-auto max-w-4xl p-4">
+        <header class="text-center mb-8">
+            <a href="#" id="back-to-panel" class="text-sky-400 hover:underline mb-4 inline-block text-lg">
+                ← Volver al Panel de Control
+            </a>
+            <h1 class="text-4xl font-bold text-sky-400 mb-2">🚀 Escáner QR Mejorado</h1>
+            <p id="event-name-display" class="text-xl text-gray-300"></p>
+        </header>
+
+        <!-- Sistema requirements check -->
+        <div class="setup-section">
+            <h2 class="text-xl font-bold mb-4 text-sky-400">🔍 Verificación del Sistema</h2>
+            <div id="system-check" class="space-y-3">
+                <div id="https-check" class="flex items-center space-x-3">
+                    <span class="w-6 h-6 rounded-full bg-gray-600 flex items-center justify-center text-sm">?</span>
+                    <span>Protocolo HTTPS</span>
+                </div>
+                <div id="camera-check" class="flex items-center space-x-3">
+                    <span class="w-6 h-6 rounded-full bg-gray-600 flex items-center justify-center text-sm">?</span>
+                    <span>Soporte de cámara</span>
+                </div>
+                <div id="permissions-check" class="flex items-center space-x-3">
+                    <span class="w-6 h-6 rounded-full bg-gray-600 flex items-center justify-center text-sm">?</span>
+                    <span>Permisos de cámara</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Assistant setup -->
+        <div class="setup-section">
+            <h2 class="text-xl font-bold mb-4 text-sky-400">👤 Configuración del Asistente</h2>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium mb-2">Nombre del Asistente</label>
+                    <input type="text" id="assistant-name" placeholder="Ej: Juan Pérez" 
+                           class="w-full p-3 rounded-md border border-gray-600 bg-gray-900 text-white">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-2">Código del Asistente (opcional)</label>
+                    <input type="text" id="assistant-code" placeholder="Ej: ASS001" 
+                           class="w-full p-3 rounded-md border border-gray-600 bg-gray-900 text-white">
+                </div>
+            </div>
+        </div>
+
+        <!-- Start button -->
+        <div class="text-center">
+            <button id="start-scanner" class="btn-primary" disabled>
+                <span>📱</span>
+                <span>Iniciar Escáner QR</span>
+            </button>
+            <p class="text-sm text-gray-400 mt-2">
+                Asegúrate de completar la verificación del sistema antes de iniciar
+            </p>
+        </div>
+
+        <!-- Manual search option -->
+        <div class="setup-section">
+            <h2 class="text-xl font-bold mb-4 text-sky-400">🔍 Búsqueda Manual</h2>
+            <p class="text-gray-300 mb-4">Si el escáner no funciona, puedes buscar invitados manualmente</p>
+            <button id="toggle-manual-search" class="btn-secondary">
+                Activar Búsqueda Manual
+            </button>
+        </div>
+
+        <!-- Manual search section -->
+        <div id="manual-search-section" class="search-section hidden">
+            <h3 class="text-lg font-bold mb-3">Búsqueda Manual de Invitados</h3>
+            <input type="text" id="search-input" placeholder="Buscar por nombre..." class="search-input">
+            <div id="search-results">
+                <p class="text-center text-gray-400 py-8">Escribe para buscar invitados...</p>
+            </div>
+            <button id="close-manual-search" class="btn-secondary mt-4">
+                Cerrar Búsqueda Manual
+            </button>
+        </div>
+    </div>
+
+    <!-- Scanner Screen -->
+    <div id="scanner-screen" class="hidden">
+        <div id="scanner-container">
+            <div id="qr-reader"></div>
+            
+            <!-- Status overlay -->
+            <div class="scanner-overlay">
+                <div class="status-overlay">
+                    <div class="stats-grid">
+                        <div class="stat-item">
+                            <div id="counter-valid" class="stat-number text-green-400">0</div>
+                            <div class="stat-label">Válidos</div>
+                        </div>
+                        <div class="stat-item">
+                            <div id="counter-used" class="stat-number text-yellow-400">0</div>
+                            <div class="stat-label">Ya Usados</div>
+                        </div>
+                        <div class="stat-item">
+                            <div id="counter-invalid" class="stat-number text-red-400">0</div>
+                            <div class="stat-label">Inválidos</div>
+                        </div>
+                        <div class="stat-item">
+                            <div id="counter-total" class="stat-number text-sky-400">0</div>
+                            <div class="stat-label">Total</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Scanner controls -->
+                <div class="scanner-controls">
+                    <button id="toggle-camera" class="control-btn btn-camera" title="Cambiar cámara">
+                        📷
+                    </button>
+                    <button id="toggle-flash" class="control-btn btn-flash" title="Flash">
+                        💡
+                    </button>
+                    <button id="show-manual-search" class="control-btn" title="Búsqueda manual">
+                        🔍
+                    </button>
+                    <button id="stop-scanner" class="control-btn btn-stop" title="Detener">
+                        ❌
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Search overlay for scanner mode -->
+        <div id="scanner-search-overlay" class="hidden" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.9); z-index: 70; padding: 20px;">
+            <div class="search-section max-w-md mx-auto mt-20">
+                <h3 class="text-lg font-bold mb-3">Búsqueda Rápida</h3>
+                <input type="text" id="scanner-search-input" placeholder="Buscar por nombre..." class="search-input">
+                <div id="scanner-search-results">
+                    <p class="text-center text-gray-400 py-4">Escribe para buscar invitados...</p>
+                </div>
+                <button id="close-scanner-search" class="btn-secondary mt-4">
+                    Volver al Escáner
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Feedback overlays -->
+    <div id="scan-feedback" class="scan-feedback hidden">
+        <div id="feedback-content"></div>
+    </div>
+
+    <!-- Libraries -->
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+    
+    <script type="module">
+        import { db } from './firebase_config.js';
+        import { collection, onSnapshot, query, doc, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        class ImprovedQRScanner {
+            constructor() {
+                this.eventId = null;
+                this.eventName = null;
+                this.assistantName = '';
+                this.assistantCode = '';
+                
+                this.html5QrCode = null;
+                this.isActive = false;
+                this.cameras = [];
+                this.currentCameraIndex = 0;
+                this.flashEnabled = false;
+                
+                this.ticketsCache = new Map();
+                this.localEntries = [];
+                this.syncQueue = [];
+                
+                this.counters = {
+                    valid: 0,
+                    used: 0,
+                    invalid: 0,
+                    total: 0
+                };
+                
+                this.isOnline = navigator.onLine;
+                this.setupComplete = false;
+                
+                this.init();
+            }
+            
+            init() {
+                this.parseUrlParams();
+                this.setupEventListeners();
+                this.checkSystemRequirements();
+                this.setupNetworkMonitoring();
+                
+                if (this.eventId && this.eventName) {
+                    this.loadEventData();
+                } else {
+                    this.showError('Error: Evento no especificado');
+                }
+            }
+            
+            parseUrlParams() {
+                const urlParams = new URLSearchParams(window.location.search);
+                this.eventId = urlParams.get('eventId');
+                this.eventName = urlParams.get('eventName');
+                
+                if (this.eventName) {
+                    document.getElementById('event-name-display').textContent = this.eventName;
+                }
+                
+                // Configurar botón de regreso
+                const backUrl = `panel_evento_mejorado.html?eventId=${this.eventId}&eventName=${encodeURIComponent(this.eventName)}`;
+                document.getElementById('back-to-panel').href = backUrl;
+            }
+            
+            setupEventListeners() {
+                // System setup
+                document.getElementById('start-scanner').onclick = () => this.startScanner();
+                document.getElementById('stop-scanner').onclick = () => this.stopScanner();
+                
+                // Camera controls
+                document.getElementById('toggle-camera').onclick = () => this.switchCamera();
+                document.getElementById('toggle-flash').onclick = () => this.toggleFlash();
+                
+                // Manual search
+                document.getElementById('toggle-manual-search').onclick = () => this.toggleManualSearch();
+                document.getElementById('close-manual-search').onclick = () => this.hideManualSearch();
+                document.getElementById('show-manual-search').onclick = () => this.showScannerSearch();
+                document.getElementById('close-scanner-search').onclick = () => this.hideScannerSearch();
+                
+                // Search inputs
+                document.getElementById('search-input').oninput = (e) => this.searchInvitados(e.target.value, 'search-results');
+                document.getElementById('scanner-search-input').oninput = (e) => this.searchInvitados(e.target.value, 'scanner-search-results');
+                
+                // Assistant name validation
+                document.getElementById('assistant-name').oninput = () => this.validateAssistantInfo();
+            }
+            
+            async checkSystemRequirements() {
+                // Check HTTPS
+                const httpsCheck = document.getElementById('https-check');
+                const isSecure = location.protocol === 'https:' || location.hostname === 'localhost';
+                this.updateCheckStatus(httpsCheck, isSecure, isSecure ? 'Conexión segura' : 'Se requiere HTTPS');
+                
+                // Check camera support
+                const cameraCheck = document.getElementById('camera-check');
+                const hasCamera = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+                this.updateCheckStatus(cameraCheck, hasCamera, hasCamera ? 'Cámara soportada' : 'Cámara no disponible');
+                
+                // Check permissions
+                if (isSecure && hasCamera) {
+                    try {
+                        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+                        stream.getTracks().forEach(track => track.stop());
+                        
+                        const permissionsCheck = document.getElementById('permissions-check');
+                        this.updateCheckStatus(permissionsCheck, true, 'Permisos concedidos');
+                        
+                        this.setupComplete = true;
+                        this.validateAssistantInfo();
+                        
+                    } catch (error) {
+                        const permissionsCheck = document.getElementById('permissions-check');
+                        this.updateCheckStatus(permissionsCheck, false, `Error: ${error.message}`);
+                    }
+                }
+            }
+            
+            updateCheckStatus(element, success, message) {
+                const icon = element.querySelector('span');
+                const text = element.querySelector('span:last-child');
+                
+                if (success) {
+                    icon.className = 'w-6 h-6 rounded-full bg-green-600 flex items-center justify-center text-sm';
+                    icon.textContent = '✓';
+                    text.textContent = message;
+                } else {
+                    icon.className = 'w-6 h-6 rounded-full bg-red-600 flex items-center justify-center text-sm';
+                    icon.textContent = '✗';
+                    text.textContent = message;
+                }
+            }
+            
+            validateAssistantInfo() {
+                const name = document.getElementById('assistant-name').value.trim();
+                const startBtn = document.getElementById('start-scanner');
+                
+                if (this.setupComplete && name.length >= 2) {
+                    startBtn.disabled = false;
+                    startBtn.classList.remove('opacity-50');
+                    this.assistantName = name;
+                    this.assistantCode = document.getElementById('assistant-code').value.trim();
+                } else {
+                    startBtn.disabled = true;
+                    startBtn.classList.add('opacity-50');
+                }
+            }
+            
+            setupNetworkMonitoring() {
+                window.addEventListener('online', () => {
+                    this.isOnline = true;
+                    this.syncPendingData();
+                });
+                
+                window.addEventListener('offline', () => {
+                    this.isOnline = false;
+                });
+            }
+            
+            async loadEventData() {
+                if (!this.eventId) return;
+                
+                try {
+                    const ticketsQuery = query(collection(db, `events/${this.eventId}/tickets`));
+                    onSnapshot(ticketsQuery, (snapshot) => {
+                        this.ticketsCache.clear();
+                        snapshot.docs.forEach(doc => {
+                            this.ticketsCache.set(doc.id, { id: doc.id, ...doc.data() });
+                        });
+                        console.log(`✅ Cargados ${this.ticketsCache.size} tickets en cache`);
+                    });
+                } catch (error) {
+                    console.error('Error cargando datos del evento:', error);
+                }
+            }
+            
+            async startScanner() {
+                if (!this.setupComplete || !this.assistantName) {
+                    alert('❌ Completa la configuración antes de iniciar el escáner');
+                    return;
+                }
+                
+                try {
+                    // Ocultar setup y mostrar scanner
+                    document.getElementById('setup-screen').classList.add('hidden');
+                    document.getElementById('scanner-screen').classList.remove('hidden');
+                    
+                    // Inicializar escáner
+                    this.html5QrCode = new Html5Qrcode("qr-reader");
+                    
+                    await this.html5QrCode.start(
+                        { facingMode: "environment" },
+                        {
+                            fps: 10,
+                            qrbox: { width: 250, height: 250 },
+                            aspectRatio: 1.0
+                        },
+                        (decodedText) => {
+                            this.processQRCode(decodedText);
+                        },
+                        () => {} // Ignorar errores menores
+                    );
+                    
+                    this.isActive = true;
+                    console.log('🚀 Escáner QR mejorado iniciado correctamente');
+                    
+                } catch (error) {
+                    console.error('Error iniciando escáner:', error);
+                    this.showError(`Error de cámara: ${error.message}`);
+                    this.returnToSetup();
+                }
+            }
+            
+            async stopScanner() {
+                if (this.html5QrCode && this.isActive) {
+                    try {
+                        await this.html5QrCode.stop();
+                        this.isActive = false;
+                        console.log('🛑 Escáner detenido');
+                    } catch (error) {
+                        console.error('Error deteniendo escáner:', error);
+                    }
+                }
+                this.returnToSetup();
+            }
+            
+            returnToSetup() {
+                document.getElementById('scanner-screen').classList.add('hidden');
+                document.getElementById('setup-screen').classList.remove('hidden');
+                this.hideScannerSearch();
+            }
+            
+            async processQRCode(ticketId) {
+                this.counters.total++;
+                this.updateCounters();
+                
+                const ticket = this.ticketsCache.get(ticketId);
+                
+                if (!ticket) {
+                    this.counters.invalid++;
+                    this.showFeedback('error', '❌ Código QR Inválido', 'El código escaneado no corresponde a una entrada válida');
+                    this.updateCounters();
+                    return;
+                }
+                
+                if (ticket.used) {
+                    this.counters.used++;
+                    this.showFeedback('warning', '⚠️ Entrada Ya Usada', `${ticket.name} ya ingresó anteriormente\\n${ticket.usedAt ? new Date(ticket.usedAt).toLocaleString() : ''}`);
+                    this.updateCounters();
+                    return;
+                }
+                
+                // Entrada válida - procesar
+                this.counters.valid++;
+                
+                // Guardar localmente
+                const entry = {
+                    ticketId,
+                    name: ticket.name,
+                    prefix: ticket.prefix || 'Sin grupo',
+                    paymentStatus: ticket.paymentStatus || 'No especificado',
+                    timestamp: new Date().toISOString(),
+                    timestampLocal: new Date().toLocaleString(),
+                    assistant: this.assistantName,
+                    assistantCode: this.assistantCode,
+                    synced: false
+                };
+                
+                this.localEntries.push(entry);
+                this.syncQueue.push({ ticketId, entry });
+                
+                // Mostrar confirmación
+                this.showFeedback('success', '✅ Entrada Registrada', `${ticket.name}\\n${ticket.prefix || 'Sin grupo'}\\nTotal registros: ${this.counters.valid}`);
+                
+                // Intentar sincronizar si hay conexión
+                if (this.isOnline) {
+                    this.syncSingleEntry(ticketId, entry);
+                }
+                
+                this.updateCounters();
+                console.log(`✅ Entrada procesada: ${ticket.name}`);
+            }
+            
+            async syncSingleEntry(ticketId, entry) {
+                try {
+                    const ticketRef = doc(db, `events/${this.eventId}/tickets`, ticketId);
+                    await updateDoc(ticketRef, {
+                        used: true,
+                        usedAt: entry.timestamp,
+                        usedBy: entry.assistant
+                    });
+                    
+                    // Marcar como sincronizado
+                    entry.synced = true;
+                    this.syncQueue = this.syncQueue.filter(item => item.ticketId !== ticketId);
+                    
+                    console.log(`🔄 Sincronizado: ${entry.name}`);
+                } catch (error) {
+                    console.error('Error sincronizando entrada:', error);
+                }
+            }
+            
+            async syncPendingData() {
+                if (this.syncQueue.length === 0) return;
+                
+                console.log(`🔄 Sincronizando ${this.syncQueue.length} entradas pendientes...`);
+                
+                for (const item of this.syncQueue) {
+                    await this.syncSingleEntry(item.ticketId, item.entry);
+                }
+            }
+            
+            showFeedback(type, title, message) {
+                const feedback = document.getElementById('scan-feedback');
+                const content = document.getElementById('feedback-content');
+                
+                feedback.className = `scan-feedback feedback-${type}`;
+                content.innerHTML = `
+                    <div class="text-4xl mb-4">${title.split(' ')[0]}</div>
+                    <div class="text-2xl font-bold mb-2">${title}</div>
+                    <div class="text-lg text-center px-4">${message.replace(/\\n/g, '<br>')}</div>
+                `;
+                
+                feedback.classList.remove('hidden');
+                
+                setTimeout(() => {
+                    feedback.classList.add('hidden');
+                }, type === 'success' ? 2000 : type === 'warning' ? 2000 : 2000);
+            }
+            
+            updateCounters() {
+                document.getElementById('counter-valid').textContent = this.counters.valid;
+                document.getElementById('counter-used').textContent = this.counters.used;
+                document.getElementById('counter-invalid').textContent = this.counters.invalid;
+                document.getElementById('counter-total').textContent = this.counters.total;
+            }
+            
+            toggleManualSearch() {
+                const section = document.getElementById('manual-search-section');
+                if (section.classList.contains('hidden')) {
+                    section.classList.remove('hidden');
+                    document.getElementById('search-input').focus();
+                } else {
+                    this.hideManualSearch();
+                }
+            }
+            
+            hideManualSearch() {
+                document.getElementById('manual-search-section').classList.add('hidden');
+                document.getElementById('search-input').value = '';
+                document.getElementById('search-results').innerHTML = '<p class="text-center text-gray-400 py-8">Escribe para buscar invitados...</p>';
+            }
+            
+            showScannerSearch() {
+                document.getElementById('scanner-search-overlay').classList.remove('hidden');
+                document.getElementById('scanner-search-input').focus();
+            }
+            
+            hideScannerSearch() {
+                document.getElementById('scanner-search-overlay').classList.add('hidden');
+                document.getElementById('scanner-search-input').value = '';
+                document.getElementById('scanner-search-results').innerHTML = '<p class="text-center text-gray-400 py-4">Escribe para buscar invitados...</p>';
+            }
+            
+            searchInvitados(query, containerId) {
+                const resultsContainer = document.getElementById(containerId);
+                
+                if (!query || query.length < 2) {
+                    resultsContainer.innerHTML = '<p class="text-center text-gray-400 py-4">Escribe al menos 2 caracteres para buscar...</p>';
+                    return;
+                }
+                
+                const searchTerm = query.toLowerCase().trim();
+                const results = [];
+                
+                this.ticketsCache.forEach((ticket, ticketId) => {
+                    if (ticket.name && ticket.name.toLowerCase().includes(searchTerm)) {
+                        results.push({ ticketId, ...ticket });
+                    }
+                });
+                
+                if (results.length === 0) {
+                    resultsContainer.innerHTML = `<p class="text-center text-gray-400 py-4">No se encontraron invitados con "${query}"</p>`;
+                    return;
+                }
+                
+                resultsContainer.innerHTML = results.map(ticket => {
+                    const statusClass = ticket.used ? 'used' : '';
+                    const statusText = ticket.used ? 
+                        `❌ YA INGRESÓ (${ticket.usedAt ? new Date(ticket.usedAt).toLocaleString() : 'Fecha desconocida'})` : 
+                        '✅ DISPONIBLE - Click para marcar ingreso';
+                    
+                    return `
+                        <div class="search-result ${statusClass}" onclick="scanner.markManualEntry('${ticket.ticketId}', '${ticket.name}', '${ticket.prefix || 'Sin grupo'}')">
+                            <div class="font-bold text-lg text-white">${ticket.name}</div>
+                            <div class="text-sm text-gray-300">Grupo: ${ticket.prefix || 'Sin grupo'}</div>
+                            <div class="text-sm ${ticket.used ? 'text-red-400' : 'text-emerald-400'} mt-2">
+                                ${statusText}
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            }
+            
+            async markManualEntry(ticketId, name, prefix) {
+                const ticket = this.ticketsCache.get(ticketId);
+                
+                if (!ticket) {
+                    alert('❌ Error: Ticket no encontrado');
+                    return;
+                }
+                
+                if (ticket.used) {
+                    alert('⚠️ Este invitado ya ingresó al evento');
+                    return;
+                }
+                
+                if (!confirm(`¿Confirmar ingreso manual de:\\n${name} (${prefix})?`)) {
+                    return;
+                }
+                
+                console.log(`👤 Entrada manual confirmada: ${name}`);
+                await this.processQRCode(ticketId);
+                
+                // Cerrar búsquedas
+                this.hideManualSearch();
+                this.hideScannerSearch();
+            }
+            
+            async switchCamera() {
+                if (!this.isActive || this.cameras.length <= 1) return;
+                
+                try {
+                    await this.html5QrCode.stop();
+                    
+                    this.currentCameraIndex = (this.currentCameraIndex + 1) % this.cameras.length;
+                    
+                    await this.html5QrCode.start(
+                        this.cameras[this.currentCameraIndex],
+                        {
+                            fps: 10,
+                            qrbox: { width: 250, height: 250 },
+                            aspectRatio: 1.0
+                        },
+                        (decodedText) => this.processQRCode(decodedText),
+                        () => {}
+                    );
+                    
+                    console.log(`📷 Cámara cambiada (${this.currentCameraIndex + 1}/${this.cameras.length})`);
+                } catch (error) {
+                    console.error('Error cambiando cámara:', error);
+                }
+            }
+            
+            toggleFlash() {
+                // Esta funcionalidad depende del dispositivo y puede no estar disponible en todos los navegadores
+                console.log('💡 Toggle flash (funcionalidad limitada en navegadores web)');
+                this.flashEnabled = !this.flashEnabled;
+            }
+            
+            showError(message) {
+                alert(`❌ ${message}`);
+            }
+        }
+        
+        // Inicializar escáner
+        const scanner = new ImprovedQRScanner();
+        
+        // Hacer disponible globalmente para onclick handlers
+        window.scanner = scanner;
+    </script>
+</body>
+</html>
