@@ -349,8 +349,19 @@
             </div>
         </div>
 
-        <!-- Assistant setup -->
-        <div class="setup-section">
+        <!-- User Type Detection -->
+        <div id="user-detection" class="setup-section">
+            <h2 class="text-xl font-bold mb-4 text-sky-400">👤 Detección de Usuario</h2>
+            <div id="user-info-display" class="space-y-4">
+                <div class="bg-blue-900 border border-blue-600 rounded-lg p-4">
+                    <p class="text-blue-200 mb-2">🔍 Verificando tipo de usuario...</p>
+                    <div id="user-status" class="text-white font-semibold">Cargando...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Assistant setup (solo para asistentes) -->
+        <div id="assistant-setup" class="setup-section hidden">
             <h2 class="text-xl font-bold mb-4 text-sky-400">👤 Configuración del Asistente</h2>
             <div class="space-y-4">
                 <div>
@@ -372,8 +383,8 @@
                 <span>📱</span>
                 <span>Iniciar Escáner QR</span>
             </button>
-            <p class="text-sm text-gray-400 mt-2">
-                Asegúrate de completar la verificación del sistema antes de iniciar
+            <p id="start-scanner-note" class="text-sm text-gray-400 mt-2">
+                Verificando permisos...
             </p>
         </div>
 
@@ -469,13 +480,16 @@
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
     
     <script type="module">
-        import { db } from './firebase_config.js';
-        import { collection, onSnapshot, query, doc, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { db, auth } from './firebase_config.js';
+        import { collection, onSnapshot, query, doc, updateDoc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         
         class ImprovedQRScanner {
             constructor() {
                 this.eventId = null;
                 this.eventName = null;
+                this.currentUser = null;
+                this.isOrganizer = false;
                 this.assistantName = '';
                 this.assistantCode = '';
                 
@@ -507,12 +521,122 @@
                 this.setupEventListeners();
                 this.checkSystemRequirements();
                 this.setupNetworkMonitoring();
+                this.checkUserType(); // Nueva función para verificar si es organizador
                 
                 if (this.eventId && this.eventName) {
                     this.loadEventData();
                 } else {
                     this.showError('Error: Evento no especificado');
                 }
+            }
+            
+            async checkUserType() {
+                // Verificar si el usuario está autenticado
+                onAuthStateChanged(auth, async (user) => {
+                    this.currentUser = user;
+                    
+                    if (user) {
+                        // Usuario autenticado - verificar si es organizador
+                        await this.verifyOrganizer(user);
+                    } else {
+                        // Usuario no autenticado - debe ser asistente
+                        this.setupAsAssistant();
+                    }
+                });
+            }
+            
+            async verifyOrganizer(user) {
+                try {
+                    if (!this.eventId) {
+                        this.setupAsAssistant();
+                        return;
+                    }
+                    
+                    // Verificar si el usuario es el propietario del evento
+                    const eventRef = doc(db, 'events', this.eventId);
+                    const eventDoc = await getDoc(eventRef);
+                    
+                    if (eventDoc.exists()) {
+                        const eventData = eventDoc.data();
+                        
+                        // Si el ownerId coincide con el usuario actual, es organizador
+                        if (eventData.ownerId === user.uid) {
+                            this.setupAsOrganizer(user);
+                        } else {
+                            this.setupAsAssistant();
+                        }
+                    } else {
+                        this.setupAsAssistant();
+                    }
+                } catch (error) {
+                    console.error('Error verificando organizador:', error);
+                    this.setupAsAssistant();
+                }
+            }
+            
+            setupAsOrganizer(user) {
+                this.isOrganizer = true;
+                this.assistantName = `Organizador: ${user.email}`;
+                this.assistantCode = 'ORG-ADMIN';
+                
+                // Actualizar la UI para organizador
+                const userStatus = document.getElementById('user-status');
+                const userDisplay = document.getElementById('user-info-display');
+                
+                userDisplay.innerHTML = `
+                    <div class="bg-green-900 border border-green-600 rounded-lg p-4">
+                        <div class="flex items-center space-x-3">
+                            <span class="text-2xl">👑</span>
+                            <div>
+                                <p class="text-green-200 font-semibold">Organizador del Evento</p>
+                                <p class="text-white">${user.email}</p>
+                                <p class="text-green-300 text-sm mt-1">Acceso completo autorizado</p>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                // Ocultar sección de asistente
+                document.getElementById('assistant-setup').classList.add('hidden');
+                
+                // Actualizar nota del botón
+                const startNote = document.getElementById('start-scanner-note');
+                startNote.textContent = 'Listo para iniciar como organizador';
+                startNote.className = 'text-sm text-green-400 mt-2';
+                
+                // Validar automáticamente
+                this.validateSetup();
+                
+                console.log('✅ Configurado como organizador del evento');
+            }
+            
+            setupAsAssistant() {
+                this.isOrganizer = false;
+                
+                // Actualizar la UI para asistente
+                const userDisplay = document.getElementById('user-info-display');
+                userDisplay.innerHTML = `
+                    <div class="bg-orange-900 border border-orange-600 rounded-lg p-4">
+                        <div class="flex items-center space-x-3">
+                            <span class="text-2xl">👤</span>
+                            <div>
+                                <p class="text-orange-200 font-semibold">Modo Asistente</p>
+                                <p class="text-white">Configura tus datos abajo</p>
+                                <p class="text-orange-300 text-sm mt-1">Se requiere información del asistente</p>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                // Mostrar sección de asistente
+                document.getElementById('assistant-setup').classList.remove('hidden');
+                
+                // Actualizar nota del botón
+                const startNote = document.getElementById('start-scanner-note');
+                startNote.textContent = 'Completa la configuración de asistente';
+                startNote.className = 'text-sm text-gray-400 mt-2';
+                
+                console.log('📝 Configurado como asistente - requiere datos');
             }
             
             parseUrlParams() {
@@ -573,7 +697,7 @@
                         this.updateCheckStatus(permissionsCheck, true, 'Permisos concedidos');
                         
                         this.setupComplete = true;
-                        this.validateAssistantInfo();
+                        this.validateSetup();
                         
                     } catch (error) {
                         const permissionsCheck = document.getElementById('permissions-check');
@@ -598,14 +722,31 @@
             }
             
             validateAssistantInfo() {
-                const name = document.getElementById('assistant-name').value.trim();
-                const startBtn = document.getElementById('start-scanner');
+                if (this.isOrganizer) {
+                    // Si es organizador, ya está validado
+                    this.validateSetup();
+                    return;
+                }
                 
-                if (this.setupComplete && name.length >= 2) {
-                    startBtn.disabled = false;
-                    startBtn.classList.remove('opacity-50');
+                const name = document.getElementById('assistant-name').value.trim();
+                
+                if (name.length >= 2) {
                     this.assistantName = name;
                     this.assistantCode = document.getElementById('assistant-code').value.trim();
+                    this.validateSetup();
+                } else {
+                    const startBtn = document.getElementById('start-scanner');
+                    startBtn.disabled = true;
+                    startBtn.classList.add('opacity-50');
+                }
+            }
+            
+            validateSetup() {
+                const startBtn = document.getElementById('start-scanner');
+                
+                if (this.setupComplete && (this.isOrganizer || this.assistantName.length >= 2)) {
+                    startBtn.disabled = false;
+                    startBtn.classList.remove('opacity-50');
                 } else {
                     startBtn.disabled = true;
                     startBtn.classList.add('opacity-50');
@@ -641,8 +782,13 @@
             }
             
             async startScanner() {
-                if (!this.setupComplete || !this.assistantName) {
-                    alert('❌ Completa la configuración antes de iniciar el escáner');
+                if (!this.setupComplete) {
+                    alert('❌ Completa la verificación del sistema antes de iniciar el escáner');
+                    return;
+                }
+                
+                if (!this.isOrganizer && !this.assistantName) {
+                    alert('❌ Completa la configuración de asistente antes de iniciar el escáner');
                     return;
                 }
                 
