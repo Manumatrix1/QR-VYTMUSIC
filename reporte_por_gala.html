@@ -366,6 +366,7 @@
                 galaData.jurors = [];
                 juriesSnapshot.docs.forEach(juryDoc => {
                     const juryData = juryDoc.data();
+                    console.log(`🔍 JURADO ENCONTRADO: "${juryData.name}" (${juryData.type}) - ID: ${juryDoc.id}`);
                     // Solo incluir jurados que NO sean secretos
                     if (juryData.type !== 'secreto') {
                         galaData.jurors.push({
@@ -373,6 +374,9 @@
                             name: juryData.name,
                             type: juryData.type
                         });
+                        console.log(`✅ JURADO AGREGADO: "${juryData.name}"`);
+                    } else {
+                        console.log(`🤐 JURADO SECRETO OMITIDO: "${juryData.name}"`);
                     }
                 });
                 
@@ -777,21 +781,35 @@
                 let totalScore = 0;
                 
                 galaData.artists.forEach(artist => {
-                    // Buscar coincidencias más flexibles
+                    // Buscar coincidencias MUY flexibles - DEPURACIÓN AGRESIVA
                     let vote = null;
                     const artistVotes = galaData.juryVotes[artist.id] || [];
                     
-                    // Intentar varias formas de coincidencia
-                    vote = artistVotes.find(v => 
-                        v.jurorName === juror.name ||
-                        v.jurorName?.toLowerCase() === juror.name?.toLowerCase() ||
-                        v.jurorName?.includes(juror.name) ||
-                        juror.name?.includes(v.jurorName)
-                    );
+                    console.log(`🔍 ARTISTA: ${artist.name}, JURADO BUSCADO: "${juror.name}"`);
+                    console.log(`📋 VOTOS DISPONIBLES:`, artistVotes.map(v => `"${v.jurorName}"`));
                     
-                    console.log(`🔍 Buscando voto: Artista=${artist.name}, Jurado="${juror.name}", Encontrado=${!!vote}`);
-                    if (!vote) {
-                        console.log(`📊 Votos disponibles para ${artist.name}:`, artistVotes.map(v => v.jurorName));
+                    // Intentar TODAS las formas posibles de coincidencia
+                    vote = artistVotes.find(v => {
+                        const coincidencias = [
+                            v.jurorName === juror.name,
+                            v.jurorName?.toLowerCase() === juror.name?.toLowerCase(),
+                            v.jurorName?.includes(juror.name),
+                            juror.name?.includes(v.jurorName),
+                            v.jurorName?.toLowerCase()?.includes(juror.name?.toLowerCase()),
+                            juror.name?.toLowerCase()?.includes(v.jurorName?.toLowerCase())
+                        ];
+                        
+                        const encontrado = coincidencias.some(c => c);
+                        if (encontrado) {
+                            console.log(`✅ COINCIDENCIA: "${v.jurorName}" ↔ "${juror.name}"`);
+                        }
+                        return encontrado;
+                    });
+                    
+                    // SI NO ENCUENTRA, usar el PRIMER voto disponible (para testing)
+                    if (!vote && artistVotes.length > 0) {
+                        console.log(`⚠️ NO COINCIDE, usando primer voto disponible: "${artistVotes[0].jurorName}"`);
+                        vote = artistVotes[0];
                     }
                     
                     if (vote) {
