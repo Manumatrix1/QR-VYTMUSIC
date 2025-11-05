@@ -63,28 +63,39 @@
         
         /* Header con contadores */
         .header-stats {
-            position: fixed; top: 20px; left: 20px; right: 20px;
+            position: fixed; top: 10px; left: 10px; right: 10px;
             background: rgba(15, 23, 42, 0.95); backdrop-filter: blur(15px);
-            border: 2px solid; border-radius: 20px; padding: 20px; z-index: 60;
-            display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px;
+            border: 2px solid; border-radius: 15px; padding: 12px; z-index: 60;
+            display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;
         }
         
         .header-online { border-color: #2563eb; box-shadow: 0 0 20px rgba(37, 99, 235, 0.3); }
         .header-offline { border-color: #f59e0b; box-shadow: 0 0 20px rgba(245, 158, 11, 0.3); }
         
         .stat-item {
-            text-align: center; padding: 10px; border-radius: 12px;
+            text-align: center; padding: 8px; border-radius: 10px;
             background: rgba(255, 255, 255, 0.1);
         }
         
         .stat-number {
-            font-size: 2.2rem; font-weight: 900; line-height: 1;
+            font-size: 1.8rem; font-weight: 900; line-height: 1;
             text-shadow: 0 2px 4px rgba(0,0,0,0.5);
         }
         
         .stat-label {
-            font-size: 0.75rem; font-weight: 600; opacity: 0.9; 
-            margin-top: 5px; text-transform: uppercase; letter-spacing: 0.5px;
+            font-size: 0.65rem; font-weight: 600; opacity: 0.9; 
+            margin-top: 4px; text-transform: uppercase; letter-spacing: 0.3px;
+        }
+        
+        /* Responsive para móvil */
+        @media (max-width: 640px) {
+            .header-stats {
+                top: 5px; left: 5px; right: 5px;
+                padding: 8px; gap: 6px; border-radius: 12px;
+            }
+            .stat-item { padding: 6px; border-radius: 8px; }
+            .stat-number { font-size: 1.5rem; }
+            .stat-label { font-size: 0.6rem; margin-top: 2px; }
         }
         
         /* Estado de conexión inteligente */
@@ -114,26 +125,46 @@
         
         /* Información del asistente */
         .assistant-info {
-            position: fixed; top: 180px; left: 20px; right: 20px;
+            position: fixed; top: 140px; left: 15px; right: 15px;
             background: rgba(30, 41, 59, 0.95); backdrop-filter: blur(10px);
-            border-radius: 15px; padding: 12px 20px; z-index: 60;
+            border-radius: 12px; padding: 8px 15px; z-index: 60;
             text-align: center; border: 1px solid #475569;
+        }
+        
+        /* Responsive para móvil */
+        @media (max-width: 640px) {
+            .assistant-info {
+                top: 90px; left: 8px; right: 8px;
+                padding: 6px 12px; font-size: 0.85rem;
+                border-radius: 10px;
+            }
         }
         
         /* Controles inferiores */
         .bottom-controls {
-            position: fixed; bottom: 20px; left: 20px; right: 20px;
-            display: flex; justify-content: space-between; gap: 10px; z-index: 60;
+            position: fixed; bottom: 15px; left: 15px; right: 15px;
+            display: flex; justify-content: space-between; gap: 8px; z-index: 60;
         }
         
         .control-btn {
-            flex: 1; padding: 15px 12px; border-radius: 15px;
-            font-weight: 800; font-size: 0.9rem; border: none;
+            flex: 1; padding: 12px 10px; border-radius: 12px;
+            font-weight: 800; font-size: 0.85rem; border: none;
             box-shadow: 0 8px 25px rgba(0,0,0,0.3);
             transition: all 0.2s ease; text-transform: uppercase;
         }
         
         .control-btn:active { transform: scale(0.95); }
+        
+        /* Responsive para móvil */
+        @media (max-width: 640px) {
+            .bottom-controls {
+                bottom: 10px; left: 8px; right: 8px; gap: 6px;
+            }
+            .control-btn {
+                padding: 10px 8px; font-size: 0.75rem;
+                border-radius: 10px;
+            }
+        }
         
         .btn-stop { background: linear-gradient(135deg, #ef4444, #dc2626); color: white; }
         .btn-sync { background: linear-gradient(135deg, #3b82f6, #2563eb); color: white; }
@@ -611,6 +642,9 @@
                 document.getElementById('current-event-name').textContent = this.eventName;
                 document.getElementById('current-assistant-name').textContent = this.assistantName;
 
+                // Forzar actualización de contadores
+                this.updateCounters();
+
                 // Iniciar escáner QR automáticamente
                 await this.initializeScanner();
 
@@ -674,6 +708,9 @@
                 // Actualizar información del asistente
                 document.getElementById('current-event-name').textContent = this.eventName;
                 document.getElementById('current-assistant-name').textContent = this.assistantName;
+
+                // Forzar actualización de contadores
+                this.updateCounters();
 
                 // Iniciar escáner QR
                 await this.initializeScanner();
@@ -805,12 +842,34 @@
                         const snapshot = await getDocs(ticketsRef);
                         
                         let loadedCount = 0;
+                        let validCount = 0;
+                        let usedCount = 0;
+                        
                         snapshot.docs.forEach(doc => {
-                            this.ticketsCache.set(doc.id, { id: doc.id, ...doc.data() });
+                            const ticketData = { id: doc.id, ...doc.data() };
+                            this.ticketsCache.set(doc.id, ticketData);
                             loadedCount++;
+                            
+                            // Contar tickets válidos y usados
+                            if (ticketData.paymentStatus === 'Paga' || ticketData.paymentStatus === 'cobrada') {
+                                validCount++;
+                                if (ticketData.used) {
+                                    usedCount++;
+                                }
+                            }
                         });
 
+                        // Actualizar contadores
+                        this.counters.total = loadedCount;
+                        this.counters.valid = validCount;
+                        this.counters.used = usedCount;
+                        this.counters.invalid = loadedCount - validCount;
+
                         console.log(`✅ ${loadedCount} tickets cargados desde Firebase`);
+                        console.log(`📊 Válidos: ${validCount}, Usados: ${usedCount}, Inválidos: ${this.counters.invalid}`);
+                        
+                        // Actualizar UI
+                        this.updateCounters();
                         this.saveToStorage();
                     } catch (error) {
                         console.error('❌ Error cargando tickets:', error);
@@ -818,7 +877,33 @@
                     }
                 } else {
                     console.log('📱 Modo offline - usando cache local');
+                    // En modo offline, recalcular contadores desde cache
+                    this.recalculateCountersFromCache();
                 }
+            }
+
+            recalculateCountersFromCache() {
+                let validCount = 0;
+                let usedCount = 0;
+                let totalCount = 0;
+                
+                this.ticketsCache.forEach(ticket => {
+                    totalCount++;
+                    if (ticket.paymentStatus === 'Paga' || ticket.paymentStatus === 'cobrada') {
+                        validCount++;
+                        if (ticket.used) {
+                            usedCount++;
+                        }
+                    }
+                });
+                
+                this.counters.total = totalCount;
+                this.counters.valid = validCount;
+                this.counters.used = usedCount;
+                this.counters.invalid = totalCount - validCount;
+                
+                console.log(`📊 Cache recalculado - Total: ${totalCount}, Válidos: ${validCount}, Usados: ${usedCount}`);
+                this.updateCounters();
             }
 
             async initializeScanner() {
