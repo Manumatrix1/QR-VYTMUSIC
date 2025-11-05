@@ -502,6 +502,11 @@
                 this.tryAutoStart();
                 
                 console.log('🎯 Escáner Integrado VYT MUSIC Iniciado');
+                
+                // Asegurar que los contadores se muestren correctamente
+                setTimeout(() => {
+                    this.recalculateCountersFromCache();
+                }, 1000);
             }
 
             async tryAutoStart() {
@@ -910,9 +915,21 @@
                 try {
                     console.log('🔄 Iniciando escáner QR...');
                     
+                    // Verificar que el elemento existe
+                    const qrReaderElement = document.getElementById("qr-reader");
+                    if (!qrReaderElement) {
+                        throw new Error('❌ Elemento qr-reader no encontrado');
+                    }
+                    
+                    // Verificar que Html5Qrcode está disponible
+                    if (typeof Html5Qrcode === 'undefined') {
+                        throw new Error('❌ Librería Html5Qrcode no cargada');
+                    }
+                    
+                    console.log('✅ Elemento qr-reader encontrado, inicializando...');
                     this.html5QrCode = new Html5Qrcode("qr-reader");
                     
-                    // Configuración simplificada pero efectiva
+                    // Configuración optimizada para móvil
                     const config = {
                         fps: 10,
                         qrbox: { width: 250, height: 250 },
@@ -920,6 +937,8 @@
                         disableFlip: false
                     };
 
+                    console.log('🎥 Solicitando acceso a cámara trasera...');
+                    
                     // Intentar con cámara trasera primero
                     await this.html5QrCode.start(
                         { facingMode: "environment" },
@@ -942,8 +961,47 @@
                     
                 } catch (error) {
                     console.error('❌ Error iniciando escáner:', error);
-                    alert(`❌ Error al iniciar cámara: ${error.message}\n\nSoluciones:\n• Permite acceso a la cámara\n• Cierra otras apps que usen la cámara\n• Usa Chrome o Firefox\n• Recarga la página`);
+                    
+                    // Intentar con cámara frontal como fallback
+                    try {
+                        console.log('🔄 Intentando con cámara frontal...');
+                        if (this.html5QrCode) {
+                            await this.html5QrCode.start(
+                                { facingMode: "user" },
+                                { fps: 10, qrbox: { width: 200, height: 200 } },
+                                (decodedText) => this.onScanSuccess(decodedText),
+                                () => {} // Ignorar errores menores
+                            );
+                            this.isActive = true;
+                            console.log('✅ Escáner iniciado con cámara frontal');
+                        }
+                    } catch (fallbackError) {
+                        console.error('❌ Error con cámara frontal:', fallbackError);
+                        this.showCameraError(error.message);
+                    }
                 }
+            }
+
+            showCameraError(errorMessage = '') {
+                const errorDiv = document.createElement('div');
+                errorDiv.className = 'fixed inset-0 bg-red-900 bg-opacity-90 flex items-center justify-center z-50 p-6';
+                errorDiv.innerHTML = `
+                    <div class="bg-red-800 p-6 rounded-xl text-white text-center max-w-md">
+                        <h3 class="text-xl font-bold mb-4">❌ Error de Cámara</h3>
+                        <p class="mb-4">No se pudo acceder a la cámara.</p>
+                        <div class="text-sm mb-4 text-left">
+                            <p><strong>Soluciones:</strong></p>
+                            <p>• Permite acceso a la cámara</p>
+                            <p>• Cierra otras apps que usen la cámara</p>
+                            <p>• Usa Chrome o Firefox</p>
+                            <p>• Recarga la página</p>
+                        </div>
+                        <button onclick="location.reload()" class="bg-red-600 hover:bg-red-700 px-4 py-2 rounded font-bold">
+                            🔄 Recargar Página
+                        </button>
+                    </div>
+                `;
+                document.body.appendChild(errorDiv);
             }
 
             async onScanSuccess(decodedText) {
@@ -1607,10 +1665,17 @@
                         if (this.assistantName) document.getElementById('assistant-name').value = this.assistantName;
                         if (this.assistantCode) document.getElementById('assistant-code').value = this.assistantCode;
                         
+                        // Actualizar contadores UI inmediatamente
+                        this.updateCounters();
+                        
                         console.log(`📱 Datos cargados: ${this.localEntries.length} ingresos, ${this.syncQueue.length} pendientes`);
+                        console.log(`📊 Contadores cargados: Válidos: ${this.counters.valid}, Usados: ${this.counters.used}, Total: ${this.counters.total}`);
                     } catch (error) {
                         console.error('Error cargando datos:', error);
                     }
+                } else {
+                    // Si no hay datos guardados, inicializar contadores en UI
+                    this.updateCounters();
                 }
             }
         }
