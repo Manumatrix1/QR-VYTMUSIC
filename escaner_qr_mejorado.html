@@ -547,7 +547,12 @@
             
             async verifyOrganizer(user) {
                 try {
+                    console.log('🔍 Verificando si es organizador...');
+                    console.log('👤 Usuario actual:', user.uid, user.email);
+                    console.log('🎫 Event ID:', this.eventId);
+                    
                     if (!this.eventId) {
+                        console.log('❌ No hay eventId - configurando como asistente');
                         this.setupAsAssistant();
                         return;
                     }
@@ -558,18 +563,25 @@
                     
                     if (eventDoc.exists()) {
                         const eventData = eventDoc.data();
+                        console.log('📊 Datos del evento:', eventData);
+                        console.log('👑 Owner ID del evento:', eventData.ownerId);
+                        console.log('🆔 User ID actual:', user.uid);
                         
                         // Si el ownerId coincide con el usuario actual, es organizador
                         if (eventData.ownerId === user.uid) {
+                            console.log('✅ ¡ES ORGANIZADOR! Configurando acceso completo');
                             this.setupAsOrganizer(user);
                         } else {
+                            console.log('❌ No es organizador - configurando como asistente');
+                            console.log(`Comparación: "${eventData.ownerId}" !== "${user.uid}"`);
                             this.setupAsAssistant();
                         }
                     } else {
+                        console.log('❌ Evento no encontrado - configurando como asistente');
                         this.setupAsAssistant();
                     }
                 } catch (error) {
-                    console.error('Error verificando organizador:', error);
+                    console.error('❌ Error verificando organizador:', error);
                     this.setupAsAssistant();
                 }
             }
@@ -619,24 +631,43 @@
                     <div class="bg-orange-900 border border-orange-600 rounded-lg p-4">
                         <div class="flex items-center space-x-3">
                             <span class="text-2xl">👤</span>
-                            <div>
+                            <div class="flex-grow">
                                 <p class="text-orange-200 font-semibold">Modo Asistente</p>
                                 <p class="text-white">Configura tus datos abajo</p>
                                 <p class="text-orange-300 text-sm mt-1">Se requiere información del asistente</p>
                             </div>
+                            <button id="force-organizer-btn" class="bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded text-sm font-bold">
+                                🔧 Forzar Modo Organizador
+                            </button>
                         </div>
                     </div>
                 `;
+                
+                // Agregar event listener para el botón de forzar organizador
+                document.getElementById('force-organizer-btn').onclick = () => {
+                    if (confirm('¿Eres el organizador de este evento y quieres forzar el acceso de organizador?')) {
+                        this.forceOrganizerMode();
+                    }
+                };
                 
                 // Mostrar sección de asistente
                 document.getElementById('assistant-setup').classList.remove('hidden');
                 
                 // Actualizar nota del botón
                 const startNote = document.getElementById('start-scanner-note');
-                startNote.textContent = 'Completa la configuración de asistente';
+                startNote.textContent = 'Completa la configuración de asistente o usa el botón de forzar organizador';
                 startNote.className = 'text-sm text-gray-400 mt-2';
                 
                 console.log('📝 Configurado como asistente - requiere datos');
+            }
+            
+            forceOrganizerMode() {
+                console.log('🔧 FORZANDO MODO ORGANIZADOR');
+                const currentUser = this.currentUser || { 
+                    email: 'Organizador (Modo Forzado)', 
+                    uid: 'forced-organizer' 
+                };
+                this.setupAsOrganizer(currentUser);
             }
             
             parseUrlParams() {
