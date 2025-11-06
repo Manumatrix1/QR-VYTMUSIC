@@ -2349,7 +2349,7 @@ Formato de respuesta:
         
         // Cargar galas en selector de administrador
         async function loadAdminGalas() {
-            console.log('🎭 Iniciando carga de galas...');
+            console.log('🎭 Iniciando carga de galas REALES...');
             console.log('📍 EventId:', eventId);
             
             const select = document.getElementById('admin-gala-select');
@@ -2358,73 +2358,77 @@ Formato de respuesta:
                 return;
             }
             
-            // Cargar galas de prueba INMEDIATAMENTE para que funcione
-            const testGalas = [
-                { id: 'gala_1', name: 'Gala 1' },
-                { id: 'gala_2', name: 'Gala 2' }, 
-                { id: 'gala_3', name: 'Gala 3' },
-                { id: 'semifinal', name: 'Semifinal' },
-                { id: 'final', name: 'Final' }
-            ];
-            
-            select.innerHTML = '<option value="">🎭 Selecciona gala para generar link...</option>';
-            testGalas.forEach(gala => {
-                const option = document.createElement('option');
-                option.value = gala.id;
-                option.textContent = `🎭 ${gala.name}`;
-                select.appendChild(option);
-            });
-            console.log('✅ Galas de prueba cargadas inmediatamente');
+            select.innerHTML = '<option value="">🎭 Cargando galas reales...</option>';
             
             try {
-                // Intentar cargar galas reales desde Firebase
-                const [juryVotesSnapshot, publicVotesSnapshot, juryEvaluationsSnapshot] = await Promise.all([
-                    getDocs(collection(db, `events/${eventId}/jury_votes`)),
-                    getDocs(collection(db, `events/${eventId}/votes`)),
-                    getDocs(collection(db, `events/${eventId}/jury_evaluations`))
-                ]);
+                // BUSCAR GALAS REALES - Directamente desde la colección de eventos principales
+                console.log('🔍 Buscando eventos/galas reales...');
                 
-                console.log('📊 Votos jurados encontrados:', juryVotesSnapshot.docs.length);
-                console.log('📊 Votos públicos encontrados:', publicVotesSnapshot.docs.length);
-                console.log('📊 Evaluaciones encontradas:', juryEvaluationsSnapshot.docs.length);
+                // Buscar en la colección principal de eventos (donde están tus galas reales)
+                const eventsSnapshot = await getDocs(collection(db, 'events'));
+                console.log('📊 Eventos encontrados:', eventsSnapshot.docs.length);
                 
-                // Extraer galas únicas de Firebase
-                const galaIds = new Set();
+                const realGalas = [];
                 
-                juryVotesSnapshot.forEach(doc => {
-                    const vote = doc.data();
-                    if (vote.galaId) {
-                        galaIds.add(vote.galaId);
-                        console.log('🎭 Gala real encontrada:', vote.galaId);
+                eventsSnapshot.forEach(doc => {
+                    const eventData = doc.data();
+                    const eventId = doc.id;
+                    
+                    // Log para debug
+                    console.log('📄 Evento encontrado:', {
+                        id: eventId,
+                        name: eventData.name || eventData.eventName || 'Sin nombre',
+                        date: eventData.date || eventData.createdAt,
+                        data: eventData
+                    });
+                    
+                    // Agregar solo si tiene nombre válido
+                    if (eventData.name || eventData.eventName) {
+                        realGalas.push({
+                            id: eventId,
+                            name: eventData.name || eventData.eventName,
+                            date: eventData.date || eventData.createdAt
+                        });
                     }
                 });
                 
-                publicVotesSnapshot.forEach(doc => {
-                    const vote = doc.data();
-                    if (vote.galaId) galaIds.add(vote.galaId);
+                // Ordenar por fecha (más recientes primero)
+                realGalas.sort((a, b) => {
+                    const dateA = new Date(a.date || 0);
+                    const dateB = new Date(b.date || 0);
+                    return dateB - dateA;
                 });
                 
-                juryEvaluationsSnapshot.forEach(doc => {
-                    const evaluation = doc.data();
-                    if (evaluation.galaId) galaIds.add(evaluation.galaId);
-                });
+                console.log('✅ Galas reales encontradas:', realGalas);
                 
-                // Si hay galas reales, reemplazar las de prueba
-                if (galaIds.size > 0) {
-                    select.innerHTML = '<option value="">🎭 Selecciona gala para generar link...</option>';
-                    const sortedGalas = Array.from(galaIds).sort();
-                    sortedGalas.forEach(galaId => {
+                // Limpiar y llenar selector con galas reales
+                select.innerHTML = '<option value="">🎭 Selecciona gala para generar link...</option>';
+                
+                if (realGalas.length > 0) {
+                    realGalas.forEach(gala => {
                         const option = document.createElement('option');
-                        option.value = galaId;
-                        option.textContent = `🎭 ${galaId} (Real)`;
+                        option.value = gala.id;
+                        option.textContent = `🎭 ${gala.name}`;
                         select.appendChild(option);
                     });
-                    console.log(`🔄 Galas reales cargadas: ${galaIds.size}`);
+                    console.log(`✅ ${realGalas.length} galas reales cargadas en selector`);
+                } else {
+                    console.log('⚠️ No se encontraron galas reales, usando fallback');
+                    select.innerHTML = '<option value="">❌ No hay galas creadas</option>';
+                    
+                    // Agregar mensaje para crear galas
+                    const option = document.createElement('option');
+                    option.value = 'crear_gala';
+                    option.textContent = '➕ Crear galas en "Gestión de Eventos"';
+                    select.appendChild(option);
                 }
                 
             } catch (error) {
-                console.error('⚠️ Error cargando galas de Firebase (usando fallback):', error);
-                // Las galas de prueba ya están cargadas, así que el sistema sigue funcionando
+                console.error('❌ Error cargando galas reales:', error);
+                select.innerHTML = '<option value="">❌ Error cargando galas</option>';
+                
+                // Mensaje de error informativo
+                alert(`❌ Error cargando tus galas reales:\n\n${error.message}\n\nVerifica:\n• Conexión a Firebase\n• Galas creadas en "Gestión de Eventos"`);
             }
         }
         
