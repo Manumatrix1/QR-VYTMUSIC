@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestión de Usuarios Jurados - VYTMUSIC</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; }
+        .glass-bg { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+    </style>
+</head>
+<body class="glass-bg min-h-screen text-white">
+    <div class="container mx-auto px-4 py-8">
+        <!-- HEADER -->
+        <div class="text-center mb-8">
+            <h1 class="text-4xl font-bold mb-2">👨‍⚖️ Gestión de Usuarios Jurados</h1>
+            <p class="text-lg opacity-90">Crear y administrar cuentas permanentes para jurados</p>
+            <a href="panel_evento_mejorado.html" class="inline-block mt-4 bg-white/20 px-4 py-2 rounded-lg hover:bg-white/30 transition-colors">
+                ← Volver al Panel Principal
+            </a>
+        </div>
+
+        <!-- CREAR NUEVO USUARIO -->
+        <div class="bg-white/10 backdrop-blur-sm rounded-xl p-6 mb-8 max-w-2xl mx-auto">
+            <h2 class="text-2xl font-bold mb-4">➕ Crear Nuevo Usuario Jurado</h2>
+            
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-bold mb-2">Nombre del Jurado:</label>
+                    <input type="text" id="new-juror-name" placeholder="Ej: Lisandro García" 
+                           class="w-full p-3 rounded-lg bg-white/20 border border-white/30 text-white placeholder-white/60">
+                </div>
+
+                <div>
+                    <label class="block text-sm font-bold mb-2">Tipo de Jurado:</label>
+                    <select id="new-juror-type" class="w-full p-3 rounded-lg bg-white/20 border border-white/30 text-white">
+                        <option value="">-- Seleccionar tipo --</option>
+                        <option value="principal">🏆 Jurado Principal</option>
+                        <option value="individual">🧑 Jurado Individual</option>
+                        <option value="grupal">👥 Jurado Grupal</option>
+                        <option value="invitado">🎭 Jurado Invitado</option>
+                        <option value="secreto">🤐 Jurado Secreto</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-bold mb-2">Información Adicional (Opcional):</label>
+                    <input type="text" id="new-juror-additional" placeholder="Ej: Profesor de Canto, Músico Profesional" 
+                           class="w-full p-3 rounded-lg bg-white/20 border border-white/30 text-white placeholder-white/60">
+                </div>
+
+                <div>
+                    <label class="block text-sm font-bold mb-2">Contraseña/PIN:</label>
+                    <input type="text" id="new-juror-password" placeholder="Ej: 1234 o nombre123" 
+                           class="w-full p-3 rounded-lg bg-white/20 border border-white/30 text-white placeholder-white/60">
+                    <p class="text-xs opacity-70 mt-1">Contraseña simple que el jurado usará para acceder</p>
+                </div>
+
+                <button onclick="createJuror()" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg transition-colors">
+                    ✨ Crear Usuario Jurado
+                </button>
+            </div>
+        </div>
+
+        <!-- LISTA DE USUARIOS EXISTENTES -->
+        <div class="bg-white/10 backdrop-blur-sm rounded-xl p-6">
+            <h2 class="text-2xl font-bold mb-4">📋 Usuarios Jurados Existentes</h2>
+            <div id="jurors-list" class="space-y-3">
+                <div class="text-center py-8 opacity-60">
+                    <div class="text-4xl mb-2">👥</div>
+                    <p>Cargando usuarios...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js';
+        import { getFirestore, collection, doc, setDoc, getDocs, deleteDoc, query, orderBy } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+
+        // Configuración Firebase
+        const firebaseConfig = {
+            apiKey: "AIzaSyBOUrqFBGozT9xIdHsEsqO9cgjz14jSP3M",
+            authDomain: "vyt-music.firebaseapp.com",
+            projectId: "vyt-music",
+            storageBucket: "vyt-music.appspot.com",
+            messagingSenderId: "30961723191",
+            appId: "1:30961723191:web:2754a9b60fbe2c26bea74e"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        // Variables globales
+        window.db = db;
+
+        // Función para obtener el ID del evento actual
+        function getCurrentEventId() {
+            const urlParams = new URLSearchParams(window.location.search);
+            return urlParams.get('event') || 'default-event';
+        }
+
+        // Función para crear nuevo jurado
+        window.createJuror = async function() {
+            const name = document.getElementById('new-juror-name').value.trim();
+            const type = document.getElementById('new-juror-type').value;
+            const additional = document.getElementById('new-juror-additional').value.trim();
+            const password = document.getElementById('new-juror-password').value.trim();
+
+            if (!name) {
+                alert('❌ El nombre es obligatorio');
+                return;
+            }
+
+            if (!type) {
+                alert('❌ El tipo de jurado es obligatorio');
+                return;
+            }
+
+            if (!password) {
+                alert('❌ La contraseña/PIN es obligatoria');
+                return;
+            }
+
+            try {
+                const eventId = getCurrentEventId();
+                const jurorId = name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+                
+                const jurorData = {
+                    id: jurorId,
+                    name: name,
+                    type: type,
+                    typeLabel: getJurorTypeLabel(type),
+                    additional: additional,
+                    password: password,
+                    createdAt: new Date().toISOString(),
+                    eventId: eventId,
+                    isActive: true
+                };
+
+                await setDoc(doc(db, `events/${eventId}/jury_users`, jurorId), jurorData);
+                
+                alert(`✅ Usuario "${name}" creado exitosamente!\n\nID: ${jurorId}\nContraseña: ${password}`);
+                
+                // Limpiar formulario
+                document.getElementById('new-juror-name').value = '';
+                document.getElementById('new-juror-type').value = '';
+                document.getElementById('new-juror-additional').value = '';
+                document.getElementById('new-juror-password').value = '';
+                
+                loadJurors();
+                
+            } catch (error) {
+                console.error('Error creando jurado:', error);
+                alert('❌ Error al crear el usuario: ' + error.message);
+            }
+        };
+
+        // Función para cargar jurados existentes
+        window.loadJurors = async function() {
+            try {
+                const eventId = getCurrentEventId();
+                const jurorsQuery = query(
+                    collection(db, `events/${eventId}/jury_users`),
+                    orderBy('createdAt', 'desc')
+                );
+                
+                const snapshot = await getDocs(jurorsQuery);
+                const container = document.getElementById('jurors-list');
+                
+                if (snapshot.empty) {
+                    container.innerHTML = `
+                        <div class="text-center py-8 opacity-60">
+                            <div class="text-4xl mb-2">👥</div>
+                            <p>No hay usuarios jurados creados</p>
+                            <p class="text-sm">Crea el primer usuario usando el formulario de arriba</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                let html = '';
+                snapshot.forEach(doc => {
+                    const juror = doc.data();
+                    const typeColor = getTypeColor(juror.type);
+                    
+                    html += `
+                        <div class="bg-white/10 p-4 rounded-lg border border-white/20">
+                            <div class="flex justify-between items-center">
+                                <div class="flex-1">
+                                    <div class="flex items-center gap-3 mb-2">
+                                        <h3 class="text-lg font-bold">${juror.name}</h3>
+                                        <span class="px-2 py-1 text-xs rounded-full ${typeColor}">${juror.typeLabel}</span>
+                                        ${juror.isActive ? '<span class="text-green-400">🟢 Activo</span>' : '<span class="text-red-400">🔴 Inactivo</span>'}
+                                    </div>
+                                    <div class="text-sm opacity-75">
+                                        <p><strong>ID:</strong> ${juror.id}</p>
+                                        <p><strong>Contraseña:</strong> ${juror.password}</p>
+                                        ${juror.additional ? `<p><strong>Info:</strong> ${juror.additional}</p>` : ''}
+                                        <p><strong>Creado:</strong> ${new Date(juror.createdAt).toLocaleDateString()}</p>
+                                    </div>
+                                </div>
+                                <div class="flex gap-2">
+                                    <button onclick="toggleJurorStatus('${juror.id}', ${juror.isActive})" 
+                                            class="px-3 py-1 text-xs rounded ${juror.isActive ? 'bg-yellow-600 hover:bg-yellow-700' : 'bg-green-600 hover:bg-green-700'}">
+                                        ${juror.isActive ? '⏸️ Desactivar' : '▶️ Activar'}
+                                    </button>
+                                    <button onclick="deleteJuror('${juror.id}', '${juror.name}')" 
+                                            class="px-3 py-1 text-xs bg-red-600 hover:bg-red-700 rounded">
+                                        🗑️ Eliminar
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                container.innerHTML = html;
+                
+            } catch (error) {
+                console.error('Error cargando jurados:', error);
+                document.getElementById('jurors-list').innerHTML = `
+                    <div class="text-center py-8 text-red-400">
+                        <div class="text-4xl mb-2">⚠️</div>
+                        <p>Error al cargar usuarios: ${error.message}</p>
+                    </div>
+                `;
+            }
+        };
+
+        // Función auxiliar para obtener etiqueta del tipo de jurado
+        function getJurorTypeLabel(type) {
+            const labels = {
+                'principal': 'Jurado Principal',
+                'individual': 'Jurado Individual', 
+                'grupal': 'Jurado Grupal',
+                'invitado': 'Jurado Invitado',
+                'secreto': 'Jurado Secreto'
+            };
+            return labels[type] || 'Jurado';
+        }
+
+        // Función auxiliar para obtener color del tipo
+        function getTypeColor(type) {
+            const colors = {
+                'principal': 'bg-purple-600',
+                'individual': 'bg-blue-600',
+                'grupal': 'bg-green-600', 
+                'invitado': 'bg-yellow-600',
+                'secreto': 'bg-gray-600'
+            };
+            return colors[type] || 'bg-gray-600';
+        }
+
+        // Función para cambiar estado activo/inactivo
+        window.toggleJurorStatus = async function(jurorId, currentStatus) {
+            try {
+                const eventId = getCurrentEventId();
+                await setDoc(doc(db, `events/${eventId}/jury_users`, jurorId), {
+                    isActive: !currentStatus
+                }, { merge: true });
+                
+                loadJurors();
+                
+            } catch (error) {
+                console.error('Error cambiando estado:', error);
+                alert('❌ Error al cambiar estado: ' + error.message);
+            }
+        };
+
+        // Función para eliminar jurado
+        window.deleteJuror = async function(jurorId, jurorName) {
+            if (!confirm(`¿Estás seguro de eliminar al usuario "${jurorName}"?\n\nEsta acción no se puede deshacer.`)) {
+                return;
+            }
+
+            try {
+                const eventId = getCurrentEventId();
+                await deleteDoc(doc(db, `events/${eventId}/jury_users`, jurorId));
+                
+                alert(`✅ Usuario "${jurorName}" eliminado exitosamente`);
+                loadJurors();
+                
+            } catch (error) {
+                console.error('Error eliminando jurado:', error);
+                alert('❌ Error al eliminar usuario: ' + error.message);
+            }
+        };
+
+        // Cargar jurados al iniciar
+        loadJurors();
+    </script>
+</body>
+</html>

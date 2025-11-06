@@ -192,6 +192,13 @@
                 </div>
                 
                 <button onclick="login()" class="btn btn-primary w-full">INGRESAR COMO JURADO</button>
+                
+                <!-- BOTÓN PARA CAMBIAR A MODO USUARIO REGISTRADO -->
+                <div class="text-center mt-4">
+                    <button onclick="showRegisteredUserLogin()" class="text-blue-400 hover:text-blue-300 text-sm underline">
+                        👤 ¿Eres usuario registrado? Haz click aquí
+                    </button>
+                </div>
             </div>
             <div class="mt-4 text-sm text-center opacity-75">
                 <p>📝 Ingresa tu nombre y selecciona tu tipo de jurado</p>
@@ -378,7 +385,7 @@
     <script type="module">
         // === CONFIGURACIÓN FIREBASE ===
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getFirestore, collection, getDocs, query, orderBy, doc, setDoc, deleteDoc, limit, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, collection, getDocs, getDoc, query, orderBy, doc, setDoc, deleteDoc, limit, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         
         // Configuración Firebase
         const firebaseConfig = {
@@ -392,6 +399,16 @@
         
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
+        
+        // Hacer disponibles globalmente para las nuevas funciones
+        window.db = db;
+        window.collection = collection;
+        window.getDocs = getDocs;
+        window.getDoc = getDoc;
+        window.query = query;
+        window.where = where;
+        window.doc = doc;
+        window.setDoc = setDoc;
         
         console.log('🔥 Firebase inicializado correctamente');
         
@@ -799,6 +816,343 @@ Formato de respuesta:
                 document.getElementById('auth-section').style.display = 'block';
                 document.getElementById('main-content').style.display = 'none';
                 document.getElementById('juror-name').value = '';
+            }
+        };
+
+        // 🆕 NUEVAS FUNCIONES PARA USUARIOS REGISTRADOS
+        window.toggleLoginMode = function() {
+            const userMode = document.getElementById('user-login-mode');
+            const tempMode = document.getElementById('temp-login-mode');
+            
+            if (userMode.classList.contains('hidden')) {
+                userMode.classList.remove('hidden');
+                tempMode.classList.add('hidden');
+                loadRegisteredUsers();
+            } else {
+                userMode.classList.add('hidden');
+                tempMode.classList.remove('hidden');
+            }
+        };
+
+        window.loadRegisteredUsers = async function() {
+            try {
+                const userSelect = document.getElementById('juror-user-select');
+                userSelect.innerHTML = '<option value="">-- Cargando usuarios... --</option>';
+                
+                const usersQuery = query(
+                    collection(db, `events/${eventId}/jury_users`),
+                    where('isActive', '==', true)
+                );
+                
+                const snapshot = await getDocs(usersQuery);
+                
+                if (snapshot.empty) {
+                    userSelect.innerHTML = '<option value="">-- No hay usuarios registrados --</option>';
+                    return;
+                }
+                
+                let html = '<option value="">-- Selecciona tu usuario --</option>';
+                snapshot.forEach(doc => {
+                    const user = doc.data();
+                    html += `<option value="${user.id}">${user.name} (${user.typeLabel})</option>`;
+                });
+                
+                userSelect.innerHTML = html;
+                
+            } catch (error) {
+                console.error('Error cargando usuarios:', error);
+                document.getElementById('juror-user-select').innerHTML = '<option value="">-- Error cargando usuarios --</option>';
+            }
+        };
+
+        window.loginWithUser = async function() {
+            const userId = document.getElementById('juror-user-select').value;
+            const password = document.getElementById('juror-password').value.trim();
+            
+            if (!userId) {
+                alert('❌ Por favor selecciona tu usuario');
+                return;
+            }
+            
+            if (!password) {
+                alert('❌ Por favor ingresa tu contraseña');
+                return;
+            }
+            
+            try {
+                const userDoc = await getDoc(doc(db, `events/${eventId}/jury_users`, userId));
+                
+                if (!userDoc.exists()) {
+                    alert('❌ Usuario no encontrado');
+                    return;
+                }
+                
+                const userData = userDoc.data();
+                
+                if (userData.password !== password) {
+                    alert('❌ Contraseña incorrecta');
+                    return;
+                }
+                
+                if (!userData.isActive) {
+                    alert('❌ Usuario desactivado. Contacta al administrador.');
+                    return;
+                }
+                
+                // Configurar jurado con usuario registrado
+                currentJuror = {
+                    id: userData.id, // ← ID fijo, no aleatorio
+                    name: userData.name,
+                    type: userData.type,
+                    typeLabel: userData.typeLabel,
+                    additional: userData.additional || '',
+                    loginTime: new Date().toISOString(),
+                    isAnonymous: userData.type === 'secreto',
+                    displayName: userData.type === 'secreto' ? 'Jurado Anónimo' : userData.name,
+                    isRegisteredUser: true // ← Marca para identificar usuarios registrados
+                };
+                
+                console.log('✅ Login con usuario registrado:', currentJuror);
+                
+                // Mostrar información del jurado
+                const displayText = `${currentJuror.displayName} (${currentJuror.typeLabel}) - Registrado`;
+                document.getElementById('juror-display').textContent = displayText;
+                
+                document.getElementById('auth-section').style.display = 'none';
+                document.getElementById('main-content').style.display = 'block';
+                
+                // Cargar votos anteriores del usuario
+                await loadUserPreviousVotes();
+                
+                loadArtists();
+                
+            } catch (error) {
+                console.error('Error en login con usuario:', error);
+                alert('❌ Error al iniciar sesión: ' + error.message);
+            }
+        };
+
+        window.loginWithTemp = async function() {
+            // Función original de login temporal
+            const name = document.getElementById('juror-name').value.trim();
+            const type = document.getElementById('juror-type').value;
+            const additional = document.getElementById('juror-additional').value.trim();
+            
+            if (!name) {
+                alert('❌ Por favor ingresa tu nombre');
+                return;
+            }
+
+            if (!type) {
+                alert('❌ Por favor selecciona el tipo de jurado');
+                return;
+            }
+
+            // Crear ID único temporal (como antes)
+            const jurorId = `temp_${type}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            
+            currentJuror = {
+                id: jurorId,
+                name: name.trim(),
+                type: type,
+                typeLabel: getJurorTypeLabel(type),
+                additional: additional || '',
+                loginTime: new Date().toISOString(),
+                isAnonymous: type === 'secreto',
+                displayName: type === 'secreto' ? 'Jurado Anónimo' : name.trim(),
+                isRegisteredUser: false // ← Usuario temporal
+            };
+            
+            console.log('✅ Login temporal:', currentJuror);
+            
+            const displayText = `${currentJuror.displayName} (${currentJuror.typeLabel}) - Temporal`;
+            document.getElementById('juror-display').textContent = displayText;
+            
+            document.getElementById('auth-section').style.display = 'none';
+            document.getElementById('main-content').style.display = 'block';
+            
+            loadArtists();
+        };
+
+        // Función para cargar votos anteriores del usuario registrado
+        window.loadUserPreviousVotes = async function() {
+            if (!currentJuror || !currentJuror.isRegisteredUser) return;
+            
+            try {
+                console.log('🔍 Cargando votos anteriores para:', currentJuror.id);
+                
+                // Buscar en múltiples colecciones
+                const collections = ['jury_evaluations', 'jury_votes', 'votes'];
+                let foundVotes = {};
+                
+                for (const collectionName of collections) {
+                    try {
+                        const q = query(
+                            collection(db, `events/${eventId}/${collectionName}`),
+                            where('jurorId', '==', currentJuror.id)
+                        );
+                        
+                        const snapshot = await getDocs(q);
+                        
+                        snapshot.forEach(doc => {
+                            const voteData = doc.data();
+                            const artistId = voteData.artistId;
+                            
+                            if (artistId && voteData.scores) {
+                                foundVotes[artistId] = voteData.scores;
+                                console.log(`✅ Encontrado voto anterior para ${voteData.artistName}:`, voteData.scores);
+                            }
+                        });
+                        
+                    } catch (error) {
+                        console.log(`⚠️ No se pudo acceder a ${collectionName}:`, error.message);
+                    }
+                }
+                
+                // Aplicar votos encontrados
+                votes = foundVotes;
+                console.log('📊 Votos cargados:', votes);
+                
+                if (Object.keys(votes).length > 0) {
+                    alert(`✅ ¡Bienvenido de vuelta!\n\nSe cargaron tus votos anteriores para ${Object.keys(votes).length} artista(s).`);
+                }
+                
+            } catch (error) {
+                console.error('Error cargando votos anteriores:', error);
+            }
+        };
+
+        // Función simple para cambiar a modo usuario registrado
+        window.showRegisteredUserLogin = function() {
+            const authSection = document.getElementById('auth-section');
+            authSection.innerHTML = `
+                <h2 class="text-2xl font-bold mb-6 text-center">🔐 Login Usuario Registrado</h2>
+                
+                <div class="space-y-4">
+                    <div>
+                        <label class="block mb-2 font-bold">Selecciona tu Usuario:</label>
+                        <select id="registered-user-select" class="w-full p-3 rounded bg-white text-black">
+                            <option value="">-- Cargando usuarios... --</option>
+                        </select>
+                    </div>
+                    
+                    <div>
+                        <label class="block mb-2 font-bold">Contraseña/PIN:</label>
+                        <input type="password" id="registered-password" class="w-full p-3 rounded bg-white text-black" 
+                               placeholder="Ingresa tu contraseña">
+                    </div>
+                    
+                    <button onclick="loginWithRegisteredUser()" class="btn btn-primary w-full">
+                        INGRESAR CON USUARIO REGISTRADO
+                    </button>
+                    
+                    <div class="text-center mt-4">
+                        <button onclick="location.reload()" class="text-blue-400 hover:text-blue-300 text-sm underline">
+                            ← Volver a login normal
+                        </button>
+                    </div>
+                </div>
+            `;
+            
+            loadRegisteredUsersSimple();
+        };
+
+        // Función simplificada para cargar usuarios
+        window.loadRegisteredUsersSimple = async function() {
+            try {
+                const userSelect = document.getElementById('registered-user-select');
+                
+                const usersQuery = query(
+                    collection(db, `events/${eventId}/jury_users`),
+                    where('isActive', '==', true)
+                );
+                
+                const snapshot = await getDocs(usersQuery);
+                
+                if (snapshot.empty) {
+                    userSelect.innerHTML = '<option value="">-- No hay usuarios registrados --</option>';
+                    return;
+                }
+                
+                let html = '<option value="">-- Selecciona tu usuario --</option>';
+                snapshot.forEach(doc => {
+                    const user = doc.data();
+                    html += `<option value="${user.id}">${user.name} (${user.typeLabel})</option>`;
+                });
+                
+                userSelect.innerHTML = html;
+                
+            } catch (error) {
+                console.error('Error cargando usuarios:', error);
+                document.getElementById('registered-user-select').innerHTML = '<option value="">-- Error cargando usuarios --</option>';
+            }
+        };
+
+        // Función simplificada de login con usuario registrado
+        window.loginWithRegisteredUser = async function() {
+            const userId = document.getElementById('registered-user-select').value;
+            const password = document.getElementById('registered-password').value.trim();
+            
+            if (!userId) {
+                alert('❌ Por favor selecciona tu usuario');
+                return;
+            }
+            
+            if (!password) {
+                alert('❌ Por favor ingresa tu contraseña');
+                return;
+            }
+            
+            try {
+                const userDoc = await getDoc(doc(db, `events/${eventId}/jury_users`, userId));
+                
+                if (!userDoc.exists()) {
+                    alert('❌ Usuario no encontrado');
+                    return;
+                }
+                
+                const userData = userDoc.data();
+                
+                if (userData.password !== password) {
+                    alert('❌ Contraseña incorrecta');
+                    return;
+                }
+                
+                if (!userData.isActive) {
+                    alert('❌ Usuario desactivado. Contacta al administrador.');
+                    return;
+                }
+                
+                // Configurar jurado con usuario registrado
+                currentJuror = {
+                    id: userData.id, // ← ID fijo, no aleatorio
+                    name: userData.name,
+                    type: userData.type,
+                    typeLabel: userData.typeLabel,
+                    additional: userData.additional || '',
+                    loginTime: new Date().toISOString(),
+                    isAnonymous: userData.type === 'secreto',
+                    displayName: userData.type === 'secreto' ? 'Jurado Anónimo' : userData.name,
+                    isRegisteredUser: true // ← Marca para identificar usuarios registrados
+                };
+                
+                console.log('✅ Login con usuario registrado:', currentJuror);
+                
+                // Mostrar información del jurado
+                const displayText = `${currentJuror.displayName} (${currentJuror.typeLabel}) - Registrado`;
+                document.getElementById('juror-display').textContent = displayText;
+                
+                document.getElementById('auth-section').style.display = 'none';
+                document.getElementById('main-content').style.display = 'block';
+                
+                // Cargar votos anteriores del usuario
+                await loadUserPreviousVotes();
+                
+                loadArtists();
+                
+            } catch (error) {
+                console.error('Error en login con usuario:', error);
+                alert('❌ Error al iniciar sesión: ' + error.message);
             }
         };
 
