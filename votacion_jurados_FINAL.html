@@ -969,6 +969,17 @@ Formato de respuesta:
                                 `;
                                 }).join('')}
                                 
+                                <!-- CAMPO DE COMENTARIOS EN VISTA LISTA -->
+                                <div class="mt-6 p-4 bg-black bg-opacity-20 rounded-lg">
+                                    <label for="list-judge-comments-${artist.id}" class="block text-sm font-semibold text-green-200 mb-2">
+                                        💭 Comentarios y observaciones del jurado:
+                                    </label>
+                                    <textarea id="list-judge-comments-${artist.id}" rows="3"
+                                              class="w-full p-3 border-2 border-green-400 rounded-lg bg-green-50 text-gray-800 text-sm focus:border-green-600 focus:outline-none"
+                                              placeholder="Ej: Muy buena interpretación, mejoró mucho desde la gala anterior. Trabajar en proyección de voz."
+                                              onchange="saveListComments('${artist.id}', this.value)"></textarea>
+                                </div>
+                                
                                 <div class="text-center pt-4 space-y-3">
                                     <!-- Botón para votación completa -->
                                     <button onclick="submitVote('${artist.id}')" 
@@ -1024,6 +1035,16 @@ Formato de respuesta:
             
             // Mantener el filtro después de renderizar
             preserveFilter();
+            
+            // Cargar comentarios guardados en los campos de Vista Lista
+            if (currentViewMode === 'list' && window.artistComments) {
+                artists.forEach(artist => {
+                    const commentsField = document.getElementById(`list-judge-comments-${artist.id}`);
+                    if (commentsField && window.artistComments[artist.id]) {
+                        commentsField.value = window.artistComments[artist.id];
+                    }
+                });
+            }
         }
 
         window.selectRating = function(artistId, criteriaId, value) {
@@ -1095,6 +1116,32 @@ Formato de respuesta:
             
             alert(`✅ EDICIÓN TERMINADA\n\nVolviste al modo normal. El voto se mantiene guardado con los últimos cambios.`);
         };
+
+        // FUNCIONES PARA MANEJO DE COMENTARIOS EN VISTA LISTA
+        window.saveListComments = function(artistId, comments) {
+            console.log(`💬 Guardando comentarios para ${artistId}:`, comments);
+            
+            // Crear objeto de comentarios si no existe
+            if (!window.artistComments) {
+                window.artistComments = {};
+            }
+            
+            // Guardar comentarios para este artista
+            window.artistComments[artistId] = comments;
+            console.log('📝 Comentarios guardados:', window.artistComments);
+        };
+
+        // FUNCIÓN PARA OBTENER COMENTARIOS SEGÚN LA VISTA ACTUAL
+        function getArtistComments(artistId) {
+            if (currentViewMode === 'organizada') {
+                // En vista organizada, usar el modal
+                return document.getElementById('modal-judge-comments')?.value || '';
+            } else {
+                // En vista lista, usar el campo específico del artista
+                return document.getElementById(`list-judge-comments-${artistId}`)?.value || 
+                       window.artistComments?.[artistId] || '';
+            }
+        }
 
         window.submitVote = async function(artistId) {
             console.log('🎯 Iniciando submitVote para:', artistId);
@@ -1187,7 +1234,7 @@ Formato de respuesta:
                     feedbackTimestamp: new Date().toISOString(),
                     // ➕ NUEVOS CAMPOS ADICIONALES PARA SEGUIMIENTO COMPLETO
                     songPerformed: String(document.getElementById('modal-song-performed')?.value || ''),
-                    judgeComments: String(document.getElementById('modal-judge-comments')?.value || ''),
+                    judgeComments: String(getArtistComments(artistId)),
                     additionalNotes: String(document.getElementById('modal-additional-notes')?.value || '')
                 };
 
@@ -1381,7 +1428,7 @@ Formato de respuesta:
                 return;
             }
 
-            const average = Object.values(artistVotes).reduce((sum, val) => sum + val, 0) / Object.keys(artistVotes).length;
+            const average = Object.values(artistVotes).reduce((sum, val) => sum + val, 0) / CRITERIA.length;
 
             // 🤖 GENERAR FEEDBACK AUTOMÁTICO
             const autoFeedback = generateFallbackFeedback(artistVotes);
@@ -1407,7 +1454,7 @@ Formato de respuesta:
                 feedbackTimestamp: new Date().toISOString(),
                 // ➕ NUEVOS CAMPOS ADICIONALES PARA SEGUIMIENTO COMPLETO
                 songPerformed: String(document.getElementById('modal-song-performed')?.value || ''),
-                judgeComments: String(document.getElementById('modal-judge-comments')?.value || ''),
+                judgeComments: String(getArtistComments(artistId)),
                 additionalNotes: String(document.getElementById('modal-additional-notes')?.value || '')
             };
 

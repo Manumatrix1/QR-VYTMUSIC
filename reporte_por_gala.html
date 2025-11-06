@@ -444,6 +444,45 @@
                     }
                 });
 
+                // 🆕 BÚSQUEDA ADICIONAL EN JURY_VOTES
+                console.log('🔍 Buscando también en jury_votes...');
+                
+                try {
+                    const juryVotesQuery = query(
+                        collection(db, `events/${eventId}/jury_votes`)
+                    );
+                    const juryVotesSnapshot = await getDocs(juryVotesQuery);
+                    
+                    console.log('📊 Jury votes encontrados:', juryVotesSnapshot.docs.length);
+                    
+                    juryVotesSnapshot.docs.forEach(voteDoc => {
+                        const voteData = voteDoc.data();
+                        const artistId = voteData.artistId;
+                        const jurorName = voteData.jurorName || voteData.jurorId || 'Jurado Anónimo';
+                        const score = voteData.score || voteData.average || 0;
+                        
+                        console.log(`🗳️ Jury Vote: Artista=${voteData.artistName}, Jurado="${jurorName}", Puntuación=${score}`);
+                        
+                        if (artistId) {
+                            if (!galaData.juryVotes[artistId]) {
+                                galaData.juryVotes[artistId] = [];
+                            }
+                            
+                            // Evitar duplicados
+                            const existingVote = galaData.juryVotes[artistId].find(v => v.jurorName === jurorName);
+                            if (!existingVote) {
+                                galaData.juryVotes[artistId].push({
+                                    jurorName: jurorName,
+                                    score: score,
+                                    comments: voteData.judgeComments || voteData.comment || voteData.notes || ''
+                                });
+                            }
+                        }
+                    });
+                } catch (juryVotesError) {
+                    console.log('⚠️ No se pudo cargar jury_votes:', juryVotesError.message);
+                }
+
                 // Cargar observaciones
                 const galaDocRef = doc(db, `events/${eventId}/reports`, 'gala_observations');
                 const galaDoc = await getDoc(galaDocRef);
@@ -527,9 +566,17 @@
             updateRanking();
             
             // Solo mostrar secciones de jurados si hay jurados no secretos
+            // Verificar si hay datos de jurados registrados O evaluaciones de jurados
             const hasJuryData = galaData.jurors.length > 0;
+            const hasJuryEvaluations = Object.keys(galaData.juryVotes).length > 0;
+            const shouldShowJurySection = hasJuryData || hasJuryEvaluations;
             
-            if (hasJuryData) {
+            console.log('🔍 Estado de datos de jurados:');
+            console.log('- Jurados registrados:', galaData.jurors.length);
+            console.log('- Evaluaciones encontradas:', Object.keys(galaData.juryVotes).length);
+            console.log('- Mostrar sección:', shouldShowJurySection);
+            
+            if (shouldShowJurySection) {
                 document.getElementById('jury-analysis-section').classList.remove('hidden');
                 document.getElementById('comparison-section').classList.remove('hidden');
                 updateJuryAnalysis();
@@ -537,7 +584,7 @@
             } else {
                 document.getElementById('jury-analysis-section').classList.add('hidden');
                 document.getElementById('comparison-section').classList.add('hidden');
-                console.log('Ocultando secciones de jurados - no hay votos de jurados');
+                console.log('Ocultando secciones de jurados - no hay datos de jurados');
             }
             
             updateObservations();
@@ -767,12 +814,38 @@
             const container = document.getElementById('jury-analysis-container');
             container.innerHTML = '';
 
-            if (galaData.jurors.length === 0) {
-                container.innerHTML = '<p class="text-center text-gray-400">No hay jurados no secretos para mostrar calificaciones.</p>';
+            // Crear lista de jurados desde las evaluaciones si no hay jurados registrados
+            let juradosParaMostrar = [];
+            
+            if (galaData.jurors.length > 0) {
+                // Usar jurados registrados
+                juradosParaMostrar = galaData.jurors;
+            } else {
+                // Extraer jurados únicos desde las evaluaciones
+                const juradosEvaluaciones = new Set();
+                Object.values(galaData.juryVotes).forEach(artistVotes => {
+                    artistVotes.forEach(vote => {
+                        if (vote.jurorName && vote.jurorName !== 'undefined') {
+                            juradosEvaluaciones.add(vote.jurorName);
+                        }
+                    });
+                });
+                
+                juradosParaMostrar = Array.from(juradosEvaluaciones).map(name => ({
+                    id: name.toLowerCase().replace(/\s+/g, '_'),
+                    name: name,
+                    type: 'individual' // Asumir individual por defecto
+                }));
+            }
+
+            if (juradosParaMostrar.length === 0) {
+                container.innerHTML = '<p class="text-center text-gray-400">No se encontraron evaluaciones de jurados.</p>';
                 return;
             }
 
-            galaData.jurors.forEach(juror => {
+            console.log('👨‍⚖️ Mostrando evaluaciones para:', juradosParaMostrar.map(j => j.name));
+
+            juradosParaMostrar.forEach(juror => {
                 const juryCard = document.createElement('div');
                 juryCard.className = 'bg-gradient-to-r from-purple-800 to-purple-900 p-6 rounded-xl border border-purple-500 shadow-lg';
                 
