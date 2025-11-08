@@ -331,7 +331,8 @@
     <script src="./global-artists-manager.js"></script>
 
     <script type="module">
-        // === CONFIGURACIÓN FIREBASE ===
+        // === CONFIGURACIÓN FIREBASE === v2.0 (CACHE BUSTING)
+        console.log('🚀 VOTACIÓN JURADOS v2.0 - Sistema Unificado Cargando...');
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getFirestore, collection, getDocs, getDoc, query, orderBy, doc, setDoc, deleteDoc, limit, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         
@@ -721,40 +722,60 @@ Formato de respuesta:
         };
 
         window.loadRegisteredUsers = async function() {
-            console.log('🔍 Cargando usuarios registrados desde ruta global...');
+            console.log('🔍 v2.0 - Cargando usuarios desde jury_users global...');
+            console.log('📍 Firebase DB:', db);
+            console.log('📍 Colección objetivo: jury_users');
             
             try {
                 const userSelect = document.getElementById('juror-user-select');
-                userSelect.innerHTML = '<option value="">🔍 Cargando usuarios...</option>';
+                userSelect.innerHTML = '<option value="">🔍 v2.0 - Cargando usuarios...</option>';
                 
                 // ✅ RUTA SIMPLIFICADA - Solo busca en jury_users global
+                console.log('📂 Ejecutando: getDocs(collection(db, "jury_users"))');
                 const snapshot = await getDocs(collection(db, 'jury_users'));
+                console.log(`📊 Snapshot recibido - Total documentos: ${snapshot.size}`);
                 
                 if (snapshot.empty) {
-                    console.log('❌ No hay usuarios registrados');
-                    userSelect.innerHTML = '<option value="">❌ NO HAY USUARIOS REGISTRADOS</option>';
+                    console.log('❌ Snapshot vacío - No hay usuarios registrados');
+                    userSelect.innerHTML = '<option value="">❌ NO HAY USUARIOS EN jury_users</option>';
                     return;
                 }
                 
                 let html = '<option value="">👤 Selecciona tu usuario</option>';
                 let userCount = 0;
+                let allUsers = [];
                 
                 snapshot.forEach(doc => {
                     const user = doc.data();
-                    if (user.isActive) { // Solo usuarios activos
-                        console.log(`✅ Usuario: ${user.name} - Tipo: ${user.typeLabel}`);
+                    allUsers.push({id: doc.id, ...user});
+                    console.log(`📄 Documento ${doc.id}:`, user);
+                    console.log(`  - Nombre: ${user.name}`);
+                    console.log(`  - Tipo: ${user.type}`);
+                    console.log(`  - TypeLabel: ${user.typeLabel}`);
+                    console.log(`  - Activo: ${user.isActive}`);
+                    
+                    if (user.isActive !== false) { // Incluir si es true o undefined
+                        console.log(`✅ Usuario INCLUIDO: ${user.name} - Tipo: ${user.typeLabel}`);
                         const displayName = user.name || doc.id;
                         const typeLabel = user.typeLabel || user.type || 'Usuario';
                         html += `<option value="${user.id || doc.id}">${displayName} (${typeLabel})</option>`;
                         userCount++;
+                    } else {
+                        console.log(`⏸️ Usuario INACTIVO: ${user.name}`);
                     }
                 });
                 
+                console.log('📋 RESUMEN:');
+                console.log(`  - Total documentos: ${snapshot.size}`);
+                console.log(`  - Usuarios activos: ${userCount}`);
+                console.log('  - Todos los usuarios:', allUsers);
+                
                 userSelect.innerHTML = html;
-                console.log(`✅ ${userCount} usuarios activos cargados`);
+                console.log(`✅ v2.0 - ${userCount} usuarios cargados en el select`);
                 
             } catch (error) {
-                console.error('❌ Error cargando usuarios:', error);
+                console.error('❌ v2.0 - Error cargando usuarios:', error);
+                console.error('❌ Error stack:', error.stack);
                 document.getElementById('juror-user-select').innerHTML = '<option value="">❌ Error cargando usuarios</option>';
             }
         };
