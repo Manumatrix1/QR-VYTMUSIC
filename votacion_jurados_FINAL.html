@@ -223,6 +223,25 @@
                     </div>
                 </div>
 
+                <!-- BOTÓN GLOBAL DE ENVÍO -->
+                <div id="global-submit-section" class="card p-6 mt-8 text-center" style="display: none;">
+                    <div class="mb-4">
+                        <h3 class="text-2xl font-bold mb-2">📊 Resumen de Votación</h3>
+                        <div id="voting-summary" class="text-lg mb-4">
+                            <!-- Se llenará dinámicamente -->
+                        </div>
+                    </div>
+                    
+                    <button id="global-submit-btn" onclick="submitAllVotes()" 
+                            class="btn btn-green text-2xl px-12 py-6 w-full max-w-md mx-auto">
+                        🗳️ ENVIAR VOTACIÓN COMPLETA
+                    </button>
+                    
+                    <div id="submit-info" class="text-sm text-gray-300 mt-3">
+                        <!-- Información adicional -->
+                    </div>
+                </div>
+
                 <!-- GRID DE ARTISTAS (MODO ORGANIZADO) -->
                 <div id="artists-grid" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4" style="display: none;">
                     <!-- Se llenará dinámicamente -->
@@ -1182,18 +1201,13 @@ Formato de respuesta:
                                 </div>
                                 
                                 <div class="text-center pt-4 space-y-3">
-                                    <!-- Botón para enviar votación (completa o parcial) -->
-                                    <button onclick="submitVote('${artist.id}')" 
-                                            class="btn btn-green text-xl px-8 py-4 ${Object.keys(artistVotes).length > 0 ? '' : 'opacity-50 cursor-not-allowed'}"
-                                            ${Object.keys(artistVotes).length > 0 ? '' : 'disabled'}>
-                                        ${isComplete ? '🗳️ ENVIAR VOTACIÓN COMPLETA' : '📝 ENVIAR VOTACIÓN PARCIAL'}
-                                    </button>
-                                    
-                                    <!-- Info de estado -->
-                                    <div class="text-sm text-gray-300">
+                                    <!-- Información del estado del voto -->
+                                    <div class="text-sm">
                                         ${isComplete 
-                                            ? '✅ Todos los criterios completados' 
-                                            : `⚠️ ${Object.keys(artistVotes).length}/${CRITERIA.length} criterios completados - Se puede enviar parcial`
+                                            ? '✅ <span class="text-green-400 font-bold">Voto Completo</span>' 
+                                            : Object.keys(artistVotes).length > 0
+                                                ? `⚠️ <span class="text-yellow-400 font-bold">Voto Parcial</span> (${Object.keys(artistVotes).length}/${CRITERIA.length} criterios)`
+                                                : '⭕ <span class="text-gray-400">Sin votar</span>'
                                         }
                                     </div>
                                     
@@ -1250,6 +1264,9 @@ Formato de respuesta:
             
             // ✅ ACTUALIZAR ESTADÍSTICAS después de renderizar
             updateStats();
+            
+            // ✅ ACTUALIZAR BOTÓN GLOBAL DE ENVÍO
+            updateGlobalSubmitButton();
         }
 
         window.selectRating = function(artistId, criteriaId, value) {
@@ -1348,7 +1365,7 @@ Formato de respuesta:
             }
         }
 
-        window.submitVote = async function(artistId) {
+        window.submitVote = async function(artistId, silent = false) {
             console.log('🎯 Iniciando submitVote para:', artistId);
             console.log('👤 Jurado actual completo:', JSON.stringify(currentJuror, null, 2));
             
@@ -1506,11 +1523,14 @@ Formato de respuesta:
                     console.log('💬 Feedback generado:', feedbackText);
                 }
                 
-                const voteTypeMessage = isPartialVote 
-                    ? `📝 VOTACIÓN PARCIAL GUARDADA\n${completedCriteria}/${totalCriteria} criterios completados` 
-                    : `✅ VOTACIÓN COMPLETA GUARDADA\nTodos los criterios completados`;
-                
-                alert(`${voteTypeMessage}\n\nArtista: ${artist.name}\nPromedio: ${average.toFixed(1)} puntos\n\nRevisa el feedback generado en la sección azul del modal.`);
+                // Mostrar alerta solo si no es envío silencioso
+                if (!silent) {
+                    const voteTypeMessage = isPartialVote 
+                        ? `📝 VOTACIÓN PARCIAL GUARDADA\n${completedCriteria}/${totalCriteria} criterios completados` 
+                        : `✅ VOTACIÓN COMPLETA GUARDADA\nTodos los criterios completados`;
+                    
+                    alert(`${voteTypeMessage}\n\nArtista: ${artist.name}\nPromedio: ${average.toFixed(1)} puntos\n\nRevisa el feedback generado en la sección azul del modal.`);
+                }
                 
                 renderArtists();
                 preserveFilter(); // Mantener filtro
@@ -1564,6 +1584,203 @@ Formato de respuesta:
             
             console.log('✅ Estadísticas actualizadas en UI');
         }
+
+        // === FUNCIÓN PARA ACTUALIZAR BOTÓN GLOBAL ===
+        function updateGlobalSubmitButton() {
+            const globalSection = document.getElementById('global-submit-section');
+            const globalBtn = document.getElementById('global-submit-btn');
+            const votingSummary = document.getElementById('voting-summary');
+            const submitInfo = document.getElementById('submit-info');
+            
+            if (!globalSection || !globalBtn || !votingSummary || !submitInfo) {
+                console.warn('⚠️ Elementos del botón global no encontrados');
+                return;
+            }
+            
+            // Mostrar la sección si hay artistas
+            if (artists.length > 0) {
+                globalSection.style.display = 'block';
+            } else {
+                globalSection.style.display = 'none';
+                return;
+            }
+            
+            // Calcular estadísticas con debugging
+            const totalArtists = artists.length;
+            console.log('🔢 CRITERIA.length:', CRITERIA.length);
+            console.log('📊 Votes completo:', votes);
+            
+            const votedArtists = Object.keys(votes).filter(artistId => {
+                const hasVotes = votes[artistId] && Object.keys(votes[artistId]).length > 0;
+                console.log(`🎭 Artista ${artistId}: ${hasVotes ? 'tiene votos' : 'sin votos'}`);
+                return hasVotes;
+            }).length;
+            
+            const completeVotes = Object.keys(votes).filter(artistId => {
+                const voteCount = votes[artistId] ? Object.keys(votes[artistId]).length : 0;
+                const isComplete = voteCount === CRITERIA.length;
+                console.log(`🎯 Artista ${artistId}: ${voteCount}/${CRITERIA.length} criterios - ${isComplete ? 'COMPLETO' : 'PARCIAL'}`);
+                return votes[artistId] && voteCount === CRITERIA.length;
+            }).length;
+            
+            const isCompleteVotation = completeVotes === totalArtists;
+            const hasAnyVotes = votedArtists > 0;
+            
+            // Actualizar resumen
+            votingSummary.innerHTML = `
+                <div class="grid grid-cols-3 gap-4 text-center">
+                    <div>
+                        <div class="text-2xl font-bold text-blue-400">${totalArtists}</div>
+                        <div class="text-sm">Total Artistas</div>
+                    </div>
+                    <div>
+                        <div class="text-2xl font-bold ${completeVotes > 0 ? 'text-green-400' : 'text-gray-400'}">${completeVotes}</div>
+                        <div class="text-sm">Votos Completos</div>
+                    </div>
+                    <div>
+                        <div class="text-2xl font-bold ${votedArtists > completeVotes ? 'text-yellow-400' : 'text-gray-400'}">${votedArtists - completeVotes}</div>
+                        <div class="text-sm">Votos Parciales</div>
+                    </div>
+                </div>
+            `;
+            
+            // Actualizar botón
+            if (!hasAnyVotes) {
+                globalBtn.className = 'btn text-2xl px-12 py-6 w-full max-w-md mx-auto opacity-50 cursor-not-allowed';
+                globalBtn.style.background = '#666';
+                globalBtn.disabled = true;
+                globalBtn.innerHTML = '⭕ SIN VOTOS PARA ENVIAR';
+                submitInfo.innerHTML = 'Vota al menos un artista para poder enviar';
+            } else if (isCompleteVotation) {
+                globalBtn.className = 'btn btn-green text-2xl px-12 py-6 w-full max-w-md mx-auto';
+                globalBtn.disabled = false;
+                globalBtn.innerHTML = '🗳️ ENVIAR VOTACIÓN COMPLETA';
+                submitInfo.innerHTML = '✅ Todos los artistas han sido votados completamente';
+            } else {
+                globalBtn.className = 'btn text-2xl px-12 py-6 w-full max-w-md mx-auto';
+                globalBtn.style.background = '#f59e0b'; // Amarillo/naranja para parcial
+                globalBtn.disabled = false;
+                globalBtn.innerHTML = '📝 ENVIAR VOTACIÓN PARCIAL';
+                
+                const unvotedCount = totalArtists - votedArtists;
+                const partialCount = votedArtists - completeVotes;
+                let infoText = '';
+                
+                if (unvotedCount > 0 && partialCount > 0) {
+                    infoText = `⚠️ ${unvotedCount} sin votar, ${partialCount} parciales - Se enviará votación parcial`;
+                } else if (unvotedCount > 0) {
+                    infoText = `⚠️ ${unvotedCount} artista(s) sin votar - Se enviará votación parcial`;
+                } else if (partialCount > 0) {
+                    infoText = `⚠️ ${partialCount} artista(s) con votos parciales - Se enviará votación parcial`;
+                }
+                
+                submitInfo.innerHTML = infoText;
+            }
+            
+            console.log('🔄 Botón global actualizado:', {
+                totalArtists,
+                votedArtists,
+                completeVotes,
+                isCompleteVotation,
+                hasAnyVotes
+            });
+        }
+
+        // === FUNCIÓN PARA ENVIAR TODAS LAS VOTACIONES ===
+        window.submitAllVotes = async function() {
+            if (!currentJuror || !currentJuror.id) {
+                alert('❌ Error: No hay jurado autenticado');
+                return;
+            }
+            
+            const votedArtists = Object.keys(votes).filter(artistId => 
+                votes[artistId] && Object.keys(votes[artistId]).length > 0
+            );
+            
+            if (votedArtists.length === 0) {
+                alert('❌ No hay votos para enviar');
+                return;
+            }
+            
+            const totalArtists = artists.length;
+            const completeVotes = Object.keys(votes).filter(artistId => 
+                votes[artistId] && Object.keys(votes[artistId]).length === CRITERIA.length
+            ).length;
+            
+            const isPartialSubmission = completeVotes < totalArtists;
+            
+            // Confirmación para votación parcial
+            if (isPartialSubmission) {
+                const unvotedArtists = artists.filter(artist => 
+                    !votes[artist.id] || Object.keys(votes[artist.id]).length === 0
+                ).map(artist => artist.name);
+                
+                const partialArtists = artists.filter(artist => 
+                    votes[artist.id] && 
+                    Object.keys(votes[artist.id]).length > 0 && 
+                    Object.keys(votes[artist.id]).length < CRITERIA.length
+                ).map(artist => artist.name);
+                
+                let confirmMessage = `⚠️ ENVÍO DE VOTACIÓN PARCIAL\n\n`;
+                confirmMessage += `📊 RESUMEN:\n`;
+                confirmMessage += `• Total artistas: ${totalArtists}\n`;
+                confirmMessage += `• Votos completos: ${completeVotes}\n`;
+                confirmMessage += `• Votos parciales: ${partialArtists.length}\n`;
+                confirmMessage += `• Sin votar: ${unvotedArtists.length}\n\n`;
+                
+                if (unvotedArtists.length > 0) {
+                    confirmMessage += `❌ ARTISTAS SIN VOTAR:\n• ${unvotedArtists.join('\n• ')}\n\n`;
+                }
+                
+                if (partialArtists.length > 0) {
+                    confirmMessage += `⚠️ ARTISTAS CON VOTOS PARCIALES:\n• ${partialArtists.join('\n• ')}\n\n`;
+                }
+                
+                confirmMessage += `¿Deseas continuar con el envío?`;
+                
+                if (!confirm(confirmMessage)) {
+                    console.log('🚫 Usuario canceló envío parcial');
+                    return;
+                }
+            }
+            
+            // Proceder con el envío
+            console.log('🚀 Iniciando envío masivo de votaciones...');
+            const results = [];
+            
+            for (const artistId of votedArtists) {
+                try {
+                    console.log(`📤 Enviando voto para artista: ${artistId}`);
+                    await submitVote(artistId, true); // true = envío silencioso
+                    results.push({ artistId, success: true });
+                } catch (error) {
+                    console.error(`❌ Error enviando voto para ${artistId}:`, error);
+                    results.push({ artistId, success: false, error: error.message });
+                }
+            }
+            
+            // Mostrar resultado final
+            const successful = results.filter(r => r.success).length;
+            const failed = results.filter(r => !r.success).length;
+            
+            let resultMessage = `📊 ENVÍO COMPLETADO\n\n`;
+            resultMessage += `✅ Exitosos: ${successful}/${votedArtists.length}\n`;
+            if (failed > 0) {
+                resultMessage += `❌ Fallidos: ${failed}\n\n`;
+                resultMessage += `Artistas con errores:\n`;
+                results.filter(r => !r.success).forEach(r => {
+                    const artist = artists.find(a => a.id === r.artistId);
+                    resultMessage += `• ${artist?.name || r.artistId}: ${r.error}\n`;
+                });
+            } else {
+                resultMessage += `\n🎉 ¡Todas las votaciones se enviaron correctamente!`;
+            }
+            
+            alert(resultMessage);
+            
+            // Actualizar UI
+            renderArtists();
+        };
 
         // === NUEVAS FUNCIONES PARA MEJORAS ===
 
@@ -2793,6 +3010,18 @@ Formato de respuesta:
                 document.getElementById('admin-section').classList.remove('hidden');
             }
         }
+        
+        // === INICIALIZACIÓN DE EVENTOS GLOBALES ===
+        // Esperar a que el DOM esté listo
+        setTimeout(() => {
+            const globalSubmitBtn = document.getElementById('global-submit-btn');
+            if (globalSubmitBtn) {
+                globalSubmitBtn.addEventListener('click', submitAllVotes);
+                console.log('✅ Event listener añadido al botón global de envío');
+            } else {
+                console.warn('⚠️ No se encontró el botón global de envío');
+            }
+        }, 500);
     </script>
 </body>
 </html>
