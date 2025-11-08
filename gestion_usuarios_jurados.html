@@ -77,30 +77,11 @@
 
     <!-- Firebase SDK -->
     <script type="module">
-        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js';
-        import { getFirestore, collection, doc, setDoc, getDocs, deleteDoc, query, orderBy } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
-
-        // Configuración Firebase
-        const firebaseConfig = {
-            apiKey: "AIzaSyBOUrqFBGozT9xIdHsEsqO9cgjz14jSP3M",
-            authDomain: "vyt-music.firebaseapp.com",
-            projectId: "vyt-music",
-            storageBucket: "vyt-music.appspot.com",
-            messagingSenderId: "30961723191",
-            appId: "1:30961723191:web:2754a9b60fbe2c26bea74e"
-        };
-
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
+        import { db } from './firebase_config.js';
+        import { collection, doc, setDoc, getDocs, deleteDoc, query, orderBy } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
 
         // Variables globales
         window.db = db;
-
-        // Función para obtener el ID del evento actual
-        function getCurrentEventId() {
-            const urlParams = new URLSearchParams(window.location.search);
-            return urlParams.get('event') || 'default-event';
-        }
 
         // Función para crear nuevo jurado
         window.createJuror = async function() {
@@ -125,7 +106,6 @@
             }
 
             try {
-                const eventId = getCurrentEventId();
                 const jurorId = name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
                 
                 const jurorData = {
@@ -136,11 +116,11 @@
                     additional: additional,
                     password: password,
                     createdAt: new Date().toISOString(),
-                    eventId: eventId,
                     isActive: true
                 };
 
-                await setDoc(doc(db, `events/${eventId}/jury_users`, jurorId), jurorData);
+                // ✅ JURADOS GLOBALES - Pueden acceder a todos los eventos
+                await setDoc(doc(db, `jury_users`, jurorId), jurorData);
                 
                 alert(`✅ Usuario "${name}" creado exitosamente!\n\nID: ${jurorId}\nContraseña: ${password}`);
                 
@@ -161,9 +141,8 @@
         // Función para cargar jurados existentes
         window.loadJurors = async function() {
             try {
-                const eventId = getCurrentEventId();
                 const jurorsQuery = query(
-                    collection(db, `events/${eventId}/jury_users`),
+                    collection(db, `jury_users`),
                     orderBy('createdAt', 'desc')
                 );
                 
@@ -257,8 +236,7 @@
         // Función para cambiar estado activo/inactivo
         window.toggleJurorStatus = async function(jurorId, currentStatus) {
             try {
-                const eventId = getCurrentEventId();
-                await setDoc(doc(db, `events/${eventId}/jury_users`, jurorId), {
+                await setDoc(doc(db, `jury_users`, jurorId), {
                     isActive: !currentStatus
                 }, { merge: true });
                 
@@ -277,8 +255,7 @@
             }
 
             try {
-                const eventId = getCurrentEventId();
-                await deleteDoc(doc(db, `events/${eventId}/jury_users`, jurorId));
+                await deleteDoc(doc(db, `jury_users`, jurorId));
                 
                 alert(`✅ Usuario "${jurorName}" eliminado exitosamente`);
                 loadJurors();

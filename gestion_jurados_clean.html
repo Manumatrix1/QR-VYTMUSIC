@@ -73,7 +73,7 @@
 
     <script type="module">
         import { db } from './firebase_config.js';
-        import { collection, addDoc, getDocs, deleteDoc, doc, query, orderBy } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { collection, addDoc, getDocs, deleteDoc, doc, query, orderBy, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         const urlParams = new URLSearchParams(window.location.search);
 
@@ -114,6 +114,18 @@
 
         let currentJuries = [];
 
+        // Función para obtener etiqueta del tipo de jurado
+        function getJurorTypeLabel(type) {
+            const labels = {
+                'individual': 'Jurado Individual',
+                'grupal': 'Jurado Grupal',
+                'secreto': 'Jurado Secreto',
+                'principal': 'Jurado Principal',
+                'invitado': 'Jurado Invitado'
+            };
+            return labels[type] || 'Jurado';
+        }
+
         loadJuries();
 
         document.getElementById('jury-form').addEventListener('submit', async (e) => {
@@ -139,26 +151,25 @@
             }
 
             // Verificar si ya existe un jurado con ese nombre
-            if (currentJuries.some(jury => jury.displayName.toLowerCase() === name.toLowerCase())) {
+            if (currentJuries.some(jury => (jury.displayName || jury.name).toLowerCase() === name.toLowerCase())) {
                 showMessage('Ya existe un jurado con ese nombre', 'error');
                 return;
             }
 
-            if (currentJuries.some(jury => jury.username.toLowerCase() === name.toLowerCase())) {
-                alert('❌ Ya existe un jurado con ese nombre');
-                return;
-            }
-
-            try {
-                await addDoc(collection(db, `events/${eventId}/juries`), {
+                try {
+                const jurorId = name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+                
+                await setDoc(doc(db, `jury_users`, jurorId), {
+                    id: jurorId,
+                    name: name,
                     username: name.toLowerCase(),
                     displayName: name,
                     type: type,
-                    active: true,
-                    createdAt: new Date()
-                });
-                
-                alert(`✅ Jurado "${name}" creado exitosamente`);
+                    typeLabel: getJurorTypeLabel(type),
+                    password: jurorId, // Password simple basado en el ID
+                    isActive: true,
+                    createdAt: new Date().toISOString()
+                });                alert(`✅ Jurado "${name}" creado exitosamente`);
                 document.getElementById('jury-form').reset();
                 loadJuries();
 
@@ -173,7 +184,7 @@
             const juryList = document.getElementById('jury-list');
             
             try {
-                const snapshot = await getDocs(collection(db, `events/${eventId}/juries`));
+                const snapshot = await getDocs(collection(db, `jury_users`));
                 currentJuries = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
                 loading.style.display = 'none';
@@ -193,12 +204,14 @@
                         <div class="flex items-center space-x-3">
                             <span class="text-2xl">${typeEmoji}</span>
                             <div>
-                                <h3 class="font-bold">${jury.displayName}</h3>
-                                <p class="text-sm text-gray-300">Usuario: ${jury.username}</p>
-                                <p class="text-sm text-gray-400">Tipo: ${jury.type}</p>
+                                <h3 class="font-bold">${jury.displayName || jury.name}</h3>
+                                <p class="text-sm text-gray-300">ID: ${jury.id}</p>
+                                <p class="text-sm text-gray-300">Contraseña: ${jury.password}</p>
+                                <p class="text-sm text-gray-400">Tipo: ${jury.typeLabel || jury.type}</p>
+                                <p class="text-sm ${jury.isActive ? 'text-green-400' : 'text-red-400'}">${jury.isActive ? '🟢 Activo' : '🔴 Inactivo'}</p>
                             </div>
                         </div>
-                        <button onclick="deleteJury('${jury.id}', '${jury.displayName}')" 
+                        <button onclick="deleteJury('${jury.id}', '${jury.displayName || jury.name}')" 
                                 class="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded">
                             🗑️ Eliminar
                         </button>
@@ -215,7 +228,7 @@
         window.deleteJury = async (juryId, juryName) => {
             if (confirm(`¿Eliminar jurado "${juryName}"?`)) {
                 try {
-                    await deleteDoc(doc(db, `events/${eventId}/juries`, juryId));
+                    await deleteDoc(doc(db, `jury_users`, juryId));
                     loadJuries();
                 } catch (error) {
                     alert('Error al eliminar: ' + error.message);

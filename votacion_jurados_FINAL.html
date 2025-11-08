@@ -659,10 +659,10 @@ Formato de respuesta:
         // === CARGAR JURADOS DISPONIBLES ===
         async function loadAvailableJurors() {
             try {
-                const juriesSnapshot = await getDocs(collection(db, `events/${eventId}/juries`));
+                const juriesSnapshot = await getDocs(collection(db, `jury_users`));
                 const activeJurors = juriesSnapshot.docs
-                    .filter(doc => doc.data().active)
-                    .map(doc => doc.data().displayName);
+                    .filter(doc => doc.data().isActive)
+                    .map(doc => doc.data().name || doc.data().displayName);
                 
                 const jurorsText = activeJurors.length > 0 
                     ? `Jurados disponibles: ${activeJurors.join(', ')}`
@@ -721,68 +721,37 @@ Formato de respuesta:
         };
 
         window.loadRegisteredUsers = async function() {
-            console.log('🔍 Iniciando carga de usuarios registrados...');
-            console.log('📍 EventId:', eventId);
+            console.log('🔍 Cargando usuarios registrados desde ruta global...');
             
             try {
                 const userSelect = document.getElementById('juror-user-select');
-                userSelect.innerHTML = '<option value="">🔍 Investigando rutas Firebase...</option>';
+                userSelect.innerHTML = '<option value="">🔍 Cargando usuarios...</option>';
                 
-                // PROBAR TODAS LAS COMBINACIONES POSIBLES
-                const eventIds = [eventId, 'gmxINHvzSJ18Zt3SNeW7', 'O20MYpLQLLKrg5nET2iV', 'final_vyt', 'vytmusic', 'evento_principal', 'gala_final', 'GALA_FINAL'];
-                const collections = ['jury_users', 'jurors', 'users', 'jury', 'registered_jurors'];
+                // ✅ RUTA SIMPLIFICADA - Solo busca en jury_users global
+                const snapshot = await getDocs(collection(db, 'jury_users'));
                 
-                const possiblePaths = [];
-                
-                // Probar colecciones raíz
-                collections.forEach(col => possiblePaths.push(col));
-                
-                // Probar events/[ID]/[colección]
-                eventIds.forEach(id => {
-                    collections.forEach(col => possiblePaths.push(`events/${id}/${col}`));
-                });
-                
-                console.log('� INVESTIGANDO RUTAS POSIBLES:');
-                let found = false;
-                
-                for (const path of possiblePaths) {
-                    try {
-                        console.log(`📂 Probando ruta: ${path}`);
-                        const testQuery = query(collection(db, path));
-                        const testSnapshot = await getDocs(testQuery);
-                        console.log(`📊 ${path}: ${testSnapshot.size} documentos`);
-                        
-                        if (!testSnapshot.empty) {
-                            console.log(`✅ ¡USUARIOS ENCONTRADOS en ${path}!`);
-                            
-                            let html = '<option value="">👤 Selecciona tu usuario</option>';
-                            let userCount = 0;
-                            
-                            testSnapshot.forEach(doc => {
-                                const user = doc.data();
-                                console.log(`� Usuario: ${user.name || user.id} - Tipo: ${user.type || 'N/A'}`);
-                                const displayName = user.name || user.id || doc.id;
-                                const typeLabel = user.typeLabel || user.type || 'Usuario';
-                                html += `<option value="${user.id || doc.id}">${displayName} (${typeLabel})</option>`;
-                                userCount++;
-                            });
-                            
-                            userSelect.innerHTML = html;
-                            console.log(`✅ ${userCount} usuarios cargados desde ${path}`);
-                            found = true;
-                            break;
-                        }
-                    } catch (error) {
-                        console.log(`❌ Error en ruta ${path}:`, error.message);
-                    }
-                }
-                
-                if (!found) {
-                    console.log('❌ NO SE ENCONTRARON USUARIOS EN NINGUNA RUTA');
-                    userSelect.innerHTML = '<option value="">❌ NO HAY USUARIOS EN FIREBASE</option>';
+                if (snapshot.empty) {
+                    console.log('❌ No hay usuarios registrados');
+                    userSelect.innerHTML = '<option value="">❌ NO HAY USUARIOS REGISTRADOS</option>';
                     return;
                 }
-                // ✅ El código de arriba ya manejó la carga correctamente
+                
+                let html = '<option value="">👤 Selecciona tu usuario</option>';
+                let userCount = 0;
+                
+                snapshot.forEach(doc => {
+                    const user = doc.data();
+                    if (user.isActive) { // Solo usuarios activos
+                        console.log(`✅ Usuario: ${user.name} - Tipo: ${user.typeLabel}`);
+                        const displayName = user.name || doc.id;
+                        const typeLabel = user.typeLabel || user.type || 'Usuario';
+                        html += `<option value="${user.id || doc.id}">${displayName} (${typeLabel})</option>`;
+                        userCount++;
+                    }
+                });
+                
+                userSelect.innerHTML = html;
+                console.log(`✅ ${userCount} usuarios activos cargados`);
                 
             } catch (error) {
                 console.error('❌ Error cargando usuarios:', error);
@@ -805,7 +774,8 @@ Formato de respuesta:
             }
             
             try {
-                const userDoc = await getDoc(doc(db, `users`, userId));
+                // ✅ BUSCAR EN RUTA GLOBAL SIMPLIFICADA
+                const userDoc = await getDoc(doc(db, `jury_users`, userId));
                 
                 if (!userDoc.exists()) {
                     alert('❌ Usuario no encontrado');
@@ -826,7 +796,7 @@ Formato de respuesta:
                 
                 // Configurar jurado con usuario registrado
                 currentJuror = {
-                    id: userData.id, // ← ID fijo, no aleatorio
+                    id: userData.id,
                     name: userData.name,
                     type: userData.type,
                     typeLabel: userData.typeLabel,
@@ -834,13 +804,13 @@ Formato de respuesta:
                     loginTime: new Date().toISOString(),
                     isAnonymous: userData.type === 'secreto',
                     displayName: userData.type === 'secreto' ? 'Jurado Anónimo' : userData.name,
-                    isRegisteredUser: true // ← Marca para identificar usuarios registrados
+                    isRegisteredUser: true
                 };
                 
-                console.log('✅ Login con usuario registrado:', currentJuror);
+                console.log('✅ Login exitoso:', currentJuror);
                 
                 // Mostrar información del jurado
-                const displayText = `${currentJuror.displayName} (${currentJuror.typeLabel}) - Registrado`;
+                const displayText = `${currentJuror.displayName} (${currentJuror.typeLabel})`;
                 document.getElementById('juror-display').textContent = displayText;
                 
                 document.getElementById('auth-section').style.display = 'none';
@@ -852,7 +822,7 @@ Formato de respuesta:
                 loadArtists();
                 
             } catch (error) {
-                console.error('Error en login con usuario:', error);
+                console.error('Error en login:', error);
                 alert('❌ Error al iniciar sesión: ' + error.message);
             }
         };
@@ -866,33 +836,24 @@ Formato de respuesta:
             try {
                 console.log('🔍 Cargando votos anteriores para:', currentJuror.id);
                 
-                // Buscar en múltiples colecciones
-                const collections = ['jury_evaluations', 'jury_votes', 'votes'];
+                // ✅ BUSCAR SOLO EN jury_evaluations (simplificado)
+                const q = query(
+                    collection(db, `events/${eventId}/jury_evaluations`),
+                    where('jurorId', '==', currentJuror.id)
+                );
+                
+                const snapshot = await getDocs(q);
                 let foundVotes = {};
                 
-                for (const collectionName of collections) {
-                    try {
-                        const q = query(
-                            collection(db, `events/${eventId}/${collectionName}`),
-                            where('jurorId', '==', currentJuror.id)
-                        );
-                        
-                        const snapshot = await getDocs(q);
-                        
-                        snapshot.forEach(doc => {
-                            const voteData = doc.data();
-                            const artistId = voteData.artistId;
-                            
-                            if (artistId && voteData.scores) {
-                                foundVotes[artistId] = voteData.scores;
-                                console.log(`✅ Encontrado voto anterior para ${voteData.artistName}:`, voteData.scores);
-                            }
-                        });
-                        
-                    } catch (error) {
-                        console.log(`⚠️ No se pudo acceder a ${collectionName}:`, error.message);
+                snapshot.forEach(doc => {
+                    const voteData = doc.data();
+                    const artistId = voteData.artistId;
+                    
+                    if (artistId && voteData.scores) {
+                        foundVotes[artistId] = voteData.scores;
+                        console.log(`✅ Voto anterior para ${voteData.artistName}:`, voteData.scores);
                     }
-                }
+                });
                 
                 // Aplicar votos encontrados
                 votes = foundVotes;
@@ -947,12 +908,8 @@ Formato de respuesta:
             try {
                 const userSelect = document.getElementById('registered-user-select');
                 
-                const usersQuery = query(
-                    collection(db, `events/${eventId}/jury_users`),
-                    where('isActive', '==', true)
-                );
-                
-                const snapshot = await getDocs(usersQuery);
+                // ✅ RUTA GLOBAL SIMPLIFICADA
+                const snapshot = await getDocs(collection(db, `jury_users`));
                 
                 if (snapshot.empty) {
                     userSelect.innerHTML = '<option value="">-- No hay usuarios registrados --</option>';
@@ -962,7 +919,9 @@ Formato de respuesta:
                 let html = '<option value="">-- Selecciona tu usuario --</option>';
                 snapshot.forEach(doc => {
                     const user = doc.data();
-                    html += `<option value="${user.id}">${user.name} (${user.typeLabel})</option>`;
+                    if (user.isActive) { // Solo usuarios activos
+                        html += `<option value="${user.id}">${user.name} (${user.typeLabel})</option>`;
+                    }
                 });
                 
                 userSelect.innerHTML = html;
@@ -989,7 +948,8 @@ Formato de respuesta:
             }
             
             try {
-                const userDoc = await getDoc(doc(db, `users`, userId));
+                // ✅ RUTA GLOBAL SIMPLIFICADA
+                const userDoc = await getDoc(doc(db, `jury_users`, userId));
                 
                 if (!userDoc.exists()) {
                     alert('❌ Usuario no encontrado');
@@ -1010,7 +970,7 @@ Formato de respuesta:
                 
                 // Configurar jurado con usuario registrado
                 currentJuror = {
-                    id: userData.id, // ← ID fijo, no aleatorio
+                    id: userData.id,
                     name: userData.name,
                     type: userData.type,
                     typeLabel: userData.typeLabel,
@@ -1018,7 +978,7 @@ Formato de respuesta:
                     loginTime: new Date().toISOString(),
                     isAnonymous: userData.type === 'secreto',
                     displayName: userData.type === 'secreto' ? 'Jurado Anónimo' : userData.name,
-                    isRegisteredUser: true // ← Marca para identificar usuarios registrados
+                    isRegisteredUser: true
                 };
                 
                 console.log('✅ Login con usuario registrado:', currentJuror);
