@@ -1182,19 +1182,20 @@ Formato de respuesta:
                                 </div>
                                 
                                 <div class="text-center pt-4 space-y-3">
-                                    <!-- Botón para votación completa -->
+                                    <!-- Botón para enviar votación (completa o parcial) -->
                                     <button onclick="submitVote('${artist.id}')" 
-                                            class="btn btn-green text-xl px-8 py-4 ${isComplete ? '' : 'opacity-50 cursor-not-allowed'}"
-                                            ${isComplete ? '' : 'disabled'}>
-                                        🗳️ ENVIAR VOTACIÓN COMPLETA
+                                            class="btn btn-green text-xl px-8 py-4 ${Object.keys(artistVotes).length > 0 ? '' : 'opacity-50 cursor-not-allowed'}"
+                                            ${Object.keys(artistVotes).length > 0 ? '' : 'disabled'}>
+                                        ${isComplete ? '🗳️ ENVIAR VOTACIÓN COMPLETA' : '📝 ENVIAR VOTACIÓN PARCIAL'}
                                     </button>
                                     
-                                    <!-- Botón para guardado parcial -->
-                                    <button onclick="savePartialVote('${artist.id}')" 
-                                            class="btn btn-primary px-6 py-3 ${Object.keys(artistVotes).length > 0 ? '' : 'opacity-50 cursor-not-allowed'}"
-                                            ${Object.keys(artistVotes).length > 0 ? '' : 'disabled'}>
-                                        💾 GUARDAR PARCIAL
-                                    </button>
+                                    <!-- Info de estado -->
+                                    <div class="text-sm text-gray-300">
+                                        ${isComplete 
+                                            ? '✅ Todos los criterios completados' 
+                                            : `⚠️ ${Object.keys(artistVotes).length}/${CRITERIA.length} criterios completados - Se puede enviar parcial`
+                                        }
+                                    </div>
                                     
                                     <!-- Botón para limpiar votación -->
                                     ${Object.keys(artistVotes).length > 0 ? `
@@ -1378,22 +1379,39 @@ Formato de respuesta:
                 return;
             }
             
-            if (!artistVotes || Object.keys(artistVotes).length !== CRITERIA.length) {
-                console.error('❌ Validación de votos fallida:');
-                console.error('- artistVotes:', artistVotes);
-                console.error('- Object.keys(artistVotes).length:', artistVotes ? Object.keys(artistVotes).length : 'null');
-                console.error('- CRITERIA.length:', CRITERIA.length);
-                console.error('- CRITERIA:', CRITERIA.map(c => c.id));
-                if (artistVotes) {
-                    console.error('- Votos presentes:', Object.keys(artistVotes));
-                    console.error('- Votos faltantes:', CRITERIA.filter(c => !artistVotes[c.id]).map(c => c.id));
-                }
-                alert('❌ Completa todos los criterios para enviar la votación completa\n\nCriterios faltantes: ' + 
-                    (artistVotes ? CRITERIA.filter(c => !artistVotes[c.id]).map(c => c.name).join(', ') : 'Todos'));
+            // ✅ NUEVA VALIDACIÓN: Permitir votos parciales con confirmación
+            if (!artistVotes || Object.keys(artistVotes).length === 0) {
+                alert('❌ No hay ningún criterio evaluado para este artista');
                 return;
             }
+            
+            const completedCriteria = Object.keys(artistVotes).length;
+            const totalCriteria = CRITERIA.length;
+            const isPartialVote = completedCriteria < totalCriteria;
+            
+            if (isPartialVote) {
+                const missingCriteria = CRITERIA.filter(c => !artistVotes[c.id]).map(c => c.name);
+                
+                const confirmMessage = 
+                    `⚠️ VOTACIÓN PARCIAL DETECTADA\n\n` +
+                    `Artista: ${artist.name}\n` +
+                    `Criterios completados: ${completedCriteria}/${totalCriteria}\n\n` +
+                    `Criterios faltantes:\n• ${missingCriteria.join('\n• ')}\n\n` +
+                    `¿Deseas enviar esta votación parcial?\n\n` +
+                    `✅ SÍ - Enviar votación parcial (recomendado si el artista no participó)\n` +
+                    `❌ NO - Continuar completando criterios`;
+                
+                if (!confirm(confirmMessage)) {
+                    console.log('🚫 Usuario canceló envío de votación parcial');
+                    return;
+                }
+                
+                console.log('✅ Usuario confirmó envío de votación parcial');
+            }
 
-            const average = Object.values(artistVotes).reduce((sum, val) => sum + val, 0) / CRITERIA.length;
+            // ✅ PROMEDIO BASADO EN CRITERIOS COMPLETADOS (no en total de criterios)
+            const completedValues = Object.values(artistVotes);
+            const average = completedValues.reduce((sum, val) => sum + val, 0) / completedValues.length;
 
             try {
                 console.log('💾 Guardando voto en Firebase...');
@@ -1488,7 +1506,11 @@ Formato de respuesta:
                     console.log('💬 Feedback generado:', feedbackText);
                 }
                 
-                alert(`✅ Voto guardado para ${artist.name}\nPromedio: ${average.toFixed(1)} puntos\n\nRevisa el feedback generado en la sección azul del modal.`);
+                const voteTypeMessage = isPartialVote 
+                    ? `📝 VOTACIÓN PARCIAL GUARDADA\n${completedCriteria}/${totalCriteria} criterios completados` 
+                    : `✅ VOTACIÓN COMPLETA GUARDADA\nTodos los criterios completados`;
+                
+                alert(`${voteTypeMessage}\n\nArtista: ${artist.name}\nPromedio: ${average.toFixed(1)} puntos\n\nRevisa el feedback generado en la sección azul del modal.`);
                 
                 renderArtists();
                 preserveFilter(); // Mantener filtro
