@@ -726,23 +726,56 @@ Formato de respuesta:
             
             try {
                 const userSelect = document.getElementById('juror-user-select');
-                userSelect.innerHTML = '<option value="">🔍 Cargando usuarios registrados...</option>';
+                userSelect.innerHTML = '<option value="">🔍 Investigando rutas Firebase...</option>';
                 
-                const collectionPath = `events/${eventId}/jury_users`;
-                console.log('📂 Ruta de colección:', collectionPath);
+                // PROBAR MÚLTIPLES RUTAS POSIBLES
+                const possiblePaths = [
+                    `events/${eventId}/jury_users`,
+                    `events/${eventId}/jurors`,
+                    `jury_users`,
+                    `jurors`,
+                    `events/${eventId}/jury`,
+                    `users`
+                ];
                 
-                const usersQuery = query(
-                    collection(db, collectionPath)
-                    // Removido filtro isActive - cargar TODOS los usuarios registrados
-                );
+                console.log('� INVESTIGANDO RUTAS POSIBLES:');
+                let found = false;
                 
-                console.log('🔄 Ejecutando consulta...');
-                const snapshot = await getDocs(usersQuery);
-                console.log('📊 Documentos encontrados:', snapshot.size);
+                for (const path of possiblePaths) {
+                    try {
+                        console.log(`📂 Probando ruta: ${path}`);
+                        const testQuery = query(collection(db, path));
+                        const testSnapshot = await getDocs(testQuery);
+                        console.log(`📊 ${path}: ${testSnapshot.size} documentos`);
+                        
+                        if (!testSnapshot.empty) {
+                            console.log(`✅ ¡USUARIOS ENCONTRADOS en ${path}!`);
+                            
+                            let html = '<option value="">👤 Selecciona tu usuario</option>';
+                            let userCount = 0;
+                            
+                            testSnapshot.forEach(doc => {
+                                const user = doc.data();
+                                console.log(`� Usuario: ${user.name || user.id} - Tipo: ${user.type || 'N/A'}`);
+                                const displayName = user.name || user.id || doc.id;
+                                const typeLabel = user.typeLabel || user.type || 'Usuario';
+                                html += `<option value="${user.id || doc.id}">${displayName} (${typeLabel})</option>`;
+                                userCount++;
+                            });
+                            
+                            userSelect.innerHTML = html;
+                            console.log(`✅ ${userCount} usuarios cargados desde ${path}`);
+                            found = true;
+                            break;
+                        }
+                    } catch (error) {
+                        console.log(`❌ Error en ruta ${path}:`, error.message);
+                    }
+                }
                 
-                if (snapshot.empty) {
-                    console.log('❌ FILTRO REMOVIDO - Si ves esto, el caché no se actualizó');
-                    userSelect.innerHTML = '<option value="">❌ SIN USUARIOS - REVISAR FIREBASE</option>';
+                if (!found) {
+                    console.log('❌ NO SE ENCONTRARON USUARIOS EN NINGUNA RUTA');
+                    userSelect.innerHTML = '<option value="">❌ NO HAY USUARIOS EN FIREBASE</option>';
                     return;
                 }
                 
