@@ -843,7 +843,9 @@
                                              ticketData.artista || 
                                              ticketData.selectedArtist ||
                                              ticketData.invitedBy ||
-                                             '🎤 Artista no especificado';
+                                             ticketData.prefix ||
+                                             ticketData.generatedBy ||
+                                             'Sin artista';
                             
                             console.log('🎫 Ticket encontrado:', {
                                 id: ticketDoc.id,
@@ -859,6 +861,11 @@
                                 guestName: ticketData.guestName || ticketData.name || ticketData.inviteeName || 'Sin nombre',
                                 phone: ticketData.phone || ticketData.telefono || ticketData.phoneNumber || '',
                                 artistName: artistName,
+                                // Guardar también campos originales para búsqueda
+                                artist: ticketData.artist,
+                                prefix: ticketData.prefix,
+                                invitedBy: ticketData.invitedBy,
+                                selectedArtist: ticketData.selectedArtist,
                                 qrCode: ticketData.qrCode || ticketData.code || ticketData.id || ticketDoc.id,
                                 status: ticketData.used ? 'entered' : 'pending',
                                 accessTime: ticketData.accessTime || ticketData.usedAt || ticketData.entryTime,
@@ -1333,19 +1340,32 @@
 
             filterByArtist(query) {
                 if (!query.trim()) {
-                    // Sin filtro - mostrar todos los invitados y todos los artistas
+                    // Sin filtro - mostrar todos los invitados
                     this.filteredEntries = [...this.galaEntries];
                 } else {
                     const searchTerm = query.toLowerCase();
                     
-                    // Filtrar invitados por nombre del artista o del invitado
-                    this.filteredEntries = this.galaEntries.filter(entry =>
-                        entry.artistName.toLowerCase().includes(searchTerm) ||
-                        entry.guestName.toLowerCase().includes(searchTerm)
-                    );
+                    // Filtrar invitados buscando en TODOS los campos posibles del artista
+                    this.filteredEntries = this.galaEntries.filter(entry => {
+                        // Buscar en nombre del invitado
+                        const guestName = (entry.guestName || entry.name || '').toLowerCase();
+                        if (guestName.includes(searchTerm)) return true;
+                        
+                        // Buscar en TODOS los campos posibles del artista
+                        const artistName = (entry.artistName || '').toLowerCase();
+                        const artist = (entry.artist || '').toLowerCase();
+                        const prefix = (entry.prefix || '').toLowerCase();
+                        const invitedBy = (entry.invitedBy || '').toLowerCase();
+                        const selectedArtist = (entry.selectedArtist || '').toLowerCase();
+                        
+                        return artistName.includes(searchTerm) ||
+                               artist.includes(searchTerm) ||
+                               prefix.includes(searchTerm) ||
+                               invitedBy.includes(searchTerm) ||
+                               selectedArtist.includes(searchTerm);
+                    });
                     
-                    // También filtrar artistas por nombre (se filtra en displayEntries)
-                    // Los artistas siempre se muestran si coinciden con la búsqueda
+                    console.log(`🔍 Búsqueda "${query}": ${this.filteredEntries.length} resultados encontrados`);
                 }
                 this.displayEntries();
             }
@@ -1360,22 +1380,30 @@
 
                 // Solo mostrar invitados, no artistas separados
                 container.innerHTML = this.filteredEntries.map(entry => {
+                    // Detectar nombre del artista correctamente
+                    const artistName = entry.artistName || 
+                                     entry.artist || 
+                                     entry.prefix || 
+                                     entry.invitedBy ||
+                                     entry.selectedArtist ||
+                                     'Sin artista';
+                    
                     return `
-                        <div class="entry-item">
+                        <div class="entry-item" style="background: rgba(255,255,255,0.9); border: 1px solid #e5e7eb; border-radius: 8px; margin-bottom: 8px; padding: 12px;">
                             <div class="entry-info">
-                                <div class="entry-name" style="color: white; font-weight: bold; font-size: 18px;">${entry.guestName || entry.name || 'Sin nombre'}</div>
+                                <div class="entry-name" style="color: #1f2937; font-weight: bold; font-size: 18px;">${entry.guestName || entry.name || 'Sin nombre'}</div>
                                 <div class="entry-details" style="margin-top: 4px;">
-                                    <div style="color: #3b82f6; font-size: 14px; font-weight: 500;">🎤 ${entry.artistName || 'Sin artista'}</div>
-                                    ${entry.phone ? `<div style="color: #a3a3a3; font-size: 12px;">📱 ${entry.phone}</div>` : ''}
+                                    <div style="color: #3b82f6; font-size: 14px; font-weight: 500;">🎤 ${artistName}</div>
+                                    ${entry.phone ? `<div style="color: #6b7280; font-size: 12px;">📱 ${entry.phone}</div>` : ''}
                                     ${entry.accessTime ? `<div style="color: #10b981; font-size: 12px;">✅ ${new Date(entry.accessTime).toLocaleTimeString('es-ES')}</div>` : ''}
                                 </div>
                             </div>
                             <div class="entry-actions">
-                                <span class="status-badge status-${entry.status}" style="background: ${entry.status === 'entered' ? '#374151' : '#1f2937'}; color: white; font-size: 12px;">
+                                <span class="status-badge status-${entry.status}" style="background: ${entry.status === 'entered' ? '#dc2626' : '#16a34a'}; color: white; font-size: 12px; padding: 4px 8px; border-radius: 4px;">
                                     ${entry.status === 'entered' ? 'Ya Ingresó' : 'Pendiente'}
                                 </span>
                                 ${entry.status === 'pending' ? `
-                                    <button class="btn btn-small btn-success" onclick="scanner.allowManualAccess('${entry.id}')" style="background: #3b82f6; color: white; font-size: 12px; margin-top: 4px;">
+                                    <button class="btn btn-small btn-success" onclick="scanner.allowManualAccess('${entry.id}')" style="background: #3b82f6; color: white; font-size: 12px; margin-top: 4px; padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer;">
                                         ✅ Permitir
                                     </button>
                                 ` : ''}
