@@ -1262,7 +1262,7 @@ Formato de respuesta:
                                         <textarea id="post-comments-${artist.id}" 
                                                   placeholder="¿Quieres agregar algún comentario personal después de ver el feedback? Escribe aquí tus observaciones adicionales..."
                                                   class="w-full h-20 p-3 bg-gray-700 text-white rounded-lg border border-green-500 resize-none"
-                                                  onchange="savePostComments('${artist.id}', this.value)"></textarea>
+                                                  onblur="savePostComments('${artist.id}', this.value)"></textarea>
                                         <p class="text-xs text-green-300 mt-2">💡 Estos comentarios se guardarán junto con tu evaluación</p>
                                     </div>
                                     
@@ -3172,7 +3172,7 @@ Formato de respuesta:
                                 rows="4" 
                                 class="w-full p-3 bg-gray-800 border border-green-500 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent resize-vertical"
                                 placeholder="¿Quieres agregar algún comentario personal después de ver el feedback?"
-                                onchange="savePostComments()"
+                                onblur="savePostComments()"
                             ></textarea>
                             <p class="text-xs text-green-300 text-center">💡 Opcional: Agrega tus impresiones personales después del análisis con IA</p>
                         </div>
@@ -3959,11 +3959,13 @@ Formato de respuesta:
         }, 500);
         
         // === FUNCIÓN PARA GUARDAR COMENTARIOS POST-EVALUACIÓN ===
-        async function savePostComments() {
+        async function savePostComments(providedArtistId = null, providedComments = null) {
+            // Obtener el ID del artista - usar el proporcionado o buscar automáticamente
+            let artistId = providedArtistId;
+            
             try {
-                // Obtener el ID del artista desde el modal o desde currentModalArtist
-                let artistId = null;
                 
+            if (!artistId) {
                 // Opción 1: Desde el modal con data-artist-id
                 const votingModal = document.getElementById('voting-modal');
                 if (votingModal && votingModal.getAttribute('data-artist-id')) {
@@ -3976,19 +3978,29 @@ Formato de respuesta:
                     artistId = currentModalArtist.id;
                     console.log('🎯 ID del artista obtenido desde variable global:', artistId);
                 }
+            }
                 
                 if (!artistId) {
                     console.warn('⚠️ No se pudo obtener el ID del artista para guardar comentarios');
                     return;
                 }
-                const commentsTextarea = document.getElementById('post-evaluation-comments');
                 
-                if (!commentsTextarea) {
-                    console.warn('⚠️ No se encontró textarea de comentarios');
-                    return;
+                // Obtener comentarios - usar los proporcionados o buscar en el textarea
+                let additionalComments = providedComments;
+                
+                if (!additionalComments) {
+                    const commentsTextarea = document.getElementById('post-evaluation-comments') || 
+                                           document.getElementById(`post-comments-${artistId}`);
+                    
+                    if (!commentsTextarea) {
+                        console.warn('⚠️ No se encontró textarea de comentarios');
+                        return;
+                    }
+                    
+                    additionalComments = commentsTextarea.value.trim();
+                } else {
+                    additionalComments = additionalComments.trim();
                 }
-                
-                const additionalComments = commentsTextarea.value.trim();
                 
                 if (!additionalComments) {
                     console.log('ℹ️ No hay comentarios adicionales para guardar');
@@ -4023,29 +4035,32 @@ Formato de respuesta:
                     });
                 
                 // Mostrar confirmación visual
-                const textarea = document.getElementById('post-evaluation-comments');
-                const originalBorder = textarea.style.borderColor;
-                textarea.style.borderColor = '#10B981'; // Verde más intenso
-                textarea.style.boxShadow = '0 0 10px rgba(16, 185, 129, 0.3)';
+                const textarea = document.getElementById('post-evaluation-comments') || 
+                               document.getElementById(`post-comments-${artistId}`);
+                if (textarea) {
+                    const originalBorder = textarea.style.borderColor;
+                    textarea.style.borderColor = '#10B981'; // Verde más intenso
+                    textarea.style.boxShadow = '0 0 10px rgba(16, 185, 129, 0.3)';
                 
-                // Mostrar mensaje de éxito
-                const successMessage = document.createElement('div');
-                successMessage.className = 'text-green-400 text-sm font-bold mt-2 text-center';
-                successMessage.innerHTML = '✅ Comentarios guardados correctamente';
-                successMessage.id = 'comments-success-message';
-                
-                // Remover mensaje anterior si existe
-                const existingMessage = document.getElementById('comments-success-message');
-                if (existingMessage) existingMessage.remove();
-                
-                textarea.parentNode.appendChild(successMessage);
-                
-                // Restaurar estilo después de 3 segundos
-                setTimeout(() => {
-                    textarea.style.borderColor = originalBorder;
-                    textarea.style.boxShadow = 'none';
-                    if (successMessage) successMessage.remove();
-                }, 3000);
+                    // Mostrar mensaje de éxito
+                    const successMessage = document.createElement('div');
+                    successMessage.className = 'text-green-400 text-sm font-bold mt-2 text-center';
+                    successMessage.innerHTML = '✅ Comentarios guardados correctamente';
+                    successMessage.id = 'comments-success-message';
+                    
+                    // Remover mensaje anterior si existe
+                    const existingMessage = document.getElementById('comments-success-message');
+                    if (existingMessage) existingMessage.remove();
+                    
+                    textarea.parentNode.appendChild(successMessage);
+                    
+                    // Restaurar estilo después de 3 segundos
+                    setTimeout(() => {
+                        textarea.style.borderColor = originalBorder;
+                        textarea.style.boxShadow = 'none';
+                        if (successMessage) successMessage.remove();
+                    }, 3000);
+                }
                 
                 console.log('✅ Comentarios post-evaluación guardados exitosamente');
                 
@@ -4058,7 +4073,8 @@ Formato de respuesta:
                 errorMessage.innerHTML = '❌ Error guardando comentarios';
                 errorMessage.id = 'comments-error-message';
                 
-                const textarea = document.getElementById('post-evaluation-comments');
+                const textarea = document.getElementById('post-evaluation-comments') || 
+                               document.getElementById(`post-comments-${artistId}`);
                 if (textarea) {
                     const existingError = document.getElementById('comments-error-message');
                     if (existingError) existingError.remove();
