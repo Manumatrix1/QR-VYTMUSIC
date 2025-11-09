@@ -3097,7 +3097,45 @@ Formato de respuesta:
             const currentVotes = votes[currentModalArtist.id] || {};
             const total = Object.values(currentVotes).reduce((sum, val) => sum + val, 0);
             
+            // Mostrar puntaje individual
             document.getElementById('modal-total-score').textContent = `${total}/1000`;
+            
+            // Obtener y mostrar promedio de todos los jurados
+            try {
+                const averageData = await getAverageScoresFromAllJurors(currentModalArtist.id);
+                const totalScoreElement = document.getElementById('modal-total-score');
+                
+                if (averageData && averageData.totalJurors > 1) {
+                    // Mostrar tanto el individual como el promedio
+                    const averageTotal = (averageData.overallAverage * 10).toFixed(0); // Convertir a escala /1000
+                    totalScoreElement.innerHTML = `
+                        <div class="text-center">
+                            <div class="text-lg font-bold text-purple-300">
+                                📊 Promedio: ${averageTotal}/1000
+                            </div>
+                            <div class="text-sm text-gray-400">
+                                (${averageData.totalJurors} jurados) | Tu voto: ${total}/1000
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    // Solo mostrar individual si no hay otros votos
+                    totalScoreElement.innerHTML = `
+                        <div class="text-center">
+                            <div class="text-lg font-bold text-blue-300">
+                                ${total}/1000
+                            </div>
+                            <div class="text-xs text-gray-400">
+                                (Solo tu evaluación)
+                            </div>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                console.warn('⚠️ Error obteniendo promedio para modal:', error);
+                // Mantener solo el puntaje individual si hay error
+                document.getElementById('modal-total-score').textContent = `${total}/1000`;
+            }
             
             // Mostrar botón de finalizar cuando todos los criterios estén completos
             const hasAllVotes = CRITERIA.every(criteria => 
@@ -3120,9 +3158,123 @@ Formato de respuesta:
             // Ya NO generar feedback automáticamente - esperar a que haga clic en FINALIZAR
         }
 
+        // === FUNCIÓN PARA CALCULAR PROMEDIO DE TODOS LOS JURADOS ===
+        async function getAverageScoresFromAllJurors(artistId) {
+            try {
+                console.log(`📊 Calculando promedio de todos los jurados para artista: ${artistId}`);
+                
+                const currentEvent = localStorage.getItem('currentEvent');
+                if (!currentEvent) {
+                    console.error('❌ No hay evento actual');
+                    return null;
+                }
+                
+                // Obtener todos los votos de todos los jurados para este artista
+                const evaluationsSnapshot = await db.collection('events').doc(currentEvent)
+                    .collection('jury_evaluations')
+                    .where('artistId', '==', artistId)
+                    .get();
+                
+                if (evaluationsSnapshot.empty) {
+                    console.warn('⚠️ No se encontraron evaluaciones para este artista');
+                    return null;
+                }
+                
+                console.log(`📋 Encontradas ${evaluationsSnapshot.docs.length} evaluaciones para ${artistId}`);
+                
+                // Agrupar votos por criterio
+                const criteriaScores = {};
+                CRITERIA.forEach(criteria => {
+                    criteriaScores[criteria.id] = [];
+                });
+                
+                let totalJurors = 0;
+                
+                evaluationsSnapshot.forEach(doc => {
+                    const evaluation = doc.data();
+                    totalJurors++;
+                    
+                    console.log(`📝 Evaluación de ${evaluation.jurorId}:`, evaluation.scores || evaluation);
+                    
+                    // Procesar cada criterio
+                    CRITERIA.forEach(criteria => {
+                        let score = null;
+                        
+                        // Buscar el score en diferentes posibles estructuras
+                        if (evaluation.scores && evaluation.scores[criteria.id] !== undefined) {
+                            score = evaluation.scores[criteria.id];
+                        } else if (evaluation[criteria.id] !== undefined) {
+                            score = evaluation[criteria.id];
+                        }
+                        
+                        if (score !== null && score !== undefined && !isNaN(score)) {
+                            criteriaScores[criteria.id].push(parseFloat(score));
+                        }
+                    });
+                });
+                
+                // Calcular promedios por criterio
+                const averageScores = {};
+                let totalSum = 0;
+                let totalCriteria = 0;
+                
+                CRITERIA.forEach(criteria => {
+                    const scores = criteriaScores[criteria.id];
+                    if (scores.length > 0) {
+                        const average = scores.reduce((sum, score) => sum + score, 0) / scores.length;
+                        averageScores[criteria.id] = Math.round(average * 10) / 10; // Redondear a 1 decimal
+                        totalSum += average;
+                        totalCriteria++;
+                        
+                        console.log(`📊 ${criteria.name}: ${scores.length} votos, promedio: ${averageScores[criteria.id]}`);
+                    } else {
+                        console.warn(`⚠️ No se encontraron votos para ${criteria.name}`);
+                        averageScores[criteria.id] = 0;
+                    }
+                });
+                
+                const overallAverage = totalCriteria > 0 ? Math.round((totalSum / totalCriteria) * 10) / 10 : 0;
+                
+                console.log('✅ Promedios calculados:', {
+                    averageScores,
+                    overallAverage,
+                    totalJurors,
+                    artistId
+                });
+                
+                return {
+                    averageScores,
+                    overallAverage,
+                    totalJurors,
+                    artistId
+                };
+                
+            } catch (error) {
+                console.error('❌ Error calculando promedio de jurados:', error);
+                return null;
+            }
+        }
+
         // Función para generar y mostrar feedback automático en el modal
         async function generateAndShowModalFeedback(artistVotes) {
             console.log('🔍 Generando feedback con IA para modal:', artistVotes);
+            
+            // PRIMERO: Obtener el promedio de todos los jurados
+            const artistId = currentModalArtist ? currentModalArtist.id : null;
+            console.log('🎯 Obteniendo promedio de todos los jurados para:', artistId);
+            
+            const averageData = await getAverageScoresFromAllJurors(artistId);
+            
+            // Si no hay promedio disponible, usar los votos individuales como respaldo
+            const finalVotes = averageData ? averageData.averageScores : artistVotes;
+            const isAverageData = !!averageData;
+            
+            console.log('📊 Datos para feedback:', {
+                isAverageData,
+                finalVotes,
+                totalJurors: averageData?.totalJurors || 1,
+                overallAverage: averageData?.overallAverage || 'N/A'
+            });
             
             const feedbackContainer = document.getElementById('auto-feedback-modal');
             const feedbackSection = document.getElementById('feedback-section-modal');
@@ -3184,18 +3336,18 @@ Formato de respuesta:
                         modalContent.insertBefore(postCommentsSection, buttonsDiv);
                         console.log('🔧 Elementos de feedback y comentarios post-evaluación creados dinámicamente');
                         // Reintentar con los nuevos elementos
-                        setTimeout(() => generateAndShowModalFeedback(artistVotes), 100);
+                        setTimeout(() => generateAndShowModalFeedback(finalVotes), 100);
                         return;
                     }
                 }
                 return;
             }
             
-            const feedbackSuggestions = generateAutoFeedback(artistVotes);
+            const feedbackSuggestions = generateAutoFeedback(finalVotes);
             console.log('💬 Sugerencias generadas:', feedbackSuggestions.length, 'elementos');
             
             try {
-                const feedbackSuggestions = await generateAutoFeedback(artistVotes);
+                const feedbackSuggestions = await generateAutoFeedback(finalVotes);
                 
                 if (feedbackSuggestions.length > 0) {
                     const feedbackHTML = feedbackSuggestions.map((item, index) => `
@@ -3208,7 +3360,25 @@ Formato de respuesta:
                         </div>
                     `).join('');
                     
+                    // Crear encabezado con información del promedio
+                    const averageInfo = isAverageData ? 
+                        `<div class="mb-3 p-3 bg-gradient-to-r from-purple-800 to-blue-800 rounded-lg border border-purple-400">
+                            <div class="text-center mb-2">
+                                <span class="bg-purple-600 text-white px-3 py-1 rounded-full text-xs font-bold">
+                                    📊 PROMEDIO DE ${averageData.totalJurors} JURADO${averageData.totalJurors > 1 ? 'S' : ''}
+                                </span>
+                            </div>
+                            <div class="text-center">
+                                <span class="text-2xl font-bold text-purple-300">${averageData.overallAverage} puntos</span>
+                                <p class="text-xs text-purple-200 mt-1">Puntuación promedio general</p>
+                            </div>
+                        </div>` : 
+                        `<div class="mb-3 p-2 bg-yellow-800 bg-opacity-50 rounded-lg border border-yellow-500">
+                            <p class="text-xs text-yellow-300 text-center">⚠️ Mostrando solo tu evaluación (otros jurados aún no han votado)</p>
+                        </div>`;
+                    
                     feedbackContainer.innerHTML = `
+                        ${averageInfo}
                         <div class="mb-3 text-center">
                             <span class="bg-green-600 text-white px-3 py-1 rounded-full text-xs font-bold">
                                 ✅ Análisis completado por Gemini AI
