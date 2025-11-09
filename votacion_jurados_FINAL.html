@@ -255,14 +255,19 @@
                             <!-- El link aparecerá aquí -->
                         </div>
                         
-                        <!-- CONTROL DE PROMEDIOS EN TIEMPO REAL -->
-                        <button id="toggle-realtime-btn" onclick="toggleRealtimeAverages()" 
-                                class="btn text-lg px-8 py-3 w-full max-w-md mx-auto bg-green-600 hover:bg-green-700 mt-3">
-                            📊 MOSTRAR PROMEDIOS DE TODOS LOS JURADOS
-                        </button>
-                        <div id="realtime-info" class="mt-3 text-sm text-center text-yellow-300" style="display: none;">
-                            ⏱️ <strong>Sistema en tiempo real activo</strong><br>
-                            Los promedios se actualizan automáticamente cuando cualquier jurado vota
+                        <!-- PANEL DE ACTIVIDAD DE JURADOS EN TIEMPO REAL -->
+                        <div id="jury-activity-panel" class="bg-purple-800 bg-opacity-30 p-4 rounded-lg border border-purple-500 mt-3">
+                            <h3 class="text-lg font-bold text-purple-300 mb-3">👥 Actividad de Jurados en Tiempo Real</h3>
+                            <div id="jury-activity-list" class="space-y-2 mb-3">
+                                <p class="text-center text-gray-400">Cargando actividad de jurados...</p>
+                            </div>
+                            <button id="toggle-realtime-btn" onclick="toggleRealtimeAverages()" 
+                                    class="btn text-sm px-6 py-2 w-full bg-green-600 hover:bg-green-700">
+                                📊 MOSTRAR PROMEDIOS DETALLADOS
+                            </button>
+                            <div id="realtime-info" class="mt-2 text-xs text-center text-yellow-300" style="display: none;">
+                                ⏱️ Los promedios se actualizan automáticamente
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1958,29 +1963,107 @@ Formato de respuesta:
                 allJuryVotes.clear();
                 realTimeAverages.clear();
                 
+                // Mapa para rastrear jurados activos
+                const juryActivity = new Map(); // jurorName -> { lastVote, artistsVoted, totalScore }
+                
                 // Procesar todos los votos
                 snapshot.docs.forEach(doc => {
                     const voteData = doc.data();
                     const artistId = voteData.artistId;
+                    const jurorName = voteData.jurorName || 'Jurado Anónimo';
                     
                     if (!allJuryVotes.has(artistId)) {
                         allJuryVotes.set(artistId, []);
                     }
                     
                     allJuryVotes.get(artistId).push(voteData);
+                    
+                    // Rastrear actividad del jurado
+                    if (!juryActivity.has(jurorName)) {
+                        juryActivity.set(jurorName, {
+                            lastVote: new Date(voteData.timestamp),
+                            artistsVoted: new Set(),
+                            totalVotes: 0,
+                            averageGiven: 0
+                        });
+                    }
+                    
+                    const activity = juryActivity.get(jurorName);
+                    activity.artistsVoted.add(artistId);
+                    activity.totalVotes++;
+                    activity.lastVote = new Date(voteData.timestamp);
+                    
+                    // Calcular promedio que da este jurado
+                    if (voteData.scores) {
+                        const voteScore = Object.values(voteData.scores).reduce((sum, score) => sum + score, 0) / Object.keys(voteData.scores).length;
+                        activity.averageGiven = voteScore;
+                    }
                 });
                 
-                // Calcular promedios
+                // Calcular promedios por artista
                 allJuryVotes.forEach((votes, artistId) => {
                     const average = calculateAverageScore(votes);
                     realTimeAverages.set(artistId, average);
                 });
                 
                 // Actualizar interfaz
+                updateJuryActivityDisplay(juryActivity);
                 updateRealtimeAveragesDisplay();
                 
                 console.log('✅ Promedios actualizados:', Object.fromEntries(realTimeAverages));
+                console.log('👥 Actividad de jurados:', Object.fromEntries(juryActivity));
             });
+        }
+        
+        function updateJuryActivityDisplay(juryActivity) {
+            const activityList = document.getElementById('jury-activity-list');
+            if (!activityList) return;
+            
+            if (juryActivity.size === 0) {
+                activityList.innerHTML = '<p class="text-center text-gray-400">No hay actividad de jurados aún</p>';
+                return;
+            }
+            
+            let html = '';
+            juryActivity.forEach((activity, jurorName) => {
+                const isCurrentUser = jurorName === currentJuror?.name;
+                const timeAgo = getTimeAgo(activity.lastVote);
+                
+                html += `
+                    <div class="flex justify-between items-center p-2 ${isCurrentUser ? 'bg-blue-800 bg-opacity-50' : 'bg-gray-800 bg-opacity-50'} rounded">
+                        <div>
+                            <span class="font-bold ${isCurrentUser ? 'text-blue-300' : 'text-white'}">
+                                ${jurorName} ${isCurrentUser ? '(Tú)' : ''}
+                            </span>
+                            <div class="text-xs text-gray-400">
+                                ${activity.artistsVoted.size} artista${activity.artistsVoted.size !== 1 ? 's' : ''} evaluado${activity.artistsVoted.size !== 1 ? 's' : ''}
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <div class="text-sm font-bold text-green-300">
+                                ~${activity.averageGiven.toFixed(1)} pts prom.
+                            </div>
+                            <div class="text-xs text-gray-400">
+                                ${timeAgo}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            activityList.innerHTML = html;
+        }
+        
+        function getTimeAgo(date) {
+            const now = new Date();
+            const diffMs = now - date;
+            const diffMins = Math.floor(diffMs / 60000);
+            
+            if (diffMins < 1) return 'Ahora mismo';
+            if (diffMins < 60) return `Hace ${diffMins} min`;
+            const diffHours = Math.floor(diffMins / 60);
+            if (diffHours < 24) return `Hace ${diffHours}h`;
+            return 'Hace más de 1 día';
         }
         
         function calculateAverageScore(votes) {
@@ -2057,7 +2140,7 @@ Formato de respuesta:
         };
         
         // Control de visualización de promedios en tiempo real
-        let showRealtimeAverages = false;
+        let showRealtimeAverages = true; // Activado por defecto
         
         window.toggleRealtimeAverages = function() {
             showRealtimeAverages = !showRealtimeAverages;
@@ -2065,15 +2148,27 @@ Formato de respuesta:
             const info = document.getElementById('realtime-info');
             
             if (showRealtimeAverages) {
-                btn.textContent = '📊 OCULTAR PROMEDIOS DE JURADOS';
-                btn.className = 'btn text-lg px-8 py-3 w-full max-w-md mx-auto bg-red-600 hover:bg-red-700 mt-3';
+                btn.textContent = '📊 OCULTAR PROMEDIOS DETALLADOS';
+                btn.className = 'btn text-sm px-6 py-2 w-full bg-red-600 hover:bg-red-700';
                 info.style.display = 'block';
                 updateRealtimeAveragesDisplay();
             } else {
-                btn.textContent = '📊 MOSTRAR PROMEDIOS DE TODOS LOS JURADOS';
-                btn.className = 'btn text-lg px-8 py-3 w-full max-w-md mx-auto bg-green-600 hover:bg-green-700 mt-3';
+                btn.textContent = '📊 MOSTRAR PROMEDIOS DETALLADOS';
+                btn.className = 'btn text-sm px-6 py-2 w-full bg-green-600 hover:bg-green-700';
                 info.style.display = 'none';
                 hideRealtimeAverages();
+            }
+        };
+        
+        // Inicializar botón en el estado correcto
+        window.initializeRealtimeButton = function() {
+            const btn = document.getElementById('toggle-realtime-btn');
+            const info = document.getElementById('realtime-info');
+            
+            if (showRealtimeAverages) {
+                btn.textContent = '📊 OCULTAR PROMEDIOS DETALLADOS';
+                btn.className = 'btn text-sm px-6 py-2 w-full bg-red-600 hover:bg-red-700';
+                info.style.display = 'block';
             }
         };
         
@@ -3295,6 +3390,7 @@ Formato de respuesta:
         try {
             setTimeout(() => {
                 setupRealtimeVotingListener();
+                initializeRealtimeButton();
                 console.log('✅ Sistema de cálculo en tiempo real inicializado');
             }, 2000);
         } catch (error) {
