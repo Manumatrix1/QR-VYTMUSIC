@@ -415,6 +415,8 @@
         // === SISTEMA DE CÁLCULO EN TIEMPO REAL ===
         let allJuryVotes = new Map(); // artistId -> [votos de todos los jurados]
         let realTimeAverages = new Map(); // artistId -> promedio actual
+        let allListeners = []; // Para rastrear todos los listeners activos
+        let isProcessing = false; // Para evitar procesamiento múltiple
         
         // Escuchar votos en tiempo real
         import { onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
@@ -1952,72 +1954,158 @@ Formato de respuesta:
         // === SISTEMA DE CÁLCULO EN TIEMPO REAL ===
         function setupRealtimeVotingListener() {
             console.log('🔄 Configurando escucha en tiempo real para promedios de jurados...');
+            console.log('🎯 EventId actual:', eventId);
             
-            // Escuchar jury_evaluations en tiempo real
-            const juryQuery = query(collection(db, 'jury_evaluations'), where('eventId', '==', eventId));
+            // Escuchar múltiples colecciones en tiempo real
+            const collections = [
+                'jury_evaluations',
+                `events/${eventId}/jury_evaluations`, 
+                `events/${eventId}/jury_votes`,
+                `events/${eventId}/votes`
+            ];
             
-            onSnapshot(juryQuery, (snapshot) => {
-                console.log('📊 Actualizando votos en tiempo real...');
+            collections.forEach(collectionPath => {
+                console.log('👂 Escuchando colección:', collectionPath);
                 
-                // Resetear datos
-                allJuryVotes.clear();
-                realTimeAverages.clear();
+                try {
+                    const juryQuery = eventId ? 
+                        query(collection(db, collectionPath), where('eventId', '==', eventId)) :
+                        collection(db, collectionPath);
+                    
+                    onSnapshot(juryQuery, (snapshot) => {
+                        console.log(`📊 [${collectionPath}] Documentos encontrados:`, snapshot.size);
+                        processRealtimeSnapshot(snapshot, collectionPath);
+                    }, (error) => {
+                        console.warn(`⚠️ Error en colección ${collectionPath}:`, error.message);
+                    });
+                } catch (error) {
+                    console.warn(`⚠️ Error configurando ${collectionPath}:`, error.message);
+                }
+            });
+        }
+        
+        function processRealtimeSnapshot(snapshot, collectionPath) {
+            console.log(`📊 [${collectionPath}] Procesando ${snapshot.size} documentos...`);
+            
+            // Procesar todos los votos de esta colección
+            snapshot.docs.forEach(doc => {
+                const voteData = doc.data();
+                console.log(`📝 [${collectionPath}] Voto encontrado:`, {
+                    id: doc.id,
+                    artistId: voteData.artistId,
+                    jurorName: voteData.jurorName,
+                    eventId: voteData.eventId,
+                    timestamp: voteData.timestamp
+                });
                 
-                // Mapa para rastrear jurados activos
-                const juryActivity = new Map(); // jurorName -> { lastVote, artistsVoted, totalScore }
-                
-                // Procesar todos los votos
-                snapshot.docs.forEach(doc => {
-                    const voteData = doc.data();
+                // Solo procesar si coincide el evento o no hay filtro de evento
+                if (!eventId || voteData.eventId === eventId || collectionPath.includes(eventId)) {
                     const artistId = voteData.artistId;
-                    const jurorName = voteData.jurorName || 'Jurado Anónimo';
+                    const jurorName = voteData.jurorName || voteData.userName || 'Jurado Anónimo';
                     
                     if (!allJuryVotes.has(artistId)) {
                         allJuryVotes.set(artistId, []);
                     }
                     
-                    allJuryVotes.get(artistId).push(voteData);
+                    allJuryVotes.get(artistId).push({
+                        ...voteData,
+                        source: collectionPath
+                    });
+                }
+            });
+            
+            // Recalcular todo después de procesar todas las colecciones
+            debounceRecalculate();
+        }
+        
+        // Debounce para evitar cálculos excesivos
+        let recalculateTimer;
+        function debounceRecalculate() {
+            if (isProcessing) return;
+            
+            clearTimeout(recalculateTimer);
+            recalculateTimer = setTimeout(() => {
+                recalculateAndUpdate();
+            }, 1000);
+        }
+        
+        function recalculateAndUpdate() {
+            if (isProcessing) return;
+            isProcessing = true;
+            
+            console.log('🔄 Recalculando promedios y actividad...');
+            console.log('📊 Total de votos acumulados:', allJuryVotes.size);
+            allJuryVotes.forEach((votes, artistId) => {
+                console.log(`🎭 Artista ${artistId}: ${votes.length} votos`);
+            });
+            
+            // Resetear datos calculados
+            realTimeAverages.clear();
+            const juryActivity = new Map();
+            
+            // Procesar todos los votos acumulados
+            allJuryVotes.forEach((votes, artistId) => {
+                votes.forEach(voteData => {
+                    const jurorName = voteData.jurorName || voteData.userName || 'Jurado Anónimo';
                     
                     // Rastrear actividad del jurado
                     if (!juryActivity.has(jurorName)) {
                         juryActivity.set(jurorName, {
-                            lastVote: new Date(voteData.timestamp),
+                            lastVote: new Date(voteData.timestamp || Date.now()),
                             artistsVoted: new Set(),
                             totalVotes: 0,
-                            averageGiven: 0
+                            averageGiven: 0,
+                            sources: new Set()
                         });
                     }
                     
                     const activity = juryActivity.get(jurorName);
                     activity.artistsVoted.add(artistId);
                     activity.totalVotes++;
-                    activity.lastVote = new Date(voteData.timestamp);
+                    activity.sources.add(voteData.source);
+                    
+                    if (voteData.timestamp) {
+                        const voteTime = new Date(voteData.timestamp);
+                        if (voteTime > activity.lastVote) {
+                            activity.lastVote = voteTime;
+                        }
+                    }
                     
                     // Calcular promedio que da este jurado
                     if (voteData.scores) {
                         const voteScore = Object.values(voteData.scores).reduce((sum, score) => sum + score, 0) / Object.keys(voteData.scores).length;
                         activity.averageGiven = voteScore;
+                    } else if (voteData.totalScore) {
+                        activity.averageGiven = voteData.totalScore;
                     }
                 });
                 
-                // Calcular promedios por artista
-                allJuryVotes.forEach((votes, artistId) => {
-                    const average = calculateAverageScore(votes);
-                    realTimeAverages.set(artistId, average);
-                });
-                
-                // Actualizar interfaz
-                updateJuryActivityDisplay(juryActivity);
-                updateRealtimeAveragesDisplay();
-                
-                console.log('✅ Promedios actualizados:', Object.fromEntries(realTimeAverages));
-                console.log('👥 Actividad de jurados:', Object.fromEntries(juryActivity));
+                // Calcular promedio por artista
+                const average = calculateAverageScore(votes);
+                realTimeAverages.set(artistId, average);
             });
+            
+            // Actualizar interfaz
+            updateJuryActivityDisplay(juryActivity);
+            updateRealtimeAveragesDisplay();
+            
+            console.log('✅ Recálculo completado:');
+            console.log('📊 Promedios por artista:', Object.fromEntries(realTimeAverages));
+            console.log('👥 Jurados activos:', juryActivity.size);
+            console.log('👥 Detalle de jurados:', Object.fromEntries(juryActivity));
+            
+            isProcessing = false;
         }
         
         function updateJuryActivityDisplay(juryActivity) {
             const activityList = document.getElementById('jury-activity-list');
             if (!activityList) return;
+            
+            // Actualizar título del panel con número correcto
+            const panelTitle = document.querySelector('#jury-activity-panel h3');
+            if (panelTitle) {
+                panelTitle.textContent = `👥 Actividad de Jurados en Tiempo Real (${juryActivity.size} activos)`;
+            }
             
             if (juryActivity.size === 0) {
                 activityList.innerHTML = '<p class="text-center text-gray-400">No hay actividad de jurados aún</p>';
@@ -2028,6 +2116,7 @@ Formato de respuesta:
             juryActivity.forEach((activity, jurorName) => {
                 const isCurrentUser = jurorName === currentJuror?.name;
                 const timeAgo = getTimeAgo(activity.lastVote);
+                const sourcesInfo = activity.sources ? Array.from(activity.sources).join(', ') : '';
                 
                 html += `
                     <div class="flex justify-between items-center p-2 ${isCurrentUser ? 'bg-blue-800 bg-opacity-50' : 'bg-gray-800 bg-opacity-50'} rounded">
@@ -2036,8 +2125,9 @@ Formato de respuesta:
                                 ${jurorName} ${isCurrentUser ? '(Tú)' : ''}
                             </span>
                             <div class="text-xs text-gray-400">
-                                ${activity.artistsVoted.size} artista${activity.artistsVoted.size !== 1 ? 's' : ''} evaluado${activity.artistsVoted.size !== 1 ? 's' : ''}
+                                ${activity.artistsVoted.size} artista${activity.artistsVoted.size !== 1 ? 's' : ''} evaluado${activity.artistsVoted.size !== 1 ? 's' : ''} • ${activity.totalVotes} voto${activity.totalVotes !== 1 ? 's' : ''}
                             </div>
+                            ${sourcesInfo ? `<div class="text-xs text-purple-400">Fuente: ${sourcesInfo}</div>` : ''}
                         </div>
                         <div class="text-right">
                             <div class="text-sm font-bold text-green-300">
@@ -2052,6 +2142,8 @@ Formato de respuesta:
             });
             
             activityList.innerHTML = html;
+            
+            console.log(`✅ Panel actualizado: ${juryActivity.size} jurados activos mostrados`);
         }
         
         function getTimeAgo(date) {
