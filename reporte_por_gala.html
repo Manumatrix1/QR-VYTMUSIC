@@ -887,52 +887,214 @@
             const container = document.getElementById('jury-analysis-container');
             container.innerHTML = '';
 
-            // Crear lista de jurados desde las evaluaciones si no hay jurados registrados
-            let juradosParaMostrar = [];
-            
-            if (galaData.jurors.length > 0) {
-                // Usar jurados registrados
-                juradosParaMostrar = galaData.jurors;
-            } else {
-                // Extraer jurados únicos desde las evaluaciones
-                const juradosEvaluaciones = new Set();
-                Object.values(galaData.juryVotes).forEach(artistVotes => {
-                    artistVotes.forEach(vote => {
-                        if (vote.jurorName && vote.jurorName !== 'undefined') {
-                            juradosEvaluaciones.add(vote.jurorName);
-                        }
-                    });
-                });
-                
-                juradosParaMostrar = Array.from(juradosEvaluaciones).map(name => ({
-                    id: name.toLowerCase().replace(/\s+/g, '_'),
-                    name: name,
-                    type: 'individual' // Asumir individual por defecto
-                }));
-            }
+            // Obtener artistas que tienen evaluaciones de jurados
+            const artistsWithJuryVotes = galaData.artists.filter(artist => {
+                const artistVotes = galaData.juryVotes[artist.id] || [];
+                return artistVotes.length > 0;
+            });
 
-            if (juradosParaMostrar.length === 0) {
+            if (artistsWithJuryVotes.length === 0) {
                 container.innerHTML = '<p class="text-center text-gray-400">No se encontraron evaluaciones de jurados.</p>';
                 return;
             }
 
-            console.log('👨‍⚖️ Mostrando evaluaciones para:', juradosParaMostrar.map(j => j.name));
+            console.log('🎭 Artistas con evaluaciones de jurados:', artistsWithJuryVotes.map(a => a.name));
 
-            juradosParaMostrar.forEach(juror => {
-                const juryCard = document.createElement('div');
-                juryCard.className = 'bg-gradient-to-r from-purple-800 to-purple-900 p-6 rounded-xl border border-purple-500 shadow-lg';
+            // Ordenar artistas por promedio de evaluaciones de jurados (descendente)
+            const sortedArtists = artistsWithJuryVotes.sort((a, b) => {
+                const avgA = calculateArtistJuryAverage(a.id);
+                const avgB = calculateArtistJuryAverage(b.id);
+                return avgB - avgA;
+            });
+
+            sortedArtists.forEach((artist, index) => {
+                const artistVotes = galaData.juryVotes[artist.id] || [];
                 
-                let votesHtml = '';
-                let totalVotes = 0;
-                let totalScore = 0;
-                
-                galaData.artists.forEach(artist => {
-                    // Buscar coincidencias MUY flexibles - DEPURACIÓN AGRESIVA
-                    let vote = null;
-                    const artistVotes = galaData.juryVotes[artist.id] || [];
+                // Calcular promedios por criterio desde todas las evaluaciones
+                const criteriaAverages = calculateCriteriaAverages(artist.id);
+                const overallAverage = calculateArtistJuryAverage(artist.id);
+                const totalJuryVotes = artistVotes.length;
+
+                // Crear tarjeta visual similar al análisis del público
+                const analysisCard = document.createElement('div');
+                analysisCard.className = 'bg-gray-800 p-4 rounded-lg border border-gray-700 mb-4';
+                analysisCard.innerHTML = `
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <h4 class="text-lg font-bold text-white">${artist.name}</h4>
+                            <p class="text-sm text-gray-400">${totalJuryVotes} jurado(s) evaluaron • Posición: #${index + 1}</p>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-xl font-bold text-green-400">${overallAverage.toFixed(1)}/10</p>
+                            <p class="text-xs text-gray-400">Promedio General</p>
+                        </div>
+                    </div>
                     
-                    console.log(`🔍 ARTISTA: ${artist.name}, JURADO BUSCADO: "${juror.name}"`);
-                    console.log(`📋 VOTOS DISPONIBLES:`, artistVotes.map(v => `"${v.jurorName}"`));
+                    <!-- BARRAS DE PROGRESO POR CRITERIO -->
+                    <div class="space-y-2 mb-4">
+                        ${criteriaAverages.map(criteria => `
+                            <div class="flex items-center justify-between">
+                                <span class="text-sm text-gray-300 w-32">${criteria.icon} ${criteria.name}</span>
+                                <div class="flex-1 mx-3">
+                                    <div class="w-full bg-gray-700 rounded-full h-2">
+                                        <div class="${criteria.color} h-2 rounded-full transition-all" style="width: ${(criteria.average / 10) * 100}%"></div>
+                                    </div>
+                                </div>
+                                <span class="text-sm font-bold text-white w-12 text-right">${criteria.average.toFixed(1)}/10</span>
+                            </div>
+                        `).join('')}
+                    </div>
+
+                    <!-- OBSERVACIONES DE LOS JURADOS -->
+                    <div class="mt-4 p-3 bg-gray-900 rounded-lg">
+                        <p class="text-xs text-gray-400 mb-2">Observaciones de los jurados:</p>
+                        ${generateJuryObservations(artist.id)}
+                    </div>
+
+                    <!-- EVALUACIONES DETALLADAS POR JURADO -->
+                    <div class="mt-4">
+                        <details class="cursor-pointer">
+                            <summary class="text-sm text-blue-400 hover:text-blue-300">Ver evaluaciones detalladas por jurado</summary>
+                            <div class="mt-3 space-y-3">
+                                ${generateDetailedJuryEvaluations(artist.id)}
+                            </div>
+                        </details>
+                    </div>
+                `;
+
+                container.appendChild(analysisCard);
+            });
+        }
+
+        // === FUNCIONES AUXILIARES PARA EL NUEVO ANÁLISIS VISUAL ===
+        
+        function calculateArtistJuryAverage(artistId) {
+            const artistVotes = galaData.juryVotes[artistId] || [];
+            if (artistVotes.length === 0) return 0;
+            
+            const totalScore = artistVotes.reduce((sum, vote) => sum + (vote.average || 0), 0);
+            return totalScore / artistVotes.length;
+        }
+
+        function calculateCriteriaAverages(artistId) {
+            const artistVotes = galaData.juryVotes[artistId] || [];
+            
+            // Definir criterios con iconos y colores
+            const criteriaDefinitions = [
+                { id: 'vestuario_presentacion', name: 'Vestuario y Presentación', icon: '👗', color: 'bg-pink-500' },
+                { id: 'puntualidad_profesionalismo', name: 'Puntualidad y Profesionalismo', icon: '⭐', color: 'bg-yellow-500' },
+                { id: 'tecnica_vocal', name: 'Técnica Vocal', icon: '🎤', color: 'bg-blue-500' },
+                { id: 'interpretacion', name: 'Interpretación', icon: '🎭', color: 'bg-purple-500' },
+                { id: 'presencia_escenica', name: 'Presencia Escénica', icon: '✨', color: 'bg-green-500' },
+                { id: 'conexion_publico', name: 'Conexión con Público', icon: '❤️', color: 'bg-red-500' },
+                { id: 'originalidad_creatividad', name: 'Originalidad y Creatividad', icon: '💡', color: 'bg-indigo-500' },
+                { id: 'calidad_general', name: 'Calidad General', icon: '🏆', color: 'bg-orange-500' }
+            ];
+
+            return criteriaDefinitions.map(criteria => {
+                const scores = [];
+                artistVotes.forEach(vote => {
+                    if (vote.scores && vote.scores[criteria.id] !== undefined) {
+                        scores.push(vote.scores[criteria.id]);
+                    }
+                });
+                
+                const average = scores.length > 0 ? scores.reduce((sum, score) => sum + score, 0) / scores.length : 0;
+                
+                return {
+                    ...criteria,
+                    average: average,
+                    count: scores.length
+                };
+            }).filter(criteria => criteria.count > 0); // Solo mostrar criterios que tienen evaluaciones
+        }
+
+        function generateJuryObservations(artistId) {
+            const artistVotes = galaData.juryVotes[artistId] || [];
+            
+            // Buscar el mejor y peor criterio
+            const criteriaAverages = calculateCriteriaAverages(artistId);
+            if (criteriaAverages.length === 0) return '<p class="text-gray-500 text-xs">Sin observaciones disponibles</p>';
+            
+            const bestCriteria = criteriaAverages.reduce((prev, curr) => (curr.average > prev.average) ? curr : prev);
+            const worstCriteria = criteriaAverages.reduce((prev, curr) => (curr.average < prev.average) ? curr : prev);
+            
+            return `
+                <div class="space-y-1 text-xs">
+                    <div class="flex items-center text-green-400">
+                        <span class="mr-2">✅</span>
+                        <strong>Fortaleza:</strong> ${bestCriteria.icon} ${bestCriteria.name} (${bestCriteria.average.toFixed(1)}/10)
+                    </div>
+                    ${bestCriteria.id !== worstCriteria.id ? `
+                    <div class="flex items-center text-yellow-400">
+                        <span class="mr-2">⚠️</span>
+                        <strong>A mejorar:</strong> ${worstCriteria.icon} ${worstCriteria.name} (${worstCriteria.average.toFixed(1)}/10)
+                    </div>
+                    ` : ''}
+                    <p class="text-gray-400 mt-2">Promedio general: ${calculateArtistJuryAverage(artistId).toFixed(1)}/10</p>
+                </div>
+            `;
+        }
+
+        function generateDetailedJuryEvaluations(artistId) {
+            const artistVotes = galaData.juryVotes[artistId] || [];
+            
+            return artistVotes.map(vote => {
+                // Ocultar puntuaciones de jurados anónimos/secretos
+                const isAnonymous = vote.isAnonymous || vote.jurorName.toLowerCase().includes('secreto') || vote.jurorName.toLowerCase().includes('anónimo');
+                
+                const jurorDisplay = isAnonymous ? 
+                    `🤐 ${vote.jurorName}` : 
+                    `👨‍⚖️ ${vote.jurorName}`;
+
+                let evaluationContent = '';
+                
+                if (isAnonymous) {
+                    // Solo mostrar comentarios para jurados anónimos
+                    evaluationContent = `
+                        <div class="text-xs text-gray-400 mb-2">
+                            <em>Evaluación anónima - Solo comentarios disponibles</em>
+                        </div>
+                        ${vote.judgeComments || vote.autoFeedback ? `
+                            <div class="bg-blue-900/30 p-3 rounded text-sm">
+                                <p class="text-blue-300 font-medium mb-1">💬 Comentarios:</p>
+                                <p class="text-blue-100">${vote.judgeComments || vote.autoFeedback || 'Sin comentarios'}</p>
+                            </div>
+                        ` : '<p class="text-gray-500 text-xs">Sin comentarios disponibles</p>'}
+                    `;
+                } else {
+                    // Mostrar evaluación completa para jurados no anónimos
+                    evaluationContent = `
+                        <div class="text-xs text-gray-400 mb-2">
+                            Promedio: <span class="text-white font-bold">${(vote.average || 0).toFixed(1)}/10</span> • 
+                            Fecha: ${vote.timestamp ? new Date(vote.timestamp).toLocaleDateString() : 'N/A'}
+                        </div>
+                        ${vote.scores ? `
+                            <div class="grid grid-cols-2 gap-2 text-xs mb-3">
+                                ${Object.entries(vote.scores).map(([criteria, score]) => `
+                                    <div class="flex justify-between">
+                                        <span class="text-gray-400">${criteria.replace(/_/g, ' ')}:</span>
+                                        <span class="text-white font-medium">${score}/10</span>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        ` : ''}
+                        ${vote.judgeComments || vote.autoFeedback ? `
+                            <div class="bg-blue-900/30 p-3 rounded text-sm">
+                                <p class="text-blue-300 font-medium mb-1">💬 Comentarios:</p>
+                                <p class="text-blue-100">${vote.judgeComments || vote.autoFeedback || 'Sin comentarios'}</p>
+                            </div>
+                        ` : ''}
+                    `;
+                }
+
+                return `
+                    <div class="bg-gray-900 p-3 rounded border border-gray-600">
+                        <div class="font-medium text-white mb-2">${jurorDisplay}</div>
+                        ${evaluationContent}
+                    </div>
+                `;
+            }).join('');
                     
                     // Intentar TODAS las formas posibles de coincidencia
                     vote = artistVotes.find(v => {
@@ -1043,41 +1205,6 @@
                             </div>
                         `;
                     }
-                });
-
-                const avgScore = totalVotes > 0 ? (totalScore / totalVotes).toFixed(1) : 'N/A';
-                const typeIcon = juror.type === 'individual' ? '🧑' : '👥';
-                const typeText = juror.type === 'individual' ? 'Jurado Individual' : 'Jurado Grupal';
-
-                juryCard.innerHTML = `
-                    <div class="bg-purple-600/30 p-4 rounded-lg mb-4 border border-purple-400">
-                        <div class="flex justify-between items-center">
-                            <div>
-                                <h4 class="text-2xl font-bold text-purple-200">${typeIcon} ${juror.name}</h4>
-                                <p class="text-purple-300 text-sm">${typeText}</p>
-                            </div>
-                            <div class="text-right">
-                                <p class="text-sm text-purple-300">Promedio General</p>
-                                <p class="text-4xl font-bold text-purple-100">${avgScore}</p>
-                                <p class="text-xs text-purple-400">sobre 10</p>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="space-y-2">
-                        <h5 class="text-lg font-bold text-purple-300 mb-3">📊 Evaluaciones Detalladas:</h5>
-                        ${votesHtml}
-                    </div>
-                    
-                    <div class="bg-purple-600/20 p-4 rounded-lg mt-4 border border-purple-500 text-center">
-                        <p class="text-purple-200">
-                            <strong class="text-white">${totalVotes}</strong> de <strong class="text-white">${galaData.artists.length}</strong> artistas evaluados
-                            ${totalVotes > 0 ? `• Promedio: <strong class="text-purple-100">${avgScore}/10</strong>` : ''}
-                        </p>
-                    </div>
-                `;
-                container.appendChild(juryCard);
-            });
         }
 
         function updateComparison() {
