@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Escáner QR VYT MUSIC - Sistema Final</title>
+    <script src="https://unpkg.com/html5-qrcode@2.3.4/html5-qrcode.min.js"></script>
+    <script src="firebase_config.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: white;
+        }
+
+        .container {
+            margin: 0 auto;
+            padding: 20px;
+            max-width: 500px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 2rem;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .event-info {
+            background: rgba(255,255,255,0.1);
+            padding: 15px;
+            border-radius: 15px;
+            margin-bottom: 20px;
+            backdrop-filter: blur(10px);
+        }
+
+        .scanner-container {
+            background: rgba(255,255,255,0.95);
+            border-radius: 20px;
+            padding: 20px;
+            margin-bottom: 20px;
+            color: #333;
+        }
+
+        #qr-reader {
+            width: 100%;
+            border-radius: 15px;
+            overflow: hidden;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .btn {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 10px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .btn-primary {
+            background: linear-gradient(45deg, #4CAF50, #45a049);
+            color: white;
+        }
+
+        .btn-secondary {
+            background: linear-gradient(45deg, #f44336, #da190b);
+            color: white;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .stats {
+            background: rgba(255,255,255,0.1);
+            padding: 20px;
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+        }
+
+        .stat-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.2);
+        }
+
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+            font-weight: 600;
+        }
+
+        .result.success {
+            background: rgba(76, 175, 80, 0.2);
+            border: 2px solid #4CAF50;
+            color: #4CAF50;
+        }
+
+        .result.error {
+            background: rgba(244, 67, 54, 0.2);
+            border: 2px solid #f44336;
+            color: #f44336;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid rgba(255,255,255,0.3);
+            border-top: 4px solid white;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+
+        .status-online { background: #4CAF50; }
+        .status-offline { background: #f44336; }
+
+        @media (max-width: 480px) {
+            .container {
+                padding: 10px;
+            }
+            
+            .header h1 {
+                font-size: 1.5rem;
+            }
+            
+            .controls {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎵 Escáner QR VYT MUSIC</h1>
+            <p>Sistema de Control de Acceso</p>
+        </div>
+
+        <div class="event-info">
+            <h3 id="event-name">Cargando evento...</h3>
+            <p>👤 <span id="admin-name">Administrador</span></p>
+            <p><span class="status-indicator" id="connection-status"></span>
+               <span id="connection-text">Verificando conexión...</span></p>
+        </div>
+
+        <div class="scanner-container">
+            <div id="qr-reader"></div>
+            <div class="controls">
+                <button id="start-btn" class="btn btn-primary">📷 Iniciar Escáner</button>
+                <button id="stop-btn" class="btn btn-secondary" disabled>⏹️ Detener</button>
+            </div>
+        </div>
+
+        <div id="result-container"></div>
+
+        <div class="stats">
+            <h3>📊 Estadísticas de Sesión</h3>
+            <div class="stat-item">
+                <span>Códigos Escaneados:</span>
+                <span id="scanned-count">0</span>
+            </div>
+            <div class="stat-item">
+                <span>Entradas Válidas:</span>
+                <span id="valid-count">0</span>
+            </div>
+            <div class="stat-item">
+                <span>Rechazados:</span>
+                <span id="rejected-count">0</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class QRScannerFinal {
+            constructor() {
+                this.scanner = null;
+                this.eventId = null;
+                this.eventName = null;
+                this.isScanning = false;
+                this.stats = {
+                    scanned: 0,
+                    valid: 0,
+                    rejected: 0
+                };
+                
+                this.init();
+            }
+
+            async init() {
+                console.log('🚀 Iniciando Escáner QR Final');
+                
+                // Detectar automáticamente si es administrador
+                await this.detectAdmin();
+                
+                // Configurar elementos
+                this.setupElements();
+                
+                // Verificar conexión
+                this.checkConnection();
+                
+                // Iniciar automáticamente si es admin
+                if (this.isAdmin) {
+                    setTimeout(() => this.startScanner(), 1000);
+                }
+            }
+
+            async detectAdmin() {
+                // Método 1: Parámetros URL
+                const urlParams = new URLSearchParams(window.location.search);
+                this.eventId = urlParams.get('eventId');
+                this.eventName = urlParams.get('eventName');
+                const adminParam = urlParams.get('admin');
+                
+                console.log('🔍 Parámetros URL:', { 
+                    eventId: this.eventId, 
+                    eventName: this.eventName, 
+                    admin: adminParam 
+                });
+
+                if (this.eventId && this.eventName && adminParam === 'true') {
+                    this.isAdmin = true;
+                    this.eventName = decodeURIComponent(this.eventName);
+                    console.log('✅ Administrador detectado via URL');
+                    return;
+                }
+
+                // Método 2: Referrer del panel
+                if (document.referrer.includes('panel_evento')) {
+                    this.isAdmin = true;
+                    console.log('✅ Administrador detectado via referrer');
+                    
+                    // Intentar obtener datos del localStorage
+                    this.eventId = localStorage.getItem('currentEvent') || 'demo-event';
+                    this.eventName = localStorage.getItem('currentEventName') || 'Evento Demo';
+                    return;
+                }
+
+                // Método 3: localStorage como fallback
+                const savedAdmin = localStorage.getItem('isVYTAdmin');
+                if (savedAdmin === 'true') {
+                    this.isAdmin = true;
+                    this.eventId = localStorage.getItem('currentEvent') || 'demo-event';
+                    this.eventName = localStorage.getItem('currentEventName') || 'Evento Demo';
+                    console.log('✅ Administrador detectado via localStorage');
+                    return;
+                }
+
+                // Si no es admin, usar datos por defecto
+                this.isAdmin = false;
+                this.eventId = 'public-event';
+                this.eventName = 'Acceso Público';
+                console.log('ℹ️ Acceso público detectado');
+            }
+
+            setupElements() {
+                // Actualizar información del evento
+                document.getElementById('event-name').textContent = this.eventName;
+                document.getElementById('admin-name').textContent = 
+                    this.isAdmin ? 'Administrador del Sistema' : 'Usuario Público';
+
+                // Configurar botones
+                document.getElementById('start-btn').onclick = () => this.startScanner();
+                document.getElementById('stop-btn').onclick = () => this.stopScanner();
+            }
+
+            async checkConnection() {
+                try {
+                    // Verificar conexión con Firebase
+                    const testRef = firebase.firestore().collection('connection_test').doc('test');
+                    await testRef.get();
+                    
+                    this.updateConnectionStatus(true);
+                } catch (error) {
+                    console.warn('⚠️ Sin conexión a Firebase:', error);
+                    this.updateConnectionStatus(false);
+                }
+            }
+
+            updateConnectionStatus(isOnline) {
+                const statusIndicator = document.getElementById('connection-status');
+                const statusText = document.getElementById('connection-text');
+                
+                if (isOnline) {
+                    statusIndicator.className = 'status-indicator status-online';
+                    statusText.textContent = 'En línea - Sincronizando';
+                } else {
+                    statusIndicator.className = 'status-indicator status-offline';
+                    statusText.textContent = 'Sin conexión - Modo offline';
+                }
+            }
+
+            async startScanner() {
+                if (this.isScanning) return;
+
+                try {
+                    console.log('📷 Iniciando escáner...');
+                    this.isScanning = true;
+                    
+                    // Actualizar botones
+                    document.getElementById('start-btn').disabled = true;
+                    document.getElementById('stop-btn').disabled = false;
+
+                    // Configuración del escáner
+                    const config = {
+                        fps: 10,
+                        qrbox: { width: 250, height: 250 },
+                        aspectRatio: 1.0,
+                        supportedScanTypes: [Html5QrcodeScanType.SCAN_TYPE_CAMERA]
+                    };
+
+                    // Inicializar escáner
+                    this.scanner = new Html5Qrcode("qr-reader");
+                    
+                    await this.scanner.start(
+                        { facingMode: "environment" }, // Cámara trasera por defecto
+                        config,
+                        (decodedText, decodedResult) => this.onScanSuccess(decodedText, decodedResult),
+                        (errorMessage) => this.onScanError(errorMessage)
+                    );
+
+                    console.log('✅ Escáner iniciado correctamente');
+                    this.showResult('Escáner activo - Apunta al código QR', 'success');
+
+                } catch (error) {
+                    console.error('❌ Error al iniciar escáner:', error);
+                    this.showResult('Error al acceder a la cámara: ' + error.message, 'error');
+                    this.resetButtons();
+                }
+            }
+
+            async stopScanner() {
+                if (!this.isScanning || !this.scanner) return;
+
+                try {
+                    await this.scanner.stop();
+                    await this.scanner.clear();
+                    this.scanner = null;
+                    this.isScanning = false;
+                    
+                    this.resetButtons();
+                    this.showResult('Escáner detenido', 'success');
+                    console.log('⏹️ Escáner detenido');
+
+                } catch (error) {
+                    console.error('❌ Error al detener escáner:', error);
+                }
+            }
+
+            resetButtons() {
+                document.getElementById('start-btn').disabled = false;
+                document.getElementById('stop-btn').disabled = true;
+            }
+
+            async onScanSuccess(decodedText, decodedResult) {
+                console.log('📱 QR escaneado:', decodedText);
+                
+                // Actualizar estadísticas
+                this.stats.scanned++;
+                this.updateStats();
+
+                try {
+                    // Procesar el código QR
+                    const result = await this.processQRCode(decodedText);
+                    
+                    if (result.success) {
+                        this.stats.valid++;
+                        this.showResult(`✅ ${result.message}`, 'success');
+                    } else {
+                        this.stats.rejected++;
+                        this.showResult(`❌ ${result.message}`, 'error');
+                    }
+
+                } catch (error) {
+                    console.error('❌ Error procesando QR:', error);
+                    this.stats.rejected++;
+                    this.showResult('Error al procesar el código QR', 'error');
+                }
+
+                this.updateStats();
+            }
+
+            onScanError(errorMessage) {
+                // Ignorar errores menores de escaneo
+                if (!errorMessage.includes('NotFoundException')) {
+                    console.warn('⚠️ Error de escaneo:', errorMessage);
+                }
+            }
+
+            async processQRCode(qrData) {
+                // Simulación de procesamiento
+                // Aquí iría la lógica real de validación del QR
+                
+                console.log('🔍 Procesando QR data:', qrData);
+
+                // Ejemplo de validación básica
+                if (qrData.includes('vyt-music') || qrData.includes('ticket-')) {
+                    return {
+                        success: true,
+                        message: 'Entrada válida - Acceso autorizado'
+                    };
+                } else {
+                    return {
+                        success: false,
+                        message: 'Código QR no válido'
+                    };
+                }
+            }
+
+            showResult(message, type) {
+                const container = document.getElementById('result-container');
+                container.innerHTML = `<div class="result ${type}">${message}</div>`;
+                
+                // Auto-limpiar después de 3 segundos
+                setTimeout(() => {
+                    container.innerHTML = '';
+                }, 3000);
+            }
+
+            updateStats() {
+                document.getElementById('scanned-count').textContent = this.stats.scanned;
+                document.getElementById('valid-count').textContent = this.stats.valid;
+                document.getElementById('rejected-count').textContent = this.stats.rejected;
+            }
+        }
+
+        // Iniciar cuando se carga la página
+        document.addEventListener('DOMContentLoaded', () => {
+            new QRScannerFinal();
+        });
+    </script>
+</body>
+</html>
