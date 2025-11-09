@@ -46,6 +46,18 @@
             </div>
 
             <p id="event-name-display" class="text-2xl text-gray-300 mb-4"></p>
+            
+            <!-- Mensaje especial para artistas -->
+            <div id="artist-welcome-message" class="hidden bg-gradient-to-r from-purple-800 to-blue-800 p-6 rounded-lg mb-6 border border-purple-400">
+                <h2 class="text-2xl font-bold text-purple-200 mb-2">🎭 ¡Hola Artistas!</h2>
+                <p class="text-purple-100 mb-2">
+                    Aquí pueden ver las evaluaciones profesionales de los jurados. Esta información es muy valiosa para su crecimiento artístico.
+                </p>
+                <p class="text-purple-200 font-semibold">
+                    💡 <strong>Consejo:</strong> Presten especial atención a los comentarios y sugerencias para mejorar en futuras presentaciones.
+                </p>
+            </div>
+            
             <div id="report-actions" class="no-print flex flex-wrap justify-center gap-4 hidden">
                 <button id="export-pdf-btn" class="px-6 py-3 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700 transition-colors">📄 Exportar PDF</button>
                 <button id="export-excel-btn" class="px-6 py-3 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700 transition-colors">📈 Exportar Excel</button>
@@ -457,7 +469,53 @@
                     console.log(`👨‍🎤 Artista ${artistId}:`, galaData.juryVotes[artistId]);
                 });
 
-                // 🆕 BÚSQUEDA ADICIONAL EN JURY_VOTES
+                // 🆕 BÚSQUEDA ADICIONAL EN JURY_EVALUATIONS (PRINCIPAL)
+                console.log('🔍 Buscando primero en jury_evaluations...');
+                
+                try {
+                    const juryEvaluationsQuery = query(
+                        collection(db, `events/${eventId}/jury_evaluations`)
+                    );
+                    const juryEvaluationsSnapshot = await getDocs(juryEvaluationsQuery);
+                    
+                    console.log('📊 Jury evaluations encontradas:', juryEvaluationsSnapshot.docs.length);
+                    
+                    juryEvaluationsSnapshot.docs.forEach(voteDoc => {
+                        const voteData = voteDoc.data();
+                        const artistId = voteData.artistId;
+                        const jurorName = voteData.jurorName || voteData.jurorId || 'Jurado Anónimo';
+                        const score = voteData.score || voteData.average || 0;
+                        
+                        console.log(`🗳️ Jury Evaluation: Artista=${voteData.artistName}, Jurado="${jurorName}", Puntuación=${score}`);
+                        
+                        if (artistId) {
+                            if (!galaData.juryVotes[artistId]) {
+                                galaData.juryVotes[artistId] = [];
+                            }
+                            
+                            // Evitar duplicados
+                            const existingVote = galaData.juryVotes[artistId].find(v => v.jurorName === jurorName);
+                            if (!existingVote) {
+                                galaData.juryVotes[artistId].push({
+                                    jurorName: jurorName,
+                                    jurorType: voteData.jurorType || 'individual',
+                                    jurorTypeLabel: voteData.jurorTypeLabel || 'Jurado',
+                                    isAnonymous: voteData.isAnonymous || false,
+                                    scores: voteData.scores || {},
+                                    score: score,
+                                    comments: voteData.judgeComments || voteData.autoFeedback || voteData.additionalNotes || '',
+                                    autoFeedback: voteData.autoFeedback || '',
+                                    timestamp: voteData.timestamp || new Date().toISOString()
+                                });
+                                console.log(`✅ Evaluación agregada: ${jurorName} → ${voteData.artistName}`);
+                            }
+                        }
+                    });
+                } catch (juryEvaluationsError) {
+                    console.log('⚠️ No se pudo cargar jury_evaluations:', juryEvaluationsError.message);
+                }
+                
+                // 🆕 BÚSQUEDA ADICIONAL EN JURY_VOTES (BACKUP)
                 console.log('🔍 Buscando también en jury_votes...');
                 
                 try {
@@ -903,19 +961,70 @@
                     if (vote) {
                         totalVotes++;
                         totalScore += parseFloat(vote.score || 0);
+                        
+                        // Generar evaluaciones por criterio si están disponibles
+                        let criteriaHtml = '';
+                        if (vote.scores && Object.keys(vote.scores).length > 0) {
+                            const criteria = [
+                                { id: 'vocals', name: '🎤 Canto', icon: '🎤' },
+                                { id: 'transmission', name: '📡 Transmisión', icon: '📡' },
+                                { id: 'attitude', name: '😊 Actitud', icon: '😊' },
+                                { id: 'originality', name: '💡 Originalidad', icon: '💡' },
+                                { id: 'outfit', name: '👔 Vestuario', icon: '👔' },
+                                { id: 'performance', name: '🎭 Puesta en Escena', icon: '🎭' }
+                            ];
+                            
+                            criteriaHtml = '<div class="grid grid-cols-2 gap-2 mt-3 mb-3">';
+                            criteria.forEach(criterion => {
+                                const score = vote.scores[criterion.id];
+                                if (score !== undefined) {
+                                    const colorClass = score >= 8 ? 'text-green-400' : score >= 6 ? 'text-yellow-400' : 'text-orange-400';
+                                    criteriaHtml += `
+                                        <div class="bg-gray-800/50 p-2 rounded text-center">
+                                            <div class="text-xs text-gray-300">${criterion.name}</div>
+                                            <div class="text-lg font-bold ${colorClass}">${score}/10</div>
+                                        </div>
+                                    `;
+                                }
+                            });
+                            criteriaHtml += '</div>';
+                        }
+                        
+                        // No mostrar puntuaciones si es jurado anónimo/secreto
+                        const isAnonymous = vote.isAnonymous || vote.jurorName?.toLowerCase().includes('secreto') || vote.jurorName?.toLowerCase().includes('anónimo');
+                        const showScores = !isAnonymous;
+                        
                         votesHtml += `
                             <div class="bg-purple-700/50 p-4 rounded-lg border border-purple-400 mb-3">
                                 <div class="flex justify-between items-center mb-2">
                                     <span class="font-bold text-lg text-white">${artist.name}</span>
-                                    <div class="text-right">
-                                        <span class="text-3xl font-bold text-green-400">${vote.score}/10</span>
-                                        <p class="text-xs text-green-300">Puntuación</p>
-                                    </div>
+                                    ${showScores ? `
+                                        <div class="text-right">
+                                            <span class="text-3xl font-bold text-green-400">${vote.score}/10</span>
+                                            <p class="text-xs text-green-300">Promedio</p>
+                                        </div>
+                                    ` : `
+                                        <div class="text-right">
+                                            <span class="text-lg font-bold text-purple-300">Evaluado</span>
+                                            <p class="text-xs text-purple-300">Sin mostrar puntos</p>
+                                        </div>
+                                    `}
                                 </div>
-                                ${vote.comments ? `
+                                
+                                ${showScores && criteriaHtml ? criteriaHtml : ''}
+                                
+                                ${vote.comments || vote.autoFeedback ? `
                                     <div class="bg-gray-800/50 p-3 rounded-lg mt-2 border-l-4 border-purple-400">
-                                        <p class="text-sm text-gray-300 italic">"${vote.comments}"</p>
-                                        <p class="text-xs text-purple-300 mt-1">💬 Comentario del jurado</p>
+                                        ${vote.comments ? `
+                                            <p class="text-sm text-gray-300 italic mb-2">"${vote.comments}"</p>
+                                            <p class="text-xs text-purple-300 mb-2">💬 Comentario del jurado</p>
+                                        ` : ''}
+                                        ${vote.autoFeedback ? `
+                                            <div class="bg-blue-900/30 p-2 rounded mt-2">
+                                                <p class="text-xs text-blue-300 mb-1">🤖 Feedback generado:</p>
+                                                <p class="text-sm text-blue-200">${vote.autoFeedback}</p>
+                                            </div>
+                                        ` : ''}
                                     </div>
                                 ` : `
                                     <div class="bg-gray-800/30 p-2 rounded-lg mt-2">
@@ -1101,6 +1210,83 @@
             window.URL.revokeObjectURL(url);
         }
 
+        // Detectar si se viene del link para artistas
+        function checkArtistAccess() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const source = urlParams.get('source');
+            const evento = urlParams.get('evento');
+            
+            if (source === 'artistas') {
+                console.log('🎭 Acceso desde link de artistas detectado');
+                
+                // Mostrar mensaje de bienvenida para artistas
+                const welcomeMessage = document.getElementById('artist-welcome-message');
+                if (welcomeMessage) {
+                    welcomeMessage.classList.remove('hidden');
+                }
+                
+                // Auto-seleccionar el evento si viene en la URL
+                if (evento) {
+                    const galaSelector = document.getElementById('gala-selector');
+                    if (galaSelector) {
+                        // Crear option temporal y cargarlo
+                        const option = document.createElement('option');
+                        option.value = evento;
+                        option.textContent = evento;
+                        option.selected = true;
+                        galaSelector.appendChild(option);
+                        
+                        // Habilitar botón de carga
+                        const loadBtn = document.getElementById('load-gala-btn');
+                        if (loadBtn) {
+                            loadBtn.disabled = false;
+                            
+                            // Auto-cargar después de un breve delay
+                            setTimeout(() => {
+                                loadBtn.click();
+                            }, 1000);
+                        }
+                    }
+                }
+                
+                // Agregar mensaje explicativo sobre las puntuaciones ocultas
+                const jurySection = document.getElementById('jury-analysis-section');
+                if (jurySection) {
+                    // Crear un observer para cuando la sección se llene
+                    const observer = new MutationObserver((mutations) => {
+                        mutations.forEach((mutation) => {
+                            if (mutation.type === 'childList' && mutation.target.id === 'jury-analysis-container') {
+                                const container = mutation.target;
+                                if (container.children.length > 0) {
+                                    // Agregar nota sobre jurados anónimos
+                                    const note = document.createElement('div');
+                                    note.className = 'bg-yellow-900/30 p-4 rounded-lg border border-yellow-500 mb-4';
+                                    note.innerHTML = `
+                                        <h4 class="text-yellow-300 font-bold mb-2">ℹ️ Información importante:</h4>
+                                        <p class="text-yellow-200 text-sm">
+                                            • Las puntuaciones del <strong>Jurado Secreto/Anónimo</strong> no se muestran, solo sus comentarios.<br>
+                                            • Todos los demás jurados muestran puntuaciones y comentarios completos.<br>
+                                            • Esta información es para ayudarlos a mejorar en futuras presentaciones.
+                                        </p>
+                                    `;
+                                    container.insertBefore(note, container.firstChild);
+                                    observer.disconnect(); // Dejar de observar
+                                }
+                            }
+                        });
+                    });
+                    
+                    const juryContainer = document.getElementById('jury-analysis-container');
+                    if (juryContainer) {
+                        observer.observe(juryContainer, { childList: true });
+                    }
+                }
+            }
+        }
+
+        // Ejecutar verificación al cargar
+        checkArtistAccess();
+        
         // Cargar datos al iniciar
         loadGalaData();
     </script>
