@@ -925,24 +925,30 @@
                             <p class="text-sm text-gray-400">${totalJuryVotes} jurado(s) evaluaron • Posición: #${index + 1}</p>
                         </div>
                         <div class="text-right">
-                            <p class="text-xl font-bold text-green-400">${overallAverage.toFixed(1)}/10</p>
+                            <p class="text-xl font-bold text-green-400">${Math.min(overallAverage, 10).toFixed(1)}/10</p>
                             <p class="text-xs text-gray-400">Promedio General</p>
                         </div>
                     </div>
                     
                     <!-- BARRAS DE PROGRESO POR CRITERIO -->
                     <div class="space-y-2 mb-4">
-                        ${criteriaAverages.map(criteria => `
+                        ${criteriaAverages.map(criteria => {
+                            // 🛡️ LÍMITE DE SEGURIDAD: Máximo 10 puntos
+                            const safeAverage = Math.min(criteria.average, 10);
+                            const percentage = Math.min((safeAverage / 10) * 100, 100);
+                            
+                            return `
                             <div class="flex items-center justify-between">
                                 <span class="text-sm text-gray-300 w-32">${criteria.icon} ${criteria.name}</span>
                                 <div class="flex-1 mx-3">
                                     <div class="w-full bg-gray-700 rounded-full h-2">
-                                        <div class="${criteria.color} h-2 rounded-full transition-all" style="width: ${(criteria.average / 10) * 100}%"></div>
+                                        <div class="${criteria.color} h-2 rounded-full transition-all" style="width: ${percentage}%"></div>
                                     </div>
                                 </div>
-                                <span class="text-sm font-bold text-white w-12 text-right">${criteria.average.toFixed(1)}/10</span>
+                                <span class="text-sm font-bold text-white w-12 text-right">${safeAverage.toFixed(1)}/10</span>
                             </div>
-                        `).join('')}
+                            `;
+                        }).join('')}
                     </div>
 
                     <!-- OBSERVACIONES DE LOS JURADOS -->
@@ -979,34 +985,71 @@
         function calculateCriteriaAverages(artistId) {
             const artistVotes = galaData.juryVotes[artistId] || [];
             
-            // Definir criterios con iconos y colores
-            const criteriaDefinitions = [
-                { id: 'vestuario_presentacion', name: 'Vestuario y Presentación', icon: '👗', color: 'bg-pink-500' },
-                { id: 'puntualidad_profesionalismo', name: 'Puntualidad y Profesionalismo', icon: '⭐', color: 'bg-yellow-500' },
-                { id: 'tecnica_vocal', name: 'Técnica Vocal', icon: '🎤', color: 'bg-blue-500' },
-                { id: 'interpretacion', name: 'Interpretación', icon: '🎭', color: 'bg-purple-500' },
-                { id: 'presencia_escenica', name: 'Presencia Escénica', icon: '✨', color: 'bg-green-500' },
-                { id: 'conexion_publico', name: 'Conexión con Público', icon: '❤️', color: 'bg-red-500' },
-                { id: 'originalidad_creatividad', name: 'Originalidad y Creatividad', icon: '💡', color: 'bg-indigo-500' },
-                { id: 'calidad_general', name: 'Calidad General', icon: '🏆', color: 'bg-orange-500' }
-            ];
+            // 🔍 DEBUG: Ver qué datos tenemos
+            console.log(`🧮 Calculando promedios para artista ${artistId}:`, artistVotes);
+            if (artistVotes.length > 0) {
+                console.log('📊 Ejemplo de voto:', artistVotes[0]);
+                console.log('🎯 Scores disponibles:', artistVotes[0]?.scores);
+                console.log('🔑 Keys de scores:', Object.keys(artistVotes[0]?.scores || {}));
+            }
+            
+            // Detectar automáticamente los criterios desde los datos reales
+            const allCriteriaIds = new Set();
+            artistVotes.forEach(vote => {
+                if (vote.scores) {
+                    Object.keys(vote.scores).forEach(criteriaId => {
+                        allCriteriaIds.add(criteriaId);
+                    });
+                }
+            });
+            
+            console.log('🎭 Criterios detectados:', Array.from(allCriteriaIds));
+            
+            // Mapeo de criterios con iconos y colores
+            const criteriaMapping = {
+                'vestuario_presentacion': { name: 'Vestuario y Presentación', icon: '👗', color: 'bg-pink-500' },
+                'puntualidad_profesionalismo': { name: 'Puntualidad y Profesionalismo', icon: '⭐', color: 'bg-yellow-500' },
+                'tecnica_vocal': { name: 'Técnica Vocal', icon: '🎤', color: 'bg-blue-500' },
+                'interpretacion': { name: 'Interpretación', icon: '🎭', color: 'bg-purple-500' },
+                'presencia_escenica': { name: 'Presencia Escénica', icon: '✨', color: 'bg-green-500' },
+                'conexion_publico': { name: 'Conexión con Público', icon: '❤️', color: 'bg-red-500' },
+                'originalidad_creatividad': { name: 'Originalidad y Creatividad', icon: '💡', color: 'bg-indigo-500' },
+                'calidad_general': { name: 'Calidad General', icon: '🏆', color: 'bg-orange-500' },
+                // Mapeos adicionales para diferentes nombres de criterios
+                'canto': { name: 'Canto', icon: '🎤', color: 'bg-blue-500' },
+                'transmision': { name: 'Transmisión', icon: '📡', color: 'bg-green-500' },
+                'actitud': { name: 'Actitud', icon: '😊', color: 'bg-yellow-500' },
+                'originalidad': { name: 'Originalidad', icon: '💡', color: 'bg-purple-500' },
+                'vestuario': { name: 'Vestuario', icon: '👗', color: 'bg-pink-500' },
+                'puesta_escena': { name: 'Puesta en Escena', icon: '🎭', color: 'bg-orange-500' }
+            };
 
-            return criteriaDefinitions.map(criteria => {
+            return Array.from(allCriteriaIds).map(criteriaId => {
                 const scores = [];
                 artistVotes.forEach(vote => {
-                    if (vote.scores && vote.scores[criteria.id] !== undefined) {
-                        scores.push(vote.scores[criteria.id]);
+                    if (vote.scores && vote.scores[criteriaId] !== undefined) {
+                        const score = vote.scores[criteriaId];
+                        scores.push(score);
+                        console.log(`📊 ${criteriaId}: ${score}`);
                     }
                 });
                 
                 const average = scores.length > 0 ? scores.reduce((sum, score) => sum + score, 0) / scores.length : 0;
+                const criteriaInfo = criteriaMapping[criteriaId] || { 
+                    name: criteriaId.replace(/_/g, ' '), 
+                    icon: '📊', 
+                    color: 'bg-gray-500' 
+                };
+                
+                console.log(`✅ ${criteriaId}: promedio ${average.toFixed(2)} de ${scores.length} votos`);
                 
                 return {
-                    ...criteria,
+                    id: criteriaId,
+                    ...criteriaInfo,
                     average: average,
                     count: scores.length
                 };
-            }).filter(criteria => criteria.count > 0); // Solo mostrar criterios que tienen evaluaciones
+            }).filter(criteria => criteria.count > 0);
         }
 
         function generateJuryObservations(artistId) {
@@ -1031,7 +1074,7 @@
                         <strong>A mejorar:</strong> ${worstCriteria.icon} ${worstCriteria.name} (${worstCriteria.average.toFixed(1)}/10)
                     </div>
                     ` : ''}
-                    <p class="text-gray-400 mt-2">Promedio general: ${calculateArtistJuryAverage(artistId).toFixed(1)}/10</p>
+                    <p class="text-gray-400 mt-2">Promedio general: ${Math.min(calculateArtistJuryAverage(artistId), 10).toFixed(1)}/10</p>
                 </div>
             `;
         }
