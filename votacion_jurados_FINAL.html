@@ -1261,6 +1261,14 @@ Formato de respuesta:
                                 </div>
                             </div>
                         ` : `
+                            <!-- PANEL DE OTROS JURADOS PARA ESTE ARTISTA -->
+                            <div class="bg-orange-800 bg-opacity-30 p-4 rounded-lg border border-orange-500 mb-6">
+                                <h4 class="text-orange-300 font-bold mb-3">👥 ¿Qué hicieron otros jurados con este artista?</h4>
+                                <div id="other-jurors-${artist.id}" class="space-y-2">
+                                    <p class="text-center text-gray-400">Cargando actividad de otros jurados...</p>
+                                </div>
+                            </div>
+                            
                             <!-- FORMULARIO DE VOTACIÓN CON SLIDERS -->
                             <div class="space-y-6">
                                 ${CRITERIA.map(criteria => {
@@ -2310,6 +2318,89 @@ Formato de respuesta:
             return allJuryVotes.get(artistId)?.length || 0;
         };
         
+        // === TRANSPARENCIA ENTRE JURADOS ===
+        async function updateOtherJurorsActivity(artistId) {
+            const container = document.getElementById(`other-jurors-${artistId}`);
+            if (!container) return;
+            
+            try {
+                // Buscar votos de ESTE artista específico
+                const collections = [
+                    'jury_evaluations',
+                    `events/${eventId}/jury_evaluations`, 
+                    `events/${eventId}/jury_votes`
+                ];
+                
+                let votesForThisArtist = [];
+                
+                for (const collectionPath of collections) {
+                    try {
+                        const q = query(
+                            collection(db, collectionPath),
+                            where('eventId', '==', eventId),
+                            where('artistId', '==', artistId)
+                        );
+                        const snapshot = await getDocs(q);
+                        
+                        snapshot.docs.forEach(doc => {
+                            const voteData = doc.data();
+                            if (voteData.jurorName !== currentJuror?.name) { // Excluir mi propio voto
+                                votesForThisArtist.push(voteData);
+                            }
+                        });
+                    } catch (error) {
+                        console.warn(`Error buscando en ${collectionPath}:`, error);
+                    }
+                }
+                
+                // Mostrar información de otros jurados
+                if (votesForThisArtist.length === 0) {
+                    container.innerHTML = `
+                        <div class="text-center text-gray-400">
+                            <p>🤔 Ningún otro jurado ha votado este artista aún</p>
+                            <p class="text-xs mt-1">Serás el primero en evaluarlo</p>
+                        </div>
+                    `;
+                } else {
+                    let html = '';
+                    votesForThisArtist.forEach(vote => {
+                        const totalScore = vote.totalScore || calculateScoreFromCriteria(vote.scores);
+                        const timeAgo = vote.timestamp ? getTimeAgo(new Date(vote.timestamp)) : 'Tiempo desconocido';
+                        
+                        html += `
+                            <div class="flex justify-between items-center p-3 bg-blue-800 bg-opacity-50 rounded">
+                                <div>
+                                    <div class="font-bold text-blue-300">${vote.jurorName}</div>
+                                    <div class="text-xs text-gray-400">${timeAgo}</div>
+                                    ${vote.judgeComments ? `<div class="text-xs text-yellow-300 mt-1">"${vote.judgeComments}"</div>` : ''}
+                                </div>
+                                <div class="text-right">
+                                    <div class="text-2xl font-bold text-green-300">${totalScore.toFixed(1)} pts</div>
+                                    <div class="text-xs text-gray-400">Su evaluación</div>
+                                </div>
+                            </div>
+                        `;
+                    });
+                    
+                    container.innerHTML = html;
+                }
+                
+            } catch (error) {
+                console.error('Error actualizando actividad de otros jurados:', error);
+                container.innerHTML = `
+                    <div class="text-center text-red-400">
+                        <p>❌ Error cargando actividad de otros jurados</p>
+                    </div>
+                `;
+            }
+        }
+        
+        function calculateScoreFromCriteria(scores) {
+            if (!scores) return 0;
+            const values = Object.values(scores);
+            return values.reduce((sum, score) => sum + score, 0) / values.length;
+        }
+        
         // === FUNCIONES DE DEBUG ===
         let debugStats = {
             eventId: '',
@@ -2695,6 +2786,11 @@ Formato de respuesta:
             document.getElementById('modal-song-performed').value = existingData.songPerformed || '';
             document.getElementById('modal-judge-comments').value = existingData.judgeComments || '';
             document.getElementById('modal-additional-notes').value = existingData.additionalNotes || '';
+            
+            // === ACTUALIZAR ACTIVIDAD DE OTROS JURADOS ===
+            setTimeout(() => {
+                updateOtherJurorsActivity(artist.id);
+            }, 500);
             
             // Renderizar categorías
             renderModalCategories(artist);
