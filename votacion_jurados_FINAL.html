@@ -258,6 +258,21 @@
                         <!-- PANEL DE ACTIVIDAD DE JURADOS EN TIEMPO REAL -->
                         <div id="jury-activity-panel" class="bg-purple-800 bg-opacity-30 p-4 rounded-lg border border-purple-500 mt-3">
                             <h3 class="text-lg font-bold text-purple-300 mb-3">👥 Actividad de Jurados en Tiempo Real</h3>
+                            
+                            <!-- PANEL DE DEBUG -->
+                            <div id="debug-panel" class="bg-red-800 bg-opacity-30 p-3 rounded mb-3 border border-red-500">
+                                <h4 class="text-red-300 font-bold mb-2">🔍 DEBUG - Info de Búsqueda</h4>
+                                <div id="debug-info" class="text-xs text-red-200">
+                                    <p>EventId: <span id="debug-eventid">Cargando...</span></p>
+                                    <p>Colecciones buscadas: <span id="debug-collections">0</span></p>
+                                    <p>Documentos encontrados: <span id="debug-docs">0</span></p>
+                                    <p>Jurados únicos: <span id="debug-jurors">0</span></p>
+                                </div>
+                                <button onclick="forceRefreshDebug()" class="mt-2 px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-xs rounded">
+                                    🔄 FORZAR BÚSQUEDA
+                                </button>
+                            </div>
+                            
                             <div id="jury-activity-list" class="space-y-2 mb-3">
                                 <p class="text-center text-gray-400">Cargando actividad de jurados...</p>
                             </div>
@@ -1987,6 +2002,10 @@ Formato de respuesta:
         function processRealtimeSnapshot(snapshot, collectionPath) {
             console.log(`📊 [${collectionPath}] Procesando ${snapshot.size} documentos...`);
             
+            // Actualizar stats de debug
+            debugStats.docs += snapshot.size;
+            debugStats.collections++;
+            
             // Procesar todos los votos de esta colección
             snapshot.docs.forEach(doc => {
                 const voteData = doc.data();
@@ -2011,6 +2030,10 @@ Formato de respuesta:
                         ...voteData,
                         source: collectionPath
                     });
+                    
+                    // Rastrear jurados para debug
+                    if (voteData.jurorName) debugStats.jurors.add(voteData.jurorName);
+                    if (voteData.userName) debugStats.jurors.add(voteData.userName);
                 }
             });
             
@@ -2088,11 +2111,13 @@ Formato de respuesta:
             // Actualizar interfaz
             updateJuryActivityDisplay(juryActivity);
             updateRealtimeAveragesDisplay();
+            updateDebugInfo();
             
             console.log('✅ Recálculo completado:');
             console.log('📊 Promedios por artista:', Object.fromEntries(realTimeAverages));
             console.log('👥 Jurados activos:', juryActivity.size);
             console.log('👥 Detalle de jurados:', Object.fromEntries(juryActivity));
+            console.log('🔍 Debug stats:', debugStats);
             
             isProcessing = false;
         }
@@ -2229,6 +2254,69 @@ Formato de respuesta:
         // Función para obtener número de jurados que han votado
         window.getJuryCount = function(artistId) {
             return allJuryVotes.get(artistId)?.length || 0;
+        };
+        
+        // === FUNCIONES DE DEBUG ===
+        let debugStats = {
+            eventId: '',
+            collections: 0,
+            docs: 0,
+            jurors: new Set()
+        };
+        
+        function updateDebugInfo() {
+            document.getElementById('debug-eventid').textContent = eventId || 'No definido';
+            document.getElementById('debug-collections').textContent = debugStats.collections;
+            document.getElementById('debug-docs').textContent = debugStats.docs;
+            document.getElementById('debug-jurors').textContent = debugStats.jurors.size;
+        }
+        
+        window.forceRefreshDebug = async function() {
+            console.log('🔍 FORZANDO BÚSQUEDA MANUAL DE JURADOS...');
+            debugStats = {
+                eventId: eventId,
+                collections: 0,
+                docs: 0,
+                jurors: new Set()
+            };
+            
+            const collections = [
+                'jury_evaluations',
+                'jury_users',
+                `events/${eventId}/jury_evaluations`, 
+                `events/${eventId}/jury_votes`,
+                `events/${eventId}/votes`
+            ];
+            
+            for (const collectionPath of collections) {
+                debugStats.collections++;
+                console.log(`🔍 Buscando en: ${collectionPath}`);
+                
+                try {
+                    const snapshot = await getDocs(collection(db, collectionPath));
+                    console.log(`📊 [${collectionPath}] Encontrados: ${snapshot.size} documentos`);
+                    debugStats.docs += snapshot.size;
+                    
+                    snapshot.docs.forEach(doc => {
+                        const data = doc.data();
+                        console.log(`📝 [${collectionPath}] Doc:`, {
+                            id: doc.id,
+                            jurorName: data.jurorName || data.name,
+                            eventId: data.eventId,
+                            artistId: data.artistId
+                        });
+                        
+                        if (data.jurorName) debugStats.jurors.add(data.jurorName);
+                        if (data.name) debugStats.jurors.add(data.name);
+                    });
+                    
+                } catch (error) {
+                    console.warn(`⚠️ Error en ${collectionPath}:`, error.message);
+                }
+            }
+            
+            updateDebugInfo();
+            console.log('✅ Búsqueda manual completada:', debugStats);
         };
         
         // Control de visualización de promedios en tiempo real
@@ -3481,6 +3569,8 @@ Formato de respuesta:
         // === CONFIGURAR SISTEMA DE TIEMPO REAL ===
         try {
             setTimeout(() => {
+                debugStats.eventId = eventId;
+                updateDebugInfo();
                 setupRealtimeVotingListener();
                 initializeRealtimeButton();
                 console.log('✅ Sistema de cálculo en tiempo real inicializado');
