@@ -418,13 +418,17 @@
                 if (this.eventId && this.eventName && adminParam === 'true') {
                     this.eventName = decodeURIComponent(this.eventName);
                     this.assistantName = 'Administrador';
+                    console.log('✅ Configuración desde panel - EventId:', this.eventId);
                     return;
                 }
 
-                // Fallbacks
-                this.eventId = localStorage.getItem('currentEvent') || 'gala-2025';
-                this.eventName = localStorage.getItem('currentEventName') || 'Gala VYT Music 2025';
+                // Fallbacks - usar los mismos valores que el panel
+                this.eventId = localStorage.getItem('currentEvent') || 'G12VYTMUSIC';
+                this.eventName = localStorage.getItem('currentEventName') || 'GALA 1 CON PUNTUACIÓN. G12 VYTMUSIC';
                 this.assistantName = 'Escáner de Entradas';
+                
+                console.log('⚠️ Usando fallback - EventId:', this.eventId);
+                console.log('📋 Event Name:', this.eventName);
             }
 
             async initFirebase() {
@@ -480,53 +484,61 @@
             }
 
             async loadGalaEntries() {
-                console.log('📥 Cargando entradas de la gala...');
+                console.log('📥 Cargando entradas REALES de la gala...');
+                console.log('🎯 EventId:', this.eventId);
                 
                 try {
                     this.galaEntries = [];
                     
                     if (this.isOnline && this.db) {
-                        // Cargar desde Firebase - entradas reales de la gala
-                        const artistsSnapshot = await this.db
-                            .collection('artistas')
-                            .where('eventoId', '==', this.eventId)
+                        // Cargar desde Firebase - ESTRUCTURA REAL DEL SISTEMA
+                        console.log('🔍 Consultando tickets reales:', `events/${this.eventId}/tickets`);
+                        
+                        const ticketsSnapshot = await this.db
+                            .collection('events')
+                            .doc(this.eventId)
+                            .collection('tickets')
                             .get();
 
-                        for (const artistDoc of artistsSnapshot.docs) {
-                            const artistData = artistDoc.data();
-                            console.log(`🎤 Cargando entradas para: ${artistData.nombre}`);
+                        console.log(`📊 Encontrados ${ticketsSnapshot.size} tickets en Firebase`);
 
-                            // Cargar entradas de este artista
-                            const entriesSnapshot = await this.db
-                                .collection('entradas')
-                                .where('artistaId', '==', artistDoc.id)
-                                .where('eventoId', '==', this.eventId)
-                                .get();
-
-                            entriesSnapshot.forEach(entryDoc => {
-                                const entryData = entryDoc.data();
-                                this.galaEntries.push({
-                                    id: entryDoc.id,
-                                    ...entryData,
-                                    artistName: artistData.nombre,
-                                    artistImage: artistData.imagen || '',
-                                    status: entryData.hasEntered ? 'entered' : 'pending'
-                                });
+                        ticketsSnapshot.forEach(ticketDoc => {
+                            const ticketData = ticketDoc.data();
+                            console.log('🎫 Ticket encontrado:', {
+                                id: ticketDoc.id,
+                                guestName: ticketData.guestName,
+                                artistName: ticketData.artistName || ticketData.artist,
+                                used: ticketData.used,
+                                qrCode: ticketData.qrCode
                             });
-                        }
+
+                            this.galaEntries.push({
+                                id: ticketDoc.id,
+                                guestName: ticketData.guestName || ticketData.name || 'Sin nombre',
+                                phone: ticketData.phone || ticketData.telefono || '',
+                                artistName: ticketData.artistName || ticketData.artist || 'Sin artista',
+                                qrCode: ticketData.qrCode || ticketData.code || ticketDoc.id,
+                                status: ticketData.used ? 'entered' : 'pending',
+                                accessTime: ticketData.accessTime || ticketData.usedAt,
+                                createdAt: ticketData.createdAt || ticketData.timestamp || new Date().toISOString(),
+                                price: ticketData.price || 0,
+                                seller: ticketData.seller || ticketData.createdBy || 'Sistema'
+                            });
+                        });
+
+                        console.log(`✅ Cargadas ${this.galaEntries.length} entradas REALES`);
                     } else {
-                        // Datos de ejemplo para pruebas offline
+                        console.log('❌ Sin conexión - usando datos de ejemplo');
                         this.galaEntries = this.createSampleEntries();
                     }
                     
-                    console.log(`📋 Cargadas ${this.galaEntries.length} entradas`);
                     this.filteredEntries = [...this.galaEntries];
                     this.updateStats();
                     this.displayEntries();
                     
                 } catch (error) {
-                    console.error('❌ Error cargando entradas:', error);
-                    // Usar datos de ejemplo en caso de error
+                    console.error('❌ Error cargando entradas reales:', error);
+                    console.log('🔄 Intentando con datos de ejemplo...');
                     this.galaEntries = this.createSampleEntries();
                     this.filteredEntries = [...this.galaEntries];
                     this.updateStats();
@@ -627,27 +639,48 @@
 
             async onScanSuccess(decodedText) {
                 console.log('📱 QR escaneado:', decodedText);
+                console.log('🔍 Buscando en', this.galaEntries.length, 'entradas reales...');
                 
                 try {
-                    const entry = this.galaEntries.find(e => 
-                        e.qrCode === decodedText || 
-                        e.id === decodedText ||
-                        e.ticketId === decodedText
-                    );
+                    // Buscar con múltiples criterios para mayor compatibilidad
+                    const entry = this.galaEntries.find(e => {
+                        const matches = [
+                            e.qrCode === decodedText,
+                            e.id === decodedText,
+                            e.ticketId === decodedText,
+                            // Búsqueda parcial para códigos que contengan el texto
+                            decodedText.includes(e.id),
+                            e.qrCode && decodedText.includes(e.qrCode)
+                        ];
+                        return matches.some(match => match);
+                    });
+
+                    console.log('🎫 Entrada encontrada:', entry ? {
+                        id: entry.id,
+                        name: entry.guestName,
+                        artist: entry.artistName,
+                        status: entry.status
+                    } : 'NO ENCONTRADA');
 
                     if (!entry) {
-                        this.showScanResult('❌ Código QR no encontrado', 'error');
+                        this.showScanResult(`❌ Código QR no encontrado en las ${this.galaEntries.length} entradas`, 'error');
+                        console.log('🔍 Código buscado:', decodedText);
+                        console.log('📋 Primeras 3 entradas disponibles:', this.galaEntries.slice(0, 3).map(e => ({
+                            id: e.id,
+                            qrCode: e.qrCode,
+                            name: e.guestName
+                        })));
                         return;
                     }
 
                     if (entry.status === 'entered') {
-                        this.showScanResult(`❌ ${entry.guestName} ya ingresó`, 'error');
+                        this.showScanResult(`❌ ${entry.guestName} ya ingresó anteriormente`, 'error');
                         return;
                     }
 
                     // Registrar acceso
                     await this.recordAccess(entry);
-                    this.showScanResult(`✅ Acceso autorizado: ${entry.guestName} (${entry.artistName})`, 'success');
+                    this.showScanResult(`✅ ACCESO AUTORIZADO: ${entry.guestName} (${entry.artistName})`, 'success');
 
                 } catch (error) {
                     console.error('❌ Error procesando QR:', error);
@@ -669,27 +702,38 @@
                 entry.status = 'entered';
                 entry.accessTime = accessTime;
 
-                // Intentar guardar en Firebase
+                // Intentar guardar en Firebase - ESTRUCTURA REAL
                 if (this.isOnline && this.db) {
                     try {
-                        await this.db.collection('entradas').doc(entry.id).update({
-                            hasEntered: true,
-                            accessTime: accessTime,
-                            scannedBy: this.assistantName
-                        });
+                        console.log('💾 Guardando acceso en estructura real:', `events/${this.eventId}/tickets/${entry.id}`);
                         
-                        // Registrar en log de accesos
+                        // Actualizar el ticket en la estructura real
+                        await this.db
+                            .collection('events')
+                            .doc(this.eventId)
+                            .collection('tickets')
+                            .doc(entry.id)
+                            .update({
+                                used: true,
+                                usedAt: accessTime,
+                                accessTime: accessTime,
+                                scannedBy: this.assistantName,
+                                scannedDevice: navigator.userAgent.includes('Mobile') ? 'mobile' : 'desktop'
+                            });
+                        
+                        // Registrar en log de accesos global
                         await this.db.collection('access_log').add({
-                            entryId: entry.id,
+                            ticketId: entry.id,
                             guestName: entry.guestName,
                             artistName: entry.artistName,
                             eventId: this.eventId,
+                            eventName: this.eventName,
                             accessTime: accessTime,
                             scannedBy: this.assistantName,
                             device: navigator.userAgent.includes('Mobile') ? 'mobile' : 'desktop'
                         });
 
-                        console.log('✅ Acceso registrado en Firebase');
+                        console.log('✅ Acceso registrado correctamente en Firebase');
                     } catch (error) {
                         console.error('❌ Error guardando en Firebase:', error);
                         // Guardar localmente para sincronizar después
