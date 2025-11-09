@@ -632,12 +632,12 @@
         <!-- FILTRO POR ARTISTA -->
         <div class="artist-filter">
             <input type="text" id="artist-filter" class="filter-input" 
-                   placeholder="🔍 Buscar artista o invitado (ej: Emilia, Juan Pérez, etc.)">
+                   placeholder="🔍 Buscar por artista o invitado (ej: Emilia mostrará todos sus invitados)">
         </div>
 
         <!-- LISTA DE ENTRADAS DE LA GALA -->
         <div class="entries-container">
-            <h3 style="margin-bottom: 15px; color: white;">📋 Artistas e Invitados de la Gala</h3>
+            <h3 style="margin-bottom: 15px; color: white;">📋 Invitados de la Gala</h3>
             <div id="entries-list" class="entries-list">
                 <div style="text-align: center; padding: 20px; color: rgba(255,255,255,0.7);">
                     Cargando entradas de la gala...
@@ -1353,87 +1353,35 @@
             displayEntries() {
                 const container = document.getElementById('entries-list');
                 
-                // Obtener el filtro actual para aplicarlo también a los artistas  
-                const artistFilter = document.getElementById('artist-filter');
-                const searchTerm = artistFilter ? artistFilter.value.toLowerCase() : '';
-                
-                // Combinar artistas y invitados para la visualización
-                const allEntries = [];
-                
-                // Agregar artistas al inicio de la lista (filtrados si hay búsqueda)
-                this.artists.forEach(artist => {
-                    // Si hay filtro, solo incluir artistas que coincidan
-                    if (!searchTerm || artist.name.toLowerCase().includes(searchTerm)) {
-                        allEntries.push({
-                            id: artist.id,
-                            name: artist.name,
-                            type: 'artist',
-                            prefix: artist.prefix,
-                            ticketsSold: artist.ticketsSold,
-                            isArtist: true
-                        });
-                    }
-                });
-                
-                // Agregar invitados filtrados
-                this.filteredEntries.forEach(entry => {
-                    allEntries.push({
-                        ...entry,
-                        type: 'guest',
-                        isArtist: false
-                    });
-                });
-                
-                if (allEntries.length === 0) {
-                    container.innerHTML = '<div style="text-align: center; padding: 20px; color: rgba(255,255,255,0.7);">No se encontraron entradas ni artistas</div>';
+                if (this.filteredEntries.length === 0) {
+                    container.innerHTML = '<div style="text-align: center; padding: 20px; color: rgba(255,255,255,0.7);">No se encontraron invitados</div>';
                     return;
                 }
 
-                container.innerHTML = allEntries.map(entry => {
-                    if (entry.isArtist) {
-                        // Renderizar artista
-                        return `
-                            <div class="entry-item artist-item" style="background: linear-gradient(135deg, rgba(34, 197, 94, 0.1), rgba(59, 130, 246, 0.1)); border-left: 4px solid #22c55e;">
-                                <div class="entry-info">
-                                    <div class="entry-name" style="color: #22c55e; font-weight: bold;">🎤 ${entry.name}</div>
-                                    <div class="entry-details">
-                                        <span style="color: #a3a3a3;">ARTISTA</span>
-                                        ${entry.prefix ? ` • Código: ${entry.prefix}` : ''}
-                                        ${entry.ticketsSold ? ` • ${entry.ticketsSold} invitados` : ''}
-                                    </div>
-                                </div>
-                                <div class="entry-actions">
-                                    <span class="status-badge" style="background: #22c55e; color: white;">
-                                        ARTISTA
-                                    </span>
+                // Solo mostrar invitados, no artistas separados
+                container.innerHTML = this.filteredEntries.map(entry => {
+                    return `
+                        <div class="entry-item">
+                            <div class="entry-info">
+                                <div class="entry-name" style="color: white; font-weight: bold; font-size: 18px;">${entry.guestName || entry.name || 'Sin nombre'}</div>
+                                <div class="entry-details" style="margin-top: 4px;">
+                                    <div style="color: #3b82f6; font-size: 14px; font-weight: 500;">🎤 ${entry.artistName || 'Sin artista'}</div>
+                                    ${entry.phone ? `<div style="color: #a3a3a3; font-size: 12px;">📱 ${entry.phone}</div>` : ''}
+                                    ${entry.accessTime ? `<div style="color: #10b981; font-size: 12px;">✅ ${new Date(entry.accessTime).toLocaleTimeString('es-ES')}</div>` : ''}
                                 </div>
                             </div>
-                        `;
-                    } else {
-                        // Renderizar invitado (código original)
-                        return `
-                            <div class="entry-item">
-                                <div class="entry-info">
-                                    <div class="entry-name">${entry.guestName}</div>
-                                    <div class="entry-details">
-                                        🎤 <span class="entry-artist">${entry.artistName}</span>
-                                        ${entry.phone ? ` • 📱 ${entry.phone}` : ''}
-                                        ${entry.accessTime ? ` • ✅ ${new Date(entry.accessTime).toLocaleTimeString('es-ES')}` : ''}
-                                    </div>
-                                </div>
-                                <div class="entry-actions">
-                                    <span class="status-badge status-${entry.status}">
-                                        ${entry.status === 'entered' ? 'Ya Ingresó' : 'Pendiente'}
-                                    </span>
-                                    ${entry.status === 'pending' ? `
-                                        <button class="btn btn-small btn-success" onclick="scanner.allowManualAccess('${entry.id}')">
-                                            ✅ Permitir
-                                        </button>
-                                    ` : ''}
-                                </div>
+                            <div class="entry-actions">
+                                <span class="status-badge status-${entry.status}" style="background: ${entry.status === 'entered' ? '#374151' : '#1f2937'}; color: white; font-size: 12px;">
+                                    ${entry.status === 'entered' ? 'Ya Ingresó' : 'Pendiente'}
+                                </span>
+                                ${entry.status === 'pending' ? `
+                                    <button class="btn btn-small btn-success" onclick="scanner.allowManualAccess('${entry.id}')" style="background: #3b82f6; color: white; font-size: 12px; margin-top: 4px;">
+                                        ✅ Permitir
+                                    </button>
+                                ` : ''}
                             </div>
-                        `;
-                    }
+                        </div>
+                    `;
                 }).join('');
             }
 
