@@ -443,6 +443,99 @@
             color: #ef4444;
         }
 
+        /* DIÁLOGO DE VALIDACIÓN */
+        .validation-dialog {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 15px;
+            padding: 20px;
+            margin-top: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            border: 3px solid rgba(255,255,255,0.3);
+            animation: validationPulse 1s ease-out;
+        }
+
+        @keyframes validationPulse {
+            0% { transform: scale(0.9); opacity: 0; }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        .validation-info h3 {
+            color: #fff;
+            margin-bottom: 15px;
+            text-align: center;
+            font-size: 1.2rem;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .entry-details-validation {
+            background: rgba(255,255,255,0.1);
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            backdrop-filter: blur(10px);
+        }
+
+        .entry-details-validation p {
+            margin: 8px 0;
+            color: #fff;
+            font-size: 1rem;
+        }
+
+        .entry-details-validation strong {
+            color: #fff;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+        }
+
+        .validation-actions {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .btn-validation {
+            min-width: 160px;
+            padding: 15px 25px;
+            font-size: 1.1rem;
+            border-radius: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            position: relative;
+            overflow: hidden;
+            transition: all 0.3s ease;
+        }
+
+        .btn-validation::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+            transition: left 0.5s;
+        }
+
+        .btn-validation:hover::before {
+            left: 100%;
+        }
+
+        .btn-validation:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+        }
+
+        .validation-active {
+            animation: validationAlert 0.5s ease-out;
+        }
+
+        @keyframes validationAlert {
+            0%, 100% { border-color: rgba(255,255,255,0.3); }
+            50% { border-color: #10b981; }
+        }
+
         /* CONEXIÓN */
         .connection-indicator {
             display: flex;
@@ -563,6 +656,10 @@
                 this.isScanning = false;
                 this.isOnline = false;
                 this.db = null;
+                
+                // Variables de validación
+                this.isValidating = false;
+                this.validationEntry = null;
                 
                 this.galaEntries = [];
                 this.filteredEntries = [];
@@ -705,25 +802,36 @@
 
                         ticketsSnapshot.forEach(ticketDoc => {
                             const ticketData = ticketDoc.data();
+                            
+                            // DETECTAR TODOS LOS POSIBLES CAMPOS DE ARTISTA
+                            const artistName = ticketData.artistName || 
+                                             ticketData.artist || 
+                                             ticketData.artistaName || 
+                                             ticketData.artista || 
+                                             ticketData.selectedArtist ||
+                                             ticketData.invitedBy ||
+                                             '🎤 Artista no especificado';
+                            
                             console.log('🎫 Ticket encontrado:', {
                                 id: ticketDoc.id,
                                 guestName: ticketData.guestName,
-                                artistName: ticketData.artistName || ticketData.artist,
+                                artistName: artistName,
                                 used: ticketData.used,
-                                qrCode: ticketData.qrCode
+                                qrCode: ticketData.qrCode,
+                                allData: ticketData // Para debugging
                             });
 
                             this.galaEntries.push({
                                 id: ticketDoc.id,
-                                guestName: ticketData.guestName || ticketData.name || 'Sin nombre',
-                                phone: ticketData.phone || ticketData.telefono || '',
-                                artistName: ticketData.artistName || ticketData.artist || 'Sin artista',
-                                qrCode: ticketData.qrCode || ticketData.code || ticketDoc.id,
+                                guestName: ticketData.guestName || ticketData.name || ticketData.inviteeName || 'Sin nombre',
+                                phone: ticketData.phone || ticketData.telefono || ticketData.phoneNumber || '',
+                                artistName: artistName,
+                                qrCode: ticketData.qrCode || ticketData.code || ticketData.id || ticketDoc.id,
                                 status: ticketData.used ? 'entered' : 'pending',
-                                accessTime: ticketData.accessTime || ticketData.usedAt,
-                                createdAt: ticketData.createdAt || ticketData.timestamp || new Date().toISOString(),
-                                price: ticketData.price || 0,
-                                seller: ticketData.seller || ticketData.createdBy || 'Sistema'
+                                accessTime: ticketData.accessTime || ticketData.usedAt || ticketData.entryTime,
+                                createdAt: ticketData.createdAt || ticketData.timestamp || ticketData.createdDate || new Date().toISOString(),
+                                price: ticketData.price || ticketData.amount || 0,
+                                seller: ticketData.seller || ticketData.createdBy || ticketData.generatedBy || 'Sistema'
                             });
                         });
 
@@ -913,6 +1021,9 @@
                 console.log('📱 QR escaneado:', decodedText);
                 console.log('🔍 Buscando en', this.galaEntries.length, 'entradas reales...');
                 
+                // REPRODUCIR SONIDO DE LECTURA
+                this.playBeepSound();
+                
                 try {
                     // Buscar con múltiples criterios para mayor compatibilidad
                     const entry = this.galaEntries.find(e => {
@@ -935,6 +1046,7 @@
                     } : 'NO ENCONTRADA');
 
                     if (!entry) {
+                        this.playErrorSound();
                         this.showScanResult(`❌ Código QR no encontrado en las ${this.galaEntries.length} entradas`, 'error');
                         console.log('🔍 Código buscado:', decodedText);
                         console.log('📋 Primeras 3 entradas disponibles:', this.galaEntries.slice(0, 3).map(e => ({
@@ -946,22 +1058,185 @@
                     }
 
                     if (entry.status === 'entered') {
+                        this.playErrorSound();
                         this.showScanResult(`❌ ${entry.guestName} ya ingresó anteriormente`, 'error');
                         return;
                     }
 
-                    // Registrar acceso
-                    await this.recordAccess(entry);
-                    this.showScanResult(`✅ ACCESO AUTORIZADO: ${entry.guestName} (${entry.artistName})`, 'success');
+                    // PARAR EL ESCÁNER Y MOSTRAR BOTÓN DE VALIDACIÓN
+                    await this.pauseScannerForValidation(entry);
 
                 } catch (error) {
                     console.error('❌ Error procesando QR:', error);
+                    this.playErrorSound();
                     this.showScanResult('❌ Error al procesar el código', 'error');
                 }
             }
 
+            // FUNCIONES DE SONIDO
+            playBeepSound() {
+                try {
+                    // Crear tono de confirmación - estilo Mercado Pago
+                    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    const oscillator = audioContext.createOscillator();
+                    const gainNode = audioContext.createGain();
+                    
+                    oscillator.connect(gainNode);
+                    gainNode.connect(audioContext.destination);
+                    
+                    oscillator.frequency.setValueAtTime(800, audioContext.currentTime); // Tono alto
+                    oscillator.type = 'square';
+                    
+                    gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+                    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+                    
+                    oscillator.start();
+                    oscillator.stop(audioContext.currentTime + 0.1);
+                    
+                    console.log('🔊 Sonido beep reproducido');
+                } catch (error) {
+                    console.warn('🔇 No se pudo reproducir sonido:', error);
+                }
+            }
+
+            playErrorSound() {
+                try {
+                    // Crear tono de error
+                    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    const oscillator = audioContext.createOscillator();
+                    const gainNode = audioContext.createGain();
+                    
+                    oscillator.connect(gainNode);
+                    gainNode.connect(audioContext.destination);
+                    
+                    oscillator.frequency.setValueAtTime(300, audioContext.currentTime); // Tono bajo
+                    oscillator.type = 'sawtooth';
+                    
+                    gainNode.gain.setValueAtTime(0.2, audioContext.currentTime);
+                    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
+                    
+                    oscillator.start();
+                    oscillator.stop(audioContext.currentTime + 0.3);
+                    
+                    console.log('🔊 Sonido error reproducido');
+                } catch (error) {
+                    console.warn('🔇 No se pudo reproducir sonido de error:', error);
+                }
+            }
+
+            playSuccessSound() {
+                try {
+                    // Crear doble beep de éxito
+                    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    
+                    // Primer beep
+                    const osc1 = audioContext.createOscillator();
+                    const gain1 = audioContext.createGain();
+                    osc1.connect(gain1);
+                    gain1.connect(audioContext.destination);
+                    osc1.frequency.setValueAtTime(600, audioContext.currentTime);
+                    osc1.type = 'sine';
+                    gain1.gain.setValueAtTime(0.3, audioContext.currentTime);
+                    gain1.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+                    osc1.start();
+                    osc1.stop(audioContext.currentTime + 0.1);
+                    
+                    // Segundo beep
+                    const osc2 = audioContext.createOscillator();
+                    const gain2 = audioContext.createGain();
+                    osc2.connect(gain2);
+                    gain2.connect(audioContext.destination);
+                    osc2.frequency.setValueAtTime(800, audioContext.currentTime + 0.15);
+                    osc2.type = 'sine';
+                    gain2.gain.setValueAtTime(0.3, audioContext.currentTime + 0.15);
+                    gain2.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.25);
+                    osc2.start(audioContext.currentTime + 0.15);
+                    osc2.stop(audioContext.currentTime + 0.25);
+                    
+                    console.log('🔊 Sonido éxito reproducido');
+                } catch (error) {
+                    console.warn('🔇 No se pudo reproducir sonido de éxito:', error);
+                }
+            }
+
+            // FUNCIÓN DE VALIDACIÓN CON PAUSA
+            async pauseScannerForValidation(entry) {
+                console.log('⏸️ Pausando escáner para validación:', entry.guestName);
+                
+                // Pausar temporalmente el escáner sin detenerlo completamente
+                this.validationEntry = entry;
+                this.isValidating = true;
+                
+                this.showValidationDialog(entry);
+            }
+
+            showValidationDialog(entry) {
+                const resultDiv = document.getElementById('scan-result');
+                resultDiv.innerHTML = `
+                    <div class="validation-dialog">
+                        <div class="validation-info">
+                            <h3>✅ QR VÁLIDO DETECTADO</h3>
+                            <div class="entry-details-validation">
+                                <p><strong>👤 Invitado:</strong> ${entry.guestName}</p>
+                                <p><strong>🎤 Viene a ver:</strong> ${entry.artistName}</p>
+                                <p><strong>📱 Teléfono:</strong> ${entry.phone || 'No especificado'}</p>
+                            </div>
+                        </div>
+                        <div class="validation-actions">
+                            <button class="btn btn-success btn-validation" onclick="scanner.confirmAccess()">
+                                ✅ CONFIRMAR INGRESO
+                            </button>
+                            <button class="btn btn-secondary btn-validation" onclick="scanner.cancelValidation()">
+                                ❌ CANCELAR
+                            </button>
+                        </div>
+                    </div>
+                `;
+                resultDiv.className = 'scan-result validation-active';
+            }
+
+            async confirmAccess() {
+                if (!this.validationEntry) return;
+                
+                console.log('✅ Confirmando acceso para:', this.validationEntry.guestName);
+                
+                // Reproducir sonido de éxito
+                this.playSuccessSound();
+                
+                // Registrar acceso
+                await this.recordAccess(this.validationEntry);
+                
+                // Mostrar resultado
+                this.showScanResult(
+                    `✅ ACCESO CONFIRMADO: ${this.validationEntry.guestName} (${this.validationEntry.artistName})`, 
+                    'success'
+                );
+                
+                // Limpiar validación
+                this.clearValidation();
+                
+                // Continuar escaneando después de 2 segundos
+                setTimeout(() => {
+                    this.showScanResult('📷 Listo para el siguiente código QR', 'success');
+                }, 2000);
+            }
+
+            cancelValidation() {
+                console.log('❌ Validación cancelada');
+                this.clearValidation();
+                this.showScanResult('📷 Escaneo cancelado - Listo para continuar', 'success');
+            }
+
+            clearValidation() {
+                this.validationEntry = null;
+                this.isValidating = false;
+                document.getElementById('scan-result').className = 'scan-result';
+            }
+
             onScanError(errorMessage) {
-                // Ignorar errores menores
+                // Ignorar errores menores y no procesar si estamos validando
+                if (this.isValidating) return;
+                
                 if (!errorMessage.includes('NotFoundException')) {
                     console.warn('⚠️ Error escaneo:', errorMessage);
                 }
