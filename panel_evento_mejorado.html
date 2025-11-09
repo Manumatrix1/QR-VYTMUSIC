@@ -302,9 +302,12 @@
             <div id="live-voting-preview-list" class="space-y-3 mb-6">
                 <p class="text-center text-gray-400">Cargando ranking...</p>
             </div>
-            <a id="full-voting-btn" class="block w-full text-center px-4 py-3 bg-sky-600 text-white font-bold rounded-lg hover:bg-sky-700 transition-colors">
+            <a id="full-voting-btn" class="block w-full text-center px-4 py-3 bg-sky-600 text-white font-bold rounded-lg hover:bg-sky-700 transition-colors mb-3">
                 Ver Todas las Votaciones
             </a>
+            <button id="share-jury-link-btn" class="block w-full text-center px-4 py-3 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700 transition-colors">
+                📋 Compartir Link para Jurados
+            </button>
         </div>
     </div>
 
@@ -358,6 +361,9 @@
             document.getElementById('guest-finder-btn').href = `buscador_invitados.html${baseParams}`;
             document.getElementById('testing-system-btn').href = `sistema_testing_completo.html${baseParams}`;
             document.getElementById('full-voting-btn').href = `gestion_votacion.html${baseParams}`;
+
+            // Configurar botón de compartir link para jurados
+            document.getElementById('share-jury-link-btn').addEventListener('click', shareJuryLink);
 
             // Cargar estadísticas en tiempo real
             loadStatistics();
@@ -458,6 +464,86 @@
                 `;
                 previewList.appendChild(card);
             });
+        }
+
+        // Función para compartir link de votación de jurados
+        function shareJuryLink() {
+            const juryVotingUrl = `${window.location.origin}/votacion_jurados_FINAL.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`;
+            
+            // Intentar usar la Web Share API si está disponible (móviles)
+            if (navigator.share) {
+                navigator.share({
+                    title: `VYT MUSIC - Votación de Jurados: ${eventName}`,
+                    text: `Participa como jurado en el evento "${eventName}". Ingresa para evaluar a los artistas.`,
+                    url: juryVotingUrl
+                }).then(() => {
+                    console.log('✅ Link compartido exitosamente');
+                }).catch((error) => {
+                    console.log('❌ Error al compartir:', error);
+                    fallbackCopyToClipboard(juryVotingUrl);
+                });
+            } else {
+                // Fallback: copiar al portapapeles
+                fallbackCopyToClipboard(juryVotingUrl);
+            }
+        }
+
+        // Función fallback para copiar al portapapeles
+        function fallbackCopyToClipboard(text) {
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(text).then(() => {
+                    showNotification('✅ Link copiado al portapapeles', 'success');
+                }).catch(() => {
+                    showTextAreaCopy(text);
+                });
+            } else {
+                showTextAreaCopy(text);
+            }
+        }
+
+        // Método alternativo para navegadores muy antiguos
+        function showTextAreaCopy(text) {
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            document.body.appendChild(textarea);
+            textarea.select();
+            
+            try {
+                document.execCommand('copy');
+                showNotification('✅ Link copiado al portapapeles', 'success');
+            } catch (err) {
+                // Si todo falla, mostrar el link en un alert
+                alert(`Copia este link para compartir con los jurados:\n\n${text}`);
+            }
+            
+            document.body.removeChild(textarea);
+        }
+
+        // Función para mostrar notificaciones
+        function showNotification(message, type = 'info') {
+            const notification = document.createElement('div');
+            notification.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                background: ${type === 'success' ? '#16a34a' : '#3b82f6'};
+                color: white;
+                padding: 12px 20px;
+                border-radius: 8px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+                z-index: 10000;
+                font-weight: bold;
+                max-width: 300px;
+            `;
+            notification.textContent = message;
+            
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.parentNode.removeChild(notification);
+                }
+            }, 3000);
         }
     </script>
 </body>

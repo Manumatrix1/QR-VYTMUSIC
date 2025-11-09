@@ -1,0 +1,1364 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🚀 Escáner QR Mejorado - VYTMUSIC</title>
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    
+    <!-- PWA Support -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="mobile-web-app-capable" content="yes">
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+    
+    <style>
+        body { 
+            font-family: 'Inter', sans-serif; 
+            background: linear-gradient(135deg, #0f172a, #1e293b); 
+            color: #f8fafc; 
+            overflow-x: hidden;
+        }
+        
+        .hidden { display: none !important; }
+        
+        /* Scanner UI */
+        #scanner-container { 
+            position: fixed; 
+            top: 0; 
+            left: 0; 
+            width: 100vw; 
+            height: 100vh; 
+            background: #000; 
+            z-index: 50; 
+            display: flex;
+            flex-direction: column;
+        }
+        
+        #qr-reader { 
+            flex: 1;
+            width: 100%;
+            height: 100%;
+            position: relative;
+        }
+        
+        /* Scanner controls overlay */
+        .scanner-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            pointer-events: none;
+            z-index: 60;
+        }
+        
+        .scanner-controls {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 1rem;
+            pointer-events: auto;
+        }
+        
+        .control-btn {
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+        }
+        
+        .control-btn:hover {
+            background: rgba(0, 0, 0, 0.9);
+            border-color: #38bdf8;
+            transform: scale(1.1);
+        }
+        
+        .btn-stop { border-color: #ef4444; }
+        .btn-stop:hover { border-color: #ef4444; background: rgba(239, 68, 68, 0.2); }
+        
+        .btn-flash { border-color: #f59e0b; }
+        .btn-flash:hover { border-color: #f59e0b; background: rgba(245, 158, 11, 0.2); }
+        
+        .btn-camera { border-color: #10b981; }
+        .btn-camera:hover { border-color: #10b981; background: rgba(16, 185, 129, 0.2); }
+        
+        /* Status overlay */
+        .status-overlay {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            border-radius: 1rem;
+            padding: 1rem;
+            pointer-events: none;
+            backdrop-filter: blur(15px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 0.5rem;
+            text-align: center;
+        }
+        
+        .stat-item {
+            padding: 0.5rem;
+            border-radius: 0.5rem;
+            background: rgba(255, 255, 255, 0.1);
+        }
+        
+        .stat-number {
+            font-size: 1.5rem;
+            font-weight: 900;
+            line-height: 1;
+        }
+        
+        .stat-label {
+            font-size: 0.6rem;
+            font-weight: 600;
+            opacity: 0.9;
+            margin-top: 2px;
+            text-transform: uppercase;
+        }
+        
+        /* Success/Error animations */
+        .scan-feedback {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            z-index: 100;
+            pointer-events: none;
+        }
+        
+        .feedback-success {
+            background: linear-gradient(135deg, rgba(34, 197, 94, 0.95), rgba(22, 163, 74, 0.95));
+            animation: feedbackSuccess 2s ease-out;
+        }
+        
+        .feedback-warning {
+            background: linear-gradient(135deg, rgba(245, 158, 11, 0.95), rgba(217, 119, 6, 0.95));
+            animation: feedbackWarning 2s ease-out;
+        }
+        
+        .feedback-error {
+            background: linear-gradient(135deg, rgba(239, 68, 68, 0.95), rgba(220, 38, 38, 0.95));
+            animation: feedbackError 2s ease-out;
+        }
+        
+        @keyframes feedbackSuccess {
+            0% { opacity: 0; transform: scale(0.5); }
+            15% { opacity: 1; transform: scale(1.1); }
+            85% { opacity: 1; transform: scale(1); }
+            100% { opacity: 0; transform: scale(1); }
+        }
+        
+        @keyframes feedbackWarning {
+            0% { opacity: 0; transform: scale(0.5); }
+            20% { opacity: 1; transform: scale(1.05); }
+            80% { opacity: 1; transform: scale(1); }
+            100% { opacity: 0; transform: scale(1); }
+        }
+        
+        @keyframes feedbackError {
+            0% { opacity: 0; transform: scale(0.5); }
+            25% { opacity: 1; transform: scale(1.02); }
+            75% { opacity: 1; transform: scale(1); }
+            100% { opacity: 0; transform: scale(1); }
+        }
+        
+        /* Setup screen */
+        .setup-section {
+            background: rgba(31, 41, 55, 0.9);
+            border: 1px solid #4b5563;
+            border-radius: 1rem;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            backdrop-filter: blur(10px);
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #2563eb, #1d4ed8);
+            color: white;
+            padding: 1rem 2rem;
+            border-radius: 0.75rem;
+            font-weight: 700;
+            font-size: 1.1rem;
+            transition: all 0.3s ease;
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            width: 100%;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 15px 30px rgba(37, 99, 235, 0.3);
+        }
+        
+        .btn-secondary {
+            background: rgba(55, 65, 81, 0.8);
+            color: #f9fafb;
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem;
+            font-weight: 600;
+            transition: all 0.2s ease;
+            border: 1px solid #4b5563;
+            cursor: pointer;
+            width: 100%;
+        }
+        
+        .btn-secondary:hover {
+            background: rgba(75, 85, 99, 0.9);
+            border-color: #6b7280;
+        }
+        
+        /* Manual search */
+        .search-section {
+            background: rgba(31, 41, 55, 0.95);
+            border: 1px solid #4b5563;
+            border-radius: 1rem;
+            padding: 1.5rem;
+            backdrop-filter: blur(15px);
+        }
+        
+        .search-input {
+            background: rgba(17, 24, 39, 0.8);
+            border: 1px solid #4b5563;
+            border-radius: 0.5rem;
+            padding: 1rem;
+            color: white;
+            font-size: 1.1rem;
+            width: 100%;
+            margin-bottom: 1rem;
+        }
+        
+        .search-result {
+            background: rgba(55, 65, 81, 0.8);
+            border: 1px solid #4b5563;
+            border-radius: 0.5rem;
+            padding: 1rem;
+            margin-bottom: 0.5rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .search-result:hover {
+            background: rgba(75, 85, 99, 0.9);
+            border-color: #38bdf8;
+        }
+        
+        .search-result.used {
+            opacity: 0.6;
+            background: rgba(239, 68, 68, 0.2);
+            border-color: #ef4444;
+        }
+        
+        /* Responsive */
+        @media (max-width: 640px) {
+            .status-overlay {
+                top: 10px;
+                left: 10px;
+                right: 10px;
+                padding: 0.75rem;
+            }
+            
+            .stats-grid {
+                gap: 0.25rem;
+            }
+            
+            .stat-item {
+                padding: 0.25rem;
+            }
+            
+            .stat-number {
+                font-size: 1.25rem;
+            }
+            
+            .stat-label {
+                font-size: 0.5rem;
+            }
+            
+            .scanner-controls {
+                bottom: 15px;
+                gap: 0.75rem;
+            }
+            
+            .control-btn {
+                width: 50px;
+                height: 50px;
+                font-size: 1.25rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Setup Screen -->
+    <div id="setup-screen" class="container mx-auto max-w-4xl p-4">
+        <header class="text-center mb-8">
+            <a href="#" id="back-to-panel" class="text-sky-400 hover:underline mb-4 inline-block text-lg">
+                ← Volver al Panel de Control
+            </a>
+            <h1 class="text-4xl font-bold text-sky-400 mb-2">🚀 Escáner QR Mejorado</h1>
+            <p id="event-name-display" class="text-xl text-gray-300"></p>
+        </header>
+
+        <!-- Sistema requirements check -->
+        <div class="setup-section">
+            <h2 class="text-xl font-bold mb-4 text-sky-400">🔍 Verificación del Sistema</h2>
+            <div id="system-check" class="space-y-3">
+                <div id="https-check" class="flex items-center space-x-3">
+                    <span class="w-6 h-6 rounded-full bg-gray-600 flex items-center justify-center text-sm">?</span>
+                    <span>Protocolo HTTPS</span>
+                </div>
+                <div id="camera-check" class="flex items-center space-x-3">
+                    <span class="w-6 h-6 rounded-full bg-gray-600 flex items-center justify-center text-sm">?</span>
+                    <span>Soporte de cámara</span>
+                </div>
+                <div id="permissions-check" class="flex items-center space-x-3">
+                    <span class="w-6 h-6 rounded-full bg-gray-600 flex items-center justify-center text-sm">?</span>
+                    <span>Permisos de cámara</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- User Type Detection -->
+        <div id="user-detection" class="setup-section">
+            <h2 class="text-xl font-bold mb-4 text-sky-400">👤 Detección de Usuario</h2>
+            <div id="user-info-display" class="space-y-4">
+                <div class="bg-blue-900 border border-blue-600 rounded-lg p-4">
+                    <p class="text-blue-200 mb-2">🔍 Verificando tipo de usuario...</p>
+                    <div id="user-status" class="text-white font-semibold">Cargando...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Assistant setup (solo para asistentes) -->
+        <div id="assistant-setup" class="setup-section hidden">
+            <h2 class="text-xl font-bold mb-4 text-sky-400">👤 Configuración del Asistente</h2>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium mb-2">Nombre del Asistente</label>
+                    <input type="text" id="assistant-name" placeholder="Ej: Juan Pérez" 
+                           class="w-full p-3 rounded-md border border-gray-600 bg-gray-900 text-white">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-2">Código del Asistente (opcional)</label>
+                    <input type="text" id="assistant-code" placeholder="Ej: ASS001" 
+                           class="w-full p-3 rounded-md border border-gray-600 bg-gray-900 text-white">
+                </div>
+            </div>
+        </div>
+
+        <!-- Start button -->
+        <div class="text-center">
+            <button id="start-scanner" class="btn-primary" disabled>
+                <span>📱</span>
+                <span>Iniciar Escáner QR</span>
+            </button>
+            <p id="start-scanner-note" class="text-sm text-gray-400 mt-2">
+                Verificando permisos...
+            </p>
+        </div>
+
+        <!-- Manual search option -->
+        <div class="setup-section">
+            <h2 class="text-xl font-bold mb-4 text-sky-400">🔍 Búsqueda Manual</h2>
+            <p class="text-gray-300 mb-4">Si el escáner no funciona, puedes buscar invitados manualmente</p>
+            <button id="toggle-manual-search" class="btn-secondary">
+                Activar Búsqueda Manual
+            </button>
+        </div>
+
+        <!-- Manual search section -->
+        <div id="manual-search-section" class="search-section hidden">
+            <h3 class="text-lg font-bold mb-3">Búsqueda Manual de Invitados</h3>
+            <input type="text" id="search-input" placeholder="Buscar por nombre..." class="search-input">
+            <div id="search-results">
+                <p class="text-center text-gray-400 py-8">Escribe para buscar invitados...</p>
+            </div>
+            <button id="close-manual-search" class="btn-secondary mt-4">
+                Cerrar Búsqueda Manual
+            </button>
+        </div>
+    </div>
+
+    <!-- Scanner Screen -->
+    <div id="scanner-screen" class="hidden">
+        <div id="scanner-container">
+            <div id="qr-reader"></div>
+            
+            <!-- Status overlay -->
+            <div class="scanner-overlay">
+                <div class="status-overlay">
+                    <div class="stats-grid">
+                        <div class="stat-item">
+                            <div id="counter-valid" class="stat-number text-green-400">0</div>
+                            <div class="stat-label">Válidos</div>
+                        </div>
+                        <div class="stat-item">
+                            <div id="counter-used" class="stat-number text-yellow-400">0</div>
+                            <div class="stat-label">Ya Usados</div>
+                        </div>
+                        <div class="stat-item">
+                            <div id="counter-invalid" class="stat-number text-red-400">0</div>
+                            <div class="stat-label">Inválidos</div>
+                        </div>
+                        <div class="stat-item">
+                            <div id="counter-total" class="stat-number text-sky-400">0</div>
+                            <div class="stat-label">Total</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Scanner controls -->
+                <div class="scanner-controls">
+                    <button id="toggle-camera" class="control-btn btn-camera" title="Cambiar cámara">
+                        📷
+                    </button>
+                    <button id="toggle-flash" class="control-btn btn-flash" title="Flash">
+                        💡
+                    </button>
+                    <button id="show-manual-search" class="control-btn" title="Búsqueda manual">
+                        🔍
+                    </button>
+                    <button id="stop-scanner" class="control-btn btn-stop" title="Detener">
+                        ❌
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Search overlay for scanner mode -->
+        <div id="scanner-search-overlay" class="hidden" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.9); z-index: 70; padding: 20px;">
+            <div class="search-section max-w-md mx-auto mt-20">
+                <h3 class="text-lg font-bold mb-3">Búsqueda Rápida</h3>
+                <input type="text" id="scanner-search-input" placeholder="Buscar por nombre..." class="search-input">
+                <div id="scanner-search-results">
+                    <p class="text-center text-gray-400 py-4">Escribe para buscar invitados...</p>
+                </div>
+                <button id="close-scanner-search" class="btn-secondary mt-4">
+                    Volver al Escáner
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Feedback overlays -->
+    <div id="scan-feedback" class="scan-feedback hidden">
+        <div id="feedback-content"></div>
+    </div>
+
+    <!-- Libraries -->
+    <script src="https://unpkg.com/html5-qrcode@2.3.4/html5-qrcode.min.js"></script>
+    
+    <script type="module">
+        import { db, auth } from './firebase_config.js';
+        import { collection, onSnapshot, query, doc, updateDoc, getDoc, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        
+        class ImprovedQRScanner {
+            constructor() {
+                this.eventId = null;
+                this.eventName = null;
+                this.currentUser = null;
+                this.isOrganizer = false;
+                this.assistantName = '';
+                this.assistantCode = '';
+                
+                this.html5QrCode = null;
+                this.isActive = false;
+                this.cameras = [];
+                this.currentCameraIndex = 0;
+                this.flashEnabled = false;
+                
+                this.ticketsCache = new Map();
+                this.localEntries = [];
+                this.syncQueue = [];
+                
+                this.counters = {
+                    valid: 0,
+                    used: 0,
+                    invalid: 0,
+                    total: 0
+                };
+                
+                this.isOnline = navigator.onLine;
+                this.setupComplete = false;
+                
+                this.init();
+            }
+            
+            init() {
+                this.checkBrowserCompatibility();
+                this.parseUrlParams();
+                this.setupEventListeners();
+                this.checkSystemRequirements();
+                this.setupNetworkMonitoring();
+                this.checkUserType(); // Nueva función para verificar si es organizador
+                
+                if (this.eventId && this.eventName) {
+                    this.loadEventData();
+                } else {
+                    this.showError('Error: Evento no especificado');
+                }
+            }
+            
+            // Función para verificar compatibilidad del navegador y dispositivo
+            checkBrowserCompatibility() {
+                console.log('🔍 Verificando compatibilidad del navegador...');
+                
+                const checks = {
+                    mediaDevices: !!navigator.mediaDevices,
+                    getUserMedia: !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia),
+                    isSecureContext: location.protocol === 'https:' || location.hostname === 'localhost',
+                    webRTC: !!(window.RTCPeerConnection || window.mozRTCPeerConnection || window.webkitRTCPeerConnection)
+                };
+                
+                const userAgent = navigator.userAgent;
+                const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(userAgent);
+                const isIOS = /iPad|iPhone|iPod/.test(userAgent);
+                const isAndroid = /Android/.test(userAgent);
+                const isChrome = /Chrome/.test(userAgent);
+                const isFirefox = /Firefox/.test(userAgent);
+                const isSafari = /Safari/.test(userAgent) && !isChrome;
+                
+                console.log('📱 Información del dispositivo:', {
+                    isMobile,
+                    isIOS,
+                    isAndroid,
+                    isChrome,
+                    isFirefox,
+                    isSafari,
+                    userAgent: userAgent.substring(0, 100) + '...'
+                });
+                
+                console.log('✅ Verificaciones de compatibilidad:', checks);
+                
+                // Advertencias específicas por navegador/dispositivo
+                if (isMobile && !checks.isSecureContext) {
+                    console.warn('⚠️ HTTPS requerido para cámara en móviles');
+                }
+                
+                if (isIOS && isSafari) {
+                    console.warn('⚠️ Safari iOS puede tener limitaciones de cámara');
+                }
+                
+                if (!checks.mediaDevices || !checks.getUserMedia) {
+                    console.error('❌ API de MediaDevices no soportada');
+                    this.showError('Tu navegador no soporta acceso a cámara. Usa Chrome, Firefox o Safari actualizado.');
+                    return false;
+                }
+                
+                return true;
+            }
+            
+            async checkUserType() {
+                console.log('🔍 Iniciando verificación de tipo de usuario...');
+                
+                // Verificar si el usuario está autenticado
+                onAuthStateChanged(auth, async (user) => {
+                    this.currentUser = user;
+                    
+                    if (user) {
+                        console.log('✅ Usuario autenticado:', user.email);
+                        // Usuario autenticado - verificar si es organizador con múltiples métodos
+                        await this.smartOrganizerDetection(user);
+                    } else {
+                        console.log('❌ Usuario no autenticado - configurando como asistente');
+                        // Usuario no autenticado - debe ser asistente
+                        this.setupAsAssistant();
+                    }
+                });
+            }
+            
+            async smartOrganizerDetection(user) {
+                console.log('🧠 Detección inteligente de organizador iniciada...');
+                
+                try {
+                    // Método 1: Verificar por ownerId del evento
+                    const isOwnerByEvent = await this.verifyEventOwner(user);
+                    if (isOwnerByEvent) {
+                        console.log('✅ MÉTODO 1: Detectado como organizador por ownerId del evento');
+                        this.setupAsOrganizer(user);
+                        return;
+                    }
+                    
+                    // Método 2: Si viene desde el panel principal autenticado, muy probablemente es organizador
+                    const isFromMainPanel = this.isComingFromMainPanel();
+                    if (isFromMainPanel) {
+                        console.log('✅ MÉTODO 2: Detectado como organizador - viene del panel principal autenticado');
+                        this.setupAsOrganizer(user);
+                        return;
+                    }
+                    
+                    // Método 3: Verificar si es el único usuario que ha creado eventos
+                    const isMainUser = await this.verifyMainUser(user);
+                    if (isMainUser) {
+                        console.log('✅ MÉTODO 3: Detectado como organizador - usuario principal del sistema');
+                        this.setupAsOrganizer(user);
+                        return;
+                    }
+                    
+                    console.log('❌ No se pudo detectar como organizador - configurando como asistente');
+                    this.setupAsAssistant();
+                    
+                } catch (error) {
+                    console.error('❌ Error en detección inteligente:', error);
+                    this.setupAsAssistant();
+                }
+            }
+            
+            async verifyEventOwner(user) {
+                try {
+                    if (!this.eventId) {
+                        console.log('⚠️ No hay eventId para verificar ownership');
+                        return false;
+                    }
+                    
+                    const eventRef = doc(db, 'events', this.eventId);
+                    const eventDoc = await getDoc(eventRef);
+                    
+                    if (eventDoc.exists()) {
+                        const eventData = eventDoc.data();
+                        console.log('📊 Datos del evento:', eventData);
+                        console.log('👑 Owner ID del evento:', eventData.ownerId);
+                        console.log('🆔 User ID actual:', user.uid);
+                        
+                        return eventData.ownerId === user.uid;
+                    }
+                    
+                    return false;
+                } catch (error) {
+                    console.error('Error verificando event owner:', error);
+                    return false;
+                }
+            }
+            
+            isComingFromMainPanel() {
+                // Si viene con parámetros de evento desde el panel principal, es muy probable que sea organizador
+                const referrer = document.referrer;
+                const hasEventParams = this.eventId && this.eventName;
+                
+                console.log('🔗 Referrer:', referrer);
+                console.log('📋 Tiene parámetros de evento:', hasEventParams);
+                
+                // Si viene del panel de eventos o tiene parámetros completos, probablemente es organizador
+                return hasEventParams && (
+                    referrer.includes('eventos.html') || 
+                    referrer.includes('panel_evento') ||
+                    !referrer || // Acceso directo con parámetros
+                    referrer.includes(window.location.origin)
+                );
+            }
+            
+            async verifyMainUser(user) {
+                try {
+                    // Verificar si este usuario ha creado eventos en el sistema
+                    const eventsQuery = query(collection(db, 'events'));
+                    const eventsSnapshot = await getDocs(eventsQuery);
+                    
+                    let userEventCount = 0;
+                    let totalEvents = eventsSnapshot.size;
+                    
+                    eventsSnapshot.docs.forEach(doc => {
+                        const eventData = doc.data();
+                        if (eventData.ownerId === user.uid) {
+                            userEventCount++;
+                        }
+                    });
+                    
+                    console.log(`📊 Usuario ha creado ${userEventCount} de ${totalEvents} eventos`);
+                    
+                    // Si ha creado más del 50% de los eventos o es el único que ha creado eventos
+                    return userEventCount > 0 && (userEventCount >= totalEvents * 0.5 || totalEvents <= 3);
+                    
+                } catch (error) {
+                    console.error('Error verificando main user:', error);
+                    return false;
+                }
+            }
+            
+            setupAsOrganizer(user) {
+                this.isOrganizer = true;
+                this.assistantName = `Organizador: ${user.email}`;
+                this.assistantCode = 'ORG-ADMIN';
+                
+                console.log('👑 CONFIGURADO COMO ORGANIZADOR:', user.email);
+                
+                // Actualizar la UI para organizador
+                const userDisplay = document.getElementById('user-info-display');
+                
+                userDisplay.innerHTML = `
+                    <div class="bg-green-900 border border-green-600 rounded-lg p-4">
+                        <div class="flex items-center space-x-3">
+                            <span class="text-2xl">👑</span>
+                            <div>
+                                <p class="text-green-200 font-semibold">Organizador del Evento</p>
+                                <p class="text-white">${user.email}</p>
+                                <p class="text-green-300 text-sm mt-1">Acceso completo autorizado automáticamente</p>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                // Ocultar sección de asistente
+                document.getElementById('assistant-setup').classList.add('hidden');
+                
+                // Actualizar nota del botón y ocultar botón para auto-inicio
+                const startNote = document.getElementById('start-scanner-note');
+                startNote.textContent = '🚀 Iniciando escáner automáticamente...';
+                startNote.className = 'text-sm text-green-400 mt-2';
+                
+                // Ocultar botón de inicio manual para organizadores
+                const startBtn = document.getElementById('start-scanner');
+                startBtn.style.display = 'none';
+                
+                // Validar automáticamente
+                this.validateSetup();
+                
+                console.log('✅ Configurado como organizador del evento - acceso directo habilitado');
+            }
+            
+            setupAsAssistant() {
+                this.isOrganizer = false;
+                
+                console.log('📝 Configurando como asistente...');
+                
+                // Actualizar la UI para asistente
+                const userDisplay = document.getElementById('user-info-display');
+                userDisplay.innerHTML = `
+                    <div class="bg-orange-900 border border-orange-600 rounded-lg p-4">
+                        <div class="flex items-center space-x-3">
+                            <span class="text-2xl">👤</span>
+                            <div>
+                                <p class="text-orange-200 font-semibold">Modo Asistente</p>
+                                <p class="text-white">Configura tus datos abajo</p>
+                                <p class="text-orange-300 text-sm mt-1">Se requiere información del asistente</p>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                // Mostrar sección de asistente
+                document.getElementById('assistant-setup').classList.remove('hidden');
+                
+                // Actualizar nota del botón
+                const startNote = document.getElementById('start-scanner-note');
+                startNote.textContent = 'Completa la configuración de asistente';
+                startNote.className = 'text-sm text-gray-400 mt-2';
+                
+                console.log('📝 Configurado como asistente - requiere datos');
+            }
+            
+            parseUrlParams() {
+                const urlParams = new URLSearchParams(window.location.search);
+                this.eventId = urlParams.get('eventId');
+                this.eventName = urlParams.get('eventName');
+                
+                if (this.eventName) {
+                    document.getElementById('event-name-display').textContent = this.eventName;
+                }
+                
+                // Configurar botón de regreso
+                const backUrl = `panel_evento_mejorado.html?eventId=${this.eventId}&eventName=${encodeURIComponent(this.eventName)}`;
+                document.getElementById('back-to-panel').href = backUrl;
+            }
+            
+            setupEventListeners() {
+                // System setup
+                document.getElementById('start-scanner').onclick = () => this.startScanner();
+                document.getElementById('stop-scanner').onclick = () => this.stopScanner();
+                
+                // Camera controls
+                document.getElementById('toggle-camera').onclick = () => this.switchCamera();
+                document.getElementById('toggle-flash').onclick = () => this.toggleFlash();
+                
+                // Manual search
+                document.getElementById('toggle-manual-search').onclick = () => this.toggleManualSearch();
+                document.getElementById('close-manual-search').onclick = () => this.hideManualSearch();
+                document.getElementById('show-manual-search').onclick = () => this.showScannerSearch();
+                document.getElementById('close-scanner-search').onclick = () => this.hideScannerSearch();
+                
+                // Search inputs
+                document.getElementById('search-input').oninput = (e) => this.searchInvitados(e.target.value, 'search-results');
+                document.getElementById('scanner-search-input').oninput = (e) => this.searchInvitados(e.target.value, 'scanner-search-results');
+                
+                // Assistant name validation
+                document.getElementById('assistant-name').oninput = () => this.validateAssistantInfo();
+            }
+            
+            async checkSystemRequirements() {
+                // Check HTTPS
+                const httpsCheck = document.getElementById('https-check');
+                const isSecure = location.protocol === 'https:' || location.hostname === 'localhost';
+                this.updateCheckStatus(httpsCheck, isSecure, isSecure ? 'Conexión segura' : 'Se requiere HTTPS');
+                
+                // Check camera support
+                const cameraCheck = document.getElementById('camera-check');
+                const hasCamera = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+                this.updateCheckStatus(cameraCheck, hasCamera, hasCamera ? 'Cámara soportada' : 'Cámara no disponible');
+                
+                // Check permissions
+                if (isSecure && hasCamera) {
+                    try {
+                        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+                        stream.getTracks().forEach(track => track.stop());
+                        
+                        const permissionsCheck = document.getElementById('permissions-check');
+                        this.updateCheckStatus(permissionsCheck, true, 'Permisos concedidos');
+                        
+                        this.setupComplete = true;
+                        this.validateSetup();
+                        
+                    } catch (error) {
+                        const permissionsCheck = document.getElementById('permissions-check');
+                        this.updateCheckStatus(permissionsCheck, false, `Error: ${error.message}`);
+                    }
+                }
+            }
+            
+            updateCheckStatus(element, success, message) {
+                const icon = element.querySelector('span');
+                const text = element.querySelector('span:last-child');
+                
+                if (success) {
+                    icon.className = 'w-6 h-6 rounded-full bg-green-600 flex items-center justify-center text-sm';
+                    icon.textContent = '✓';
+                    text.textContent = message;
+                } else {
+                    icon.className = 'w-6 h-6 rounded-full bg-red-600 flex items-center justify-center text-sm';
+                    icon.textContent = '✗';
+                    text.textContent = message;
+                }
+            }
+            
+            validateAssistantInfo() {
+                if (this.isOrganizer) {
+                    // Si es organizador, ya está validado
+                    this.validateSetup();
+                    return;
+                }
+                
+                const name = document.getElementById('assistant-name').value.trim();
+                
+                if (name.length >= 2) {
+                    this.assistantName = name;
+                    this.assistantCode = document.getElementById('assistant-code').value.trim();
+                    this.validateSetup();
+                } else {
+                    const startBtn = document.getElementById('start-scanner');
+                    startBtn.disabled = true;
+                    startBtn.classList.add('opacity-50');
+                }
+            }
+            
+            validateSetup() {
+                const startBtn = document.getElementById('start-scanner');
+                
+                if (this.setupComplete && (this.isOrganizer || this.assistantName.length >= 2)) {
+                    startBtn.disabled = false;
+                    startBtn.classList.remove('opacity-50');
+                    
+                    // AUTO-INICIO para organizadores
+                    if (this.isOrganizer && !this.isActive) {
+                        console.log('🚀 AUTO-INICIANDO escáner para organizador...');
+                        setTimeout(() => {
+                            this.startScanner();
+                        }, 1000); // Pequeña pausa para que se complete la configuración
+                    }
+                } else {
+                    startBtn.disabled = true;
+                    startBtn.classList.add('opacity-50');
+                }
+            }
+            
+            setupNetworkMonitoring() {
+                window.addEventListener('online', () => {
+                    this.isOnline = true;
+                    this.syncPendingData();
+                });
+                
+                window.addEventListener('offline', () => {
+                    this.isOnline = false;
+                });
+            }
+            
+            async loadEventData() {
+                if (!this.eventId) return;
+                
+                try {
+                    const ticketsQuery = query(collection(db, `events/${this.eventId}/tickets`));
+                    onSnapshot(ticketsQuery, (snapshot) => {
+                        this.ticketsCache.clear();
+                        snapshot.docs.forEach(doc => {
+                            this.ticketsCache.set(doc.id, { id: doc.id, ...doc.data() });
+                        });
+                        console.log(`✅ Cargados ${this.ticketsCache.size} tickets en cache`);
+                    });
+                } catch (error) {
+                    console.error('Error cargando datos del evento:', error);
+                }
+            }
+            
+            // Función para verificar permisos de cámara
+            async checkCameraPermissions() {
+                try {
+                    console.log('🔍 Verificando permisos de cámara...');
+                    
+                    // Solicitar permisos explícitamente
+                    const stream = await navigator.mediaDevices.getUserMedia({ 
+                        video: { 
+                            facingMode: "environment",
+                            width: { ideal: 1280 },
+                            height: { ideal: 720 }
+                        } 
+                    });
+                    
+                    // Detener el stream inmediatamente, solo necesitábamos verificar permisos
+                    stream.getTracks().forEach(track => track.stop());
+                    
+                    console.log('✅ Permisos de cámara concedidos');
+                    return true;
+                    
+                } catch (error) {
+                    console.error('❌ Error de permisos de cámara:', error);
+                    
+                    let errorMsg = 'Error de cámara: ';
+                    if (error.name === 'NotAllowedError') {
+                        errorMsg += 'Permisos denegados. Permite el acceso a la cámara.';
+                    } else if (error.name === 'NotFoundError') {
+                        errorMsg += 'No se encontró cámara en el dispositivo.';
+                    } else if (error.name === 'NotSupportedError') {
+                        errorMsg += 'Cámara no soportada en este navegador.';
+                    } else {
+                        errorMsg += error.message;
+                    }
+                    
+                    this.showError(errorMsg);
+                    return false;
+                }
+            }
+
+            async startScanner() {
+                if (!this.setupComplete) {
+                    alert('❌ Completa la verificación del sistema antes de iniciar el escáner');
+                    return;
+                }
+                
+                if (!this.isOrganizer && !this.assistantName) {
+                    alert('❌ Completa la configuración de asistente antes de iniciar el escáner');
+                    return;
+                }
+                
+                try {
+                    // Verificar permisos primero
+                    const hasPermissions = await this.checkCameraPermissions();
+                    if (!hasPermissions) {
+                        return; // No continuar si no hay permisos
+                    }
+                    
+                    // Ocultar setup y mostrar scanner
+                    document.getElementById('setup-screen').classList.add('hidden');
+                    document.getElementById('scanner-screen').classList.remove('hidden');
+                    
+                    // Inicializar escáner con configuración mejorada para móviles
+                    this.html5QrCode = new Html5Qrcode("qr-reader");
+                    
+                    // Configuración optimizada para móviles
+                    const cameraConfig = {
+                        facingMode: "environment"
+                    };
+                    
+                    // Detectar si es móvil para ajustar configuración
+                    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+                    
+                    const qrCodeConfig = {
+                        fps: isMobile ? 5 : 10, // FPS más bajo en móviles para mejor rendimiento
+                        qrbox: function(viewfinderWidth, viewfinderHeight) {
+                            // Configuración más conservadora para móviles
+                            let minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+                            let qrboxSize = Math.floor(minEdge * (isMobile ? 0.7 : 0.8));
+                            return {
+                                width: qrboxSize,
+                                height: qrboxSize
+                            };
+                        },
+                        aspectRatio: 1.0,
+                        disableFlip: false, // Permitir flip para mejor compatibilidad
+                        videoConstraints: {
+                            width: isMobile ? { ideal: 1280 } : { ideal: 1920 },
+                            height: isMobile ? { ideal: 720 } : { ideal: 1080 },
+                            facingMode: "environment"
+                        },
+                        supportedScanTypes: [
+                            Html5QrcodeScanType.SCAN_TYPE_QR_CODE,
+                            Html5QrcodeScanType.SCAN_TYPE_BARCODE
+                        ]
+                    };
+                    
+                    console.log('📱 Configuración detectada:', { isMobile, qrCodeConfig });
+                    
+                    await this.html5QrCode.start(
+                        cameraConfig,
+                        qrCodeConfig,
+                        (decodedText) => {
+                            this.processQRCode(decodedText);
+                        },
+                        (errorMessage) => {
+                            // Manejo mejorado de errores
+                            if (errorMessage.includes('NotAllowedError')) {
+                                console.log('⚠️ Permisos de cámara denegados');
+                            } else if (errorMessage.includes('NotFoundError')) {
+                                console.log('⚠️ No se encontró cámara');
+                            } else {
+                                console.log('⚠️ Error menor de escaneo:', errorMessage);
+                            }
+                        }
+                    );
+                    
+                    this.isActive = true;
+                    console.log('🚀 Escáner QR mejorado iniciado correctamente');
+                    
+                } catch (error) {
+                    console.error('Error iniciando escáner:', error);
+                    this.showError(`Error de cámara: ${error.message}`);
+                    this.returnToSetup();
+                }
+            }
+            
+            async stopScanner() {
+                if (this.html5QrCode && this.isActive) {
+                    try {
+                        await this.html5QrCode.stop();
+                        this.isActive = false;
+                        console.log('🛑 Escáner detenido');
+                    } catch (error) {
+                        console.error('Error deteniendo escáner:', error);
+                    }
+                }
+                this.returnToSetup();
+            }
+            
+            returnToSetup() {
+                document.getElementById('scanner-screen').classList.add('hidden');
+                document.getElementById('setup-screen').classList.remove('hidden');
+                this.hideScannerSearch();
+            }
+            
+            async processQRCode(ticketId) {
+                this.counters.total++;
+                this.updateCounters();
+                
+                const ticket = this.ticketsCache.get(ticketId);
+                
+                if (!ticket) {
+                    this.counters.invalid++;
+                    this.showFeedback('error', '❌ Código QR Inválido', 'El código escaneado no corresponde a una entrada válida');
+                    this.updateCounters();
+                    return;
+                }
+                
+                if (ticket.used) {
+                    this.counters.used++;
+                    this.showFeedback('warning', '⚠️ Entrada Ya Usada', `${ticket.name} ya ingresó anteriormente\\n${ticket.usedAt ? new Date(ticket.usedAt).toLocaleString() : ''}`);
+                    this.updateCounters();
+                    return;
+                }
+                
+                // Entrada válida - procesar
+                this.counters.valid++;
+                
+                // Guardar localmente
+                const entry = {
+                    ticketId,
+                    name: ticket.name,
+                    prefix: ticket.prefix || 'Sin grupo',
+                    paymentStatus: ticket.paymentStatus || 'No especificado',
+                    timestamp: new Date().toISOString(),
+                    timestampLocal: new Date().toLocaleString(),
+                    assistant: this.assistantName,
+                    assistantCode: this.assistantCode,
+                    synced: false
+                };
+                
+                this.localEntries.push(entry);
+                this.syncQueue.push({ ticketId, entry });
+                
+                // Mostrar confirmación
+                this.showFeedback('success', '✅ Entrada Registrada', `${ticket.name}\\n${ticket.prefix || 'Sin grupo'}\\nTotal registros: ${this.counters.valid}`);
+                
+                // Intentar sincronizar si hay conexión
+                if (this.isOnline) {
+                    this.syncSingleEntry(ticketId, entry);
+                }
+                
+                this.updateCounters();
+                console.log(`✅ Entrada procesada: ${ticket.name}`);
+            }
+            
+            async syncSingleEntry(ticketId, entry) {
+                try {
+                    const ticketRef = doc(db, `events/${this.eventId}/tickets`, ticketId);
+                    await updateDoc(ticketRef, {
+                        used: true,
+                        usedAt: entry.timestamp,
+                        usedBy: entry.assistant
+                    });
+                    
+                    // Marcar como sincronizado
+                    entry.synced = true;
+                    this.syncQueue = this.syncQueue.filter(item => item.ticketId !== ticketId);
+                    
+                    console.log(`🔄 Sincronizado: ${entry.name}`);
+                } catch (error) {
+                    console.error('Error sincronizando entrada:', error);
+                }
+            }
+            
+            async syncPendingData() {
+                if (this.syncQueue.length === 0) return;
+                
+                console.log(`🔄 Sincronizando ${this.syncQueue.length} entradas pendientes...`);
+                
+                for (const item of this.syncQueue) {
+                    await this.syncSingleEntry(item.ticketId, item.entry);
+                }
+            }
+            
+            showFeedback(type, title, message) {
+                const feedback = document.getElementById('scan-feedback');
+                const content = document.getElementById('feedback-content');
+                
+                feedback.className = `scan-feedback feedback-${type}`;
+                content.innerHTML = `
+                    <div class="text-4xl mb-4">${title.split(' ')[0]}</div>
+                    <div class="text-2xl font-bold mb-2">${title}</div>
+                    <div class="text-lg text-center px-4">${message.replace(/\\n/g, '<br>')}</div>
+                `;
+                
+                feedback.classList.remove('hidden');
+                
+                setTimeout(() => {
+                    feedback.classList.add('hidden');
+                }, type === 'success' ? 2000 : type === 'warning' ? 2000 : 2000);
+            }
+            
+            updateCounters() {
+                document.getElementById('counter-valid').textContent = this.counters.valid;
+                document.getElementById('counter-used').textContent = this.counters.used;
+                document.getElementById('counter-invalid').textContent = this.counters.invalid;
+                document.getElementById('counter-total').textContent = this.counters.total;
+            }
+            
+            toggleManualSearch() {
+                const section = document.getElementById('manual-search-section');
+                if (section.classList.contains('hidden')) {
+                    section.classList.remove('hidden');
+                    document.getElementById('search-input').focus();
+                } else {
+                    this.hideManualSearch();
+                }
+            }
+            
+            hideManualSearch() {
+                document.getElementById('manual-search-section').classList.add('hidden');
+                document.getElementById('search-input').value = '';
+                document.getElementById('search-results').innerHTML = '<p class="text-center text-gray-400 py-8">Escribe para buscar invitados...</p>';
+            }
+            
+            showScannerSearch() {
+                document.getElementById('scanner-search-overlay').classList.remove('hidden');
+                document.getElementById('scanner-search-input').focus();
+            }
+            
+            hideScannerSearch() {
+                document.getElementById('scanner-search-overlay').classList.add('hidden');
+                document.getElementById('scanner-search-input').value = '';
+                document.getElementById('scanner-search-results').innerHTML = '<p class="text-center text-gray-400 py-4">Escribe para buscar invitados...</p>';
+            }
+            
+            searchInvitados(query, containerId) {
+                const resultsContainer = document.getElementById(containerId);
+                
+                if (!query || query.length < 2) {
+                    resultsContainer.innerHTML = '<p class="text-center text-gray-400 py-4">Escribe al menos 2 caracteres para buscar...</p>';
+                    return;
+                }
+                
+                const searchTerm = query.toLowerCase().trim();
+                const results = [];
+                
+                this.ticketsCache.forEach((ticket, ticketId) => {
+                    if (ticket.name && ticket.name.toLowerCase().includes(searchTerm)) {
+                        results.push({ ticketId, ...ticket });
+                    }
+                });
+                
+                if (results.length === 0) {
+                    resultsContainer.innerHTML = `<p class="text-center text-gray-400 py-4">No se encontraron invitados con "${query}"</p>`;
+                    return;
+                }
+                
+                resultsContainer.innerHTML = results.map(ticket => {
+                    const statusClass = ticket.used ? 'used' : '';
+                    const statusText = ticket.used ? 
+                        `❌ YA INGRESÓ (${ticket.usedAt ? new Date(ticket.usedAt).toLocaleString() : 'Fecha desconocida'})` : 
+                        '✅ DISPONIBLE - Click para marcar ingreso';
+                    
+                    return `
+                        <div class="search-result ${statusClass}" onclick="scanner.markManualEntry('${ticket.ticketId}', '${ticket.name}', '${ticket.prefix || 'Sin grupo'}')">
+                            <div class="font-bold text-lg text-white">${ticket.name}</div>
+                            <div class="text-sm text-gray-300">Grupo: ${ticket.prefix || 'Sin grupo'}</div>
+                            <div class="text-sm ${ticket.used ? 'text-red-400' : 'text-emerald-400'} mt-2">
+                                ${statusText}
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            }
+            
+            async markManualEntry(ticketId, name, prefix) {
+                const ticket = this.ticketsCache.get(ticketId);
+                
+                if (!ticket) {
+                    alert('❌ Error: Ticket no encontrado');
+                    return;
+                }
+                
+                if (ticket.used) {
+                    alert('⚠️ Este invitado ya ingresó al evento');
+                    return;
+                }
+                
+                if (!confirm(`¿Confirmar ingreso manual de:\\n${name} (${prefix})?`)) {
+                    return;
+                }
+                
+                console.log(`👤 Entrada manual confirmada: ${name}`);
+                await this.processQRCode(ticketId);
+                
+                // Cerrar búsquedas
+                this.hideManualSearch();
+                this.hideScannerSearch();
+            }
+            
+            async switchCamera() {
+                if (!this.isActive || this.cameras.length <= 1) return;
+                
+                try {
+                    await this.html5QrCode.stop();
+                    
+                    this.currentCameraIndex = (this.currentCameraIndex + 1) % this.cameras.length;
+                    
+                    await this.html5QrCode.start(
+                        this.cameras[this.currentCameraIndex],
+                        {
+                            fps: 10,
+                            qrbox: function(viewfinderWidth, viewfinderHeight) {
+                                // Usar el 80% del ancho disponible para el cuadro de escaneo
+                                let minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+                                let qrboxSize = Math.floor(minEdge * 0.8);
+                                return {
+                                    width: qrboxSize,
+                                    height: qrboxSize
+                                };
+                            },
+                            aspectRatio: 1.0,
+                            supportedScanTypes: [
+                                Html5QrcodeScanType.SCAN_TYPE_QR_CODE,
+                                Html5QrcodeScanType.SCAN_TYPE_BARCODE
+                            ]
+                        },
+                        (decodedText) => this.processQRCode(decodedText),
+                        () => {}
+                    );
+                    
+                    console.log(`📷 Cámara cambiada (${this.currentCameraIndex + 1}/${this.cameras.length})`);
+                } catch (error) {
+                    console.error('Error cambiando cámara:', error);
+                }
+            }
+            
+            toggleFlash() {
+                // Esta funcionalidad depende del dispositivo y puede no estar disponible en todos los navegadores
+                console.log('💡 Toggle flash (funcionalidad limitada en navegadores web)');
+                this.flashEnabled = !this.flashEnabled;
+            }
+            
+            showError(message) {
+                console.error('🚨 Error en escáner:', message);
+                
+                // Crear un modal de error más visual para móviles
+                const errorModal = document.createElement('div');
+                errorModal.className = 'fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4';
+                errorModal.innerHTML = `
+                    <div class="bg-red-800 border border-red-600 rounded-lg p-6 max-w-md w-full text-center">
+                        <div class="text-4xl mb-4">❌</div>
+                        <h3 class="text-lg font-bold text-white mb-4">Error de Cámara</h3>
+                        <p class="text-red-200 mb-6 text-sm leading-relaxed">${message}</p>
+                        <div class="space-y-3">
+                            <button onclick="this.parentElement.parentElement.parentElement.remove()" 
+                                    class="w-full bg-red-600 hover:bg-red-700 text-white py-3 px-6 rounded-lg font-bold">
+                                Cerrar
+                            </button>
+                            <button onclick="location.reload()" 
+                                    class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 px-6 rounded-lg text-sm">
+                                🔄 Reiniciar Escáner
+                            </button>
+                        </div>
+                        <div class="mt-4 p-3 bg-blue-900 bg-opacity-50 rounded-md">
+                            <p class="text-xs text-blue-200">
+                                💡 <strong>Soluciones:</strong><br>
+                                • Verifica permisos de cámara<br>
+                                • Usa Chrome o Firefox<br>
+                                • Reinicia el navegador
+                            </p>
+                        </div>
+                    </div>
+                `;
+                
+                document.body.appendChild(errorModal);
+                
+                // También mostrar alert como fallback
+                setTimeout(() => {
+                    alert(`❌ ${message}`);
+                }, 100);
+            }
+        }
+        
+        // Inicializar escáner
+        const scanner = new ImprovedQRScanner();
+        
+        // Hacer disponible globalmente para onclick handlers
+        window.scanner = scanner;
+    </script>
+</body>
+</html>
