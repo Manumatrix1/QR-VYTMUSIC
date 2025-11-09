@@ -480,6 +480,7 @@
                 this.eventName = null;
                 this.assistantName = null;
                 this.assistantCode = null;
+                this.isAdministrator = false; // Nueva propiedad para detectar admin
                 this.html5QrCode = null;
                 this.isActive = false;
                 this.isOnline = false;
@@ -535,21 +536,46 @@
                 const urlParams = new URLSearchParams(window.location.search);
                 const eventId = urlParams.get('eventId');
                 const eventName = urlParams.get('eventName');
+                const admin = urlParams.get('admin'); // Nuevo parámetro admin
+                
+                console.log('🔍 Detectando parámetros URL:', { eventId, eventName, admin });
                 
                 if (eventId && eventName) {
-                    // Es el creador viniendo desde panel_evento.html - acceso automático
+                    // Es el administrador viniendo desde panel_evento.html - acceso automático
                     this.eventId = eventId;
                     this.eventName = decodeURIComponent(eventName);
-                    this.assistantName = 'Creador del Evento'; // Nombre automático
-                    this.assistantCode = 'CREATOR_ACCESS'; // Código especial
+                    this.assistantName = 'Administrador del Sistema'; // Nombre automático
+                    this.assistantCode = 'ADMIN_ACCESS'; // Código especial
+                    this.isAdministrator = true; // Marcar como administrador
                     
-                    console.log(`🔗 ACCESO AUTOMÁTICO DEL CREADOR: ${this.eventName} (${eventId})`);
-                    console.log(`👑 Iniciando como creador sin configuración`);
+                    console.log(`🔗 ACCESO AUTOMÁTICO DEL ADMINISTRADOR: ${this.eventName} (${eventId})`);
+                    console.log(`👑 Iniciando como administrador sin configuración`);
                     
                     // Iniciar automáticamente sin mostrar setup
                     await this.startSystemDirectly();
                     return true; // Indica que se auto-inició
                 }
+                
+                // Si no hay parámetros de URL, también verificar si viene del referrer del panel
+                if (document.referrer.includes('panel_evento')) {
+                    console.log('🔗 Detectado acceso desde panel de control, asumiendo administrador');
+                    this.isAdministrator = true;
+                    this.assistantName = 'Administrador del Sistema';
+                    this.assistantCode = 'ADMIN_ACCESS';
+                    
+                    // Intentar obtener datos del evento desde localStorage
+                    const savedEventId = localStorage.getItem('currentEvent');
+                    const savedEventName = localStorage.getItem('currentEventName');
+                    
+                    if (savedEventId) {
+                        this.eventId = savedEventId;
+                        this.eventName = savedEventName || 'Evento';
+                        console.log(`📱 Usando datos guardados: ${this.eventName} (${savedEventId})`);
+                        await this.startSystemDirectly();
+                        return true;
+                    }
+                }
+                
                 return false; // No se auto-inició, mostrar setup
             }
 
