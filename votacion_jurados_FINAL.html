@@ -383,8 +383,13 @@
                 <button onclick="closeVotingModal()" class="btn btn-red">
                     Cancelar
                 </button>
-                <button onclick="saveModalVote()" class="btn btn-green">
-                    💾 Guardar Votación
+                <button id="finalizar-evaluacion-btn" onclick="finalizarEvaluacion()" 
+                        class="btn bg-green-600 hover:bg-green-700 opacity-50 cursor-not-allowed" 
+                        style="display: none;">
+                    ✅ FINALIZAR EVALUACIÓN
+                </button>
+                <button onclick="saveModalVote()" class="btn btn-blue">
+                    💾 Guardar Parcial
                 </button>
             </div>
         </div>
@@ -2324,6 +2329,28 @@ Formato de respuesta:
             return allJuryVotes.get(artistId)?.length || 0;
         };
         
+        // === FUNCIÓN PARA FINALIZAR EVALUACIÓN ===
+        window.finalizarEvaluacion = async function() {
+            if (!currentModalArtist) return;
+            
+            const currentVotes = votes[currentModalArtist.id] || {};
+            const hasAllVotes = CRITERIA.every(criteria => 
+                currentVotes[criteria.id] !== undefined && currentVotes[criteria.id] !== null
+            );
+            
+            if (!hasAllVotes) {
+                alert('❌ Completa todos los criterios antes de finalizar la evaluación');
+                return;
+            }
+            
+            const confirmar = confirm(`🎯 FINALIZAR EVALUACIÓN\n\n¿Estás seguro de finalizar la evaluación de "${currentModalArtist.name}"?\n\nEsto hará:\n• Generar feedback automático con IA\n• Guardar la votación en Firebase\n• Mostrar resumen completo\n\n✅ ¿Continuar?`);
+            
+            if (!confirmar) return;
+            
+            // Generar feedback automáticamente
+            await generateAndShowModalFeedback(currentVotes);
+        };
+        
         // === FUNCIÓN PARA VER VOTOS DE OTROS JURADOS ===
         window.debugArtistVotes = async function(artistId) {
             console.log(`�️ === CONSULTANDO VOTOS DE OTROS JURADOS: ${artistId} ===`);
@@ -3055,14 +3082,25 @@ Formato de respuesta:
             
             document.getElementById('modal-total-score').textContent = `${total}/1000`;
             
-            // Generar y mostrar feedback automático si hay votos completos
+            // Mostrar botón de finalizar cuando todos los criterios estén completos
             const hasAllVotes = CRITERIA.every(criteria => 
                 currentVotes[criteria.id] !== undefined && currentVotes[criteria.id] !== null
             );
             
-            if (hasAllVotes) {
-                await generateAndShowModalFeedback(currentVotes);
+            const finalizarButton = document.getElementById('finalizar-evaluacion-btn');
+            if (finalizarButton) {
+                if (hasAllVotes) {
+                    finalizarButton.style.display = 'block';
+                    finalizarButton.classList.remove('opacity-50', 'cursor-not-allowed');
+                    finalizarButton.classList.add('hover:bg-green-700');
+                } else {
+                    finalizarButton.style.display = 'block';
+                    finalizarButton.classList.add('opacity-50', 'cursor-not-allowed');
+                    finalizarButton.classList.remove('hover:bg-green-700');
+                }
             }
+            
+            // Ya NO generar feedback automáticamente - esperar a que haga clic en FINALIZAR
         }
 
         // Función para generar y mostrar feedback automático en el modal
