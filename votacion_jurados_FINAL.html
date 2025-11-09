@@ -254,6 +254,16 @@
                         <div id="artist-report-link" class="mt-3 text-sm" style="display: none;">
                             <!-- El link aparecerá aquí -->
                         </div>
+                        
+                        <!-- CONTROL DE PROMEDIOS EN TIEMPO REAL -->
+                        <button id="toggle-realtime-btn" onclick="toggleRealtimeAverages()" 
+                                class="btn text-lg px-8 py-3 w-full max-w-md mx-auto bg-green-600 hover:bg-green-700 mt-3">
+                            📊 MOSTRAR PROMEDIOS DE TODOS LOS JURADOS
+                        </button>
+                        <div id="realtime-info" class="mt-3 text-sm text-center text-yellow-300" style="display: none;">
+                            ⏱️ <strong>Sistema en tiempo real activo</strong><br>
+                            Los promedios se actualizan automáticamente cuando cualquier jurado vota
+                        </div>
                     </div>
                 </div>
 
@@ -396,6 +406,13 @@
         
         // INICIALIZAR GESTOR DE ARTISTAS GLOBALES (temporalmente comentado)
         // const globalArtistsManager = new GlobalArtistsManager();
+
+        // === SISTEMA DE CÁLCULO EN TIEMPO REAL ===
+        let allJuryVotes = new Map(); // artistId -> [votos de todos los jurados]
+        let realTimeAverages = new Map(); // artistId -> promedio actual
+        
+        // Escuchar votos en tiempo real
+        import { onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // OBTENER EVENT ID DESDE URL (como en gestión de votaciones)
         const urlParams = new URLSearchParams(window.location.search);
@@ -1927,6 +1944,175 @@ Formato de respuesta:
             }
         }
 
+        // === SISTEMA DE CÁLCULO EN TIEMPO REAL ===
+        function setupRealtimeVotingListener() {
+            console.log('🔄 Configurando escucha en tiempo real para promedios de jurados...');
+            
+            // Escuchar jury_evaluations en tiempo real
+            const juryQuery = query(collection(db, 'jury_evaluations'), where('eventId', '==', eventId));
+            
+            onSnapshot(juryQuery, (snapshot) => {
+                console.log('📊 Actualizando votos en tiempo real...');
+                
+                // Resetear datos
+                allJuryVotes.clear();
+                realTimeAverages.clear();
+                
+                // Procesar todos los votos
+                snapshot.docs.forEach(doc => {
+                    const voteData = doc.data();
+                    const artistId = voteData.artistId;
+                    
+                    if (!allJuryVotes.has(artistId)) {
+                        allJuryVotes.set(artistId, []);
+                    }
+                    
+                    allJuryVotes.get(artistId).push(voteData);
+                });
+                
+                // Calcular promedios
+                allJuryVotes.forEach((votes, artistId) => {
+                    const average = calculateAverageScore(votes);
+                    realTimeAverages.set(artistId, average);
+                });
+                
+                // Actualizar interfaz
+                updateRealtimeAveragesDisplay();
+                
+                console.log('✅ Promedios actualizados:', Object.fromEntries(realTimeAverages));
+            });
+        }
+        
+        function calculateAverageScore(votes) {
+            if (votes.length === 0) return 0;
+            
+            let totalSum = 0;
+            let totalVotes = 0;
+            
+            votes.forEach(vote => {
+                if (vote.scores) {
+                    const voteAverage = Object.values(vote.scores).reduce((sum, score) => sum + score, 0) / Object.keys(vote.scores).length;
+                    totalSum += voteAverage;
+                    totalVotes++;
+                } else if (vote.totalScore) {
+                    totalSum += vote.totalScore;
+                    totalVotes++;
+                }
+            });
+            
+            return totalVotes > 0 ? (totalSum / totalVotes) : 0;
+        }
+        
+        function updateRealtimeAveragesDisplay() {
+            if (!showRealtimeAverages) return;
+            
+            artists.forEach(artist => {
+                const average = realTimeAverages.get(artist.id) || 0;
+                const juryCount = allJuryVotes.get(artist.id)?.length || 0;
+                
+                // Actualizar en vista lista
+                const listCard = document.querySelector(`[data-artist-id="${artist.id}"]`);
+                if (listCard) {
+                    let averageDisplay = listCard.querySelector('.realtime-average');
+                    if (!averageDisplay) {
+                        averageDisplay = document.createElement('div');
+                        averageDisplay.className = 'realtime-average bg-blue-800 bg-opacity-50 p-3 rounded-lg mt-3 border border-blue-500';
+                        listCard.querySelector('.artist-card').appendChild(averageDisplay);
+                    }
+                    
+                    averageDisplay.style.display = 'block';
+                    
+                    if (juryCount > 0) {
+                        averageDisplay.innerHTML = `
+                            <div class="text-center">
+                                <div class="text-2xl font-bold text-blue-300">📊 ${average.toFixed(1)} pts</div>
+                                <div class="text-sm text-gray-300">Promedio de ${juryCount} jurado${juryCount !== 1 ? 's' : ''}</div>
+                                <div class="text-xs text-yellow-300 mt-1">⏱️ Actualizado en tiempo real</div>
+                                <button onclick="showComparativeAnalysis('${artist.id}')" 
+                                        class="mt-2 px-3 py-1 bg-purple-600 hover:bg-purple-700 text-white text-xs rounded">
+                                    🔍 Comparar con mi voto
+                                </button>
+                            </div>
+                        `;
+                    } else {
+                        averageDisplay.innerHTML = `
+                            <div class="text-center text-gray-500">
+                                <div class="text-lg">📊 Sin votos aún</div>
+                                <div class="text-xs">Esperando evaluaciones...</div>
+                            </div>
+                        `;
+                    }
+                }
+            });
+        }
+        
+        // Función para obtener promedio actual de un artista
+        window.getCurrentAverage = function(artistId) {
+            return realTimeAverages.get(artistId) || 0;
+        };
+        
+        // Función para obtener número de jurados que han votado
+        window.getJuryCount = function(artistId) {
+            return allJuryVotes.get(artistId)?.length || 0;
+        };
+        
+        // Control de visualización de promedios en tiempo real
+        let showRealtimeAverages = false;
+        
+        window.toggleRealtimeAverages = function() {
+            showRealtimeAverages = !showRealtimeAverages;
+            const btn = document.getElementById('toggle-realtime-btn');
+            const info = document.getElementById('realtime-info');
+            
+            if (showRealtimeAverages) {
+                btn.textContent = '📊 OCULTAR PROMEDIOS DE JURADOS';
+                btn.className = 'btn text-lg px-8 py-3 w-full max-w-md mx-auto bg-red-600 hover:bg-red-700 mt-3';
+                info.style.display = 'block';
+                updateRealtimeAveragesDisplay();
+            } else {
+                btn.textContent = '📊 MOSTRAR PROMEDIOS DE TODOS LOS JURADOS';
+                btn.className = 'btn text-lg px-8 py-3 w-full max-w-md mx-auto bg-green-600 hover:bg-green-700 mt-3';
+                info.style.display = 'none';
+                hideRealtimeAverages();
+            }
+        };
+        
+        function hideRealtimeAverages() {
+            document.querySelectorAll('.realtime-average').forEach(el => {
+                el.style.display = 'none';
+            });
+        }
+        
+        // Función mejorada para mostrar feedback individual vs grupal
+        window.showComparativeAnalysis = function(artistId) {
+            const myVote = votes[artistId];
+            const groupAverage = realTimeAverages.get(artistId) || 0;
+            const juryCount = allJuryVotes.get(artistId)?.length || 0;
+            
+            if (!myVote || Object.keys(myVote).length === 0) {
+                alert('⚠️ Primero evalúa a este artista para ver el análisis comparativo');
+                return;
+            }
+            
+            const myAverage = Object.values(myVote).reduce((sum, score) => sum + score, 0) / Object.keys(myVote).length;
+            const difference = myAverage - groupAverage;
+            
+            let message = `📊 ANÁLISIS COMPARATIVO\n\n`;
+            message += `👤 Tu evaluación: ${myAverage.toFixed(1)} pts\n`;
+            message += `👥 Promedio grupal: ${groupAverage.toFixed(1)} pts (${juryCount} jurado${juryCount !== 1 ? 's' : ''})\n`;
+            message += `📈 Diferencia: ${difference > 0 ? '+' : ''}${difference.toFixed(1)} pts\n\n`;
+            
+            if (Math.abs(difference) < 5) {
+                message += '✅ Tu evaluación está alineada con el grupo';
+            } else if (difference > 0) {
+                message += '⬆️ Evaluaste más alto que el promedio grupal';
+            } else {
+                message += '⬇️ Evaluaste más bajo que el promedio grupal';
+            }
+            
+            alert(message);
+        };
+
         // Función para limpiar votos de un artista (LOCAL + FIREBASE)
         window.clearVote = async function(artistId) {
             const artist = artists.find(a => a.id === artistId);
@@ -3103,6 +3289,16 @@ Formato de respuesta:
             loadAdminGalas();
         } catch (error) {
             console.log('⚠️ Error cargando galas Firebase:', error);
+        }
+        
+        // === CONFIGURAR SISTEMA DE TIEMPO REAL ===
+        try {
+            setTimeout(() => {
+                setupRealtimeVotingListener();
+                console.log('✅ Sistema de cálculo en tiempo real inicializado');
+            }, 2000);
+        } catch (error) {
+            console.log('⚠️ Error configurando tiempo real:', error);
         }
         
         checkUrlParameters();
