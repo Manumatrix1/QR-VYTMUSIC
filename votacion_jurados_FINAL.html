@@ -2323,35 +2323,85 @@ Formato de respuesta:
             const container = document.getElementById(`other-jurors-${artistId}`);
             if (!container) return;
             
+            console.log(`🔍 Buscando votos de otros jurados para artista: ${artistId}`);
+            console.log(`👤 Jurado actual (excluir): ${currentJuror?.name}`);
+            
             try {
-                // Buscar votos de ESTE artista específico
+                // Buscar votos de ESTE artista específico en TODAS las colecciones posibles
                 const collections = [
                     'jury_evaluations',
+                    'jury_users', 
                     `events/${eventId}/jury_evaluations`, 
-                    `events/${eventId}/jury_votes`
+                    `events/${eventId}/jury_votes`,
+                    `events/${eventId}/votes`
                 ];
                 
                 let votesForThisArtist = [];
                 
                 for (const collectionPath of collections) {
+                    console.log(`🔍 Buscando en colección: ${collectionPath}`);
+                    
                     try {
-                        const q = query(
+                        // Primero buscar solo por artistId (más amplio)
+                        const q1 = query(
                             collection(db, collectionPath),
-                            where('eventId', '==', eventId),
                             where('artistId', '==', artistId)
                         );
-                        const snapshot = await getDocs(q);
+                        const snapshot1 = await getDocs(q1);
                         
-                        snapshot.docs.forEach(doc => {
+                        console.log(`📊 [${collectionPath}] Por artistId: ${snapshot1.size} docs`);
+                        
+                        snapshot1.docs.forEach(doc => {
                             const voteData = doc.data();
-                            if (voteData.jurorName !== currentJuror?.name) { // Excluir mi propio voto
-                                votesForThisArtist.push(voteData);
+                            console.log(`📝 Voto encontrado:`, {
+                                docId: doc.id,
+                                jurorName: voteData.jurorName,
+                                artistId: voteData.artistId,
+                                eventId: voteData.eventId,
+                                scores: voteData.scores ? 'Sí' : 'No'
+                            });
+                            
+                            if (voteData.jurorName && voteData.jurorName !== currentJuror?.name) {
+                                votesForThisArtist.push({
+                                    ...voteData,
+                                    source: collectionPath
+                                });
                             }
                         });
+                        
+                        // También buscar con eventId si está disponible
+                        if (eventId) {
+                            const q2 = query(
+                                collection(db, collectionPath),
+                                where('eventId', '==', eventId),
+                                where('artistId', '==', artistId)
+                            );
+                            const snapshot2 = await getDocs(q2);
+                            
+                            console.log(`📊 [${collectionPath}] Por eventId+artistId: ${snapshot2.size} docs`);
+                            
+                            snapshot2.docs.forEach(doc => {
+                                const voteData = doc.data();
+                                if (voteData.jurorName && voteData.jurorName !== currentJuror?.name) {
+                                    // Evitar duplicados
+                                    const exists = votesForThisArtist.some(v => v.jurorName === voteData.jurorName && v.artistId === voteData.artistId);
+                                    if (!exists) {
+                                        votesForThisArtist.push({
+                                            ...voteData,
+                                            source: collectionPath
+                                        });
+                                    }
+                                }
+                            });
+                        }
+                        
                     } catch (error) {
-                        console.warn(`Error buscando en ${collectionPath}:`, error);
+                        console.warn(`⚠️ Error buscando en ${collectionPath}:`, error.message);
                     }
                 }
+                
+                console.log(`✅ TOTAL votos encontrados para ${artistId}:`, votesForThisArtist.length);
+                console.log(`📋 Detalles:`, votesForThisArtist);
                 
                 // Mostrar información de otros jurados
                 if (votesForThisArtist.length === 0) {
@@ -2359,20 +2409,24 @@ Formato de respuesta:
                         <div class="text-center text-gray-400">
                             <p>🤔 Ningún otro jurado ha votado este artista aún</p>
                             <p class="text-xs mt-1">Serás el primero en evaluarlo</p>
+                            <p class="text-xs mt-2 text-red-400">Debug: Buscado en ${collections.length} colecciones</p>
                         </div>
                     `;
                 } else {
-                    let html = '';
+                    let html = `<div class="text-xs text-green-400 mb-2">✅ Encontrados ${votesForThisArtist.length} voto(s) de otros jurados</div>`;
+                    
                     votesForThisArtist.forEach(vote => {
-                        const totalScore = vote.totalScore || calculateScoreFromCriteria(vote.scores);
+                        const totalScore = vote.totalScore || calculateScoreFromCriteria(vote.scores) || 0;
                         const timeAgo = vote.timestamp ? getTimeAgo(new Date(vote.timestamp)) : 'Tiempo desconocido';
                         
                         html += `
-                            <div class="flex justify-between items-center p-3 bg-blue-800 bg-opacity-50 rounded">
+                            <div class="flex justify-between items-center p-3 bg-blue-800 bg-opacity-50 rounded mb-2">
                                 <div>
                                     <div class="font-bold text-blue-300">${vote.jurorName}</div>
                                     <div class="text-xs text-gray-400">${timeAgo}</div>
+                                    <div class="text-xs text-purple-400">Fuente: ${vote.source}</div>
                                     ${vote.judgeComments ? `<div class="text-xs text-yellow-300 mt-1">"${vote.judgeComments}"</div>` : ''}
+                                    ${vote.scores ? `<div class="text-xs text-gray-300">Criterios: ${Object.keys(vote.scores).length}</div>` : ''}
                                 </div>
                                 <div class="text-right">
                                     <div class="text-2xl font-bold text-green-300">${totalScore.toFixed(1)} pts</div>
@@ -2789,6 +2843,7 @@ Formato de respuesta:
             
             // === ACTUALIZAR ACTIVIDAD DE OTROS JURADOS ===
             setTimeout(() => {
+                console.log(`🔍 Modal abierto para ${artist.name} (ID: ${artist.id})`);
                 updateOtherJurorsActivity(artist.id);
             }, 500);
             
