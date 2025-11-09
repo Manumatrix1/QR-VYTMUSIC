@@ -4261,59 +4261,112 @@ Formato de respuesta:
         }
 
         // Función para compartir link de votación de jurados
-        async function shareJuryLink() {
+        function shareJuryLink() {
+            console.log('🔗 Función shareJuryLink ejecutada');
+            
             try {
                 const currentUrl = window.location.href;
-                const baseUrl = currentUrl.split('?')[0]; // Solo la URL base
+                const baseUrl = currentUrl.split('?')[0];
                 const juryLink = baseUrl;
                 
-                console.log('🔗 Compartiendo link de jurados:', juryLink);
+                console.log('🎯 URL actual:', currentUrl);
+                console.log('🔗 Link a compartir:', juryLink);
                 
-                // Intentar usar Web Share API (funciona en móviles)
-                if (navigator.share) {
-                    await navigator.share({
+                const button = document.getElementById('share-jury-link-btn');
+                console.log('🎮 Botón encontrado:', !!button);
+                
+                // Intentar copiar al portapapeles primero (más confiable)
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(juryLink).then(() => {
+                        console.log('📋 Link copiado exitosamente');
+                        
+                        // Mostrar confirmación visual
+                        if (button) {
+                            const originalText = button.innerHTML;
+                            button.innerHTML = '✅ Link Copiado!';
+                            button.style.backgroundColor = '#10B981';
+                            button.style.transform = 'scale(1.05)';
+                            
+                            setTimeout(() => {
+                                button.innerHTML = originalText;
+                                button.style.backgroundColor = '';
+                                button.style.transform = '';
+                            }, 2500);
+                        }
+                        
+                        // También mostrar un alert de confirmación
+                        alert(`✅ Link copiado al portapapeles!\n\n${juryLink}\n\nYa puedes pegarlo en WhatsApp, email o donde necesites.`);
+                        
+                    }).catch(err => {
+                        console.error('❌ Error copiando al portapapeles:', err);
+                        showLinkManually(juryLink);
+                    });
+                } 
+                // Intentar Web Share API en móviles
+                else if (navigator.share) {
+                    navigator.share({
                         title: 'VYT MUSIC - Votación de Jurados',
                         text: 'Accede al sistema de votación de jurados VYT MUSIC',
                         url: juryLink
+                    }).then(() => {
+                        console.log('✅ Link compartido con Web Share API');
+                    }).catch(err => {
+                        console.error('❌ Error con Web Share API:', err);
+                        showLinkManually(juryLink);
                     });
-                    console.log('✅ Link compartido exitosamente');
-                } else {
-                    // Fallback: copiar al portapapeles
-                    if (navigator.clipboard) {
-                        await navigator.clipboard.writeText(juryLink);
-                        console.log('📋 Link copiado al portapapeles');
-                        
-                        // Mostrar mensaje de confirmación
-                        const button = document.getElementById('share-jury-link-btn');
-                        const originalText = button.innerHTML;
-                        button.innerHTML = '✅ Link Copiado';
-                        button.style.backgroundColor = '#10B981';
-                        
-                        setTimeout(() => {
-                            button.innerHTML = originalText;
-                            button.style.backgroundColor = '';
-                        }, 2000);
-                    } else {
-                        // Último fallback: mostrar el link
-                        alert(`Link de votación de jurados:\n\n${juryLink}\n\nCopia este link y compártelo con los jurados.`);
-                    }
+                } 
+                // Fallback manual
+                else {
+                    console.log('⚠️ Usando fallback manual');
+                    showLinkManually(juryLink);
                 }
                 
             } catch (error) {
-                console.error('❌ Error compartiendo link:', error);
-                
-                // Si falla todo, mostrar el link
-                const currentUrl = window.location.href;
-                const baseUrl = currentUrl.split('?')[0];
-                alert(`Link de votación de jurados:\n\n${baseUrl}\n\nCopia este link y compártelo con los jurados.`);
+                console.error('❌ Error general en shareJuryLink:', error);
+                showLinkManually(window.location.href.split('?')[0]);
             }
         }
 
-        // Event listener para el botón de compartir
+        // Función auxiliar para mostrar el link manualmente
+        function showLinkManually(link) {
+            alert(`📱 Link de votación de jurados:\n\n${link}\n\n📋 Copia este link y compártelo con los jurados por WhatsApp, email, etc.`);
+        }
+
+        // Configurar el botón cuando cargue la página
         document.addEventListener('DOMContentLoaded', function() {
+            console.log('📄 DOM cargado, configurando botón...');
+            
             const shareButton = document.getElementById('share-jury-link-btn');
+            console.log('🎮 Botón share encontrado:', !!shareButton);
+            
             if (shareButton) {
-                shareButton.addEventListener('click', shareJuryLink);
+                // Remover listeners previos
+                shareButton.replaceWith(shareButton.cloneNode(true));
+                const newButton = document.getElementById('share-jury-link-btn');
+                
+                newButton.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    console.log('🔥 Click en botón compartir detectado');
+                    shareJuryLink();
+                });
+                
+                console.log('✅ Event listener configurado correctamente');
+            } else {
+                console.error('❌ Botón share-jury-link-btn no encontrado');
+            }
+        });
+
+        // También configurar cuando la ventana termine de cargar
+        window.addEventListener('load', function() {
+            console.log('🌐 Window load - verificando botón nuevamente...');
+            const shareButton = document.getElementById('share-jury-link-btn');
+            if (shareButton && !shareButton.onclick) {
+                shareButton.onclick = function(e) {
+                    e.preventDefault();
+                    console.log('🔥 Click alternativo detectado');
+                    shareJuryLink();
+                };
+                console.log('✅ Event handler alternativo configurado');
             }
         });
     </script>
