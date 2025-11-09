@@ -1256,6 +1256,16 @@ Formato de respuesta:
                                         <p class="text-xs text-blue-300 mt-2 text-center">💡 Basado en tus puntuaciones - Puedes usarlas como guía</p>
                                     </div>
                                     
+                                    <!-- COMENTARIOS ADICIONALES POST-EVALUACIÓN -->
+                                    <div id="post-comments-section-${artist.id}" class="bg-green-800 bg-opacity-30 p-4 rounded-lg mt-4 border border-green-500" style="display: none;">
+                                        <h5 class="text-lg font-bold mb-3 text-green-300">📝 Tus comentarios adicionales</h5>
+                                        <textarea id="post-comments-${artist.id}" 
+                                                  placeholder="¿Quieres agregar algún comentario personal después de ver el feedback? Escribe aquí tus observaciones adicionales..."
+                                                  class="w-full h-20 p-3 bg-gray-700 text-white rounded-lg border border-green-500 resize-none"
+                                                  onchange="savePostComments('${artist.id}', this.value)"></textarea>
+                                        <p class="text-xs text-green-300 mt-2">💡 Estos comentarios se guardarán junto con tu evaluación</p>
+                                    </div>
+                                    
                                     <div class="space-x-2 space-y-2">
                                         <button onclick="editVote('${artist.id}')" class="btn btn-primary">✏️ Editar Voto</button>
                                         <button onclick="clearVote('${artist.id}')" class="btn btn-red">🗑️ Borrar Voto</button>
@@ -2901,6 +2911,13 @@ Formato de respuesta:
         window.openVotingModal = function(artist) {
             currentModalArtist = artist;
             
+            // Asegurar que el modal tenga el data-artist-id para identificación
+            const modal = document.getElementById('voting-modal');
+            if (modal) {
+                modal.setAttribute('data-artist-id', artist.id);
+                console.log(`🎯 Modal configurado con artist-id: ${artist.id}`);
+            }
+            
             // Llenar información del artista
             document.getElementById('modal-artist-name').textContent = artist.name;
             document.getElementById('modal-artist-info').textContent = `Participante del certamen`;
@@ -3141,10 +3158,31 @@ Formato de respuesta:
                         <div id="auto-feedback-modal" class="space-y-2 text-sm"></div>
                         <p class="text-xs text-blue-300 mt-2 text-center">💡 Basado en tus puntuaciones - Puedes usarlas como guía</p>
                     `;
+                    
+                    // También crear la sección de comentarios post-evaluación
+                    const postCommentsSection = document.createElement('div');
+                    postCommentsSection.id = 'post-evaluation-comments-section';
+                    postCommentsSection.className = 'bg-green-800 bg-opacity-30 border border-green-500 p-4 rounded-lg mb-6';
+                    postCommentsSection.style.display = 'none';
+                    postCommentsSection.innerHTML = `
+                        <h5 class="text-lg font-bold mb-3 text-center text-green-400">💭 COMENTARIOS ADICIONALES POST-EVALUACIÓN</h5>
+                        <div class="space-y-3">
+                            <textarea 
+                                id="post-evaluation-comments" 
+                                rows="4" 
+                                class="w-full p-3 bg-gray-800 border border-green-500 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent resize-vertical"
+                                placeholder="¿Quieres agregar algún comentario personal después de ver el feedback?"
+                                onchange="savePostComments()"
+                            ></textarea>
+                            <p class="text-xs text-green-300 text-center">💡 Opcional: Agrega tus impresiones personales después del análisis con IA</p>
+                        </div>
+                    `;
+                    
                     const buttonsDiv = modalContent.querySelector('.flex.gap-4.justify-end');
                     if (buttonsDiv) {
                         modalContent.insertBefore(newFeedbackSection, buttonsDiv);
-                        console.log('🔧 Elementos de feedback creados dinámicamente');
+                        modalContent.insertBefore(postCommentsSection, buttonsDiv);
+                        console.log('🔧 Elementos de feedback y comentarios post-evaluación creados dinámicamente');
                         // Reintentar con los nuevos elementos
                         setTimeout(() => generateAndShowModalFeedback(artistVotes), 100);
                         return;
@@ -3182,6 +3220,13 @@ Formato de respuesta:
                     // Mostrar la sección de feedback
                     feedbackSection.style.display = 'block';
                     feedbackSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    
+                    // Mostrar también la sección de comentarios post-evaluación
+                    const postCommentsSection = document.getElementById('post-evaluation-comments-section');
+                    if (postCommentsSection) {
+                        postCommentsSection.style.display = 'block';
+                        console.log('✅ Sección de comentarios post-evaluación mostrada');
+                    }
                     
                     console.log('✅ Feedback con IA mostrado correctamente');
                     console.log('📄 Sugerencias generadas:', feedbackSuggestions.length);
@@ -3912,6 +3957,119 @@ Formato de respuesta:
                 console.warn('⚠️ No se encontró el botón global de envío');
             }
         }, 500);
+        
+        // === FUNCIÓN PARA GUARDAR COMENTARIOS POST-EVALUACIÓN ===
+        async function savePostComments() {
+            try {
+                // Obtener el ID del artista desde el modal o desde currentModalArtist
+                let artistId = null;
+                
+                // Opción 1: Desde el modal con data-artist-id
+                const votingModal = document.getElementById('voting-modal');
+                if (votingModal && votingModal.getAttribute('data-artist-id')) {
+                    artistId = votingModal.getAttribute('data-artist-id');
+                    console.log('🎯 ID del artista obtenido desde modal:', artistId);
+                }
+                
+                // Opción 2: Desde la variable global currentModalArtist
+                if (!artistId && currentModalArtist) {
+                    artistId = currentModalArtist.id;
+                    console.log('🎯 ID del artista obtenido desde variable global:', artistId);
+                }
+                
+                if (!artistId) {
+                    console.warn('⚠️ No se pudo obtener el ID del artista para guardar comentarios');
+                    return;
+                }
+                const commentsTextarea = document.getElementById('post-evaluation-comments');
+                
+                if (!commentsTextarea) {
+                    console.warn('⚠️ No se encontró textarea de comentarios');
+                    return;
+                }
+                
+                const additionalComments = commentsTextarea.value.trim();
+                
+                if (!additionalComments) {
+                    console.log('ℹ️ No hay comentarios adicionales para guardar');
+                    return;
+                }
+                
+                const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
+                const currentEvent = localStorage.getItem('currentEvent');
+                
+                if (!currentUser.username || !currentEvent) {
+                    console.error('❌ Faltan datos de usuario o evento');
+                    return;
+                }
+                
+                console.log('💾 Guardando comentarios post-evaluación:', {
+                    artist: artistId,
+                    juror: currentUser.username,
+                    comments: additionalComments
+                });
+                
+                // Guardar en Firebase
+                await db.collection('events').doc(currentEvent)
+                    .collection('post_evaluation_comments').doc(`${artistId}_${currentUser.username}`)
+                    .set({
+                        artistId: artistId,
+                        artistName: currentModalArtist?.name || document.getElementById('modal-artist-name')?.textContent || 'Artista desconocido',
+                        jurorId: currentUser.username,
+                        jurorName: currentUser.displayName || currentUser.username,
+                        additionalComments: additionalComments,
+                        timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+                        eventId: currentEvent
+                    });
+                
+                // Mostrar confirmación visual
+                const textarea = document.getElementById('post-evaluation-comments');
+                const originalBorder = textarea.style.borderColor;
+                textarea.style.borderColor = '#10B981'; // Verde más intenso
+                textarea.style.boxShadow = '0 0 10px rgba(16, 185, 129, 0.3)';
+                
+                // Mostrar mensaje de éxito
+                const successMessage = document.createElement('div');
+                successMessage.className = 'text-green-400 text-sm font-bold mt-2 text-center';
+                successMessage.innerHTML = '✅ Comentarios guardados correctamente';
+                successMessage.id = 'comments-success-message';
+                
+                // Remover mensaje anterior si existe
+                const existingMessage = document.getElementById('comments-success-message');
+                if (existingMessage) existingMessage.remove();
+                
+                textarea.parentNode.appendChild(successMessage);
+                
+                // Restaurar estilo después de 3 segundos
+                setTimeout(() => {
+                    textarea.style.borderColor = originalBorder;
+                    textarea.style.boxShadow = 'none';
+                    if (successMessage) successMessage.remove();
+                }, 3000);
+                
+                console.log('✅ Comentarios post-evaluación guardados exitosamente');
+                
+            } catch (error) {
+                console.error('❌ Error guardando comentarios post-evaluación:', error);
+                
+                // Mostrar mensaje de error
+                const errorMessage = document.createElement('div');
+                errorMessage.className = 'text-red-400 text-sm font-bold mt-2 text-center';
+                errorMessage.innerHTML = '❌ Error guardando comentarios';
+                errorMessage.id = 'comments-error-message';
+                
+                const textarea = document.getElementById('post-evaluation-comments');
+                if (textarea) {
+                    const existingError = document.getElementById('comments-error-message');
+                    if (existingError) existingError.remove();
+                    textarea.parentNode.appendChild(errorMessage);
+                    
+                    setTimeout(() => {
+                        if (errorMessage) errorMessage.remove();
+                    }, 5000);
+                }
+            }
+        }
     </script>
 </body>
 </html>
