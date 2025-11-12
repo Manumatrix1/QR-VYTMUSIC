@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🔐 Restaurar Jurados Seguros - VYT MUSIC</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; }
+        .glass-bg { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+        .success { background: rgba(16, 185, 129, 0.2); border: 1px solid #10b981; }
+        .error { background: rgba(239, 68, 68, 0.2); border: 1px solid #ef4444; }
+        .warning { background: rgba(245, 158, 11, 0.2); border: 1px solid #f59e0b; }
+    </style>
+</head>
+<body class="glass-bg min-h-screen text-white">
+    <div class="container mx-auto px-4 py-8">
+        <!-- HEADER -->
+        <div class="text-center mb-8">
+            <h1 class="text-4xl font-bold mb-2">🔐 RESTAURAR JURADOS SEGUROS</h1>
+            <p class="text-lg opacity-90">Sistema de backup y restauración de usuarios jurados críticos</p>
+            <div class="mt-4 p-4 bg-yellow-500/20 rounded-lg">
+                <p class="font-bold">⚠️ IMPORTANTE: Este script maneja datos críticos del sistema</p>
+            </div>
+        </div>
+
+        <!-- INFORMACIÓN DEL BACKUP -->
+        <div class="bg-white/10 backdrop-blur-sm rounded-xl p-6 mb-8">
+            <h2 class="text-2xl font-bold mb-4">📋 Información del Backup</h2>
+            <div id="backup-info" class="space-y-2 text-sm">
+                <p><strong>Estado:</strong> <span id="backup-status">Cargando...</span></p>
+                <p><strong>Jurados en backup:</strong> <span id="jurados-count">-</span></p>
+                <p><strong>Evento:</strong> <span id="event-info">-</span></p>
+            </div>
+        </div>
+
+        <!-- JURADOS EN BACKUP -->
+        <div class="bg-white/10 backdrop-blur-sm rounded-xl p-6 mb-8">
+            <h2 class="text-2xl font-bold mb-4">👥 Jurados en Backup</h2>
+            <div id="jurados-list" class="space-y-4">
+                <!-- Se llenará dinámicamente -->
+            </div>
+        </div>
+
+        <!-- ACCIONES -->
+        <div class="bg-white/10 backdrop-blur-sm rounded-xl p-6 mb-8">
+            <h2 class="text-2xl font-bold mb-4">🔧 Acciones</h2>
+            <div class="space-y-4">
+                <button onclick="verificarExistentes()" class="w-full bg-blue-600 hover:bg-blue-700 py-3 px-6 rounded-lg font-bold">
+                    🔍 VERIFICAR JURADOS EXISTENTES
+                </button>
+                <button onclick="restaurarJurados()" class="w-full bg-green-600 hover:bg-green-700 py-3 px-6 rounded-lg font-bold">
+                    ♻️ RESTAURAR JURADOS A FIREBASE
+                </button>
+                <button onclick="crearBackupActual()" class="w-full bg-purple-600 hover:bg-purple-700 py-3 px-6 rounded-lg font-bold">
+                    💾 CREAR BACKUP DE JURADOS ACTUALES
+                </button>
+            </div>
+        </div>
+
+        <!-- LOG DE OPERACIONES -->
+        <div class="bg-white/10 backdrop-blur-sm rounded-xl p-6">
+            <h2 class="text-2xl font-bold mb-4">📝 Log de Operaciones</h2>
+            <div id="operation-log" class="bg-black/30 p-4 rounded-lg h-64 overflow-y-auto font-mono text-sm">
+                <p>Sistema iniciado...</p>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { db } from './firebase_config.js';
+        import { collection, doc, setDoc, getDocs, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Configuración
+        const eventId = 'vIINfBwQaFsIhNOYWPtS';
+        const eventName = 'GALA 1 CON PUNTUACIÓN. G12 VYTMUSIC';
+
+        // Datos de jurados seguros (hardcodeados para máxima seguridad)
+        const juradosSegurosDatos = {
+            "eze_ceci_grupal": {
+                id: "eze_ceci_grupal",
+                name: "Eze y Ceci",
+                displayName: "Eze y Ceci",
+                username: "eze_ceci_grupal",
+                type: "grupal",
+                category: "Jurado Grupal",
+                description: "Jurado grupal conformado por Eze y Ceci",
+                active: true,
+                canVote: true,
+                canComment: true,
+                accessReports: true,
+                createdAt: new Date().toISOString(),
+                votingSystem: "conjunto",
+                voteWeight: 1.0,
+                eventId: eventId,
+                backup: true
+            },
+            "luciano_secreto": {
+                id: "luciano_secreto",
+                name: "Luciano",
+                displayName: "Luciano",
+                username: "luciano_secreto",
+                type: "secreto",
+                category: "Jurado Secreto",
+                description: "Jurado con voto secreto - evaluación confidencial",
+                active: true,
+                canVote: true,
+                canComment: true,
+                accessReports: false,
+                secretVote: true,
+                createdAt: new Date().toISOString(),
+                votingSystem: "individual_secreto",
+                voteWeight: 1.0,
+                confidential: true,
+                eventId: eventId,
+                backup: true
+            }
+        };
+
+        // Función para log
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('operation-log');
+            const timestamp = new Date().toLocaleTimeString();
+            const className = type === 'error' ? 'text-red-400' : type === 'success' ? 'text-green-400' : type === 'warning' ? 'text-yellow-400' : 'text-white';
+            logDiv.innerHTML += `<p class="${className}">[${timestamp}] ${message}</p>`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        // Cargar información del backup
+        function cargarInfoBackup() {
+            const juradosArray = Object.values(juradosSegurosDatos);
+            document.getElementById('backup-status').textContent = 'Backup cargado correctamente';
+            document.getElementById('jurados-count').textContent = juradosArray.length;
+            document.getElementById('event-info').textContent = eventName;
+
+            const listDiv = document.getElementById('jurados-list');
+            listDiv.innerHTML = '';
+
+            juradosArray.forEach(jurado => {
+                const div = document.createElement('div');
+                div.className = 'bg-white/5 p-4 rounded-lg border-l-4 border-green-400';
+                div.innerHTML = `
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <h3 class="font-bold text-lg">${jurado.name}</h3>
+                            <p class="text-sm opacity-80">${jurado.category}</p>
+                            <p class="text-xs mt-1">${jurado.description}</p>
+                        </div>
+                        <div class="text-right">
+                            <span class="px-2 py-1 bg-green-500/20 rounded text-xs">${jurado.type}</span>
+                            ${jurado.confidential ? '<span class="px-2 py-1 bg-red-500/20 rounded text-xs ml-1">CONFIDENCIAL</span>' : ''}
+                        </div>
+                    </div>
+                `;
+                listDiv.appendChild(div);
+            });
+
+            log('Información del backup cargada correctamente', 'success');
+        }
+
+        // Verificar jurados existentes
+        window.verificarExistentes = async function() {
+            log('🔍 Verificando jurados existentes en Firebase...', 'info');
+            
+            try {
+                const juradosSnapshot = await getDocs(collection(db, `events/${eventId}/jury_users`));
+                log(`📊 Encontrados ${juradosSnapshot.size} jurados en Firebase`, 'info');
+
+                const existentes = {};
+                juradosSnapshot.forEach(doc => {
+                    existentes[doc.id] = doc.data();
+                    log(`   - ${doc.data().name || doc.id} (${doc.data().type || 'sin tipo'})`, 'info');
+                });
+
+                // Verificar si nuestros jurados seguros están
+                Object.keys(juradosSegurosDatos).forEach(id => {
+                    if (existentes[id]) {
+                        log(`✅ ${juradosSegurosDatos[id].name} YA EXISTE en Firebase`, 'success');
+                    } else {
+                        log(`❌ ${juradosSegurosDatos[id].name} NO EXISTE en Firebase`, 'warning');
+                    }
+                });
+
+            } catch (error) {
+                log(`❌ Error verificando jurados: ${error.message}`, 'error');
+            }
+        };
+
+        // Restaurar jurados a Firebase
+        window.restaurarJurados = async function() {
+            log('♻️ Iniciando restauración de jurados seguros...', 'info');
+            
+            let exitosos = 0;
+            let errores = 0;
+
+            for (const [id, juradoData] of Object.entries(juradosSegurosDatos)) {
+                try {
+                    log(`💾 Guardando ${juradoData.name}...`, 'info');
+                    
+                    await setDoc(doc(db, `events/${eventId}/jury_users`, id), juradoData);
+                    
+                    log(`✅ ${juradoData.name} guardado exitosamente`, 'success');
+                    exitosos++;
+                    
+                } catch (error) {
+                    log(`❌ Error guardando ${juradoData.name}: ${error.message}`, 'error');
+                    errores++;
+                }
+                
+                // Pausa pequeña entre guardados
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
+
+            log(`🎉 RESTAURACIÓN COMPLETADA: ${exitosos} exitosos, ${errores} errores`, exitosos > 0 ? 'success' : 'error');
+            
+            if (exitosos > 0) {
+                alert(`✅ Restauración exitosa!\n\n${exitosos} jurados restaurados correctamente.\n\nYa puedes usarlos en el sistema de votación.`);
+            }
+        };
+
+        // Crear backup de jurados actuales
+        window.crearBackupActual = async function() {
+            log('💾 Creando backup de jurados actuales...', 'info');
+            
+            try {
+                const juradosSnapshot = await getDocs(collection(db, `events/${eventId}/jury_users`));
+                const backupData = {};
+                
+                juradosSnapshot.forEach(doc => {
+                    backupData[doc.id] = doc.data();
+                });
+                
+                const backupJson = JSON.stringify({
+                    backup_info: {
+                        fecha: new Date().toISOString(),
+                        evento: eventName,
+                        total_jurados: juradosSnapshot.size
+                    },
+                    jurados: backupData
+                }, null, 2);
+                
+                const blob = new Blob([backupJson], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `backup_jurados_${new Date().toISOString().split('T')[0]}.json`;
+                a.click();
+                
+                log(`💾 Backup creado y descargado: ${juradosSnapshot.size} jurados`, 'success');
+                
+            } catch (error) {
+                log(`❌ Error creando backup: ${error.message}`, 'error');
+            }
+        };
+
+        // Inicializar
+        document.addEventListener('DOMContentLoaded', function() {
+            log('🚀 Sistema de restauración de jurados iniciado', 'success');
+            cargarInfoBackup();
+        });
+    </script>
+</body>
+</html>
