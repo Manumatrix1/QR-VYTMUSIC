@@ -109,6 +109,86 @@
             cursor: pointer;
         }
         .hidden { display: none !important; }
+        
+        /* 📱 RESPONSIVE DESIGN PARA MÓVILES */
+        @media (max-width: 768px) {
+            /* Sliders más pequeños y mejor manejo táctil */
+            .category-slider {
+                height: 35px !important;
+                -webkit-appearance: none;
+                background: linear-gradient(to right, #dc2626 0%, #f59e0b 25%, #10b981 75%, #059669 100%);
+                border-radius: 12px;
+                outline: none;
+                touch-action: none; /* Evita scroll accidental */
+            }
+            
+            .category-slider::-webkit-slider-thumb {
+                -webkit-appearance: none;
+                width: 28px;
+                height: 28px;
+                border-radius: 50%;
+                background: #ffffff;
+                border: 3px solid #1f2937;
+                cursor: pointer;
+                box-shadow: 0 0 15px rgba(0,0,0,0.4);
+                touch-action: none;
+            }
+            
+            /* Botones más pequeños en móvil */
+            .btn {
+                padding: 10px 18px !important;
+                font-size: 14px !important;
+                min-height: 44px; /* Tamaño mínimo táctil recomendado */
+            }
+            
+            /* Textos de puntuación optimizados */
+            .text-xl {
+                font-size: 1.1rem !important;
+            }
+            
+            .text-2xl {
+                font-size: 1.3rem !important;
+            }
+            
+            /* Cards más compactas */
+            .card {
+                padding: 16px !important;
+                margin-bottom: 16px !important;
+            }
+            
+            /* Modal responsive */
+            .modal-content {
+                padding: 20px !important;
+                margin: 10px !important;
+                max-height: 85vh !important;
+            }
+            
+            /* Comentarios más compactos */
+            textarea {
+                font-size: 14px !important;
+                padding: 8px !important;
+            }
+        }
+        
+        /* Estilos para sistema de bloqueo */
+        .score-lock-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+        
+        .lock-checkbox {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+        
+        .slider-locked {
+            opacity: 0.5 !important;
+            pointer-events: none !important;
+            filter: grayscale(50%);
+        }
     </style>
 </head>
 <body class="p-4">
@@ -1211,6 +1291,12 @@ Formato de respuesta:
 
                 renderArtists();
                 updateStats();
+                
+                // ✅ NUEVO: Restaurar bloqueos de puntuación después de renderizar
+                setTimeout(() => {
+                    restoreScoreLocks();
+                    console.log('🔒 Bloqueos de puntuación restaurados');
+                }, 500);
 
             } catch (error) {
                 console.error('❌ Error cargando artistas:', error);
@@ -1323,6 +1409,15 @@ Formato de respuesta:
                                         <div class="flex justify-between items-center mb-3">
                                             <h4 class="text-lg font-bold">${criteria.name}</h4>
                                             <div class="flex items-center gap-3">
+                                                <!-- ✅ NUEVO: Checkbox de bloqueo para móviles -->
+                                                <div class="flex items-center gap-2">
+                                                    <input type="checkbox" 
+                                                           id="lock-${artist.id}-${criteria.id}" 
+                                                           class="lock-checkbox" 
+                                                           onchange="toggleScoreLock('${artist.id}', '${criteria.id}')"
+                                                           title="Bloquear puntuación">
+                                                    <label for="lock-${artist.id}-${criteria.id}" class="text-sm cursor-pointer">🔒</label>
+                                                </div>
                                                 <span id="list-${artist.id}-${criteria.id}-display" class="text-2xl font-bold text-blue-300">${currentValue}</span>
                                                 <input type="number" 
                                                        id="list-${artist.id}-${criteria.id}-input" 
@@ -1500,7 +1595,7 @@ Formato de respuesta:
             alert(`✅ EDICIÓN TERMINADA\n\nVolviste al modo normal. El voto se mantiene guardado con los últimos cambios.`);
         };
 
-        // FUNCIONES PARA MANEJO DE COMENTARIOS EN VISTA LISTA
+        // FUNCIONES PARA MANEJO DE COMENTARIOS EN VISTA LISTA - MEJORADA
         window.saveListComments = function(artistId, comments) {
             console.log(`💬 Guardando comentarios para ${artistId}:`, comments);
             
@@ -1511,18 +1606,101 @@ Formato de respuesta:
             
             // Guardar comentarios para este artista
             window.artistComments[artistId] = comments;
-            console.log('📝 Comentarios guardados:', window.artistComments);
+            
+            // ✅ NUEVO: Guardar también en localStorage para persistencia
+            const savedComments = JSON.parse(localStorage.getItem('juror_comments') || '{}');
+            savedComments[artistId] = comments;
+            localStorage.setItem('juror_comments', JSON.stringify(savedComments));
+            
+            // ✅ NUEVO: Feedback visual inmediato
+            const textarea = document.getElementById(`list-judge-comments-${artistId}`);
+            if (textarea) {
+                textarea.style.borderColor = '#10B981';
+                textarea.style.boxShadow = '0 0 10px rgba(16, 185, 129, 0.3)';
+                
+                setTimeout(() => {
+                    textarea.style.borderColor = '#4ade80';
+                    textarea.style.boxShadow = 'none';
+                }, 1000);
+            }
+            
+            console.log('📝 Comentarios guardados y persistidos:', window.artistComments);
         };
 
-        // FUNCIÓN PARA OBTENER COMENTARIOS SEGÚN LA VISTA ACTUAL
+        // ✅ NUEVO: SISTEMA DE BLOQUEO DE PUNTUACIÓN PARA MÓVILES
+        window.scoreLocks = {}; // Objeto para rastrear bloqueos: {artistId_criteriaId: true/false}
+        
+        window.toggleScoreLock = function(artistId, criteriaId) {
+            const lockKey = `${artistId}_${criteriaId}`;
+            const checkbox = document.getElementById(`lock-${artistId}-${criteriaId}`);
+            const slider = document.getElementById(`list-${artistId}-${criteriaId}-slider`);
+            
+            if (!checkbox || !slider) {
+                console.warn('⚠️ No se encontraron elementos de bloqueo:', lockKey);
+                return;
+            }
+            
+            // Alternar estado de bloqueo
+            window.scoreLocks[lockKey] = checkbox.checked;
+            
+            if (checkbox.checked) {
+                // BLOQUEAR puntuación
+                slider.disabled = true;
+                slider.classList.add('slider-locked');
+                console.log(`🔒 Puntuación bloqueada: ${lockKey}`);
+                
+                // Feedback táctil en móviles
+                if (navigator.vibrate) {
+                    navigator.vibrate(50);
+                }
+            } else {
+                // DESBLOQUEAR puntuación
+                slider.disabled = false;
+                slider.classList.remove('slider-locked');
+                console.log(`🔓 Puntuación desbloqueada: ${lockKey}`);
+                
+                if (navigator.vibrate) {
+                    navigator.vibrate([25, 25, 25]);
+                }
+            }
+            
+            // Guardar estado en localStorage
+            localStorage.setItem('score_locks', JSON.stringify(window.scoreLocks));
+        };
+        
+        // Restaurar bloqueos desde localStorage
+        window.restoreScoreLocks = function() {
+            const savedLocks = JSON.parse(localStorage.getItem('score_locks') || '{}');
+            window.scoreLocks = savedLocks;
+            
+            Object.keys(savedLocks).forEach(lockKey => {
+                if (savedLocks[lockKey]) {
+                    const [artistId, criteriaId] = lockKey.split('_');
+                    const checkbox = document.getElementById(`lock-${artistId}-${criteriaId}`);
+                    if (checkbox) {
+                        checkbox.checked = true;
+                        toggleScoreLock(artistId, criteriaId);
+                    }
+                }
+            });
+        };
+
+        // FUNCIÓN PARA OBTENER COMENTARIOS SEGÚN LA VISTA ACTUAL - MEJORADA
         function getArtistComments(artistId) {
             if (currentViewMode === 'organizada') {
                 // En vista organizada, usar el modal
                 return document.getElementById('modal-judge-comments')?.value || '';
             } else {
-                // En vista lista, usar el campo específico del artista
-                return document.getElementById(`list-judge-comments-${artistId}`)?.value || 
-                       window.artistComments?.[artistId] || '';
+                // En vista lista, usar múltiples fuentes con prioridad
+                const fieldValue = document.getElementById(`list-judge-comments-${artistId}`)?.value || '';
+                const memoryValue = window.artistComments?.[artistId] || '';
+                
+                // ✅ NUEVO: También leer desde localStorage
+                const savedComments = JSON.parse(localStorage.getItem('juror_comments') || '{}');
+                const persistedValue = savedComments[artistId] || '';
+                
+                // Retornar el más reciente (prioridad: campo actual, memoria, persistido)
+                return fieldValue || memoryValue || persistedValue;
             }
         }
 
