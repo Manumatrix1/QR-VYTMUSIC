@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎤 Gestión de Votaciones - VYTMUSIC</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { 
+            font-family: 'Inter', sans-serif; 
+            background: linear-gradient(135deg, #0f172a, #1e293b);
+        }
+        .sponsor-banner { transition: transform 0.2s ease; }
+        .sponsor-banner:hover { transform: scale(1.02); }
+        .sponsor-preview img { max-height: 150px; object-fit: contain; }
+    </style>
+</head>
+
+<body class="min-h-screen text-white">
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="text-center">
+            <div class="animate-spin rounded-full h-16 w-16 border-b-2 border-sky-500 mb-4"></div>
+            <p class="text-xl font-semibold">Procesando...</p>
+        </div>
+    </div>
+
+    <!-- Debug Console -->
+    <div id="debug-console" class="fixed top-0 right-0 bg-black bg-opacity-90 text-green-400 p-4 max-w-md text-xs overflow-auto z-40" style="max-height: 200px;">
+        <h3 class="text-white font-bold mb-2">🐛 Debug Console</h3>
+        <div id="debug-log"></div>
+    </div>
+
+    <div class="container mx-auto max-w-7xl p-4">
+        <header class="text-center mb-8">
+            <a href="#" id="back-to-panel-link" class="inline-flex items-center gap-2 text-sky-400 hover:text-sky-300 mb-4">
+                ← Volver al Panel de Control
+            </a>
+            <h1 class="text-3xl sm:text-4xl font-bold text-sky-400">Gestión de Votaciones (DEBUG)</h1>
+            <p id="event-name-display" class="text-xl text-gray-300 mt-2"></p>
+        </header>
+
+        <main class="space-y-8">
+            <!-- Sección de Patrocinadores con DEBUGGING -->
+            <section id="sponsors-section" class="bg-gray-800 p-6 rounded-lg shadow-xl">
+                <h2 class="text-2xl font-bold mb-4">🎯 Gestión de Patrocinadores (DEBUG)</h2>
+                <div class="bg-yellow-900 border border-yellow-600 p-4 rounded mb-4">
+                    <h3 class="text-yellow-200 font-bold">⚠️ Información de Debug</h3>
+                    <p class="text-sm text-yellow-100">Esta versión incluye logs detallados para diagnosticar problemas.</p>
+                    <div class="mt-2">
+                        <p id="debug-eventid" class="text-xs text-yellow-200"></p>
+                        <p id="debug-storage" class="text-xs text-yellow-200"></p>
+                        <p id="debug-firebase" class="text-xs text-yellow-200"></p>
+                    </div>
+                </div>
+                
+                <p class="text-gray-400 mb-4">Añade o elimina los banners de los patrocinadores que aparecerán en la página de votación.</p>
+                
+                <!-- Preview del banner seleccionado -->
+                <div id="sponsor-preview" class="bg-gray-700 p-4 rounded-lg mb-4 hidden">
+                    <h4 class="text-white font-bold mb-2">Vista Previa:</h4>
+                    <div class="sponsor-preview"></div>
+                </div>
+
+                <form id="sponsor-form" class="space-y-4">
+                    <div>
+                        <label for="sponsor-banner-input" class="block mb-1 font-semibold text-gray-300">Banner del Patrocinador</label>
+                        <input type="file" id="sponsor-banner-input" accept="image/*" class="w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-sky-600 file:text-white hover:file:bg-sky-700" required />
+                        <p class="text-xs text-gray-500 mt-1">Formatos aceptados: JPG, PNG, GIF. Tamaño recomendado: 800x200px</p>
+                    </div>
+                    <div>
+                        <label for="sponsor-url-input" class="block mb-1 font-semibold text-gray-300">URL de Destino</label>
+                        <input type="url" id="sponsor-url-input" placeholder="https://www.ejemplo.com" required class="w-full p-2 rounded-md bg-gray-900 text-white border border-gray-600">
+                        <p class="text-xs text-gray-500 mt-1">URL completa a donde redirigirá el banner</p>
+                    </div>
+                    <button type="submit" id="add-sponsor-btn" class="w-full px-4 py-3 bg-indigo-600 text-white font-bold rounded-lg disabled:opacity-50 hover:bg-indigo-700 transition-colors">
+                        Agregar Patrocinador
+                    </button>
+                </form>
+
+                <!-- Estados del proceso -->
+                <div id="process-status" class="mt-4 space-y-2 hidden">
+                    <div class="bg-blue-900 border border-blue-600 p-3 rounded">
+                        <h4 class="text-blue-200 font-bold">📊 Estado del Proceso:</h4>
+                        <div id="status-steps" class="text-sm text-blue-100 mt-1"></div>
+                    </div>
+                </div>
+
+                <div class="mt-8">
+                    <h3 class="text-xl font-bold mb-4">Patrocinadores Activos</h3>
+                    <div id="sponsors-list" class="space-y-4">
+                        <p class="text-center text-gray-500">Cargando patrocinadores...</p>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script type="module">
+        import { db, storage } from './firebase_config.js';
+        import { collection, onSnapshot, query, addDoc, doc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
+
+        // Debug logging function
+        function debugLog(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logDiv = document.getElementById('debug-log');
+            const colors = {
+                'info': 'text-green-400',
+                'warning': 'text-yellow-400', 
+                'error': 'text-red-400',
+                'success': 'text-blue-400'
+            };
+            logDiv.innerHTML += `<div class="${colors[type] || 'text-green-400'}">[${timestamp}] ${message}</div>`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+            console.log(`[VYTMUSIC DEBUG] ${message}`);
+        }
+
+        // Parámetros de URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const eventId = urlParams.get('eventId');
+        const eventName = urlParams.get('eventName');
+
+        debugLog(`Inicializando con eventId: ${eventId}, eventName: ${eventName}`);
+        
+        if (!eventId || !eventName) {
+            debugLog('Error: Faltan parámetros de URL', 'error');
+            alert('Error: No se ha especificado un evento. Redirigiendo.');
+            window.location.href = 'eventos.html';
+        }
+
+        // Configurar UI inicial
+        document.getElementById('event-name-display').textContent = eventName;
+        document.getElementById('debug-eventid').textContent = `Event ID: ${eventId}`;
+        document.getElementById('debug-storage').textContent = `Storage: ${storage ? 'Conectado' : 'Error'}`;
+        document.getElementById('debug-firebase').textContent = `DB: ${db ? 'Conectado' : 'Error'}`;
+
+        debugLog('Firebase inicializado correctamente');
+
+        // Cache de elementos UI
+        const ui = {};
+        const uiIds = [
+            'sponsor-form', 'sponsor-banner-input', 'sponsor-url-input', 'sponsors-list', 
+            'add-sponsor-btn', 'sponsor-preview', 'process-status', 'status-steps'
+        ];
+        uiIds.forEach(id => {
+            ui[id.replace(/-(\w)/g, (_, c) => c.toUpperCase())] = document.getElementById(id);
+        });
+
+        debugLog('UI elements cached');
+
+        // Vista previa del banner
+        ui.sponsorBannerInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                debugLog(`Archivo seleccionado: ${file.name}, tipo: ${file.type}, tamaño: ${file.size} bytes`);
+                
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const preview = ui.sponsorPreview;
+                    preview.querySelector('.sponsor-preview').innerHTML = `
+                        <img src="${e.target.result}" alt="Preview" class="max-w-full h-32 object-contain rounded border">
+                        <p class="text-sm text-gray-300 mt-2">${file.name} (${(file.size/1024/1024).toFixed(2)} MB)</p>
+                    `;
+                    preview.classList.remove('hidden');
+                    debugLog('Vista previa generada correctamente', 'success');
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        // Función para mostrar el estado del proceso
+        function updateProcessStatus(step, status = 'in-progress') {
+            const statusDiv = ui.processStatus;
+            const stepsDiv = ui.statusSteps;
+            
+            statusDiv.classList.remove('hidden');
+            
+            const statusIcons = {
+                'pending': '⏳',
+                'in-progress': '🔄',
+                'success': '✅',
+                'error': '❌'
+            };
+
+            stepsDiv.innerHTML += `<div>${statusIcons[status]} ${step}</div>`;
+            stepsDiv.scrollTop = stepsDiv.scrollHeight;
+        }
+
+        // Función principal para manejar el envío del formulario
+        async function handleSponsorFormSubmit(e) {
+            e.preventDefault();
+            debugLog('Iniciando proceso de agregar patrocinador');
+            updateProcessStatus('Iniciando proceso...', 'in-progress');
+
+            const bannerFile = ui.sponsorBannerInput.files[0];
+            const url = ui.sponsorUrlInput.value.trim();
+
+            // Validaciones
+            if (!bannerFile) {
+                debugLog('Error: No se seleccionó archivo', 'error');
+                updateProcessStatus('Error: No se seleccionó archivo de banner', 'error');
+                alert('Por favor selecciona un archivo de imagen para el banner.');
+                return;
+            }
+
+            if (!url) {
+                debugLog('Error: URL vacía', 'error');
+                updateProcessStatus('Error: URL vacía', 'error');
+                alert('Por favor ingresa una URL válida.');
+                return;
+            }
+
+            // Validar tipo de archivo
+            const validTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+            if (!validTypes.includes(bannerFile.type)) {
+                debugLog(`Error: Tipo de archivo inválido: ${bannerFile.type}`, 'error');
+                updateProcessStatus('Error: Tipo de archivo no válido', 'error');
+                alert('Por favor selecciona un archivo de imagen válido (JPG, PNG, GIF, WebP).');
+                return;
+            }
+
+            // Validar tamaño (5MB máximo)
+            if (bannerFile.size > 5 * 1024 * 1024) {
+                debugLog(`Error: Archivo muy grande: ${bannerFile.size} bytes`, 'error');
+                updateProcessStatus('Error: Archivo demasiado grande', 'error');
+                alert('El archivo es demasiado grande. Máximo 5MB permitido.');
+                return;
+            }
+
+            debugLog(`Archivo válido: ${bannerFile.name}, URL: ${url}`);
+            updateProcessStatus('Validaciones completadas', 'success');
+
+            // Deshabilitar botón
+            ui.addSponsorBtn.disabled = true;
+            ui.addSponsorBtn.textContent = 'Subiendo...';
+
+            try {
+                updateProcessStatus('Subiendo imagen a Firebase Storage...', 'in-progress');
+                
+                // Generar nombre único para el archivo
+                const timestamp = Date.now();
+                const safeName = bannerFile.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+                const fileName = `${timestamp}-${safeName}`;
+                
+                debugLog(`Nombre de archivo: ${fileName}`);
+                
+                // Crear referencia en Storage
+                const storageRef = ref(storage, `events/${eventId}/sponsor_banners/${fileName}`);
+                debugLog(`Ruta de Storage: events/${eventId}/sponsor_banners/${fileName}`);
+                
+                // Subir archivo
+                updateProcessStatus('Uploading bytes...', 'in-progress');
+                const uploadResult = await uploadBytes(storageRef, bannerFile);
+                debugLog(`Upload completado: ${uploadResult.metadata.name}`, 'success');
+                updateProcessStatus('Archivo subido correctamente', 'success');
+
+                // Obtener URL de descarga
+                updateProcessStatus('Obteniendo URL de descarga...', 'in-progress');
+                const bannerURL = await getDownloadURL(storageRef);
+                debugLog(`URL obtenida: ${bannerURL.substring(0, 50)}...`, 'success');
+                updateProcessStatus('URL obtenida correctamente', 'success');
+
+                // Guardar en Firestore
+                updateProcessStatus('Guardando en base de datos...', 'in-progress');
+                const sponsorData = {
+                    bannerURL: bannerURL,
+                    redirectURL: url,
+                    createdAt: new Date().toISOString(),
+                    fileName: fileName,
+                    originalName: bannerFile.name,
+                    fileSize: bannerFile.size,
+                    fileType: bannerFile.type
+                };
+
+                debugLog(`Datos a guardar: ${JSON.stringify(sponsorData, null, 2)}`);
+
+                const docRef = await addDoc(collection(db, `events/${eventId}/sponsors`), sponsorData);
+                debugLog(`Documento guardado con ID: ${docRef.id}`, 'success');
+                updateProcessStatus('Patrocinador guardado correctamente', 'success');
+
+                // Limpiar formulario
+                ui.sponsorForm.reset();
+                ui.sponsorPreview.classList.add('hidden');
+                
+                // Mostrar mensaje de éxito
+                showMessage('¡Patrocinador agregado con éxito!', 'success');
+                debugLog('Proceso completado exitosamente', 'success');
+
+                // Limpiar estado del proceso después de 3 segundos
+                setTimeout(() => {
+                    ui.processStatus.classList.add('hidden');
+                    ui.statusSteps.innerHTML = '';
+                }, 3000);
+
+            } catch (error) {
+                debugLog(`Error durante el proceso: ${error.message}`, 'error');
+                updateProcessStatus(`Error: ${error.message}`, 'error');
+                showMessage(`Error al agregar patrocinador: ${error.message}`, 'error');
+                console.error('Error completo:', error);
+            } finally {
+                // Rehabilitar botón
+                ui.addSponsorBtn.disabled = false;
+                ui.addSponsorBtn.textContent = 'Agregar Patrocinador';
+            }
+        }
+
+        // Función para mostrar mensajes
+        function showMessage(message, type = 'success') {
+            const colors = { 
+                success: 'bg-green-500', 
+                error: 'bg-red-500', 
+                warning: 'bg-yellow-500 text-black', 
+                info: 'bg-sky-500' 
+            };
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `fixed top-4 left-1/2 transform -translate-x-1/2 p-4 rounded-md mb-4 text-white ${colors[type]} transition-opacity duration-300 z-50`;
+            messageDiv.textContent = message;
+            document.body.appendChild(messageDiv);
+            setTimeout(() => { 
+                messageDiv.style.opacity = '0';
+                setTimeout(() => messageDiv.remove(), 300);
+            }, 5000);
+        }
+
+        // Función para renderizar patrocinadores
+        function renderSponsors(sponsors) {
+            debugLog(`Renderizando ${sponsors.length} patrocinadores`);
+            const sponsorsList = ui.sponsorsList;
+            sponsorsList.innerHTML = '';
+            
+            if (sponsors.length === 0) {
+                sponsorsList.innerHTML = '<p class="text-center text-gray-500">No hay patrocinadores activos.</p>';
+                return;
+            }
+
+            sponsors.forEach((sponsor, index) => {
+                debugLog(`Renderizando patrocinador ${index + 1}: ${sponsor.redirectURL}`);
+                const div = document.createElement('div');
+                div.className = 'bg-gray-700 p-4 rounded-lg flex items-center justify-between gap-4';
+                div.innerHTML = `
+                    <a href="${sponsor.redirectURL}" target="_blank" class="flex-grow flex items-center gap-4 hover:bg-gray-600 p-2 rounded transition-colors">
+                        <img src="${sponsor.bannerURL}" alt="Banner de patrocinador" class="w-32 h-auto rounded-md border border-gray-500" 
+                             onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTI4IiBoZWlnaHQ9IjY0IiB2aWV3Qm94PSIwIDAgMTI4IDY0IiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPgo8cmVjdCB3aWR0aD0iMTI4IiBoZWlnaHQ9IjY0IiBmaWxsPSIjNEY0RjRGIi8+Cjx0ZXh0IHg9IjY0IiB5PSIzNiIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0id2hpdGUiIGZvbnQtc2l6ZT0iMTIiPkVycm9yPC90ZXh0Pgo8L3N2Zz4K'">
+                        <div class="flex-grow">
+                            <span class="text-sm text-sky-300 hover:underline break-all block">${sponsor.redirectURL}</span>
+                            <div class="text-xs text-gray-400 mt-1">
+                                Creado: ${new Date(sponsor.createdAt).toLocaleString()}
+                                ${sponsor.originalName ? ` | ${sponsor.originalName}` : ''}
+                            </div>
+                        </div>
+                    </a>
+                    <button data-id="${sponsor.id}" class="delete-sponsor-btn p-2 rounded-full bg-red-600 text-white leading-none hover:bg-red-700 transition-colors" title="Eliminar patrocinador">
+                        🗑️
+                    </button>
+                `;
+                sponsorsList.appendChild(div);
+            });
+        }
+
+        // Event listeners
+        ui.sponsorForm.addEventListener('submit', handleSponsorFormSubmit);
+        
+        // Event listener para eliminar patrocinadores
+        ui.sponsorsList.addEventListener('click', async (e) => {
+            const target = e.target.closest('.delete-sponsor-btn');
+            if (target) {
+                const sponsorId = target.dataset.id;
+                debugLog(`Intentando eliminar patrocinador: ${sponsorId}`);
+                
+                if (confirm("¿Seguro que quieres eliminar este patrocinador?")) {
+                    try {
+                        await deleteDoc(doc(db, `events/${eventId}/sponsors`, sponsorId));
+                        debugLog(`Patrocinador eliminado: ${sponsorId}`, 'success');
+                        showMessage('Patrocinador eliminado correctamente', 'success');
+                    } catch (error) {
+                        debugLog(`Error al eliminar patrocinador: ${error.message}`, 'error');
+                        showMessage(`Error al eliminar: ${error.message}`, 'error');
+                    }
+                }
+            }
+        });
+
+        // Listener en tiempo real para patrocinadores
+        debugLog('Configurando listener para patrocinadores');
+        const sponsorsQuery = query(collection(db, `events/${eventId}/sponsors`));
+        onSnapshot(sponsorsQuery, (snapshot) => {
+            debugLog(`Snapshot recibido: ${snapshot.docs.length} documentos`);
+            const sponsors = snapshot.docs.map(doc => ({ 
+                id: doc.id, 
+                ...doc.data() 
+            }));
+            renderSponsors(sponsors);
+        }, (error) => {
+            debugLog(`Error en snapshot de patrocinadores: ${error.message}`, 'error');
+            showMessage(`Error al cargar patrocinadores: ${error.message}`, 'error');
+        });
+
+        debugLog('Sistema de patrocinadores inicializado correctamente', 'success');
+    </script>
+</body>
+</html>
