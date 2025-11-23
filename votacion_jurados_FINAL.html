@@ -364,8 +364,8 @@
                         <div id="jury-activity-panel" class="bg-purple-800 bg-opacity-30 p-4 rounded-lg border border-purple-500 mt-3">
                             <h3 class="text-lg font-bold text-purple-300 mb-3">👥 Actividad de Jurados en Tiempo Real</h3>
                             
-                            <!-- PANEL DE DEBUG -->
-                            <div id="debug-panel" class="bg-red-800 bg-opacity-30 p-3 rounded mb-3 border border-red-500">
+                            <!-- PANEL DE DEBUG (OCULTO PARA JURADOS) -->
+                            <div id="debug-panel" class="bg-red-800 bg-opacity-30 p-3 rounded mb-3 border border-red-500" style="display: none;">
                                 <h4 class="text-red-300 font-bold mb-2">🔍 DEBUG - Info de Búsqueda</h4>
                                 <div id="debug-info" class="text-xs text-red-200">
                                     <p>EventId: <span id="debug-eventid">Cargando...</span></p>
@@ -448,7 +448,8 @@
                     </label>
                     <textarea id="modal-judge-comments" rows="3"
                               class="w-full p-3 bg-gray-800 border border-green-500 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-green-300 resize-none"
-                              placeholder="Ej: Muy buena interpretación, mejoró mucho desde la gala anterior. Trabajar en proyección de voz."></textarea>
+                              placeholder="Ej: Muy buena interpretación, mejoró mucho desde la gala anterior. Trabajar en proyección de voz."
+                              oninput="saveCommentsToStorage()" onchange="saveCommentsToStorage()"></textarea>
                 </div>
                 
                 <!-- Campo Notas Adicionales -->
@@ -458,7 +459,8 @@
                     </label>
                     <textarea id="modal-additional-notes" rows="2"
                               class="w-full p-3 bg-gray-800 border border-green-500 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-green-300 resize-none"
-                              placeholder="Ej: Vestuario muy acorde al tema, mucha más seguridad que en gala 1."></textarea>
+                              placeholder="Ej: Vestuario muy acorde al tema, mucha más seguridad que en gala 1."
+                              oninput="saveCommentsToStorage()" onchange="saveCommentsToStorage()"></textarea>
                 </div>
                 
                 <p class="text-xs text-green-300 text-center">
@@ -1704,6 +1706,39 @@ Formato de respuesta:
                 return fieldValue || memoryValue || persistedValue;
             }
         }
+
+        // 💾 FUNCIÓN PARA GUARDAR COMENTARIOS AUTOMÁTICAMENTE
+        window.saveCommentsToStorage = function() {
+            if (!currentModalArtist?.id) {
+                console.log('⚠️ No hay artista modal activo para guardar comentarios');
+                return;
+            }
+            
+            const artistId = currentModalArtist.id;
+            const judgeComments = document.getElementById('modal-judge-comments')?.value || '';
+            const additionalNotes = document.getElementById('modal-additional-notes')?.value || '';
+            
+            // Guardar en memoria global
+            if (!window.artistComments) window.artistComments = {};
+            window.artistComments[artistId] = judgeComments;
+            
+            if (!window.additionalNotes) window.additionalNotes = {};
+            window.additionalNotes[artistId] = additionalNotes;
+            
+            // Guardar en localStorage para persistencia
+            const savedComments = JSON.parse(localStorage.getItem('juror_comments') || '{}');
+            savedComments[artistId] = judgeComments;
+            localStorage.setItem('juror_comments', JSON.stringify(savedComments));
+            
+            const savedNotes = JSON.parse(localStorage.getItem('juror_additional_notes') || '{}');
+            savedNotes[artistId] = additionalNotes;
+            localStorage.setItem('juror_additional_notes', JSON.stringify(savedNotes));
+            
+            console.log(`💾 Comentarios guardados automáticamente para ${currentModalArtist.name}:`, {
+                judgeComments: judgeComments.substring(0, 50) + (judgeComments.length > 50 ? '...' : ''),
+                additionalNotes: additionalNotes.substring(0, 30) + (additionalNotes.length > 30 ? '...' : '')
+            });
+        };
 
         window.submitVote = async function(artistId, silent = false) {
             console.log('🎯 Iniciando submitVote para:', artistId);
@@ -3127,11 +3162,24 @@ Formato de respuesta:
             document.getElementById('modal-artist-photo').src = artist.foto || artist.photoURL || 
                 'https://via.placeholder.com/80x80/1e3a8a/ffffff?text=' + encodeURIComponent(artist.name.charAt(0));
 
-            // Cargar datos adicionales existentes
+            // Cargar datos adicionales existentes (desde votes, localStorage y memoria)
             const existingData = votes[artist.id] || {};
+            const savedComments = JSON.parse(localStorage.getItem('juror_comments') || '{}');
+            const savedNotes = JSON.parse(localStorage.getItem('juror_additional_notes') || '{}');
+            
+            // Prioridad: localStorage (más reciente), luego existingData, luego memoria global
+            const judgeComments = savedComments[artist.id] || existingData.judgeComments || window.artistComments?.[artist.id] || '';
+            const additionalNotes = savedNotes[artist.id] || existingData.additionalNotes || window.additionalNotes?.[artist.id] || '';
+            
             document.getElementById('modal-song-performed').value = existingData.songPerformed || '';
-            document.getElementById('modal-judge-comments').value = existingData.judgeComments || '';
-            document.getElementById('modal-additional-notes').value = existingData.additionalNotes || '';
+            document.getElementById('modal-judge-comments').value = judgeComments;
+            document.getElementById('modal-additional-notes').value = additionalNotes;
+            
+            console.log(`📝 Comentarios cargados para ${artist.name}:`, {
+                judgeComments: judgeComments.substring(0, 50) + (judgeComments.length > 50 ? '...' : ''),
+                additionalNotes: additionalNotes.substring(0, 30) + (additionalNotes.length > 30 ? '...' : ''),
+                source: savedComments[artist.id] ? 'localStorage' : existingData.judgeComments ? 'votes' : 'memory'
+            });
             
             // === ACTUALIZAR ACTIVIDAD DE OTROS JURADOS ===
             setTimeout(() => {
