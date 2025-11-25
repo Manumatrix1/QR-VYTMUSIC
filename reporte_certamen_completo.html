@@ -25,7 +25,13 @@
         <header class="text-center mb-8">
             <a href="reportes.html" class="no-print text-sky-400 hover:underline mb-4 inline-block">&larr; Volver a Reportes</a>
             <h1 class="text-4xl font-bold text-sky-400 mb-2">🏆 Reporte Completo del Certamen</h1>
-            <p class="text-lg text-gray-300 mb-6">Selecciona las galas que quieres incluir en el reporte final</p>
+            <p class="text-lg text-gray-300 mb-2">Selecciona las galas que quieres incluir en el reporte final</p>
+            <div class="bg-blue-900 bg-opacity-50 p-3 rounded-lg mb-6 border border-blue-400">
+                <p class="text-sm text-blue-200">
+                    📊 <strong>Importante:</strong> Este reporte se basa en las <strong>evaluaciones de los jurados</strong>, 
+                    no en los votos del público. Los puntajes se suman entre galas para determinar el ranking final.
+                </p>
+            </div>
         </header>
 
         <!-- SELECTOR DE GALAS PARA EL CERTAMEN -->
@@ -136,7 +142,7 @@
                         </div>
                         <div class="bg-gradient-to-br from-green-600 to-green-800 p-6 rounded-lg text-center">
                             <div class="text-3xl mb-2">🗳️</div>
-                            <h3 class="text-lg font-semibold mb-2">Total Votos</h3>
+                            <h3 class="text-lg font-semibold mb-2">Total Evaluaciones</h3>
                             <p id="stats-votes" class="text-3xl font-bold">0</p>
                         </div>
                         <div class="bg-gradient-to-br from-purple-600 to-purple-800 p-6 rounded-lg text-center">
@@ -444,7 +450,7 @@
                         </label>
                     </div>
                     <div class="text-right text-sm">
-                        <div class="text-green-400 font-bold">${gala.totalVotes} votos</div>
+                        <div class="text-green-400 font-bold">${gala.totalVotes} evaluaciones de jurados</div>
                         <div class="text-gray-400">Promedio: ${gala.avgScore}/10</div>
                     </div>
                 `;
@@ -548,16 +554,44 @@
                     participants: []
                 };
 
+                // 🎯 CARGAR EVALUACIONES DE JURADOS (NO VOTOS DEL PÚBLICO)
+                const jurySnapshot = await getDocs(collection(db, `events/${galaId}/jury_evaluations`));
+                const juryScores = {};
+                
+                // Procesar evaluaciones de jurados
+                jurySnapshot.docs.forEach(juryDoc => {
+                    const juryData = juryDoc.data();
+                    const artistId = juryData.artistId;
+                    const juryScore = juryData.average || juryData.score || 0;
+                    
+                    if (!juryScores[artistId]) {
+                        juryScores[artistId] = [];
+                    }
+                    juryScores[artistId].push(juryScore);
+                });
+
                 artistsSnapshot.docs.forEach(artistDoc => {
                     const artistData = artistDoc.data();
+                    
+                    // 🎯 CALCULAR PROMEDIO DE JURADOS PARA ESTE ARTISTA
+                    const artistJuryScores = juryScores[artistDoc.id] || [];
+                    const juryAverage = artistJuryScores.length > 0 
+                        ? artistJuryScores.reduce((sum, score) => sum + score, 0) / artistJuryScores.length 
+                        : 0;
+                    
                     const participantData = {
                         id: artistDoc.id,
                         name: artistData.name,
                         photoURL: artistData.photoURL,
-                        score: artistData.totalScore || 0,
-                        votes: artistData.totalRatingsCount || 0,
-                        galaName: gala.name
+                        score: juryAverage, // ✅ USAR PROMEDIO DE JURADOS
+                        votes: artistJuryScores.length, // ✅ CANTIDAD DE JURADOS QUE EVALUARON
+                        galaName: gala.name,
+                        juryScores: artistJuryScores, // Para debugging
+                        publicScore: artistData.totalScore || 0, // Mantener score público por referencia
+                        publicVotes: artistData.totalRatingsCount || 0
                     };
+
+                    console.log(`🎭 ${artistData.name} en ${gala.name}: Jurados: ${juryAverage.toFixed(1)}/10 (${artistJuryScores.length} evaluaciones) | Público: ${participantData.publicScore}`);
 
                     galaData.participants.push(participantData);
                     reportData.totalVotes += participantData.votes;
