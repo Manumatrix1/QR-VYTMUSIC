@@ -619,12 +619,19 @@
                     reportData.totalVotes += participantData.votes;
                     reportData.totalScore += participantData.score;
 
-                    // Acumular en el ranking general
+                    // Acumular en el ranking general CON DETALLES POR GALA
                     if (reportData.allParticipants.has(artistData.name)) {
                         const existing = reportData.allParticipants.get(artistData.name);
                         existing.totalScore += participantData.score;
                         existing.totalVotes += participantData.votes;
                         existing.galas.push(gala.name);
+                        // 📊 GUARDAR DETALLES DE CADA GALA
+                        existing.galaDetails = existing.galaDetails || {};
+                        existing.galaDetails[gala.name] = {
+                            score: participantData.score,
+                            votes: participantData.votes,
+                            participated: true
+                        };
                     } else {
                         reportData.allParticipants.set(artistData.name, {
                             name: artistData.name,
@@ -632,7 +639,15 @@
                             totalScore: participantData.score,
                             totalVotes: participantData.votes,
                             galas: [gala.name],
-                            avgScore: 0
+                            avgScore: 0,
+                            // 📊 GUARDAR DETALLES DE CADA GALA
+                            galaDetails: {
+                                [gala.name]: {
+                                    score: participantData.score,
+                                    votes: participantData.votes,
+                                    participated: true
+                                }
+                            }
                         });
                     }
                 });
@@ -640,21 +655,46 @@
                 reportData.galas.push(galaData);
             }
 
-            // 🎯 INICIALIZAR PARTICIPANTES SIN PENALIZACIONES (CONTROL MANUAL)
+            // 🎯 COMPENSAR GALAS FALTANTES Y PREPARAR DATOS
             console.log(`📊 Total de galas seleccionadas: ${selectedGalas.length}`);
             
             reportData.allParticipants.forEach(participant => {
-                // ✅ TODOS EMPIEZAN SIN PENALIZACIÓN (se aplicará manualmente)
+                // 🔄 COMPENSAR GALAS FALTANTES CON PROMEDIO REPETIDO
+                const galasParticipadas = participant.galas.length;
+                const galasFaltantes = selectedGalas.length - galasParticipadas;
+                
+                if (galasFaltantes > 0) {
+                    const promedioActual = participant.totalVotes > 0 ? 
+                        (participant.totalScore / participant.totalVotes) : 0;
+                    
+                    // Agregar score repetido por cada gala faltante
+                    participant.totalScore += promedioActual * galasFaltantes;
+                    participant.totalVotes += galasFaltantes;
+                    
+                    // Marcar galas faltantes en los detalles
+                    selectedGalas.forEach(gala => {
+                        if (!participant.galaDetails[gala.name]) {
+                            participant.galaDetails[gala.name] = {
+                                score: promedioActual,
+                                votes: 1,
+                                participated: false, // Marca que no participó realmente
+                                repeated: true
+                            };
+                        }
+                    });
+                    
+                    console.log(`🔄 ${participant.name}: Compensado ${galasFaltantes} galas con promedio ${promedioActual.toFixed(1)}`);
+                }
+                
+                // ✅ INICIALIZAR SIN PENALIZACIONES (control manual)
                 participant.finalScore = participant.totalVotes > 0 ? 
                     (participant.totalScore / participant.totalVotes) : 0;
                 participant.penalizacion = 0;
                 participant.ausencias = 0;
-                participant.penaltyApplied = false; // Control manual
-                
-                // Mantener avgScore para compatibilidad
+                participant.penaltyApplied = false;
                 participant.avgScore = participant.finalScore;
                 
-                console.log(`👤 ${participant.name}: Promedio base: ${participant.finalScore.toFixed(1)}/10 (sin penalización)`);
+                console.log(`👤 ${participant.name}: Promedio final: ${participant.finalScore.toFixed(1)}/10`);
             });
             
             // 🎛️ MOSTRAR SELECTOR MANUAL DE PENALIZACIONES
@@ -746,41 +786,99 @@
             const container = document.getElementById('final-ranking-container');
             container.innerHTML = '';
 
-            ranking.forEach((participant, index) => {
-                const rankCard = document.createElement('div');
-                rankCard.className = 'bg-gray-800 p-4 rounded-lg flex items-center justify-between border border-gray-700';
+            // 📊 CREAR TABLA DETALLADA Y CLARA
+            const tableHTML = `
+                <div class="overflow-x-auto">
+                    <table class="w-full bg-gray-800 rounded-lg overflow-hidden">
+                        <thead class="bg-gray-700">
+                            <tr>
+                                <th class="px-4 py-3 text-left text-white font-bold">Pos</th>
+                                <th class="px-4 py-3 text-left text-white font-bold">Artista</th>
+                                ${selectedGalas.map(gala => `<th class="px-3 py-3 text-center text-white font-bold text-sm">${gala.name.substring(0, 15)}...</th>`).join('')}
+                                <th class="px-4 py-3 text-center text-white font-bold">Suma Total</th>
+                                <th class="px-4 py-3 text-center text-white font-bold">Promedio Base</th>
+                                <th class="px-4 py-3 text-center text-white font-bold">Penalización</th>
+                                <th class="px-4 py-3 text-center text-white font-bold bg-green-700">FINAL</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${ranking.map((participant, index) => {
+                                const positionBadge = index < 3 ? 
+                                    ['🥇', '🥈', '🥉'][index] : 
+                                    `#${index + 1}`;
+                                
+                                // 🎯 OBTENER PUNTOS POR GALA DESDE LOS DETALLES
+                                const scoresPerGala = selectedGalas.map(gala => {
+                                    const galaDetail = participant.galaDetails?.[gala.name];
+                                    
+                                    if (galaDetail) {
+                                        if (galaDetail.participated) {
+                                            // Participó realmente
+                                            return `<span class="text-green-400 font-bold">${galaDetail.score.toFixed(1)}</span>`;
+                                        } else {
+                                            // Puntuación repetida
+                                            return `<span class="text-yellow-400 text-sm">${galaDetail.score.toFixed(1)}<br><i class="text-xs">(repetido)</i></span>`;
+                                        }
+                                    } else {
+                                        return `<span class="text-red-400 text-sm">N/A</span>`;
+                                    }
+                                });
+                                
+                                const promedioBase = participant.totalVotes > 0 ? 
+                                    (participant.totalScore / participant.totalVotes) : 0;
+                                
+                                return `
+                                    <tr class="border-b border-gray-700 hover:bg-gray-750 ${index < 3 ? 'bg-gray-700' : ''}">
+                                        <td class="px-4 py-4 font-bold text-lg ${index === 0 ? 'text-yellow-400' : index === 1 ? 'text-gray-300' : index === 2 ? 'text-orange-400' : 'text-white'}">${positionBadge}</td>
+                                        <td class="px-4 py-4">
+                                            <div class="flex items-center">
+                                                <img src="${participant.photoURL || 'https://placehold.co/40x40/1f2937/f9fafb?text=ART'}" 
+                                                     alt="${participant.name}" class="w-10 h-10 rounded-full mr-3">
+                                                <span class="text-white font-semibold">${participant.name}</span>
+                                            </div>
+                                        </td>
+                                        ${scoresPerGala.map(score => `<td class="px-3 py-4 text-center">${score}</td>`).join('')}
+                                        <td class="px-4 py-4 text-center">
+                                            <span class="text-blue-400 font-bold text-lg">${participant.totalScore.toFixed(1)} pts</span>
+                                        </td>
+                                        <td class="px-4 py-4 text-center">
+                                            <span class="text-gray-300 font-semibold">${promedioBase.toFixed(1)}/10</span>
+                                        </td>
+                                        <td class="px-4 py-4 text-center">
+                                            ${participant.penaltyApplied ? 
+                                                `<span class="text-red-400 font-bold">-${participant.penalizacion}</span>` : 
+                                                `<span class="text-green-400">0.0</span>`
+                                            }
+                                        </td>
+                                        <td class="px-4 py-4 text-center bg-green-800">
+                                            <span class="text-green-300 font-bold text-xl">${participant.finalScore.toFixed(1)}/10</span>
+                                        </td>
+                                    </tr>
+                                `;
+                            }).join('')}
+                        </tbody>
+                    </table>
+                </div>
                 
-                const positionBadge = index < 3 ? 
-                    `<span class="text-2xl mr-3">${['🥇', '🥈', '🥉'][index]}</span>` :
-                    `<span class="bg-gray-600 text-white px-3 py-1 rounded-full text-sm font-bold mr-3">#${index + 1}</span>`;
-
-                rankCard.innerHTML = `
-                    <div class="flex items-center">
-                        ${positionBadge}
-                        <div class="w-12 h-12 rounded-full overflow-hidden border-2 border-sky-400 mr-4">
-                            <img src="${participant.photoURL || 'https://placehold.co/48x48/1f2937/f9fafb?text=ART'}" 
-                                 alt="${participant.name}" class="w-full h-full object-cover">
+                <!-- LEYENDA EXPLICATIVA -->
+                <div class="mt-6 bg-blue-900 bg-opacity-30 p-4 rounded-lg border border-blue-400">
+                    <h4 class="text-lg font-bold text-blue-300 mb-3">📖 Cómo leer esta tabla:</h4>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-blue-200">
+                        <div>
+                            <p><strong>🎭 Cada columna de gala:</strong> Puntuación real obtenida por el artista en esa gala específica</p>
+                            <p><strong>📊 Suma Total:</strong> Suma de todas las puntuaciones (reales + repetidas)</p>
+                            <p><strong>📈 Promedio Base:</strong> Suma ÷ Número de galas</p>
                         </div>
                         <div>
-                            <h4 class="text-lg font-bold text-white">${participant.name}</h4>
-                            <p class="text-sm text-gray-400">
-                                Participó en: ${participant.galas.join(', ')}
-                            </p>
+                            <p><strong>⚖️ Penalización:</strong> Descuento aplicado por faltas (marcado manualmente)</p>
+                            <p><strong>🏆 FINAL:</strong> Promedio Base - Penalización = Puntuación que determina el ranking</p>
+                            <p><strong>📝 (repetido):</strong> Indica que se usó la puntuación de otra gala</p>
                         </div>
                     </div>
-                    <div class="text-right">
-                        <p class="text-xl font-bold text-green-400">${participant.finalScore.toFixed(1)}/10</p>
-                        ${participant.penaltyApplied ? 
-                            `<p class="text-xs text-yellow-400">⚖️ -${participant.penalizacion} pts (manual)</p>` : 
-                            `<p class="text-xs text-green-400">✅ Sin penalización</p>`
-                        }
-                        <p class="text-sm text-gray-400">${participant.galas.length}/${selectedGalas.length} galas</p>
-                        <p class="text-xs text-gray-500">Promedio: ${participant.avgScore.toFixed(1)}/10</p>
-                    </div>
-                `;
-                
-                container.appendChild(rankCard);
-            });
+                </div>
+            `;
+            
+            container.innerHTML = tableHTML;
         }
 
         function renderGalaBreakdown() {
