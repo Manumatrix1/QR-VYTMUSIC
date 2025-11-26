@@ -26,10 +26,18 @@
             <a href="reportes.html" class="no-print text-sky-400 hover:underline mb-4 inline-block">&larr; Volver a Reportes</a>
             <h1 class="text-4xl font-bold text-sky-400 mb-2">🏆 Reporte Completo del Certamen</h1>
             <p class="text-lg text-gray-300 mb-2">Selecciona las galas que quieres incluir en el reporte final</p>
-            <div class="bg-blue-900 bg-opacity-50 p-3 rounded-lg mb-6 border border-blue-400">
+            <div class="bg-blue-900 bg-opacity-50 p-3 rounded-lg mb-4 border border-blue-400">
                 <p class="text-sm text-blue-200">
                     📊 <strong>Importante:</strong> Este reporte se basa en las <strong>evaluaciones de los jurados</strong>, 
                     no en los votos del público. Los puntajes se suman entre galas para determinar el ranking final.
+                </p>
+            </div>
+            
+            <div class="bg-yellow-900 bg-opacity-50 p-3 rounded-lg mb-6 border border-yellow-400">
+                <p class="text-sm text-yellow-200">
+                    ⚖️ <strong>Sistema de Compensación:</strong> Los participantes que faltaron a alguna gala reciben 
+                    su puntuación promedio repetida, pero con un descuento de <strong>0.5 puntos por gala ausente</strong> 
+                    para mantener la equidad con quienes asistieron a todas las galas.
                 </p>
             </div>
         </header>
@@ -618,10 +626,43 @@
                 reportData.galas.push(galaData);
             }
 
-            // Calcular promedios
+            // 🎯 SISTEMA DE COMPENSACIÓN POR AUSENCIAS
+            const totalGalasSelected = selectedGalas.length;
+            console.log(`📊 Total de galas seleccionadas: ${totalGalasSelected}`);
+            
             reportData.allParticipants.forEach(participant => {
-                participant.avgScore = participant.totalVotes > 0 ? 
-                    (participant.totalScore / participant.totalVotes) : 0;
+                const galasParticipadas = participant.galas.length;
+                const galasFaltantes = totalGalasSelected - galasParticipadas;
+                
+                if (galasFaltantes > 0) {
+                    // 📉 APLICAR PENALIZACIÓN POR AUSENCIA
+                    const penalizacionPorAusencia = 0.5 * galasFaltantes;
+                    const promedioBase = participant.totalVotes > 0 ? 
+                        (participant.totalScore / participant.totalVotes) : 0;
+                    
+                    // 🔄 COMPENSAR GALA FALTANTE CON PROMEDIO ACTUAL PERO CON DESCUENTO
+                    const scoreCompensado = promedioBase * galasFaltantes;
+                    participant.totalScore += scoreCompensado;
+                    participant.totalVotes += galasFaltantes;
+                    
+                    // ⚖️ APLICAR DESCUENTO FINAL
+                    participant.finalScore = (participant.totalScore / participant.totalVotes) - penalizacionPorAusencia;
+                    participant.penalizacion = penalizacionPorAusencia;
+                    participant.ausencias = galasFaltantes;
+                    
+                    console.log(`🔄 ${participant.name}: Compensado ${galasFaltantes} galas faltantes. Promedio base: ${promedioBase.toFixed(1)} → Final con penalización: ${participant.finalScore.toFixed(1)} (-${penalizacionPorAusencia})`);
+                } else {
+                    // ✅ PARTICIPANTE COMPLETO - SIN PENALIZACIÓN
+                    participant.finalScore = participant.totalVotes > 0 ? 
+                        (participant.totalScore / participant.totalVotes) : 0;
+                    participant.penalizacion = 0;
+                    participant.ausencias = 0;
+                    
+                    console.log(`✅ ${participant.name}: Asistencia completa. Promedio: ${participant.finalScore.toFixed(1)}/10`);
+                }
+                
+                // Mantener avgScore para compatibilidad
+                participant.avgScore = participant.finalScore;
             });
 
             // Calcular período
@@ -664,9 +705,9 @@
             document.getElementById('stats-average').textContent = 
                 reportData.totalVotes > 0 ? (reportData.totalScore / reportData.totalVotes).toFixed(1) : '0.0';
 
-            // Ranking final (convertir Map a Array y ordenar)
+            // Ranking final (convertir Map a Array y ordenar por finalScore)
             const finalRanking = Array.from(reportData.allParticipants.values())
-                .sort((a, b) => b.totalScore - a.totalScore);
+                .sort((a, b) => b.finalScore - a.finalScore);
 
             renderFinalPodium(finalRanking);
             renderFinalRanking(finalRanking);
@@ -694,9 +735,12 @@
                              alt="${participant.name}" class="w-full h-full object-cover">
                     </div>
                     <p class="text-lg font-semibold mb-2">${participant.name}</p>
-                    <p class="text-sm opacity-90 mb-2">Puntaje Total: ${participant.totalScore} pts</p>
-                    <p class="text-xs opacity-80">Promedio: ${participant.avgScore.toFixed(1)}/10</p>
-                    <p class="text-xs opacity-70">${participant.totalVotes} votos • ${participant.galas.length} galas</p>
+                    <p class="text-sm opacity-90 mb-1">Promedio Final: ${participant.finalScore.toFixed(1)}/10</p>
+                    ${participant.ausencias > 0 ? 
+                        `<p class="text-xs text-yellow-300 mb-1">⚠️ ${participant.ausencias} gala(s) compensada(s) con -${participant.penalizacion} pts</p>` : 
+                        `<p class="text-xs text-green-300 mb-1">✅ Asistencia completa - Sin penalización</p>`
+                    }
+                    <p class="text-xs opacity-70">${participant.galas.length}/${selectedGalas.length} galas participadas</p>
                 `;
                 
                 container.appendChild(podiumCard);
@@ -730,8 +774,12 @@
                         </div>
                     </div>
                     <div class="text-right">
-                        <p class="text-xl font-bold text-green-400">${participant.totalScore} pts</p>
-                        <p class="text-sm text-gray-400">${participant.totalVotes} votos</p>
+                        <p class="text-xl font-bold text-green-400">${participant.finalScore.toFixed(1)}/10</p>
+                        ${participant.ausencias > 0 ? 
+                            `<p class="text-xs text-yellow-400">-${participant.penalizacion} pts (${participant.ausencias} ausencia(s))</p>` : 
+                            `<p class="text-xs text-green-400">✅ Completo</p>`
+                        }
+                        <p class="text-sm text-gray-400">${participant.galas.length}/${selectedGalas.length} galas</p>
                         <p class="text-xs text-gray-500">Promedio: ${participant.avgScore.toFixed(1)}/10</p>
                     </div>
                 `;
@@ -799,13 +847,13 @@
         document.getElementById('export-final-excel').addEventListener('click', function() {
             // Generar CSV básico
             const ranking = Array.from(reportData.allParticipants.values())
-                .sort((a, b) => b.totalScore - a.totalScore);
+                .sort((a, b) => b.finalScore - a.finalScore);
             
             let csvContent = "data:text/csv;charset=utf-8,";
-            csvContent += "Posición,Nombre,Puntaje Total,Total Votos,Promedio,Galas Participadas\r\n";
+            csvContent += "Posición,Nombre,Promedio Final,Penalización,Ausencias,Galas Participadas\r\n";
             
             ranking.forEach((participant, index) => {
-                csvContent += `${index + 1},"${participant.name}",${participant.totalScore},${participant.totalVotes},${participant.avgScore.toFixed(1)},"${participant.galas.join(', ')}"\r\n`;
+                csvContent += `${index + 1},"${participant.name}",${participant.finalScore.toFixed(1)},${participant.penalizacion},${participant.ausencias},"${participant.galas.join(', ')}"\r\n`;
             });
             
             const encodedUri = encodeURI(csvContent);
