@@ -35,9 +35,9 @@
             
             <div class="bg-yellow-900 bg-opacity-50 p-3 rounded-lg mb-6 border border-yellow-400">
                 <p class="text-sm text-yellow-200">
-                    ⚖️ <strong>Sistema de Compensación:</strong> Los participantes que faltaron a alguna gala reciben 
-                    su puntuación promedio repetida, pero con un descuento de <strong>0.5 puntos por gala ausente</strong> 
-                    para mantener la equidad con quienes asistieron a todas las galas.
+                    ⚖️ <strong>Sistema de Compensación Manual:</strong> Después de generar el reporte inicial, 
+                    podrás seleccionar manualmente a qué participantes aplicar un descuento de <strong>0.5 puntos</strong> 
+                    por haber faltado a alguna gala. Esto garantiza control total sobre las penalizaciones.
                 </p>
             </div>
         </header>
@@ -46,6 +46,20 @@
         <section id="gala-selector-section" class="mb-8">
             <div class="glass-effect p-6 rounded-lg">
                 <h2 class="text-2xl font-bold mb-6 text-center">🎯 Configurar Reporte del Certamen</h2>
+                
+                <!-- SELECTOR MANUAL DE PENALIZACIONES -->
+                <div class="bg-red-800 bg-opacity-20 p-4 rounded-lg mb-6 border border-red-400" id="penalty-selector-section" style="display: none;">
+                    <h3 class="text-lg font-bold text-red-300 mb-3">⚖️ Selector Manual de Penalizaciones</h3>
+                    <p class="text-sm text-red-200 mb-4">Marca los participantes que faltaron a alguna gala para aplicarles el descuento de 0.5 puntos:</p>
+                    <div id="penalty-participants-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                        <!-- Se llenará dinámicamente -->
+                    </div>
+                    <div class="mt-4 text-center">
+                        <button id="apply-penalties-btn" class="px-6 py-2 bg-red-600 text-white font-bold rounded hover:bg-red-700">
+                            ⚖️ Aplicar Penalizaciones Seleccionadas
+                        </button>
+                    </div>
+                </div>
                 
                 <!-- FILTROS POR FECHA -->
                 <div class="bg-gray-800 p-4 rounded-lg mb-6">
@@ -626,44 +640,25 @@
                 reportData.galas.push(galaData);
             }
 
-            // 🎯 SISTEMA DE COMPENSACIÓN POR AUSENCIAS
-            const totalGalasSelected = selectedGalas.length;
-            console.log(`📊 Total de galas seleccionadas: ${totalGalasSelected}`);
+            // 🎯 INICIALIZAR PARTICIPANTES SIN PENALIZACIONES (CONTROL MANUAL)
+            console.log(`📊 Total de galas seleccionadas: ${selectedGalas.length}`);
             
             reportData.allParticipants.forEach(participant => {
-                const galasParticipadas = participant.galas.length;
-                const galasFaltantes = totalGalasSelected - galasParticipadas;
-                
-                if (galasFaltantes > 0) {
-                    // 📉 APLICAR PENALIZACIÓN POR AUSENCIA
-                    const penalizacionPorAusencia = 0.5 * galasFaltantes;
-                    const promedioBase = participant.totalVotes > 0 ? 
-                        (participant.totalScore / participant.totalVotes) : 0;
-                    
-                    // 🔄 COMPENSAR GALA FALTANTE CON PROMEDIO ACTUAL PERO CON DESCUENTO
-                    const scoreCompensado = promedioBase * galasFaltantes;
-                    participant.totalScore += scoreCompensado;
-                    participant.totalVotes += galasFaltantes;
-                    
-                    // ⚖️ APLICAR DESCUENTO FINAL
-                    participant.finalScore = (participant.totalScore / participant.totalVotes) - penalizacionPorAusencia;
-                    participant.penalizacion = penalizacionPorAusencia;
-                    participant.ausencias = galasFaltantes;
-                    
-                    console.log(`🔄 ${participant.name}: Compensado ${galasFaltantes} galas faltantes. Promedio base: ${promedioBase.toFixed(1)} → Final con penalización: ${participant.finalScore.toFixed(1)} (-${penalizacionPorAusencia})`);
-                } else {
-                    // ✅ PARTICIPANTE COMPLETO - SIN PENALIZACIÓN
-                    participant.finalScore = participant.totalVotes > 0 ? 
-                        (participant.totalScore / participant.totalVotes) : 0;
-                    participant.penalizacion = 0;
-                    participant.ausencias = 0;
-                    
-                    console.log(`✅ ${participant.name}: Asistencia completa. Promedio: ${participant.finalScore.toFixed(1)}/10`);
-                }
+                // ✅ TODOS EMPIEZAN SIN PENALIZACIÓN (se aplicará manualmente)
+                participant.finalScore = participant.totalVotes > 0 ? 
+                    (participant.totalScore / participant.totalVotes) : 0;
+                participant.penalizacion = 0;
+                participant.ausencias = 0;
+                participant.penaltyApplied = false; // Control manual
                 
                 // Mantener avgScore para compatibilidad
                 participant.avgScore = participant.finalScore;
+                
+                console.log(`👤 ${participant.name}: Promedio base: ${participant.finalScore.toFixed(1)}/10 (sin penalización)`);
             });
+            
+            // 🎛️ MOSTRAR SELECTOR MANUAL DE PENALIZACIONES
+            showPenaltySelector();
 
             // Calcular período
             const dates = reportData.galas.map(g => new Date(g.date)).sort((a, b) => a - b);
@@ -736,9 +731,9 @@
                     </div>
                     <p class="text-lg font-semibold mb-2">${participant.name}</p>
                     <p class="text-sm opacity-90 mb-1">Promedio Final: ${participant.finalScore.toFixed(1)}/10</p>
-                    ${participant.ausencias > 0 ? 
-                        `<p class="text-xs text-yellow-300 mb-1">⚠️ ${participant.ausencias} gala(s) compensada(s) con -${participant.penalizacion} pts</p>` : 
-                        `<p class="text-xs text-green-300 mb-1">✅ Asistencia completa - Sin penalización</p>`
+                    ${participant.penaltyApplied ? 
+                        `<p class="text-xs text-yellow-300 mb-1">⚖️ Penalización manual aplicada: -${participant.penalizacion} pts</p>` : 
+                        `<p class="text-xs text-green-300 mb-1">✅ Sin penalización aplicada</p>`
                     }
                     <p class="text-xs opacity-70">${participant.galas.length}/${selectedGalas.length} galas participadas</p>
                 `;
@@ -775,9 +770,9 @@
                     </div>
                     <div class="text-right">
                         <p class="text-xl font-bold text-green-400">${participant.finalScore.toFixed(1)}/10</p>
-                        ${participant.ausencias > 0 ? 
-                            `<p class="text-xs text-yellow-400">-${participant.penalizacion} pts (${participant.ausencias} ausencia(s))</p>` : 
-                            `<p class="text-xs text-green-400">✅ Completo</p>`
+                        ${participant.penaltyApplied ? 
+                            `<p class="text-xs text-yellow-400">⚖️ -${participant.penalizacion} pts (manual)</p>` : 
+                            `<p class="text-xs text-green-400">✅ Sin penalización</p>`
                         }
                         <p class="text-sm text-gray-400">${participant.galas.length}/${selectedGalas.length} galas</p>
                         <p class="text-xs text-gray-500">Promedio: ${participant.avgScore.toFixed(1)}/10</p>
@@ -917,6 +912,85 @@
                     preselectSpecificGala(specificGala);
                 }, 500);
             }
+        }
+
+        // 🎛️ FUNCIONES PARA SELECTOR MANUAL DE PENALIZACIONES
+        function showPenaltySelector() {
+            const selectorSection = document.getElementById('penalty-selector-section');
+            const participantsList = document.getElementById('penalty-participants-list');
+            
+            // Limpiar lista
+            participantsList.innerHTML = '';
+            
+            // Crear checkboxes para cada participante
+            reportData.allParticipants.forEach(participant => {
+                const participantDiv = document.createElement('div');
+                participantDiv.className = 'flex items-center space-x-3 p-3 bg-gray-800 rounded border border-gray-600';
+                
+                participantDiv.innerHTML = `
+                    <input type="checkbox" id="penalty-${participant.name}" class="penalty-checkbox w-4 h-4 text-red-500">
+                    <div class="flex-1">
+                        <label for="penalty-${participant.name}" class="text-white font-medium cursor-pointer">${participant.name}</label>
+                        <p class="text-xs text-gray-400">Participó en: ${participant.galas.join(', ')} | Promedio: ${participant.finalScore.toFixed(1)}/10</p>
+                    </div>
+                `;
+                
+                participantsList.appendChild(participantDiv);
+            });
+            
+            // Mostrar selector
+            selectorSection.style.display = 'block';
+            
+            // Configurar evento del botón
+            document.getElementById('apply-penalties-btn').onclick = applyManualPenalties;
+            
+            console.log('🎛️ Selector manual de penalizaciones mostrado');
+        }
+        
+        function applyManualPenalties() {
+            const checkboxes = document.querySelectorAll('.penalty-checkbox');
+            let penaltiesApplied = 0;
+            
+            // Resetear todas las penalizaciones primero
+            reportData.allParticipants.forEach(participant => {
+                participant.finalScore = participant.totalVotes > 0 ? 
+                    (participant.totalScore / participant.totalVotes) : 0;
+                participant.penalizacion = 0;
+                participant.ausencias = 0;
+                participant.penaltyApplied = false;
+                participant.avgScore = participant.finalScore;
+            });
+            
+            // Aplicar penalizaciones seleccionadas
+            checkboxes.forEach(checkbox => {
+                if (checkbox.checked) {
+                    const participantName = checkbox.id.replace('penalty-', '');
+                    const participant = reportData.allParticipants.get(participantName);
+                    
+                    if (participant) {
+                        // ⚖️ APLICAR PENALIZACIÓN MANUAL
+                        participant.penalizacion = 0.5;
+                        participant.ausencias = 1; // Marcar como ausente
+                        participant.finalScore = participant.finalScore - participant.penalizacion;
+                        participant.penaltyApplied = true;
+                        participant.avgScore = participant.finalScore;
+                        
+                        penaltiesApplied++;
+                        console.log(`⚖️ Penalización aplicada a ${participantName}: ${participant.finalScore.toFixed(1)}/10 (-0.5)`);
+                    }
+                }
+            });
+            
+            // Regenerar reporte con penalizaciones aplicadas
+            generateFinalReport();
+            
+            // Ocultar selector
+            document.getElementById('penalty-selector-section').style.display = 'none';
+            
+            // Mostrar confirmación
+            alert(`✅ Penalizaciones aplicadas exitosamente a ${penaltiesApplied} participantes.\n\nReporte actualizado con las penalizaciones seleccionadas.`);
+            
+            console.log(`✅ ${penaltiesApplied} penalizaciones aplicadas manualmente`);
         }
 
         // Inicializar
