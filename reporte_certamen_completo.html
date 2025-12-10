@@ -1026,12 +1026,11 @@
                     console.log(`🔄 ${participant.name}: Compensado ${galasFaltantes} galas con promedio ${promedioActual.toFixed(1)}`);
                 }
                 
-                // ✅ INICIALIZAR SIN PENALIZACIONES (control manual)
+                // ✅ INICIALIZAR CON SISTEMA DE BONUS
                 participant.finalScore = participant.totalVotes > 0 ? 
                     (participant.totalScore / participant.totalVotes) : 0;
-                participant.penalizacion = 0;
-                participant.ausencias = 0;
-                participant.penaltyApplied = false;
+                participant.bonus = participant.bonus || 0;
+                participant.bonusApplied = participant.bonusApplied || false;
                 participant.avgScore = participant.finalScore;
                 
                 console.log(`👤 ${participant.name}: Promedio final: ${participant.finalScore.toFixed(1)}/10`);
@@ -1044,6 +1043,10 @@
         // Función para completar la generación después del bonus
         async function completeReportGeneration() {
             console.log('🔄 Completando generación del reporte con los bonus aplicados...');
+
+            // 📊 INICIALIZAR ESTADÍSTICAS GLOBALES
+            reportData.totalVotes = 0;
+            reportData.totalScore = 0;
 
             // 🔄 PROCESAR COMPENSACIÓN PARA GALAS FALTANTES Y CALCULAR ESTADÍSTICAS
             let totalVotesGlobal = 0;
@@ -1102,6 +1105,12 @@
             // 📊 ACTUALIZAR ESTADÍSTICAS GLOBALES
             reportData.totalVotes = totalVotesGlobal;
             reportData.totalScore = totalScoreGlobal;
+            
+            console.log(`🔢 ESTADÍSTICAS FINALES:`, {
+                totalVotes: reportData.totalVotes,
+                totalScore: reportData.totalScore,
+                promedio: reportData.totalVotes > 0 ? (reportData.totalScore / reportData.totalVotes).toFixed(2) : 'N/A'
+            });
 
             // Calcular período
             const dates = selectedGalas.map(galaId => {
@@ -1143,12 +1152,26 @@
                 reportData.period.from : 
                 `${reportData.period.from} - ${reportData.period.to}`;
 
-            // Estadísticas
-            document.getElementById('stats-participants').textContent = reportData.allParticipants.size;
-            document.getElementById('stats-votes').textContent = reportData.totalVotes;
-            document.getElementById('stats-galas').textContent = reportData.galas.length;
-            document.getElementById('stats-average').textContent = 
-                reportData.totalVotes > 0 ? (reportData.totalScore / reportData.totalVotes).toFixed(1) : '0.0';
+            // Estadísticas con validación
+            const statsParticipants = document.getElementById('stats-participants');
+            const statsVotes = document.getElementById('stats-votes');
+            const statsGalas = document.getElementById('stats-galas');
+            const statsAverage = document.getElementById('stats-average');
+            
+            if (statsParticipants) statsParticipants.textContent = reportData.allParticipants.size || 0;
+            if (statsVotes) statsVotes.textContent = reportData.totalVotes || 0;
+            if (statsGalas) statsGalas.textContent = reportData.galas.length || 0;
+            if (statsAverage) {
+                const average = reportData.totalVotes > 0 ? (reportData.totalScore / reportData.totalVotes).toFixed(1) : '0.0';
+                statsAverage.textContent = average;
+            }
+            
+            console.log(`📊 Estadísticas actualizadas:`, {
+                participantes: reportData.allParticipants.size,
+                evaluaciones: reportData.totalVotes,
+                galas: reportData.galas.length,
+                promedio: reportData.totalVotes > 0 ? (reportData.totalScore / reportData.totalVotes).toFixed(1) : '0.0'
+            });
 
             // Ranking final (convertir Map a Array y ordenar por finalScore)
             const finalRanking = Array.from(reportData.allParticipants.values())
@@ -1590,6 +1613,12 @@
         function generatePublicLink() {
             // Crear un ID único para este reporte
             const reportId = Date.now().toString(36);
+            // Verificar que reportData existe
+            if (!reportData || !reportData.allParticipants) {
+                alert('❌ Error: No hay datos del reporte disponibles.\n\nGenera primero el reporte del certamen.');
+                return;
+            }
+
             const ranking = Array.from(reportData.allParticipants.values())
                 .sort((a, b) => b.finalScore - a.finalScore);
             
@@ -1597,7 +1626,7 @@
                 id: reportId,
                 timestamp: new Date().toISOString(),
                 title: reportData.galas.length > 1 ? 'CERTAMEN VYT-MUSIC' : `GALA: ${reportData.galas[0].name}`,
-                period: reportData.period,
+                period: reportData.period || { from: 'N/A', to: 'N/A' },
                 podium: ranking.slice(0, 3),
                 ranking: ranking
             };
