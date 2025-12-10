@@ -1020,16 +1020,40 @@
             // Limpiar lista
             participantsList.innerHTML = '';
             
-            // Crear checkboxes para cada participante
-            reportData.allParticipants.forEach(participant => {
+            console.log('🔍 Participantes disponibles:', reportData.allParticipants.size);
+            
+            // ✨ CREAR LISTA ÚNICA DE PARTICIPANTES (sin duplicados)
+            const uniqueParticipants = Array.from(reportData.allParticipants.values());
+            
+            // Ordenar alfabéticamente para mejor organización
+            uniqueParticipants.sort((a, b) => a.name.localeCompare(b.name));
+            
+            // Crear checkboxes para cada participante único
+            uniqueParticipants.forEach((participant, index) => {
                 const participantDiv = document.createElement('div');
-                participantDiv.className = 'flex items-center space-x-3 p-3 bg-gray-800 rounded border border-gray-600';
+                participantDiv.className = 'flex items-center space-x-3 p-3 bg-gray-800 rounded border border-gray-600 hover:bg-gray-700 transition-colors';
+                
+                // Calcular cuántas galas participó
+                const galasParticipadas = participant.galas || [];
+                const totalGalas = selectedGalas.length;
+                const participoEnTodas = galasParticipadas.length === totalGalas;
                 
                 participantDiv.innerHTML = `
-                    <input type="checkbox" id="bonus-${participant.name}" class="bonus-checkbox w-4 h-4 text-green-500">
+                    <input type="checkbox" id="bonus-${participant.name.replace(/\s+/g, '-')}" class="bonus-checkbox w-5 h-5 text-green-500 rounded focus:ring-green-500">
                     <div class="flex-1">
-                        <label for="bonus-${participant.name}" class="text-white font-medium cursor-pointer">${participant.name}</label>
-                        <p class="text-xs text-gray-400">Participó en: ${participant.galas.join(', ')} | Promedio: ${participant.finalScore.toFixed(1)}/10</p>
+                        <label for="bonus-${participant.name.replace(/\s+/g, '-')}" class="text-white font-medium cursor-pointer hover:text-green-300">
+                            ${participant.name}
+                        </label>
+                        <div class="text-xs mt-1">
+                            <span class="text-gray-400">Participó en: ${galasParticipadas.join(', ')}</span>
+                            ${participoEnTodas ? 
+                                '<span class="ml-2 text-green-400">✅ Participación completa</span>' : 
+                                '<span class="ml-2 text-yellow-400">⚠️ Faltó a alguna gala</span>'
+                            }
+                        </div>
+                        <div class="text-xs text-blue-300">
+                            Promedio actual: ${participant.finalScore ? participant.finalScore.toFixed(1) : '0.0'}/10
+                        </div>
                     </div>
                 `;
                 
@@ -1042,7 +1066,7 @@
             // Configurar evento del botón
             document.getElementById('apply-bonuses-btn').onclick = applyManualBonuses;
             
-            console.log('🏆 Selector de bonus por participación mostrado');
+            console.log(`🏆 Selector de bonus mostrado con ${uniqueParticipants.length} participantes únicos`);
         }
         
         function applyManualBonuses() {
@@ -1050,18 +1074,21 @@
             let bonusesApplied = 0;
             
             // Resetear todos los bonus primero
-            reportData.allParticipants.forEach(participant => {
+            for (let participant of reportData.allParticipants.values()) {
                 participant.finalScore = participant.totalVotes > 0 ? 
                     (participant.totalScore / participant.totalVotes) : 0;
                 participant.bonus = 0;
                 participant.bonusApplied = false;
                 participant.avgScore = participant.finalScore;
-            });
+            }
             
             // Aplicar bonus seleccionados
             checkboxes.forEach(checkbox => {
                 if (checkbox.checked) {
-                    const participantName = checkbox.id.replace('bonus-', '');
+                    // Limpiar el ID del checkbox para obtener el nombre real
+                    const participantName = checkbox.id.replace('bonus-', '').replace(/-/g, ' ');
+                    
+                    // Buscar el participante por nombre (Map usa nombres como keys)
                     const participant = reportData.allParticipants.get(participantName);
                     
                     if (participant) {
@@ -1073,6 +1100,8 @@
                         
                         bonusesApplied++;
                         console.log(`⭐ Bonus aplicado a ${participantName}: ${participant.finalScore.toFixed(1)}/10 (+0.5)`);
+                    } else {
+                        console.warn(`⚠️ No se encontró participante: ${participantName}`);
                     }
                 }
             });
@@ -1084,7 +1113,7 @@
             document.getElementById('penalty-selector-section').style.display = 'none';
             
             // Mostrar confirmación
-            alert(`🎉 ¡Bonus aplicados exitosamente a ${bonusesApplied} participantes!\n\n⭐ Premio por participación completa otorgado.`);
+            alert(`🎉 ¡Bonus aplicados exitosamente a ${bonusesApplied} participantes!\n\n⭐ Premio por participación completa otorgado.\n\nEl ranking ha sido actualizado automáticamente.`);
             
             console.log(`🎉 ${bonusesApplied} bonus aplicados por participación completa`);
         }
