@@ -654,51 +654,76 @@
                 totalVotes: 0,
             };
 
+            console.log(`🔄 Cargando participantes de ${selectedGalas.length} galas para selector de bonus...`);
+
             // Cargar datos de todas las galas seleccionadas
-            for (const gala of selectedGalas) {
-                console.log(`Cargando gala para bonus: ${gala.name}`);
-                const juryEvaluations = await getJuryEvaluations(gala.eventId);
+            for (const galaId of selectedGalas) {
+                const gala = allGalas.find(g => g.id === galaId);
+                console.log(`📊 Procesando gala: ${gala.name}`);
+
+                // 🎯 CARGAR EVALUACIONES DE JURADOS (usando la misma lógica que generateCertamenReport)
+                const jurySnapshot = await getDocs(collection(db, `events/${galaId}/jury_evaluations`));
+                const juryScores = {};
+                
+                // Procesar evaluaciones de jurados
+                jurySnapshot.docs.forEach(juryDoc => {
+                    const juryData = juryDoc.data();
+                    const artistId = juryData.artistId;
+                    const juryScore = juryData.average || juryData.score || 0;
+                    
+                    if (!juryScores[artistId]) {
+                        juryScores[artistId] = [];
+                    }
+                    juryScores[artistId].push(juryScore);
+                });
+
+                // Cargar artistas de esta gala
+                const artistsSnapshot = await getDocs(collection(db, `events/${galaId}/artists`));
                 
                 const galaData = {
                     name: gala.name,
                     participants: []
                 };
 
-                // Procesar participantes de esta gala
-                juryEvaluations.forEach(evaluation => {
-                    const artistName = evaluation.artist;
-                    const score = evaluation.averageScore || 0;
-
-                    galaData.participants.push({
-                        name: artistName,
-                        score: score
-                    });
-
-                    // 🔍 BUSCAR NOMBRE SIMILAR PARA BONUS
-                    const existingNames = Array.from(reportData.allParticipants.keys());
-                    const similarName = findSimilarName(artistName, existingNames);
-                    const finalName = similarName || artistName;
+                // Procesar cada artista
+                artistsSnapshot.docs.forEach(artistDoc => {
+                    const artistData = artistDoc.data();
+                    const artistJuryScores = juryScores[artistDoc.id] || [];
                     
-                    if (similarName) {
-                        console.log(`🔗 Unificando para bonus: "${artistName}" con "${similarName}"`);
-                    }
-
-                    // Añadir/actualizar en la lista global
-                    if (reportData.allParticipants.has(finalName)) {
-                        const existing = reportData.allParticipants.get(finalName);
-                        existing.galas.push(gala.name);
-                        existing.totalScore += score;
-                        existing.totalVotes++;
-                    } else {
-                        reportData.allParticipants.set(finalName, {
-                            name: finalName,
-                            galas: [gala.name],
-                            totalScore: score,
-                            totalVotes: 1,
-                            finalScore: score,
-                            bonus: 0,
-                            bonusApplied: false
+                    if (artistJuryScores.length > 0) {
+                        const juryAverage = artistJuryScores.reduce((sum, score) => sum + score, 0) / artistJuryScores.length;
+                        
+                        galaData.participants.push({
+                            name: artistData.name,
+                            score: juryAverage
                         });
+
+                        // 🔍 BUSCAR NOMBRE SIMILAR PARA BONUS
+                        const existingNames = Array.from(reportData.allParticipants.keys());
+                        const similarName = findSimilarName(artistData.name, existingNames, artistData.photoURL);
+                        const finalName = similarName || artistData.name;
+                        
+                        if (similarName) {
+                            console.log(`🔗 Unificando para bonus: "${artistData.name}" con "${similarName}"`);
+                        }
+
+                        // Añadir/actualizar en la lista global
+                        if (reportData.allParticipants.has(finalName)) {
+                            const existing = reportData.allParticipants.get(finalName);
+                            existing.galas.push(gala.name);
+                            existing.totalScore += juryAverage;
+                            existing.totalVotes++;
+                        } else {
+                            reportData.allParticipants.set(finalName, {
+                                name: finalName,
+                                galas: [gala.name],
+                                totalScore: juryAverage,
+                                totalVotes: 1,
+                                finalScore: juryAverage,
+                                bonus: 0,
+                                bonusApplied: false
+                            });
+                        }
                     }
                 });
 
