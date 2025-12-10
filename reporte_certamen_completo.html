@@ -47,19 +47,7 @@
             <div class="glass-effect p-6 rounded-lg">
                 <h2 class="text-2xl font-bold mb-6 text-center">🎯 Configurar Reporte del Certamen</h2>
                 
-                <!-- SELECTOR DE BONUS POR PARTICIPACIÓN COMPLETA -->
-                <div class="bg-green-800 bg-opacity-20 p-4 rounded-lg mb-6 border border-green-400" id="penalty-selector-section" style="display: none;">
-                    <h3 class="text-lg font-bold text-green-300 mb-3">🏆 Selector de Bonus por Participación Completa</h3>
-                    <p class="text-sm text-red-200 mb-4">Marca los participantes que faltaron a alguna gala para aplicarles el descuento de 0.5 puntos:</p>
-                    <div id="penalty-participants-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                        <!-- Se llenará dinámicamente -->
-                    </div>
-                    <div class="mt-4 text-center">
-                        <button id="apply-bonuses-btn" class="px-6 py-2 bg-green-600 text-white font-bold rounded hover:bg-green-700">
-                            ⭐ Aplicar Bonus Seleccionados
-                        </button>
-                    </div>
-                </div>
+
                 
                 <!-- FILTROS POR FECHA -->
                 <div class="bg-gray-800 p-4 rounded-lg mb-6">
@@ -86,6 +74,30 @@
                     <h3 class="text-lg font-bold mb-4">✅ Seleccionar Galas para Incluir</h3>
                     <div id="galas-checkbox-container" class="space-y-3">
                         <p class="text-gray-400 text-center">Cargando galas disponibles...</p>
+                    </div>
+                </div>
+
+                <!-- SELECTOR DE BONUS POR PARTICIPACIÓN COMPLETA -->
+                <div class="bg-green-800 bg-opacity-20 p-4 rounded-lg mb-6 border border-green-400" id="penalty-selector-section" style="display: none;">
+                    <h3 class="text-lg font-bold text-green-300 mb-3">🏆 Selector de Bonus por Participación Completa</h3>
+                    <div class="bg-blue-900/30 border border-blue-500 rounded-lg p-4 mb-4">
+                        <p class="text-blue-200 text-sm mb-2">
+                            📝 <strong>Instrucciones:</strong> Selecciona los participantes que asistieron a TODAS las galas para otorgarles un bonus de +0.5 puntos.
+                        </p>
+                        <p class="text-blue-300 text-xs">
+                            ⭐ Este es un premio por dedicación y participación completa en el certamen.
+                        </p>
+                    </div>
+                    <div id="penalty-participants-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                        <!-- Se llenará dinámicamente -->
+                    </div>
+                    <div class="mt-4 text-center">
+                        <button id="apply-bonuses-btn" class="px-6 py-3 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700">
+                            ⭐ Aplicar Bonus y Generar Reporte
+                        </button>
+                        <button id="skip-bonus-btn" class="ml-3 px-6 py-3 bg-gray-600 text-white font-bold rounded-lg hover:bg-gray-700">
+                            ⏭️ Continuar Sin Bonus
+                        </button>
                     </div>
                 </div>
 
@@ -527,29 +539,80 @@
             updateSelectedGalas();
         });
 
-        // Generar reporte
+        // Generar reporte - Ahora muestra selector de bonus primero
         generateReportBtn.addEventListener('click', async function() {
             if (selectedGalas.length === 0) return;
 
-            console.log('Generando reporte del certamen...');
-            generateReportBtn.disabled = true;
-            generateReportBtn.textContent = '⏳ Generando Reporte...';
-
+            console.log('Mostrando selector de bonus antes del reporte...');
+            
             try {
-                await generateCertamenReport();
+                // Primero cargar los datos para saber quiénes participaron
+                await loadParticipantsForBonus();
                 
-                // Mostrar reporte y ocultar selector
-                galaSelectorSection.classList.add('hidden');
-                reportContent.classList.remove('hidden');
+                // Mostrar el selector de bonus
+                showBonusSelector();
+                
+                // Deshabilitar botón hasta que se maneje el bonus
+                generateReportBtn.style.display = 'none';
                 
             } catch (error) {
-                console.error('Error generando reporte:', error);
-                alert('Error al generar el reporte del certamen');
-            } finally {
-                generateReportBtn.disabled = false;
-                generateReportBtn.textContent = '📊 Generar Reporte del Certamen';
+                console.error('Error cargando participantes:', error);
+                alert('Error al cargar los participantes para el bonus');
             }
         });
+
+        // Nueva función para cargar participantes antes del selector de bonus
+        async function loadParticipantsForBonus() {
+            reportData = {
+                galas: [],
+                allParticipants: new Map(),
+                totalVotes: 0,
+            };
+
+            // Cargar datos de todas las galas seleccionadas
+            for (const gala of selectedGalas) {
+                console.log(`Cargando gala para bonus: ${gala.name}`);
+                const juryEvaluations = await getJuryEvaluations(gala.eventId);
+                
+                const galaData = {
+                    name: gala.name,
+                    participants: []
+                };
+
+                // Procesar participantes de esta gala
+                juryEvaluations.forEach(evaluation => {
+                    const artistName = evaluation.artist;
+                    const score = evaluation.averageScore || 0;
+
+                    galaData.participants.push({
+                        name: artistName,
+                        score: score
+                    });
+
+                    // Añadir/actualizar en la lista global
+                    if (reportData.allParticipants.has(artistName)) {
+                        const existing = reportData.allParticipants.get(artistName);
+                        existing.galas.push(gala.name);
+                        existing.totalScore += score;
+                        existing.totalVotes++;
+                    } else {
+                        reportData.allParticipants.set(artistName, {
+                            name: artistName,
+                            galas: [gala.name],
+                            totalScore: score,
+                            totalVotes: 1,
+                            finalScore: score,
+                            bonus: 0,
+                            bonusApplied: false
+                        });
+                    }
+                });
+
+                reportData.galas.push(galaData);
+            }
+
+            console.log(`📊 Participantes cargados para bonus: ${reportData.allParticipants.size}`);
+        }
 
         async function generateCertamenReport() {
             reportData = {
@@ -697,8 +760,13 @@
                 console.log(`👤 ${participant.name}: Promedio final: ${participant.finalScore.toFixed(1)}/10`);
             });
             
-            // 🏆 MOSTRAR SELECTOR DE BONUS POR PARTICIPACIÓN
-            showBonusSelector();
+            // Completar el procesamiento se hace después del bonus
+            await completeReportGeneration();
+        }
+
+        // Función para completar la generación después del bonus
+        async function completeReportGeneration() {
+            console.log('🔄 Completando generación del reporte...');
 
             // Calcular período
             const dates = reportData.galas.map(g => new Date(g.date)).sort((a, b) => a - b);
@@ -1067,9 +1135,48 @@
             document.getElementById('apply-bonuses-btn').onclick = applyManualBonuses;
             
             console.log(`🏆 Selector de bonus mostrado con ${uniqueParticipants.length} participantes únicos`);
+            
+            // Configurar evento del botón para saltar bonus
+            document.getElementById('skip-bonus-btn').onclick = skipBonusAndGenerate;
         }
         
-        function applyManualBonuses() {
+        // Función para generar reporte sin bonus
+        async function skipBonusAndGenerate() {
+            console.log('⏭️ Saltando bonus y generando reporte...');
+            
+            // Ocultar selector
+            document.getElementById('penalty-selector-section').style.display = 'none';
+            
+            // Generar reporte sin bonus
+            await generateCertamenReportWithBonus();
+            
+            console.log('✅ Reporte generado sin bonus');
+        }
+        
+        // Función para generar reporte completo con los bonus ya aplicados
+        async function generateCertamenReportWithBonus() {
+            console.log('📊 Generando reporte del certamen con bonus aplicados...');
+            
+            try {
+                // Completar la carga de datos del reporte
+                await completeReportGeneration();
+                
+                // Mostrar reporte y ocultar selector
+                const galaSelectorSection = document.getElementById('gala-selector-section');
+                const reportContent = document.getElementById('report-content');
+                
+                galaSelectorSection.classList.add('hidden');
+                reportContent.classList.remove('hidden');
+                
+                console.log('✅ Reporte del certamen generado exitosamente');
+                
+            } catch (error) {
+                console.error('Error generando reporte:', error);
+                alert('Error al generar el reporte del certamen');
+            }
+        }
+        
+        async function applyManualBonuses() {
             const checkboxes = document.querySelectorAll('.bonus-checkbox');
             let bonusesApplied = 0;
             
@@ -1106,16 +1213,16 @@
                 }
             });
             
-            // Regenerar reporte con bonus aplicados
-            generateFinalReport();
-            
             // Ocultar selector
             document.getElementById('penalty-selector-section').style.display = 'none';
             
             // Mostrar confirmación
-            alert(`🎉 ¡Bonus aplicados exitosamente a ${bonusesApplied} participantes!\n\n⭐ Premio por participación completa otorgado.\n\nEl ranking ha sido actualizado automáticamente.`);
-            
             console.log(`🎉 ${bonusesApplied} bonus aplicados por participación completa`);
+            
+            // Generar el reporte completo con los bonus aplicados
+            await generateCertamenReportWithBonus();
+            
+            alert(`🎉 ¡Bonus aplicados exitosamente a ${bonusesApplied} participantes!\n\n⭐ Premio por participación completa otorgado.\n\nReporte generado con éxito.`);
         }
 
         // Inicializar
