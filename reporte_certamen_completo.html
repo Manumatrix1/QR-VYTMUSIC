@@ -458,8 +458,22 @@
                     throw new Error('Firebase no está inicializado correctamente');
                 }
                 
+                // Test de conectividad
+                console.log('🔗 Probando conexión a Firebase...');
+                const testQuery = collection(db, 'events');
+                if (!testQuery) {
+                    throw new Error('No se puede crear consulta a Firebase');
+                }
+                
                 console.log('📡 Consultando colección events...');
-                const eventsSnapshot = await getDocs(collection(db, 'events'));
+                
+                // Crear consulta con timeout
+                const eventsPromise = getDocs(collection(db, 'events'));
+                const timeoutPromise = new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error('Timeout: La consulta a Firebase tardó más de 15 segundos')), 15000)
+                );
+                
+                const eventsSnapshot = await Promise.race([eventsPromise, timeoutPromise]);
                 console.log(`📊 Encontrados ${eventsSnapshot.size} eventos en total`);
                 
                 allGalas = [];
@@ -1572,6 +1586,10 @@
         // Wrapper con manejo de errores para la inicialización
         async function safeInitialize() {
             try {
+                // Esperar a que Firebase esté completamente cargado
+                console.log('🔄 Esperando inicialización de Firebase...');
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                
                 await initializeReport();
             } catch (error) {
                 console.error('💥 Error en la inicialización:', error);
