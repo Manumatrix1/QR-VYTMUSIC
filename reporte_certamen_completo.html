@@ -1052,37 +1052,55 @@
             let totalVotesGlobal = 0;
             let totalScoreGlobal = 0;
             
+            // Ordenar galas por fecha para proceso secuencial
+            const galasOrdenadas = selectedGalas.map(galaId => ({
+                id: galaId,
+                name: allGalas.find(g => g.id === galaId)?.name,
+                date: allGalas.find(g => g.id === galaId)?.date
+            })).sort((a, b) => new Date(a.date) - new Date(b.date));
+            
             reportData.allParticipants.forEach(participant => {
-                const galasParticipadas = participant.galas || [];
-                const galasFaltantes = selectedGalas.filter(gala => {
-                    const galaName = allGalas.find(g => g.id === gala)?.name;
-                    return !galasParticipadas.includes(galaName);
+                console.log(`🎯 Procesando compensación para: ${participant.name}`);
+                
+                let ultimaPuntuacion = 0;
+                let ultimaVotacion = 0;
+                
+                // Procesar cada gala en orden cronológico
+                galasOrdenadas.forEach((gala, index) => {
+                    const galaDetail = participant.galaDetails?.[gala.name];
+                    
+                    if (galaDetail && galaDetail.participated) {
+                        // Participó en esta gala - usar su puntuación real
+                        ultimaPuntuacion = galaDetail.score;
+                        ultimaVotacion = galaDetail.votes;
+                        console.log(`✅ ${participant.name} participó en ${gala.name}: ${ultimaPuntuacion.toFixed(1)}`);
+                    } else {
+                        // No participó - usar puntuación de la gala anterior
+                        if (index > 0 && ultimaPuntuacion > 0) {
+                            participant.totalScore += ultimaPuntuacion;
+                            participant.totalVotes += 1;
+                            
+                            if (!participant.galas.includes(gala.name)) {
+                                participant.galas.push(gala.name);
+                            }
+                            
+                            // Agregar detalles de compensación
+                            participant.galaDetails = participant.galaDetails || {};
+                            participant.galaDetails[gala.name] = {
+                                score: ultimaPuntuacion,
+                                votes: 1,
+                                participated: false,
+                                repeated: true,
+                                source: `Repetida de gala anterior`
+                            };
+                            
+                            console.log(`🔄 ${participant.name} faltó a ${gala.name}: usando ${ultimaPuntuacion.toFixed(1)} (repetida)`);
+                        } else if (index === 0) {
+                            console.log(`⚠️ ${participant.name} faltó a la primera gala ${gala.name} - sin puntuación previa`);
+                        }
+                    }
                 });
-
-                if (galasFaltantes.length > 0) {
-                    console.log(`⚠️ ${participant.name} faltó a ${galasFaltantes.length} galas`);
-                    
-                    // Calcular promedio actual
-                    const promedioActual = participant.totalVotes > 0 ? 
-                        (participant.totalScore / participant.totalVotes) : 0;
-                    
-                    // Compensar galas faltantes con el promedio
-                    galasFaltantes.forEach(galaId => {
-                        const galaName = allGalas.find(g => g.id === galaId)?.name;
-                        participant.totalScore += promedioActual;
-                        participant.totalVotes += 1;
-                        participant.galas.push(galaName);
-                        
-                        // Agregar detalles de compensación
-                        participant.galaDetails = participant.galaDetails || {};
-                        participant.galaDetails[galaName] = {
-                            score: promedioActual,
-                            votes: 1,
-                            participated: false, // Marca que no participó realmente
-                            repeated: true
-                        };
-                    });
-                }
+            });
 
                 // Calcular puntuación final con bonus
                 participant.finalScore = participant.totalVotes > 0 ? 
@@ -1232,10 +1250,13 @@
                     <table class="w-full bg-gray-800 rounded-xl overflow-hidden shadow-2xl">
                         <thead class="bg-gradient-to-r from-purple-700 to-blue-700">
                             <tr>
-                                <th class="px-6 py-4 text-left text-white font-bold text-lg">🏅 Posición</th>
-                                <th class="px-6 py-4 text-left text-white font-bold text-lg">🎤 Artista</th>
-                                <th class="px-6 py-4 text-center text-white font-bold text-lg bg-green-800">🏆 Puntuación Final</th>
-                                <th class="px-6 py-4 text-center text-white font-bold text-lg">⭐ Bonus</th>
+                                <th class="px-4 py-4 text-left text-white font-bold">🏅 Pos</th>
+                                <th class="px-4 py-4 text-left text-white font-bold">🎤 Artista</th>
+                                ${reportData.galas.map(gala => `
+                                    <th class="px-2 py-4 text-center text-white font-bold text-sm bg-blue-800/50">${gala.name.replace('GALA ', 'G')}</th>
+                                `).join('')}
+                                <th class="px-3 py-4 text-center text-white font-bold bg-green-800">🏆 Final</th>
+                                <th class="px-3 py-4 text-center text-white font-bold">⭐</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -1250,31 +1271,45 @@
                                                      index === 2 ? 'text-orange-400 bg-orange-900/30' : 
                                                      index < 10 ? 'text-blue-300 bg-blue-900/20' : 'text-white';
                                 
+                                // Generar columnas por gala
+                                const galaScores = reportData.galas.map(gala => {
+                                    const galaDetail = participant.galaDetails?.[gala.name];
+                                    if (galaDetail) {
+                                        const scoreClass = galaDetail.participated ? 'text-green-400' : 'text-orange-300';
+                                        const badge = galaDetail.repeated ? '🔄' : '✅';
+                                        return `
+                                            <td class="px-2 py-4 text-center">
+                                                <div class="${scoreClass} font-bold">${galaDetail.score.toFixed(1)}</div>
+                                                <div class="text-xs">${badge}</div>
+                                            </td>
+                                        `;
+                                    }
+                                    return '<td class="px-2 py-4 text-center text-gray-500">-</td>';
+                                }).join('');
+
                                 return `
                                     <tr class="border-b border-gray-700 hover:bg-gray-700/50 transition-colors ${index < 3 ? 'bg-gray-700/30' : ''}">
-                                        <td class="px-6 py-5">
-                                            <div class="flex items-center">
-                                                <span class="font-bold text-2xl ${positionColor} px-3 py-1 rounded-lg">${positionBadge}</span>
-                                            </div>
+                                        <td class="px-4 py-4">
+                                            <span class="font-bold text-lg ${positionColor} px-2 py-1 rounded">${positionBadge}</span>
                                         </td>
-                                        <td class="px-6 py-5">
+                                        <td class="px-4 py-4">
                                             <div class="flex items-center">
                                                 <img src="${participant.photoURL || 'https://placehold.co/50x50/1f2937/f9fafb?text=ART'}" 
-                                                     alt="${participant.name}" class="w-12 h-12 rounded-full mr-4 border-2 border-gray-600">
+                                                     alt="${participant.name}" class="w-10 h-10 rounded-full mr-3 border border-gray-600">
                                                 <div>
-                                                    <span class="text-white font-bold text-lg">${participant.name}</span>
-                                                    <div class="text-xs text-gray-400">Participó en ${participant.galas.length}/${reportData.galas.length} galas</div>
+                                                    <div class="text-white font-bold">${participant.name}</div>
+                                                    <div class="text-xs text-gray-400">${participant.galas.length}/${reportData.galas.length} galas</div>
                                                 </div>
                                             </div>
                                         </td>
-                                        <td class="px-6 py-5 text-center bg-green-800/50">
-                                            <div class="text-green-300 font-bold text-2xl">${participant.finalScore.toFixed(1)}</div>
-                                            <div class="text-green-400 text-sm">sobre 10</div>
+                                        ${galaScores}
+                                        <td class="px-3 py-4 text-center bg-green-800/50">
+                                            <div class="text-green-300 font-bold text-xl">${participant.finalScore.toFixed(1)}</div>
                                         </td>
-                                        <td class="px-6 py-5 text-center">
+                                        <td class="px-3 py-4 text-center">
                                             ${participant.bonusApplied ? 
-                                                `<span class="text-green-400 font-bold text-lg">+${participant.bonus} ⭐</span><br><span class="text-xs text-green-300">Participación completa</span>` : 
-                                                `<span class="text-gray-400 text-sm">Sin bonus</span>`
+                                                `<span class="text-green-400 font-bold">+${participant.bonus}</span>` : 
+                                                `<span class="text-gray-400">-</span>`
                                             }
                                         </td>
                                     </tr>
@@ -1284,14 +1319,29 @@
                     </table>
                 </div>
                 
-                <!-- EXPLICACIÓN SIMPLE -->
-                <div class="mt-8 bg-gradient-to-r from-green-900/30 to-blue-900/30 p-6 rounded-xl border border-green-500/30">
-                    <h4 class="text-xl font-bold text-green-400 mb-4 text-center">✨ ¡Resultados Oficiales!</h4>
-                    <div class="text-center text-gray-300">
-                        <p class="mb-2"><strong>🏆 Puntuación Final:</strong> Determina el ganador del certamen</p>
-                        <p class="mb-2"><strong>⭐ Bonus:</strong> +0.5 puntos por participar en TODAS las galas</p>
-                        <p class="text-green-400 font-semibold">¡Felicitaciones a todos los participantes! 🎵</p>
+                <!-- LEYENDA Y EXPLICACIÓN -->
+                <div class="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="bg-blue-900/30 p-4 rounded-lg border border-blue-500/30">
+                        <h5 class="text-lg font-bold text-blue-400 mb-3">📖 Leyenda</h5>
+                        <div class="text-sm text-gray-300 space-y-1">
+                            <p><span class="text-green-400">✅ Verde:</span> Participó en la gala</p>
+                            <p><span class="text-orange-300">🔄 Naranja:</span> Puntuación repetida (faltó)</p>
+                            <p><span class="text-green-400">⭐ Bonus:</span> +0.5 por participación completa</p>
+                        </div>
                     </div>
+                    <div class="bg-green-900/30 p-4 rounded-lg border border-green-500/30">
+                        <h5 class="text-lg font-bold text-green-400 mb-3">🏆 Sistema de Puntuación</h5>
+                        <div class="text-sm text-gray-300 space-y-1">
+                            <p>• Promedio de evaluaciones de jurados</p>
+                            <p>• Si falta: se repite puntuación anterior</p>
+                            <p>• Solo pierde el bonus, no la puntuación</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="mt-6 bg-gradient-to-r from-green-900/30 to-blue-900/30 p-6 rounded-xl border border-green-500/30 text-center">
+                    <h4 class="text-xl font-bold text-green-400 mb-2">✨ ¡Resultados Oficiales VYT-MUSIC!</h4>
+                    <p class="text-green-400 font-semibold">¡Felicitaciones a todos los participantes! 🎵</p>
                 </div>
             `;
             
@@ -1302,40 +1352,84 @@
             const container = document.getElementById('gala-breakdown-container');
             container.innerHTML = '';
 
-            reportData.galas
-                .sort((a, b) => new Date(a.date) - new Date(b.date))
-                .forEach(gala => {
-                    const galaCard = document.createElement('div');
-                    galaCard.className = 'bg-gray-800 p-4 rounded-lg border border-gray-700';
-                    
-                    const sortedParticipants = gala.participants.sort((a, b) => b.score - a.score);
-                    const top3 = sortedParticipants.slice(0, 3);
+            // Ordenar galas por fecha
+            const galasOrdenadas = selectedGalas.map(galaId => {
+                const galaInfo = allGalas.find(g => g.id === galaId);
+                return {
+                    id: galaId,
+                    name: galaInfo?.name || 'Gala Desconocida',
+                    date: galaInfo?.date || 'Fecha no disponible'
+                };
+            }).sort((a, b) => new Date(a.date) - new Date(b.date));
 
-                    galaCard.innerHTML = `
-                        <div class="flex justify-between items-center mb-4">
-                            <div>
-                                <h4 class="text-lg font-bold text-white">${gala.name}</h4>
-                                <p class="text-sm text-gray-400">📅 ${gala.date} • 🎤 ${gala.participants.length} participantes</p>
-                            </div>
-                            <div class="text-right">
-                                <p class="text-sm text-green-400">
-                                    ${gala.participants.reduce((sum, p) => sum + p.votes, 0)} votos totales
-                                </p>
-                            </div>
-                        </div>
-                        <div class="bg-gray-900 p-3 rounded">
-                            <p class="text-xs text-gray-400 mb-2">Top 3 de esta gala:</p>
-                            ${top3.map((p, i) => `
-                                <div class="flex justify-between items-center text-sm ${i < top3.length - 1 ? 'mb-1' : ''}">
-                                    <span>${i + 1}. ${p.name}</span>
-                                    <span class="font-bold">${p.score} pts</span>
-                                </div>
-                            `).join('')}
-                        </div>
-                    `;
-                    
-                    container.appendChild(galaCard);
+            galasOrdenadas.forEach(galaInfo => {
+                const galaCard = document.createElement('div');
+                galaCard.className = 'bg-gray-800 p-4 rounded-lg border border-gray-700';
+                
+                // Recolectar todos los participantes con sus puntuaciones para esta gala
+                const participantesGala = [];
+                
+                reportData.allParticipants.forEach(participant => {
+                    const galaDetail = participant.galaDetails?.[galaInfo.name];
+                    if (galaDetail) {
+                        participantesGala.push({
+                            name: participant.name,
+                            score: galaDetail.score,
+                            votes: galaDetail.votes,
+                            participated: galaDetail.participated,
+                            repeated: galaDetail.repeated || false,
+                            bonus: participant.bonusApplied && participant.bonus ? participant.bonus : 0
+                        });
+                    }
                 });
+
+                // Ordenar por puntuación
+                participantesGala.sort((a, b) => b.score - a.score);
+                const top5 = participantesGala.slice(0, 5);
+                
+                const participados = participantesGala.filter(p => p.participated).length;
+                const repetidos = participantesGala.filter(p => p.repeated).length;
+
+                galaCard.innerHTML = `
+                    <div class="flex justify-between items-center mb-4">
+                        <div>
+                            <h4 class="text-lg font-bold text-white">${galaInfo.name}</h4>
+                            <p class="text-sm text-gray-400">📅 ${galaInfo.date}</p>
+                            <p class="text-xs text-blue-300">
+                                🎤 ${participados} participaron | 🔄 ${repetidos} repetidas | 📊 ${participantesGala.length} total
+                            </p>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-sm text-green-400">
+                                ${participantesGala.reduce((sum, p) => sum + p.votes, 0)} evaluaciones
+                            </p>
+                            <p class="text-xs text-gray-400">
+                                Promedio: ${participantesGala.length > 0 ? 
+                                    (participantesGala.reduce((sum, p) => sum + p.score, 0) / participantesGala.length).toFixed(1) 
+                                    : '0.0'}
+                            </p>
+                        </div>
+                    </div>
+                    <div class="bg-gray-900 p-3 rounded">
+                        <p class="text-xs text-gray-400 mb-2">Top 5 de esta gala:</p>
+                        ${top5.map((p, i) => `
+                            <div class="flex justify-between items-center text-sm ${i < top5.length - 1 ? 'mb-1' : ''}">
+                                <div class="flex items-center gap-2">
+                                    <span>${i + 1}. ${p.name}</span>
+                                    ${!p.participated ? '<span class="text-xs bg-orange-600 px-1 rounded">REPETIDA</span>' : ''}
+                                    ${p.bonus > 0 ? `<span class="text-xs bg-green-600 px-1 rounded">+${p.bonus}</span>` : ''}
+                                </div>
+                                <span class="font-bold">${p.score.toFixed(1)} pts</span>
+                            </div>
+                        `).join('')}
+                        ${participantesGala.length > 5 ? `
+                            <p class="text-xs text-gray-500 mt-2">... y ${participantesGala.length - 5} participantes más</p>
+                        ` : ''}
+                    </div>
+                `;
+                
+                container.appendChild(galaCard);
+            });
         }
 
         // Botón para nuevo reporte
@@ -1637,6 +1731,13 @@
             // Generar URL del reporte público
             const currentUrl = window.location.origin + window.location.pathname;
             const publicUrl = currentUrl.replace('reporte_certamen_completo.html', `resultados.html?id=${reportId}`);
+            
+            console.log(`🔗 Generando enlace público:`, {
+                reportId: reportId,
+                currentUrl: currentUrl,
+                publicUrl: publicUrl,
+                participantes: ranking.length
+            });
             
             // Mostrar modal con el enlace
             showPublicLinkModal(publicUrl, publicReportData.title);
