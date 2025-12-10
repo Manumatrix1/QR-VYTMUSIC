@@ -1279,6 +1279,7 @@
             renderFinalPodium(finalRanking);
             renderFinalRanking(finalRanking);
             renderGalaBreakdown();
+            calculateSpecialStats(finalRanking);
         }
 
         function renderFinalPodium(ranking) {
@@ -1519,6 +1520,124 @@
                 
                 container.appendChild(galaCard);
             });
+        }
+
+        function calculateSpecialStats(ranking) {
+            console.log('📊 Calculando estadísticas especiales...');
+            
+            // 🔥 MÁS CONSISTENTE: Menor variación en puntuaciones entre galas
+            let mostConsistent = null;
+            let lowestVariation = Infinity;
+            
+            // 🚀 MAYOR PROGRESIÓN: Mejor mejora desde primera a última gala
+            let mostImproved = null;
+            let biggestImprovement = -Infinity;
+            
+            // 👥 FAVORITO DEL PÚBLICO: Más evaluaciones de jurados totales
+            let publicFavorite = null;
+            let mostVotes = 0;
+            
+            ranking.forEach(participant => {
+                // Solo analizar participantes que participaron en múltiples galas
+                const realParticipations = Object.values(participant.galaDetails || {})
+                    .filter(detail => detail.participated);
+                
+                if (realParticipations.length >= 2) {
+                    // CONSISTENCIA: Calcular desviación estándar de puntuaciones
+                    const scores = realParticipations.map(detail => detail.score);
+                    const average = scores.reduce((sum, score) => sum + score, 0) / scores.length;
+                    const variance = scores.reduce((sum, score) => sum + Math.pow(score - average, 2), 0) / scores.length;
+                    const stdDeviation = Math.sqrt(variance);
+                    
+                    if (stdDeviation < lowestVariation) {
+                        lowestVariation = stdDeviation;
+                        mostConsistent = {
+                            name: participant.name,
+                            variation: stdDeviation,
+                            avgScore: average,
+                            participations: realParticipations.length
+                        };
+                    }
+                    
+                    // PROGRESIÓN: Comparar primera vs última gala real
+                    if (realParticipations.length >= 2) {
+                        const galasOrdenadas = selectedGalas.map(galaId => allGalas.find(g => g.id === galaId))
+                            .sort((a, b) => new Date(a.date) - new Date(b.date));
+                        
+                        let firstScore = null;
+                        let lastScore = null;
+                        
+                        // Encontrar primera y última puntuación real
+                        galasOrdenadas.forEach(gala => {
+                            const detail = participant.galaDetails?.[gala.name];
+                            if (detail && detail.participated) {
+                                if (firstScore === null) firstScore = detail.score;
+                                lastScore = detail.score;
+                            }
+                        });
+                        
+                        if (firstScore !== null && lastScore !== null && firstScore !== lastScore) {
+                            const improvement = lastScore - firstScore;
+                            if (improvement > biggestImprovement) {
+                                biggestImprovement = improvement;
+                                mostImproved = {
+                                    name: participant.name,
+                                    improvement: improvement,
+                                    firstScore: firstScore,
+                                    lastScore: lastScore,
+                                    participations: realParticipations.length
+                                };
+                            }
+                        }
+                    }
+                }
+                
+                // FAVORITO DEL PÚBLICO: Total de evaluaciones de jurados
+                if (participant.totalVotes > mostVotes) {
+                    mostVotes = participant.totalVotes;
+                    publicFavorite = {
+                        name: participant.name,
+                        totalVotes: participant.totalVotes,
+                        avgScore: participant.totalVotes > 0 ? (participant.totalScore / participant.totalVotes) : 0,
+                        galas: participant.galas.length
+                    };
+                }
+            });
+            
+            // Actualizar los elementos DOM
+            updateSpecialStatsUI(mostConsistent, mostImproved, publicFavorite);
+        }
+        
+        function updateSpecialStatsUI(mostConsistent, mostImproved, publicFavorite) {
+            // 🔥 MÁS CONSISTENTE
+            const consistentElement = document.getElementById('most-consistent');
+            if (mostConsistent && consistentElement) {
+                consistentElement.innerHTML = `
+                    <div class="font-bold text-lg">${mostConsistent.name}</div>
+                    <div class="text-sm">Promedio: ${mostConsistent.avgScore.toFixed(1)} • Variación: ±${mostConsistent.variation.toFixed(1)}</div>
+                `;
+            }
+            
+            // 🚀 MAYOR PROGRESIÓN
+            const improvedElement = document.getElementById('most-improved');
+            if (mostImproved && improvedElement) {
+                const improvementSign = mostImproved.improvement > 0 ? '+' : '';
+                improvedElement.innerHTML = `
+                    <div class="font-bold text-lg">${mostImproved.name}</div>
+                    <div class="text-sm">${mostImproved.firstScore.toFixed(1)} → ${mostImproved.lastScore.toFixed(1)} (${improvementSign}${mostImproved.improvement.toFixed(1)})</div>
+                `;
+            }
+            
+            // 👥 FAVORITO DEL PÚBLICO
+            const favoriteElement = document.getElementById('public-favorite');
+            if (publicFavorite && favoriteElement) {
+                favoriteElement.innerHTML = `
+                    <div class="font-bold text-lg">${publicFavorite.name}</div>
+                    <div class="text-sm">${publicFavorite.totalVotes} evaluaciones • ${publicFavorite.avgScore.toFixed(1)}/10</div>
+                `;
+            }
+            
+            console.log('✅ Estadísticas especiales actualizadas:', { mostConsistent, mostImproved, publicFavorite });
         }
 
         // Botón para nuevo reporte
