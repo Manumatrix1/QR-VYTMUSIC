@@ -573,26 +573,53 @@
                 .replace(/\s+/g, ' '); // Normalizar espacios
         }
 
-        function findSimilarName(targetName, existingNames) {
+        function findSimilarName(targetName, existingNames, targetPhoto = null) {
             const normalized = normalizeArtistName(targetName);
             
             for (const existingName of existingNames) {
                 const normalizedExisting = normalizeArtistName(existingName);
                 
-                // Coincidencia exacta después de normalizar
+                // Coincidencia exacta después de normalizar (solo diferencias de capitalización/acentos)
                 if (normalized === normalizedExisting) {
+                    console.log(`✅ Coincidencia exacta (capitalización): "${targetName}" → "${existingName}"`);
                     return existingName;
                 }
                 
-                // Similitud por distancia de Levenshtein (para errores tipográficos)
-                if (levenshteinDistance(normalized, normalizedExisting) <= 2 && 
-                    Math.abs(normalized.length - normalizedExisting.length) <= 2) {
-                    console.log(`🔍 Similitud detectada: "${targetName}" ≈ "${existingName}"`);
-                    return existingName;
+                // Para nombres muy similares, ser más conservador
+                const distance = levenshteinDistance(normalized, normalizedExisting);
+                const lengthDiff = Math.abs(normalized.length - normalizedExisting.length);
+                
+                // Solo auto-unificar si es muy probable que sean iguales (1 carácter de diferencia máximo)
+                if (distance <= 1 && lengthDiff <= 1 && normalized.length > 3) {
+                    console.log(`⚠️ Similitud muy alta: "${targetName}" ≈ "${existingName}" (distancia: ${distance})`);
+                    
+                    // Agregar a la cola de confirmaciones
+                    addToConfirmationQueue(targetName, existingName, targetPhoto);
+                    return null; // No auto-unificar, esperar confirmación
                 }
             }
             
             return null;
+        }
+
+        // Cola de nombres similares que necesitan confirmación
+        let confirmationQueue = [];
+        
+        function addToConfirmationQueue(name1, name2, photo1 = null) {
+            // Evitar duplicados en la cola
+            const exists = confirmationQueue.find(item => 
+                (item.name1 === name1 && item.name2 === name2) ||
+                (item.name1 === name2 && item.name2 === name1)
+            );
+            
+            if (!exists) {
+                confirmationQueue.push({
+                    name1: name1,
+                    name2: name2,
+                    photo1: photo1,
+                    photo2: null // Se llenará cuando se procese
+                });
+            }
         }
 
         function levenshteinDistance(str1, str2) {
@@ -679,6 +706,115 @@
             }
 
             console.log(`📊 Participantes cargados para bonus: ${reportData.allParticipants.size}`);
+            
+            // Mostrar confirmaciones si hay nombres similares
+            if (confirmationQueue.length > 0) {
+                await showSimilarNamesConfirmation();
+            }
+        }
+
+        // Función para mostrar diálogo de confirmación de nombres similares
+        async function showSimilarNamesConfirmation() {
+            if (confirmationQueue.length === 0) return;
+            
+            console.log(`🤔 Hay ${confirmationQueue.length} similitudes que requieren confirmación`);
+            
+            for (const similarity of confirmationQueue) {
+                const shouldUnify = await askUserAboutSimilarity(similarity);
+                
+                if (shouldUnify) {
+                    // Unificar los nombres en reportData
+                    unifyParticipantNames(similarity.name1, similarity.name2);
+                }
+            }
+            
+            // Limpiar la cola después de procesar
+            confirmationQueue = [];
+        }
+
+        function askUserAboutSimilarity(similarity) {
+            return new Promise((resolve) => {
+                // Obtener fotos si están disponibles
+                const participant1 = reportData.allParticipants.get(similarity.name1);
+                const participant2 = reportData.allParticipants.get(similarity.name2);
+                
+                const photo1 = participant1?.photoURL || '';
+                const photo2 = participant2?.photoURL || '';
+                
+                // Crear el diálogo HTML
+                const modalHTML = `
+                    <div id="similarity-modal" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+                         background: rgba(0,0,0,0.8); display: flex; justify-content: center; align-items: center; z-index: 10000;">
+                        <div style="background: #1f2937; padding: 30px; rounded: 15px; max-width: 600px; color: white; 
+                             border-radius: 15px; box-shadow: 0 20px 40px rgba(0,0,0,0.5);">
+                            <h3 style="color: #fbbf24; margin-bottom: 20px; text-align: center; font-size: 18px;">
+                                🤔 ¿Son la misma persona?
+                            </h3>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+                                <div style="text-align: center; border: 2px solid #374151; border-radius: 10px; padding: 15px;">
+                                    <div style="font-weight: bold; color: #60a5fa; margin-bottom: 10px;">${similarity.name1}</div>
+                                    ${photo1 ? `<img src="${photo1}" style="width: 80px; height: 80px; border-radius: 50%; object-fit: cover; margin-bottom: 10px;" onerror="this.style.display='none'">` : ''}
+                                    <div style="font-size: 12px; color: #9ca3af;">Galas: ${participant1?.galas?.join(', ') || 'N/A'}</div>
+                                </div>
+                                <div style="text-align: center; border: 2px solid #374151; border-radius: 10px; padding: 15px;">
+                                    <div style="font-weight: bold; color: #60a5fa; margin-bottom: 10px;">${similarity.name2}</div>
+                                    ${photo2 ? `<img src="${photo2}" style="width: 80px; height: 80px; border-radius: 50%; object-fit: cover; margin-bottom: 10px;" onerror="this.style.display='none'">` : ''}
+                                    <div style="font-size: 12px; color: #9ca3af;">Galas: ${participant2?.galas?.join(', ') || 'N/A'}</div>
+                                </div>
+                            </div>
+                            <p style="text-align: center; margin-bottom: 25px; color: #d1d5db; font-size: 14px;">
+                                Detecté que estos nombres son similares. ¿Quieres unificarlos como la misma persona?
+                            </p>
+                            <div style="display: flex; gap: 15px; justify-content: center;">
+                                <button onclick="respondSimilarity(true)" 
+                                        style="background: #10b981; color: white; padding: 12px 24px; border: none; 
+                                               border-radius: 8px; cursor: pointer; font-weight: bold;">
+                                    ✅ Sí, son la misma persona
+                                </button>
+                                <button onclick="respondSimilarity(false)" 
+                                        style="background: #ef4444; color: white; padding: 12px 24px; border: none; 
+                                               border-radius: 8px; cursor: pointer; font-weight: bold;">
+                                    ❌ No, son personas diferentes
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                document.body.insertAdjacentHTML('beforeend', modalHTML);
+                
+                // Función global para responder
+                window.respondSimilarity = (unify) => {
+                    document.getElementById('similarity-modal').remove();
+                    delete window.respondSimilarity;
+                    resolve(unify);
+                };
+            });
+        }
+
+        function unifyParticipantNames(name1, name2) {
+            console.log(`🔗 Unificando manualmente: "${name1}" con "${name2}"`);
+            
+            const participant1 = reportData.allParticipants.get(name1);
+            const participant2 = reportData.allParticipants.get(name2);
+            
+            if (participant1 && participant2) {
+                // Combinar datos del segundo participante en el primero
+                participant1.totalScore += participant2.totalScore;
+                participant1.totalVotes += participant2.totalVotes;
+                participant1.galas = [...participant1.galas, ...participant2.galas];
+                
+                // Combinar detalles de galas
+                if (participant2.galaDetails) {
+                    participant1.galaDetails = participant1.galaDetails || {};
+                    Object.assign(participant1.galaDetails, participant2.galaDetails);
+                }
+                
+                // Eliminar el segundo participante
+                reportData.allParticipants.delete(name2);
+                
+                console.log(`✅ Unificación completada: ${name2} → ${name1}`);
+            }
         }
 
         async function generateCertamenReport() {
@@ -751,7 +887,7 @@
 
                     // 🔍 BUSCAR NOMBRE SIMILAR (normalización para evitar duplicados)
                     const existingNames = Array.from(reportData.allParticipants.keys());
-                    const similarName = findSimilarName(artistData.name, existingNames);
+                    const similarName = findSimilarName(artistData.name, existingNames, artistData.photoURL);
                     
                     // Usar el nombre similar si se encuentra, o el original si no
                     const finalName = similarName || artistData.name;
