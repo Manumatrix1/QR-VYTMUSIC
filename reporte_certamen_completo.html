@@ -1010,14 +1010,68 @@
 
         // Función para completar la generación después del bonus
         async function completeReportGeneration() {
-            console.log('🔄 Completando generación del reporte...');
+            console.log('🔄 Completando generación del reporte con los bonus aplicados...');
+
+            // 🔄 PROCESAR COMPENSACIÓN PARA GALAS FALTANTES
+            reportData.allParticipants.forEach(participant => {
+                const galasParticipadas = participant.galas || [];
+                const galasFaltantes = selectedGalas.filter(gala => {
+                    const galaName = allGalas.find(g => g.id === gala)?.name;
+                    return !galasParticipadas.includes(galaName);
+                });
+
+                if (galasFaltantes.length > 0) {
+                    console.log(`⚠️ ${participant.name} faltó a ${galasFaltantes.length} galas`);
+                    
+                    // Calcular promedio actual
+                    const promedioActual = participant.totalVotes > 0 ? 
+                        (participant.totalScore / participant.totalVotes) : 0;
+                    
+                    // Compensar galas faltantes con el promedio
+                    galasFaltantes.forEach(galaId => {
+                        const galaName = allGalas.find(g => g.id === galaId)?.name;
+                        participant.totalScore += promedioActual;
+                        participant.totalVotes += 1;
+                        participant.galas.push(galaName);
+                        
+                        // Agregar detalles de compensación
+                        participant.galaDetails = participant.galaDetails || {};
+                        participant.galaDetails[galaName] = {
+                            score: promedioActual,
+                            votes: 1,
+                            participated: false, // Marca que no participó realmente
+                            repeated: true
+                        };
+                    });
+                }
+
+                // Calcular puntuación final con bonus
+                participant.finalScore = participant.totalVotes > 0 ? 
+                    (participant.totalScore / participant.totalVotes) : 0;
+                
+                // Aplicar bonus si corresponde
+                if (participant.bonusApplied) {
+                    participant.finalScore += participant.bonus;
+                }
+                
+                participant.avgScore = participant.finalScore;
+                
+                console.log(`👤 ${participant.name}: Final score ${participant.finalScore.toFixed(1)}/10 (Bonus: ${participant.bonusApplied ? '+' + participant.bonus : 'No'})`);
+            });
 
             // Calcular período
-            const dates = reportData.galas.map(g => new Date(g.date)).sort((a, b) => a - b);
+            const dates = selectedGalas.map(galaId => {
+                const gala = allGalas.find(g => g.id === galaId);
+                return new Date(gala.date);
+            }).sort((a, b) => a - b);
+            
+            reportData.period = reportData.period || {};
             reportData.period.from = dates[0].toLocaleDateString('es-ES');
             reportData.period.to = dates[dates.length - 1].toLocaleDateString('es-ES');
 
-            console.log('Reporte generado:', reportData);
+            console.log(`✅ Reporte completado con ${reportData.allParticipants.size} participantes`);
+            
+            // Generar la visualización final
             renderFinalReport();
         }
 
@@ -1083,9 +1137,9 @@
                     </div>
                     <p class="text-lg font-semibold mb-2">${participant.name}</p>
                     <p class="text-sm opacity-90 mb-1">Promedio Final: ${participant.finalScore.toFixed(1)}/10</p>
-                    ${participant.penaltyApplied ? 
-                        `<p class="text-xs text-yellow-300 mb-1">⚖️ Penalización manual aplicada: -${participant.penalizacion} pts</p>` : 
-                        `<p class="text-xs text-green-300 mb-1">✅ Sin penalización aplicada</p>`
+                    ${participant.bonusApplied ? 
+                        `<p class="text-xs text-green-300 mb-1">⭐ Bonus por participación completa: +${participant.bonus} pts</p>` : 
+                        `<p class="text-xs text-gray-300 mb-1">Sin bonus aplicado</p>`
                     }
                     <p class="text-xs opacity-70">${participant.galas.length}/${selectedGalas.length} galas participadas</p>
                 `;
@@ -1106,7 +1160,7 @@
                             <tr>
                                 <th class="px-4 py-3 text-left text-white font-bold">Pos</th>
                                 <th class="px-4 py-3 text-left text-white font-bold">Artista</th>
-                                ${selectedGalas.map(gala => `<th class="px-3 py-3 text-center text-white font-bold text-sm">${gala.name.substring(0, 15)}...</th>`).join('')}
+                                ${reportData.galas.map(gala => `<th class="px-3 py-3 text-center text-white font-bold text-sm">${gala.name.substring(0, 15)}...</th>`).join('')}
                                 <th class="px-4 py-3 text-center text-white font-bold">Suma Total</th>
                                 <th class="px-4 py-3 text-center text-white font-bold">Promedio Base</th>
                                 <th class="px-4 py-3 text-center text-white font-bold">Bonus</th>
@@ -1120,7 +1174,7 @@
                                     `#${index + 1}`;
                                 
                                 // 🎯 OBTENER PUNTOS POR GALA DESDE LOS DETALLES
-                                const scoresPerGala = selectedGalas.map(gala => {
+                                const scoresPerGala = reportData.galas.map(gala => {
                                     const galaDetail = participant.galaDetails?.[gala.name];
                                     
                                     if (galaDetail) {
