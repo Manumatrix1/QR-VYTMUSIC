@@ -158,15 +158,19 @@
             <section class="mb-8">
                 <div class="glass-effect p-6 rounded-lg text-center">
                     <h3 class="text-xl font-bold mb-6 text-green-400">📱 Compartir Resultados</h3>
+                    <div class="mb-6">
+                        <button onclick="generatePublicLink()" class="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-bold py-4 px-8 rounded-xl text-lg mb-4">
+                            🔗 GENERAR ENLACE PÚBLICO PARA ARTISTAS
+                        </button>
+                        <p class="text-sm text-gray-400 mb-6">👆 Crea un enlace directo solo con los resultados para compartir con los participantes</p>
+                    </div>
+                    
                     <div class="flex flex-wrap gap-4 justify-center mb-6">
                         <button onclick="shareResults()" class="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg flex items-center gap-2">
                             📱 Compartir en WhatsApp
                         </button>
                         <button onclick="copyResults()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg flex items-center gap-2">
                             📋 Copiar Texto
-                        </button>
-                        <button onclick="downloadPDF()" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-6 rounded-lg flex items-center gap-2">
-                            📄 Descargar PDF
                         </button>
                         <button onclick="printResults()" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 px-6 rounded-lg flex items-center gap-2">
                             🖨️ Imprimir
@@ -1041,7 +1045,10 @@
         async function completeReportGeneration() {
             console.log('🔄 Completando generación del reporte con los bonus aplicados...');
 
-            // 🔄 PROCESAR COMPENSACIÓN PARA GALAS FALTANTES
+            // 🔄 PROCESAR COMPENSACIÓN PARA GALAS FALTANTES Y CALCULAR ESTADÍSTICAS
+            let totalVotesGlobal = 0;
+            let totalScoreGlobal = 0;
+            
             reportData.allParticipants.forEach(participant => {
                 const galasParticipadas = participant.galas || [];
                 const galasFaltantes = selectedGalas.filter(gala => {
@@ -1085,8 +1092,16 @@
                 
                 participant.avgScore = participant.finalScore;
                 
+                // 📊 ACUMULAR PARA ESTADÍSTICAS GLOBALES
+                totalVotesGlobal += participant.totalVotes;
+                totalScoreGlobal += participant.totalScore;
+                
                 console.log(`👤 ${participant.name}: Final score ${participant.finalScore.toFixed(1)}/10 (Bonus: ${participant.bonusApplied ? '+' + participant.bonus : 'No'})`);
             });
+
+            // 📊 ACTUALIZAR ESTADÍSTICAS GLOBALES
+            reportData.totalVotes = totalVotesGlobal;
+            reportData.totalScore = totalScoreGlobal;
 
             // Calcular período
             const dates = selectedGalas.map(galaId => {
@@ -1566,8 +1581,91 @@
 
         function shareResults() {
             const shareText = document.getElementById('share-text').textContent;
-            const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(shareText)}`;
+            const reportUrl = generateReportUrl();
+            const fullMessage = `${shareText}\n\n🔗 Ver resultados completos:\n${reportUrl}`;
+            const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(fullMessage)}`;
             window.open(whatsappUrl, '_blank');
+        }
+
+        function generatePublicLink() {
+            // Crear un ID único para este reporte
+            const reportId = Date.now().toString(36);
+            const ranking = Array.from(reportData.allParticipants.values())
+                .sort((a, b) => b.finalScore - a.finalScore);
+            
+            const publicReportData = {
+                id: reportId,
+                timestamp: new Date().toISOString(),
+                title: reportData.galas.length > 1 ? 'CERTAMEN VYT-MUSIC' : `GALA: ${reportData.galas[0].name}`,
+                period: reportData.period,
+                podium: ranking.slice(0, 3),
+                ranking: ranking
+            };
+
+            // Guardar en localStorage
+            localStorage.setItem(`report_${reportId}`, JSON.stringify(publicReportData));
+
+            // Generar URL del reporte público
+            const currentUrl = window.location.origin + window.location.pathname;
+            const publicUrl = currentUrl.replace('reporte_certamen_completo.html', `resultados.html?id=${reportId}`);
+            
+            // Mostrar modal con el enlace
+            showPublicLinkModal(publicUrl, publicReportData.title);
+        }
+
+        function showPublicLinkModal(url, title) {
+            const modal = document.createElement('div');
+            modal.className = 'fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50';
+            modal.innerHTML = `
+                <div class="bg-gray-800 p-8 rounded-2xl max-w-2xl mx-4 text-white">
+                    <h3 class="text-2xl font-bold mb-6 text-center text-green-400">🔗 Enlace Público Generado</h3>
+                    <p class="text-center text-gray-300 mb-6">
+                        Este enlace muestra SOLO los resultados. Perfecto para enviar a los artistas:
+                    </p>
+                    
+                    <div class="bg-gray-900 p-4 rounded-lg mb-6 border border-green-500">
+                        <p class="text-sm text-gray-400 mb-2">📋 Enlace del reporte:</p>
+                        <p class="text-green-400 font-mono text-sm break-all" id="public-url">${url}</p>
+                    </div>
+                    
+                    <div class="flex gap-4 justify-center mb-6">
+                        <button onclick="copyPublicUrl('${url}')" class="bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-lg font-bold">
+                            📋 Copiar Enlace
+                        </button>
+                        <button onclick="sharePublicUrl('${url}', '${title}')" class="bg-green-600 hover:bg-green-700 px-6 py-3 rounded-lg font-bold">
+                            📱 Enviar por WhatsApp
+                        </button>
+                        <a href="${url}" target="_blank" class="bg-purple-600 hover:bg-purple-700 px-6 py-3 rounded-lg font-bold inline-block">
+                            👀 Ver Reporte
+                        </a>
+                    </div>
+                    
+                    <div class="text-center">
+                        <button onclick="this.parentElement.parentElement.parentElement.remove()" 
+                                class="text-gray-400 hover:text-white underline">
+                            ✕ Cerrar
+                        </button>
+                    </div>
+                </div>
+            `;
+            
+            document.body.appendChild(modal);
+        }
+
+        function copyPublicUrl(url) {
+            navigator.clipboard.writeText(url).then(() => {
+                alert('✅ Enlace copiado!\n\nYa puedes enviarlo a los artistas.');
+            });
+        }
+
+        function sharePublicUrl(url, title) {
+            const message = `🏆 ${title.toUpperCase()} 🏆\n\n¡Ya están los resultados oficiales!\n\n🔗 Ver resultados completos:\n${url}\n\n🎵 ¡Felicitaciones a todos los participantes! 🎵`;
+            const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
+            window.open(whatsappUrl, '_blank');
+        }
+
+        function generateReportUrl() {
+            return generatePublicLink();
         }
 
         function copyResults() {
