@@ -561,6 +561,64 @@
             }
         });
 
+        // 🔧 FUNCIONES PARA NORMALIZAR NOMBRES Y DETECTAR SIMILITUDES
+        function normalizeArtistName(name) {
+            if (!name) return '';
+            return name
+                .toLowerCase()
+                .trim()
+                .normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '') // Remover acentos
+                .replace(/[^\w\s]/g, '') // Remover signos de puntuación
+                .replace(/\s+/g, ' '); // Normalizar espacios
+        }
+
+        function findSimilarName(targetName, existingNames) {
+            const normalized = normalizeArtistName(targetName);
+            
+            for (const existingName of existingNames) {
+                const normalizedExisting = normalizeArtistName(existingName);
+                
+                // Coincidencia exacta después de normalizar
+                if (normalized === normalizedExisting) {
+                    return existingName;
+                }
+                
+                // Similitud por distancia de Levenshtein (para errores tipográficos)
+                if (levenshteinDistance(normalized, normalizedExisting) <= 2 && 
+                    Math.abs(normalized.length - normalizedExisting.length) <= 2) {
+                    console.log(`🔍 Similitud detectada: "${targetName}" ≈ "${existingName}"`);
+                    return existingName;
+                }
+            }
+            
+            return null;
+        }
+
+        function levenshteinDistance(str1, str2) {
+            const matrix = [];
+            for (let i = 0; i <= str2.length; i++) {
+                matrix[i] = [i];
+            }
+            for (let j = 0; j <= str1.length; j++) {
+                matrix[0][j] = j;
+            }
+            for (let i = 1; i <= str2.length; i++) {
+                for (let j = 1; j <= str1.length; j++) {
+                    if (str2.charAt(i - 1) === str1.charAt(j - 1)) {
+                        matrix[i][j] = matrix[i - 1][j - 1];
+                    } else {
+                        matrix[i][j] = Math.min(
+                            matrix[i - 1][j - 1] + 1,
+                            matrix[i][j - 1] + 1,
+                            matrix[i - 1][j] + 1
+                        );
+                    }
+                }
+            }
+            return matrix[str2.length][str1.length];
+        }
+
         // Nueva función para cargar participantes antes del selector de bonus
         async function loadParticipantsForBonus() {
             reportData = {
@@ -589,15 +647,24 @@
                         score: score
                     });
 
+                    // 🔍 BUSCAR NOMBRE SIMILAR PARA BONUS
+                    const existingNames = Array.from(reportData.allParticipants.keys());
+                    const similarName = findSimilarName(artistName, existingNames);
+                    const finalName = similarName || artistName;
+                    
+                    if (similarName) {
+                        console.log(`🔗 Unificando para bonus: "${artistName}" con "${similarName}"`);
+                    }
+
                     // Añadir/actualizar en la lista global
-                    if (reportData.allParticipants.has(artistName)) {
-                        const existing = reportData.allParticipants.get(artistName);
+                    if (reportData.allParticipants.has(finalName)) {
+                        const existing = reportData.allParticipants.get(finalName);
                         existing.galas.push(gala.name);
                         existing.totalScore += score;
                         existing.totalVotes++;
                     } else {
-                        reportData.allParticipants.set(artistName, {
-                            name: artistName,
+                        reportData.allParticipants.set(finalName, {
+                            name: finalName,
                             galas: [gala.name],
                             totalScore: score,
                             totalVotes: 1,
@@ -682,9 +749,20 @@
                     reportData.totalVotes += participantData.votes;
                     reportData.totalScore += participantData.score;
 
+                    // 🔍 BUSCAR NOMBRE SIMILAR (normalización para evitar duplicados)
+                    const existingNames = Array.from(reportData.allParticipants.keys());
+                    const similarName = findSimilarName(artistData.name, existingNames);
+                    
+                    // Usar el nombre similar si se encuentra, o el original si no
+                    const finalName = similarName || artistData.name;
+                    
+                    if (similarName) {
+                        console.log(`🔗 Unificando "${artistData.name}" con "${similarName}"`);
+                    }
+
                     // Acumular en el ranking general CON DETALLES POR GALA
-                    if (reportData.allParticipants.has(artistData.name)) {
-                        const existing = reportData.allParticipants.get(artistData.name);
+                    if (reportData.allParticipants.has(finalName)) {
+                        const existing = reportData.allParticipants.get(finalName);
                         existing.totalScore += participantData.score;
                         existing.totalVotes += participantData.votes;
                         existing.galas.push(gala.name);
@@ -695,9 +773,14 @@
                             votes: participantData.votes,
                             participated: true
                         };
+                        
+                        // Actualizar el nombre a la versión más común (mantener consistencia)
+                        if (!similarName) {
+                            existing.name = artistData.name; // Mantener formato original si no hay conflicto
+                        }
                     } else {
-                        reportData.allParticipants.set(artistData.name, {
-                            name: artistData.name,
+                        reportData.allParticipants.set(finalName, {
+                            name: finalName, // Usar el nombre unificado
                             photoURL: artistData.photoURL,
                             totalScore: participantData.score,
                             totalVotes: participantData.votes,
