@@ -451,15 +451,27 @@
         // Cargar todas las galas disponibles
         async function loadAllGalas() {
             try {
-                console.log('Cargando todas las galas...');
+                console.log('🔄 Iniciando carga de galas...');
+                
+                // Verificar que Firebase esté disponible
+                if (!db) {
+                    throw new Error('Firebase no está inicializado correctamente');
+                }
+                
+                console.log('📡 Consultando colección events...');
                 const eventsSnapshot = await getDocs(collection(db, 'events'));
+                console.log(`📊 Encontrados ${eventsSnapshot.size} eventos en total`);
+                
                 allGalas = [];
 
                 for (const eventDoc of eventsSnapshot.docs) {
                     const eventData = eventDoc.data();
+                    console.log(`🎭 Procesando evento: ${eventData.name} (ID: ${eventDoc.id})`);
                     
                     // Verificar si tiene artistas y votos
                     const artistsSnapshot = await getDocs(collection(db, `events/${eventDoc.id}/artists`));
+                    console.log(`👥 Artistas encontrados: ${artistsSnapshot.size}`);
+                    
                     if (artistsSnapshot.size > 0) {
                         // Calcular total de votos
                         let totalVotes = 0;
@@ -470,7 +482,13 @@
                             totalScore += artistData.totalScore || 0;
                         });
 
-                        if (totalVotes > 0) { // Solo incluir galas con votos reales
+                        // Verificar también si hay evaluaciones de jurados
+                        const jurySnapshot = await getDocs(collection(db, `events/${eventDoc.id}/jury_evaluations`));
+                        const hasJuryEvaluations = jurySnapshot.size > 0;
+                        
+                        console.log(`📊 Evento ${eventData.name}: ${totalVotes} votos públicos, ${jurySnapshot.size} evaluaciones de jurados`);
+                        
+                        if (totalVotes > 0 || hasJuryEvaluations) { // Incluir galas con votos públicos O evaluaciones de jurados
                             allGalas.push({
                                 id: eventDoc.id,
                                 name: eventData.name,
@@ -478,8 +496,13 @@
                                 artistCount: artistsSnapshot.size,
                                 totalVotes: totalVotes,
                                 totalScore: totalScore,
-                                avgScore: totalVotes > 0 ? (totalScore / totalVotes).toFixed(1) : 0
+                                juryEvaluations: jurySnapshot.size,
+                                avgScore: totalVotes > 0 ? (totalScore / totalVotes).toFixed(1) : 0,
+                                hasData: true
                             });
+                            console.log(`✅ Gala incluida: ${eventData.name}`);
+                        } else {
+                            console.log(`⚠️ Gala excluida (sin datos): ${eventData.name}`);
                         }
                     }
                 }
@@ -487,12 +510,22 @@
                 // Ordenar por fecha más reciente
                 allGalas.sort((a, b) => new Date(b.date) - new Date(a.date));
                 
-                console.log(`Cargadas ${allGalas.length} galas con datos`);
+                console.log(`✅ Total de galas válidas cargadas: ${allGalas.length}`);
+                console.log('📋 Galas cargadas:', allGalas.map(g => `${g.name} (${g.artistCount} artistas, ${g.totalVotes} votos)`));
+                
+                if (allGalas.length === 0) {
+                    console.warn('⚠️ No se encontraron galas con datos válidos');
+                    galasCheckboxContainer.innerHTML = '<div class="text-center p-6"><p class="text-yellow-400 text-lg mb-2">⚠️ No se encontraron galas</p><p class="text-gray-400">Verifica que existan eventos con artistas y evaluaciones de jurados.</p></div>';
+                    return;
+                }
+                
                 renderGalasCheckboxes();
                 
             } catch (error) {
-                console.error('Error cargando galas:', error);
-                galasCheckboxContainer.innerHTML = '<p class="text-red-400 text-center">Error al cargar las galas</p>';
+                console.error('❌ Error cargando galas:', error);
+                console.error('Stack trace:', error.stack);
+                galasCheckboxContainer.innerHTML = `<div class="text-center p-6"><p class="text-red-400 text-lg mb-2">❌ Error al cargar galas</p><p class="text-gray-400">${error.message}</p></div>`;
+                alert(`❌ Error cargando las galas: ${error.message}\n\nRevisa la consola del navegador para más detalles.`);
             }
         }
 
@@ -1512,6 +1545,17 @@
 
         // Inicializar con detección inteligente
         async function initializeReport() {
+            console.log('🚀 Inicializando sistema de reportes...');
+            
+            // Mostrar indicador de carga
+            galasCheckboxContainer.innerHTML = `
+                <div class="text-center p-8">
+                    <div class="animate-spin rounded-full h-12 w-12 border-4 border-blue-500 border-t-transparent mx-auto mb-4"></div>
+                    <p class="text-blue-400 font-bold">Cargando galas disponibles...</p>
+                    <p class="text-gray-500 text-sm mt-2">Verificando eventos con evaluaciones</p>
+                </div>
+            `;
+            
             const specificGala = detectSourceAndPreselect();
             await loadAllGalas();
             
@@ -1520,6 +1564,26 @@
                 setTimeout(() => {
                     preselectSpecificGala(specificGala);
                 }, 500);
+            }
+            
+            console.log('✅ Inicialización completada');
+        }
+        
+        // Wrapper con manejo de errores para la inicialización
+        async function safeInitialize() {
+            try {
+                await initializeReport();
+            } catch (error) {
+                console.error('💥 Error en la inicialización:', error);
+                galasCheckboxContainer.innerHTML = `
+                    <div class="text-center p-8">
+                        <p class="text-red-400 text-lg mb-4">💥 Error de Inicialización</p>
+                        <p class="text-gray-400 mb-4">${error.message}</p>
+                        <button onclick="location.reload()" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                            🔄 Recargar Página
+                        </button>
+                    </div>
+                `;
             }
         }
 
@@ -1830,8 +1894,8 @@
             hideElements.forEach(el => el.style.display = '');
         }
 
-        // Inicializar
-        initializeReport();
+        // Inicializar con manejo de errores
+        safeInitialize();
     </script>
 </body>
 </html>
