@@ -504,18 +504,29 @@
                         
                         // CRITERIO MODIFICADO: incluir cualquier gala que tenga artistas (pueden tener evaluaciones o no)
                         if (artistsSnapshot.size > 0) { // Incluir todas las galas que tengan artistas
-                            allGalas.push({
-                                id: eventDoc.id,
-                                name: eventData.name,
-                                date: eventData.date,
-                                artistCount: artistsSnapshot.size,
-                                totalVotes: totalVotes,
-                                totalScore: totalScore,
-                                juryEvaluations: jurySnapshot.size,
-                                avgScore: totalVotes > 0 ? (totalScore / totalVotes).toFixed(1) : 0,
-                                hasData: true
-                            });
-                            console.log(`✅ Gala incluida: ${eventData.name} (${artistsSnapshot.size} artistas, ${totalVotes} votos, ${jurySnapshot.size} evaluaciones)`);
+                            
+                            // 🔍 VERIFICAR QUE NO SEA DUPLICADA (por ID o nombre)
+                            const isDuplicateById = allGalas.some(existingGala => existingGala.id === eventDoc.id);
+                            const isDuplicateByName = allGalas.some(existingGala => 
+                                existingGala.name.toLowerCase().trim() === eventData.name.toLowerCase().trim()
+                            );
+                            
+                            if (isDuplicateById || isDuplicateByName) {
+                                console.log(`⚠️ Gala duplicada ignorada: ${eventData.name} (ID: ${eventDoc.id})`);
+                            } else {
+                                allGalas.push({
+                                    id: eventDoc.id,
+                                    name: eventData.name,
+                                    date: eventData.date,
+                                    artistCount: artistsSnapshot.size,
+                                    totalVotes: totalVotes,
+                                    totalScore: totalScore,
+                                    juryEvaluations: jurySnapshot.size,
+                                    avgScore: totalVotes > 0 ? (totalScore / totalVotes).toFixed(1) : 0,
+                                    hasData: true
+                                });
+                                console.log(`✅ Gala incluida: ${eventData.name} (${artistsSnapshot.size} artistas, ${totalVotes} votos, ${jurySnapshot.size} evaluaciones)`);
+                            }
                         } else {
                             console.log(`⚠️ Gala excluida (sin artistas): ${eventData.name}`);
                         }
@@ -897,16 +908,23 @@
             
             try {
                 reportData.allParticipants.forEach((participant, participantName) => {
-                const galasParticipadas = participant.galas.length;
-                const galasFaltantes = totalGalas - galasParticipadas;
-                
-                // Marcar si vino a todas las galas
-                participant.attendedAllGalas = (galasParticipadas === totalGalas);
-                
-                if (galasFaltantes > 0) {
-                    // 🔄 IGUALAR PUNTUACIÓN CON LA ÚLTIMA GALA
-                    const promedioActual = participant.totalVotes > 0 ? 
-                        (participant.totalScore / participant.totalVotes) : 0;
+                try {
+                    // 🔧 Verificar integridad de datos del participante
+                    if (!participant.galas) participant.galas = [];
+                    if (!participant.galaDetails) participant.galaDetails = {};
+                    if (typeof participant.totalScore !== 'number') participant.totalScore = 0;
+                    if (typeof participant.totalVotes !== 'number') participant.totalVotes = 0;
+                    
+                    const galasParticipadas = participant.galas.length;
+                    const galasFaltantes = totalGalas - galasParticipadas;
+                    
+                    // Marcar si vino a todas las galas
+                    participant.attendedAllGalas = (galasParticipadas === totalGalas);
+                    
+                    if (galasFaltantes > 0) {
+                        // 🔄 IGUALAR PUNTUACIÓN CON LA ÚLTIMA GALA
+                        const promedioActual = participant.totalVotes > 0 ? 
+                            (participant.totalScore / participant.totalVotes) : 0;
                     
                     console.log(`📊 ${participantName}: Faltó a ${galasFaltantes} galas. Igualando con promedio ${promedioActual.toFixed(1)}`);
                     
@@ -941,11 +959,16 @@
                     });
                 }
                 
-                // Calcular promedio final
-                participant.finalScore = participant.totalVotes > 0 ? 
-                    (participant.totalScore / participant.totalVotes) : 0;
+                    // Calcular promedio final
+                    participant.finalScore = participant.totalVotes > 0 ? 
+                        (participant.totalScore / participant.totalVotes) : 0;
+                        
+                    console.log(`✅ ${participantName}: Final=${participant.finalScore.toFixed(1)}, Galas=${participant.galas.length}/${totalGalas}`);
                     
-                console.log(`✅ ${participantName}: Final=${participant.finalScore.toFixed(1)}, Galas=${participant.galas.length}/${totalGalas}`);
+                } catch (participantError) {
+                    console.error(`❌ Error procesando participante ${participantName}:`, participantError);
+                    // Continuar con el siguiente participante en lugar de fallar todo
+                }
             });
             
             } catch (compensationError) {
