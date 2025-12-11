@@ -900,14 +900,49 @@
                 }
             }
 
+            // ⚠️ NO COMPENSAR GALAS FALTANTES TODAVÍA - Primero unificar nombres similares
+            console.log(`📊 Artistas cargados: ${reportData.allParticipants.size}`);
+            
+            // 🔍 DEBUG: Mostrar lista completa de nombres ANTES de unificar
+            const allNames = Array.from(reportData.allParticipants.keys()).sort();
+            console.log('🔍 LISTA de artistas ANTES de unificar:', allNames);
+            
+            console.log('✅ Carga completada, verificando nombres similares...');
+            
+            // 🔗 PRIMERO: Mostrar confirmaciones y unificar nombres similares
+            if (confirmationQueue.length > 0) {
+                try {
+                    console.log(`⚠️ Hay ${confirmationQueue.length} similitudes detectadas`);
+                    await showSimilarNamesConfirmation();
+                } catch (confirmError) {
+                    console.error('❌ Error en confirmación de nombres:', confirmError);
+                    console.log('⚠️ Continuando sin unificar nombres similares');
+                }
+            }
+            
+            // 🎯 DESPUÉS: Compensar galas faltantes (ahora que los nombres están unificados)
             console.log('🎯 Iniciando compensación de galas faltantes...');
+            await compensateMissingGalas();
+            // 🎯 DESPUÉS: Compensar galas faltantes (ahora que los nombres están unificados)
+            console.log('🎯 Iniciando compensación de galas faltantes...');
+            await compensateMissingGalas();
             
-            // 🎯 COMPENSAR GALAS FALTANTES Y CALCULAR PROMEDIOS FINALES
-            console.log(`🔧 Iniciando compensación para ${reportData.allParticipants.size} participantes...`);
-            const totalGalas = selectedGalas.length;
+            console.log('✅ loadParticipantsForBonus completado exitosamente');
             
-            try {
-                reportData.allParticipants.forEach((participant, participantName) => {
+        } catch (error) {
+            console.error('❌ Error fatal en loadParticipantsForBonus:', error);
+            alert(`Error al cargar los participantes para el bonus:\n\n${error.message}\n\nRevisa la consola para más detalles.`);
+            throw error; // Re-lanzar el error para que se muestre el alert
+        }
+    }
+
+    // 🆕 FUNCIÓN SEPARADA PARA COMPENSAR GALAS FALTANTES
+    async function compensateMissingGalas() {
+        console.log(`🔧 Iniciando compensación para ${reportData.allParticipants.size} participantes...`);
+        const totalGalas = selectedGalas.length;
+        
+        try {
+            reportData.allParticipants.forEach((participant, participantName) => {
                 try {
                     // 🔧 Verificar integridad de datos del participante
                     if (!participant.galas) participant.galas = [];
@@ -976,34 +1011,10 @@
                 throw new Error(`Error compensando galas faltantes: ${compensationError.message}`);
             }
 
-            console.log(`📊 TODOS los participantes procesados: ${reportData.allParticipants.size}`);
+            console.log(`📊 Compensación completada:`);
+            console.log(`   - Total participantes: ${reportData.allParticipants.size}`);
             console.log(`   - Vinieron a todas las galas: ${Array.from(reportData.allParticipants.values()).filter(p => p.attendedAllGalas).length}`);
             console.log(`   - Faltaron a alguna gala: ${Array.from(reportData.allParticipants.values()).filter(p => !p.attendedAllGalas).length}`);
-            
-            // 🔍 DEBUG: Mostrar lista completa de nombres
-            const allNames = Array.from(reportData.allParticipants.keys()).sort();
-            console.log('🔍 LISTA COMPLETA de artistas cargados:', allNames);
-            
-            console.log('✅ Compensación completada, verificando nombres similares...');
-            
-            // Mostrar confirmaciones si hay nombres similares
-            if (confirmationQueue.length > 0) {
-                try {
-                    console.log(`⚠️ Hay ${confirmationQueue.length} similitudes detectadas`);
-                    await showSimilarNamesConfirmation();
-                } catch (confirmError) {
-                    console.error('❌ Error en confirmación de nombres:', confirmError);
-                    // Continuar sin confirmación - los nombres quedarán separados
-                    console.log('⚠️ Continuando sin unificar nombres similares');
-                }
-            }
-            
-            console.log('✅ loadParticipantsForBonus completado exitosamente');
-            
-            } catch (error) {
-                console.error('❌ Error en loadParticipantsForBonus:', error);
-                throw error; // Re-lanzar el error para que se muestre el alert
-            }
         }
 
         // Función para mostrar diálogo de confirmación de nombres similares
