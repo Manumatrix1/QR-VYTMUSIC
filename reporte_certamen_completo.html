@@ -763,18 +763,26 @@
 
         // Nueva función para cargar TODOS los participantes antes del selector de bonus
         async function loadParticipantsForBonus() {
-            reportData = {
-                galas: [],
-                allParticipants: new Map(),
-                totalVotes: 0,
-            };
+            try {
+                console.log('🚀 Iniciando loadParticipantsForBonus...');
+                
+                reportData = {
+                    galas: [],
+                    allParticipants: new Map(),
+                    totalVotes: 0,
+                };
 
-            console.log(`🔄 Cargando TODOS los participantes de ${selectedGalas.length} galas para selector de bonus...`);
+                console.log(`🔄 Cargando TODOS los participantes de ${selectedGalas.length} galas para selector de bonus...`);
 
             // Cargar datos de todas las galas seleccionadas
             for (const galaId of selectedGalas) {
-                const gala = allGalas.find(g => g.id === galaId);
-                console.log(`📊 Procesando gala: ${gala.name}`);
+                try {
+                    const gala = allGalas.find(g => g.id === galaId);
+                    if (!gala) {
+                        console.error(`❌ Gala no encontrada: ${galaId}`);
+                        continue;
+                    }
+                    console.log(`📊 Procesando gala: ${gala.name} (${galaId})`);
 
                 // 🎯 CARGAR EVALUACIONES DE JURADOS
                 const jurySnapshot = await getDocs(collection(db, `events/${galaId}/jury_evaluations`));
@@ -873,12 +881,22 @@
                 });
 
                 reportData.galas.push(galaData);
+                console.log(`✅ ${gala.name}: Procesados ${galaData.participants.length} artistas`);
+                
+                } catch (galaError) {
+                    console.error(`❌ Error procesando gala ${galaId}:`, galaError);
+                    throw new Error(`Error en gala ${galaId}: ${galaError.message}`);
+                }
             }
 
+            console.log('🎯 Iniciando compensación de galas faltantes...');
+            
             // 🎯 COMPENSAR GALAS FALTANTES Y CALCULAR PROMEDIOS FINALES
+            console.log(`🔧 Iniciando compensación para ${reportData.allParticipants.size} participantes...`);
             const totalGalas = selectedGalas.length;
             
-            reportData.allParticipants.forEach((participant, participantName) => {
+            try {
+                reportData.allParticipants.forEach((participant, participantName) => {
                 const galasParticipadas = participant.galas.length;
                 const galasFaltantes = totalGalas - galasParticipadas;
                 
@@ -899,6 +917,15 @@
                     // Marcar galas faltantes en los detalles
                     selectedGalas.forEach(galaId => {
                         const gala = allGalas.find(g => g.id === galaId);
+                        if (!gala) {
+                            console.error(`❌ No se encontró gala con ID: ${galaId}`);
+                            return;
+                        }
+                        
+                        // 🔧 Asegurar que galaDetails existe
+                        if (!participant.galaDetails) {
+                            participant.galaDetails = {};
+                        }
                         if (!participant.galaDetails[gala.name]) {
                             participant.galaDetails[gala.name] = {
                                 score: promedioActual,
@@ -917,7 +944,14 @@
                 // Calcular promedio final
                 participant.finalScore = participant.totalVotes > 0 ? 
                     (participant.totalScore / participant.totalVotes) : 0;
+                    
+                console.log(`✅ ${participantName}: Final=${participant.finalScore.toFixed(1)}, Galas=${participant.galas.length}/${totalGalas}`);
             });
+            
+            } catch (compensationError) {
+                console.error('❌ Error en compensación de galas:', compensationError);
+                throw new Error(`Error compensando galas faltantes: ${compensationError.message}`);
+            }
 
             console.log(`📊 TODOS los participantes procesados: ${reportData.allParticipants.size}`);
             console.log(`   - Vinieron a todas las galas: ${Array.from(reportData.allParticipants.values()).filter(p => p.attendedAllGalas).length}`);
@@ -927,9 +961,18 @@
             const allNames = Array.from(reportData.allParticipants.keys()).sort();
             console.log('🔍 LISTA COMPLETA de artistas cargados:', allNames);
             
+            console.log('✅ Compensación completada, verificando nombres similares...');
+            
             // Mostrar confirmaciones si hay nombres similares
             if (confirmationQueue.length > 0) {
                 await showSimilarNamesConfirmation();
+            }
+            
+            console.log('✅ loadParticipantsForBonus completado exitosamente');
+            
+            } catch (error) {
+                console.error('❌ Error en loadParticipantsForBonus:', error);
+                throw error; // Re-lanzar el error para que se muestre el alert
             }
         }
 
