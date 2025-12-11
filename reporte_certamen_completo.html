@@ -17,11 +17,11 @@
         @media print {
             body { background-color: white; color: black; }
             .no-print { display: none !important; }
-        }
+                                        }
     </style>
 </head>
 <body class="antialiased">
-    <div class="container mx-auto max-w-6xl p-4 sm:p-6">
+                                                            <div class="container mx-auto max-w-6xl p-4 sm:p-6">]+++++=======
         <header class="text-center mb-8">
             <a href="reportes.html" class="no-print text-sky-400 hover:underline mb-4 inline-block">&larr; Volver a Reportes</a>
             <h1 class="text-4xl font-bold text-sky-400 mb-2">🏆 Reporte Completo del Certamen</h1>
@@ -761,7 +761,7 @@
             return matrix[str2.length][str1.length];
         }
 
-        // Nueva función para cargar participantes antes del selector de bonus
+        // Nueva función para cargar TODOS los participantes antes del selector de bonus
         async function loadParticipantsForBonus() {
             reportData = {
                 galas: [],
@@ -769,14 +769,14 @@
                 totalVotes: 0,
             };
 
-            console.log(`🔄 Cargando participantes de ${selectedGalas.length} galas para selector de bonus...`);
+            console.log(`🔄 Cargando TODOS los participantes de ${selectedGalas.length} galas para selector de bonus...`);
 
             // Cargar datos de todas las galas seleccionadas
             for (const galaId of selectedGalas) {
                 const gala = allGalas.find(g => g.id === galaId);
                 console.log(`📊 Procesando gala: ${gala.name}`);
 
-                // 🎯 CARGAR EVALUACIONES DE JURADOS (usando la misma lógica que generateCertamenReport)
+                // 🎯 CARGAR EVALUACIONES DE JURADOS
                 const jurySnapshot = await getDocs(collection(db, `events/${galaId}/jury_evaluations`));
                 const juryScores = {};
                 
@@ -792,7 +792,7 @@
                     juryScores[artistId].push(juryScore);
                 });
 
-                // Cargar artistas de esta gala
+                // Cargar TODOS los artistas de esta gala
                 const artistsSnapshot = await getDocs(collection(db, `events/${galaId}/artists`));
                 
                 const galaData = {
@@ -800,52 +800,122 @@
                     participants: []
                 };
 
-                // Procesar cada artista
+                // 🔥 PROCESAR TODOS LOS ARTISTAS (sin filtros)
                 artistsSnapshot.docs.forEach(artistDoc => {
                     const artistData = artistDoc.data();
                     const artistJuryScores = juryScores[artistDoc.id] || [];
                     
+                    // Calcular promedio de jurados (será 0 si no tiene evaluaciones)
+                    let juryAverage = 0;
                     if (artistJuryScores.length > 0) {
-                        const juryAverage = artistJuryScores.reduce((sum, score) => sum + score, 0) / artistJuryScores.length;
-                        
-                        galaData.participants.push({
-                            name: artistData.name,
-                            score: juryAverage
+                        juryAverage = artistJuryScores.reduce((sum, score) => sum + score, 0) / artistJuryScores.length;
+                    }
+                    
+                    // ✅ INCLUIR TODOS LOS ARTISTAS
+                    galaData.participants.push({
+                        name: artistData.name,
+                        score: juryAverage,
+                        hasJuryVotes: artistJuryScores.length > 0,
+                        juryDetails: artistJuryScores, // 📋 DETALLES DE CADA JURADO
+                        publicScore: artistData.totalScore || 0,
+                        publicVotes: artistData.totalRatingsCount || 0
+                    });
+
+                    // 🔍 BUSCAR NOMBRE SIMILAR PARA UNIFICAR (EVITAR DUPLICADOS)
+                    const existingNames = Array.from(reportData.allParticipants.keys());
+                    const similarName = findSimilarName(artistData.name, existingNames, artistData.photoURL);
+                    const finalName = similarName || artistData.name;
+                    
+                    if (similarName) {
+                        console.log(`🔗 Unificando: "${artistData.name}" con "${similarName}"`);
+                    }
+
+                    // ✅ AGREGAR/ACTUALIZAR TODOS LOS ARTISTAS
+                    if (reportData.allParticipants.has(finalName)) {
+                        const existing = reportData.allParticipants.get(finalName);
+                        existing.galas.push(gala.name);
+                        existing.galaDetails[gala.name] = {
+                            score: juryAverage,
+                            juryCount: artistJuryScores.length,
+                            juryDetails: artistJuryScores,
+                            publicScore: artistData.totalScore || 0,
+                            publicVotes: artistData.totalRatingsCount || 0
+                        };
+                        existing.totalScore += juryAverage;
+                        existing.totalVotes++;
+                        existing.hasJuryVotes = existing.hasJuryVotes || (artistJuryScores.length > 0);
+                    } else {
+                        reportData.allParticipants.set(finalName, {
+                            name: finalName,
+                            galas: [gala.name],
+                            galaDetails: {
+                                [gala.name]: {
+                                    score: juryAverage,
+                                    juryCount: artistJuryScores.length,
+                                    juryDetails: artistJuryScores,
+                                    publicScore: artistData.totalScore || 0,
+                                    publicVotes: artistData.totalRatingsCount || 0
+                                }
+                            },
+                            totalScore: juryAverage,
+                            totalVotes: 1,
+                            finalScore: juryAverage,
+                            bonus: 0,
+                            bonusApplied: false,
+                            hasJuryVotes: artistJuryScores.length > 0,
+                            attendedAllGalas: false // Se calculará después
                         });
-
-                        // 🔍 BUSCAR NOMBRE SIMILAR PARA BONUS
-                        const existingNames = Array.from(reportData.allParticipants.keys());
-                        const similarName = findSimilarName(artistData.name, existingNames, artistData.photoURL);
-                        const finalName = similarName || artistData.name;
-                        
-                        if (similarName) {
-                            console.log(`🔗 Unificando para bonus: "${artistData.name}" con "${similarName}"`);
-                        }
-
-                        // Añadir/actualizar en la lista global
-                        if (reportData.allParticipants.has(finalName)) {
-                            const existing = reportData.allParticipants.get(finalName);
-                            existing.galas.push(gala.name);
-                            existing.totalScore += juryAverage;
-                            existing.totalVotes++;
-                        } else {
-                            reportData.allParticipants.set(finalName, {
-                                name: finalName,
-                                galas: [gala.name],
-                                totalScore: juryAverage,
-                                totalVotes: 1,
-                                finalScore: juryAverage,
-                                bonus: 0,
-                                bonusApplied: false
-                            });
-                        }
                     }
                 });
 
                 reportData.galas.push(galaData);
             }
 
-            console.log(`📊 Participantes cargados para bonus: ${reportData.allParticipants.size}`);
+            // 🎯 COMPENSAR GALAS FALTANTES Y CALCULAR PROMEDIOS FINALES
+            const totalGalas = selectedGalas.length;
+            
+            reportData.allParticipants.forEach((participant, participantName) => {
+                const galasParticipadas = participant.galas.length;
+                const galasFaltantes = totalGalas - galasParticipadas;
+                
+                // Marcar si vino a todas las galas
+                participant.attendedAllGalas = (galasParticipadas === totalGalas);
+                
+                if (galasFaltantes > 0) {
+                    // 🔄 IGUALAR PUNTUACIÓN CON LA ÚLTIMA GALA
+                    const promedioActual = participant.totalVotes > 0 ? 
+                        (participant.totalScore / participant.totalVotes) : 0;
+                    
+                    console.log(`📊 ${participantName}: Faltó a ${galasFaltantes} galas. Igualando con promedio ${promedioActual.toFixed(1)}`);
+                    
+                    // Agregar score repetido por cada gala faltante
+                    participant.totalScore += promedioActual * galasFaltantes;
+                    participant.totalVotes += galasFaltantes;
+                    
+                    // Marcar galas faltantes en los detalles
+                    selectedGalas.forEach(galaId => {
+                        const gala = allGalas.find(g => g.id === galaId);
+                        if (!participant.galaDetails[gala.name]) {
+                            participant.galaDetails[gala.name] = {
+                                score: promedioActual,
+                                juryCount: 0,
+                                juryDetails: [],
+                                publicScore: 0,
+                                publicVotes: 0,
+                                missed: true // 🚫 MARCADA COMO FALTANTE
+                            };
+                        }
+                    });
+                }
+                
+                // Calcular promedio final
+                participant.finalScore = participant.totalVotes > 0 ? 
+                    (participant.totalScore / participant.totalVotes) : 0;
+            });
+
+            console.log(`📊 TODOS los participantes procesados: ${reportData.allParticipants.size}`);
+            console.log(`   - Vinieron a todas las galas: ${Array.from(reportData.allParticipants.values()).filter(p => p.attendedAllGalas).length}`);
+            console.log(`   - Faltaron a alguna gala: ${Array.from(reportData.allParticipants.values()).filter(p => !p.attendedAllGalas).length}`);
             
             // Mostrar confirmaciones si hay nombres similares
             if (confirmationQueue.length > 0) {
@@ -1767,55 +1837,80 @@
         }
 
         // 🏆 FUNCIONES PARA SELECTOR DE BONUS POR PARTICIPACIÓN
+        // 🆕 FUNCIÓN MEJORADA PARA MOSTRAR SELECTOR CON TODOS LOS ARTISTAS
         function showBonusSelector() {
-            const selectorSection = document.getElementById('penalty-selector-section');
             const participantsList = document.getElementById('penalty-participants-list');
+            const participantsArray = Array.from(reportData.allParticipants.values());
             
-            // Limpiar lista
-            participantsList.innerHTML = '';
+            // Ordenar por promedio final (descendente)
+            participantsArray.sort((a, b) => b.finalScore - a.finalScore);
             
-            console.log('🔍 Participantes disponibles:', reportData.allParticipants.size);
-            
-            // ✨ CREAR LISTA ÚNICA DE PARTICIPANTES (sin duplicados)
-            const uniqueParticipants = Array.from(reportData.allParticipants.values());
-            
-            // Ordenar alfabéticamente para mejor organización
-            uniqueParticipants.sort((a, b) => a.name.localeCompare(b.name));
-            
-            // Crear checkboxes para cada participante único
-            uniqueParticipants.forEach((participant, index) => {
-                const participantDiv = document.createElement('div');
-                participantDiv.className = 'flex items-center space-x-3 p-3 bg-gray-800 rounded border border-gray-600 hover:bg-gray-700 transition-colors';
+            participantsList.innerHTML = participantsArray.map(participant => {
+                const isEligibleForBonus = participant.attendedAllGalas;
+                const galasText = participant.galas.length === selectedGalas.length ? 
+                    'Participación completa' : 
+                    `Participó en ${participant.galas.length}/${selectedGalas.length} galas`;
                 
-                // Calcular cuántas galas participó
-                const galasParticipadas = participant.galas || [];
-                const totalGalas = selectedGalas.length;
-                const participoEnTodas = galasParticipadas.length === totalGalas;
+                // 📋 DETALLES DE CADA GALA
+                const galaDetailsHtml = participant.galaDetails ? 
+                    Object.entries(participant.galaDetails)
+                        .map(([galaName, details]) => {
+                            const missedClass = details.missed ? 'text-red-400' : 'text-green-400';
+                            const missedIcon = details.missed ? '🚫' : '✅';
+                            return `
+                                <div class="${missedClass} text-xs">
+                                    ${missedIcon} ${galaName}: ${details.score.toFixed(1)}/10 
+                                    ${details.missed ? '(igualado)' : `(${details.juryCount} jurados)`}
+                                </div>
+                            `;
+                        }).join('') : '';
                 
-                participantDiv.innerHTML = `
-                    <input type="checkbox" id="bonus-${participant.name.replace(/\s+/g, '-')}" class="bonus-checkbox w-5 h-5 text-green-500 rounded focus:ring-green-500">
-                    <div class="flex-1">
-                        <label for="bonus-${participant.name.replace(/\s+/g, '-')}" class="text-white font-medium cursor-pointer hover:text-green-300">
-                            ${participant.name}
-                        </label>
-                        <div class="text-xs mt-1">
-                            <span class="text-gray-400">Participó en: ${galasParticipadas.join(', ')}</span>
-                            ${participoEnTodas ? 
-                                '<span class="ml-2 text-green-400">✅ Participación completa</span>' : 
-                                '<span class="ml-2 text-yellow-400">⚠️ Faltó a alguna gala</span>'
-                            }
+                return `
+                    <div class="participant-card p-4 rounded-lg border-2 ${isEligibleForBonus ? 'border-green-500 bg-green-900/20' : 'border-yellow-500 bg-yellow-900/20'}">
+                        <div class="flex items-center justify-between mb-2">
+                            <label class="flex items-center cursor-pointer">
+                                <input type="checkbox" 
+                                       ${isEligibleForBonus ? 'checked' : 'disabled'} 
+                                       data-participant="${participant.name}" 
+                                       class="mr-3 w-5 h-5 text-green-600">
+                                <div>
+                                    <div class="font-bold text-white">${participant.name}</div>
+                                    <div class="text-sm ${isEligibleForBonus ? 'text-green-400' : 'text-yellow-400'}">
+                                        ${galasText}
+                                    </div>
+                                </div>
+                            </label>
+                            <div class="text-right">
+                                <div class="text-lg font-bold text-white">
+                                    ${participant.finalScore.toFixed(1)}/10
+                                </div>
+                                <div class="text-xs text-gray-400">
+                                    Promedio actual: ${participant.finalScore.toFixed(1)}
+                                </div>
+                            </div>
                         </div>
-                        <div class="text-xs text-blue-300">
-                            Promedio actual: ${participant.finalScore ? participant.finalScore.toFixed(1) : '0.0'}/10
+                        
+                        <!-- 📋 DETALLES POR GALA -->
+                        <div class="mt-2 p-2 bg-gray-800/50 rounded text-xs">
+                            <div class="font-semibold text-gray-300 mb-1">Detalles por gala:</div>
+                            ${galaDetailsHtml}
                         </div>
+                        
+                        ${!isEligibleForBonus ? `
+                            <div class="mt-2 text-xs text-yellow-300">
+                                ⚠️ No elegible para bonus (faltó a ${selectedGalas.length - participant.galas.length} gala(s))
+                            </div>
+                        ` : `
+                            <div class="mt-2 text-xs text-green-300">
+                                ⭐ Elegible para bonus (+0.5 puntos)
+                            </div>
+                        `}
                     </div>
                 `;
-                
-                participantsList.appendChild(participantDiv);
-            });
+            }).join('');
             
-            // Mostrar selector
-            selectorSection.style.display = 'block';
+            // Mostrar el selector
+            document.getElementById('penalty-selector-section').style.display = 'block';
             
             // Configurar evento del botón
             document.getElementById('apply-bonuses-btn').onclick = applyManualBonuses;
