@@ -1013,11 +1013,15 @@
             console.log(`🤔 Hay ${confirmationQueue.length} similitudes que requieren confirmación`);
             
             for (const similarity of confirmationQueue) {
-                const shouldUnify = await askUserAboutSimilarity(similarity);
+                const selectedName = await askUserAboutSimilarity(similarity);
                 
-                if (shouldUnify) {
-                    // Unificar los nombres en reportData
-                    unifyParticipantNames(similarity.name1, similarity.name2);
+                if (selectedName) {
+                    // selectedName contiene el nombre que el usuario eligió mantener
+                    const otherName = selectedName === similarity.name1 ? similarity.name2 : similarity.name1;
+                    console.log(`✅ Usuario seleccionó mantener: "${selectedName}", unificando con: "${otherName}"`);
+                    
+                    // Unificar: mantener selectedName, eliminar otherName
+                    unifyParticipantNames(selectedName, otherName);
                 }
             }
             
@@ -1034,39 +1038,55 @@
                 const photo1 = participant1?.photoURL || '';
                 const photo2 = participant2?.photoURL || '';
                 
-                // Crear el diálogo HTML
+                // Crear el diálogo HTML MEJORADO con selección de nombre
                 const modalHTML = `
                     <div id="similarity-modal" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
-                         background: rgba(0,0,0,0.8); display: flex; justify-content: center; align-items: center; z-index: 10000;">
-                        <div style="background: #1f2937; padding: 30px; rounded: 15px; max-width: 600px; color: white; 
+                         background: rgba(0,0,0,0.95); display: flex; justify-content: center; align-items: center; z-index: 10000;">
+                        <div style="background: #1f2937; padding: 30px; rounded: 15px; max-width: 700px; color: white; 
                              border-radius: 15px; box-shadow: 0 20px 40px rgba(0,0,0,0.5);">
-                            <h3 style="color: #fbbf24; margin-bottom: 20px; text-align: center; font-size: 18px;">
+                            <h3 style="color: #fbbf24; margin-bottom: 20px; text-align: center; font-size: 20px;">
                                 🤔 ¿Son la misma persona?
                             </h3>
-                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
-                                <div style="text-align: center; border: 2px solid #374151; border-radius: 10px; padding: 15px;">
-                                    <div style="font-weight: bold; color: #60a5fa; margin-bottom: 10px;">${similarity.name1}</div>
-                                    ${photo1 ? `<img src="${photo1}" style="width: 80px; height: 80px; border-radius: 50%; object-fit: cover; margin-bottom: 10px;" onerror="this.style.display='none'">` : ''}
-                                    <div style="font-size: 12px; color: #9ca3af;">Galas: ${participant1?.galas?.join(', ') || 'N/A'}</div>
+                            
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 25px;">
+                                <!-- OPCIÓN 1 -->
+                                <div id="option1" onclick="selectOption(1)" style="text-align: center; border: 3px solid #374151; border-radius: 10px; padding: 20px; cursor: pointer; transition: all 0.3s;">
+                                    <div style="font-weight: bold; color: #60a5fa; margin-bottom: 10px; font-size: 18px;">${similarity.name1}</div>
+                                    ${photo1 ? `<img src="${photo1}" style="width: 100px; height: 100px; border-radius: 50%; object-fit: cover; margin: 10px auto; display: block;" onerror="this.style.display='none'">` : ''}
+                                    <div style="font-size: 13px; color: #9ca3af; margin-top: 10px;">
+                                        <strong>Galas:</strong> ${participant1?.galas?.join(', ') || 'N/A'}
+                                    </div>
+                                    <div style="font-size: 12px; color: #10b981; margin-top: 8px; font-weight: bold; display: none;" id="selected1">
+                                        ✅ Nombre seleccionado
+                                    </div>
                                 </div>
-                                <div style="text-align: center; border: 2px solid #374151; border-radius: 10px; padding: 15px;">
-                                    <div style="font-weight: bold; color: #60a5fa; margin-bottom: 10px;">${similarity.name2}</div>
-                                    ${photo2 ? `<img src="${photo2}" style="width: 80px; height: 80px; border-radius: 50%; object-fit: cover; margin-bottom: 10px;" onerror="this.style.display='none'">` : ''}
-                                    <div style="font-size: 12px; color: #9ca3af;">Galas: ${participant2?.galas?.join(', ') || 'N/A'}</div>
+                                
+                                <!-- OPCIÓN 2 -->
+                                <div id="option2" onclick="selectOption(2)" style="text-align: center; border: 3px solid #374151; border-radius: 10px; padding: 20px; cursor: pointer; transition: all 0.3s;">
+                                    <div style="font-weight: bold; color: #60a5fa; margin-bottom: 10px; font-size: 18px;">${similarity.name2}</div>
+                                    ${photo2 ? `<img src="${photo2}" style="width: 100px; height: 100px; border-radius: 50%; object-fit: cover; margin: 10px auto; display: block;" onerror="this.style.display='none'">` : ''}
+                                    <div style="font-size: 13px; color: #9ca3af; margin-top: 10px;">
+                                        <strong>Galas:</strong> ${participant2?.galas?.join(', ') || 'N/A'}
+                                    </div>
+                                    <div style="font-size: 12px; color: #10b981; margin-top: 8px; font-weight: bold; display: none;" id="selected2">
+                                        ✅ Nombre seleccionado
+                                    </div>
                                 </div>
                             </div>
-                            <p style="text-align: center; margin-bottom: 25px; color: #d1d5db; font-size: 14px;">
-                                Detecté que estos nombres son similares. ¿Quieres unificarlos como la misma persona?
+                            
+                            <p style="text-align: center; margin-bottom: 20px; color: #d1d5db; font-size: 15px;">
+                                👆 <strong>Si son la misma persona, haz clic en el nombre que quieres mantener</strong>
                             </p>
-                            <div style="display: flex; gap: 15px; justify-content: center;">
-                                <button onclick="respondSimilarity(true)" 
-                                        style="background: #10b981; color: white; padding: 12px 24px; border: none; 
-                                               border-radius: 8px; cursor: pointer; font-weight: bold;">
-                                    ✅ Sí, son la misma persona
+                            
+                            <div style="display: flex; gap: 15px; justify-content: center; flex-wrap: wrap;">
+                                <button id="confirmBtn" onclick="confirmUnification()" disabled
+                                        style="background: #6b7280; color: white; padding: 14px 28px; border: none; 
+                                               border-radius: 8px; cursor: not-allowed; font-weight: bold; font-size: 15px; transition: all 0.3s;">
+                                    ✅ Confirmar Unificación
                                 </button>
-                                <button onclick="respondSimilarity(false)" 
-                                        style="background: #ef4444; color: white; padding: 12px 24px; border: none; 
-                                               border-radius: 8px; cursor: pointer; font-weight: bold;">
+                                <button onclick="respondSimilarity(null)" 
+                                        style="background: #ef4444; color: white; padding: 14px 28px; border: none; 
+                                               border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 15px;">
                                     ❌ No, son personas diferentes
                                 </button>
                             </div>
@@ -1076,11 +1096,50 @@
                 
                 document.body.insertAdjacentHTML('beforeend', modalHTML);
                 
+                // Variable para guardar la selección
+                let selectedOption = null;
+                
+                // Función para seleccionar opción
+                window.selectOption = (option) => {
+                    selectedOption = option;
+                    
+                    // Resetear estilos
+                    document.getElementById('option1').style.border = '3px solid #374151';
+                    document.getElementById('option2').style.border = '3px solid #374151';
+                    document.getElementById('selected1').style.display = 'none';
+                    document.getElementById('selected2').style.display = 'none';
+                    
+                    // Marcar seleccionado
+                    if (option === 1) {
+                        document.getElementById('option1').style.border = '3px solid #10b981';
+                        document.getElementById('selected1').style.display = 'block';
+                    } else {
+                        document.getElementById('option2').style.border = '3px solid #10b981';
+                        document.getElementById('selected2').style.display = 'block';
+                    }
+                    
+                    // Habilitar botón de confirmación
+                    const confirmBtn = document.getElementById('confirmBtn');
+                    confirmBtn.disabled = false;
+                    confirmBtn.style.background = '#10b981';
+                    confirmBtn.style.cursor = 'pointer';
+                };
+                
+                // Función para confirmar unificación
+                window.confirmUnification = () => {
+                    if (selectedOption) {
+                        const selectedName = selectedOption === 1 ? similarity.name1 : similarity.name2;
+                        respondSimilarity(selectedName);
+                    }
+                };
+                
                 // Función global para responder
-                window.respondSimilarity = (unify) => {
+                window.respondSimilarity = (selectedName) => {
                     document.getElementById('similarity-modal').remove();
                     delete window.respondSimilarity;
-                    resolve(unify);
+                    delete window.selectOption;
+                    delete window.confirmUnification;
+                    resolve(selectedName); // Devuelve el nombre seleccionado o null
                 };
             });
         }
