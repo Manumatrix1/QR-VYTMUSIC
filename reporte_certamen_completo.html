@@ -1151,10 +1151,17 @@
             const participant2 = reportData.allParticipants.get(name2);
             
             if (participant1 && participant2) {
-                // Combinar datos del segundo participante en el primero
+                console.log(`📊 Antes de unificar:`);
+                console.log(`   ${name1}: ${participant1.galas.length} galas, score=${participant1.totalScore.toFixed(1)}`);
+                console.log(`   ${name2}: ${participant2.galas.length} galas, score=${participant2.totalScore.toFixed(1)}`);
+                
+                // 🔗 COMBINAR DATOS DEL SEGUNDO PARTICIPANTE EN EL PRIMERO
                 participant1.totalScore += participant2.totalScore;
                 participant1.totalVotes += participant2.totalVotes;
-                participant1.galas = [...participant1.galas, ...participant2.galas];
+                
+                // Combinar galas (sin duplicados)
+                const combinedGalas = [...new Set([...participant1.galas, ...participant2.galas])];
+                participant1.galas = combinedGalas;
                 
                 // Combinar detalles de galas
                 if (participant2.galaDetails) {
@@ -1162,10 +1169,30 @@
                     Object.assign(participant1.galaDetails, participant2.galaDetails);
                 }
                 
+                // Combinar flags
+                participant1.hasJuryVotes = participant1.hasJuryVotes || participant2.hasJuryVotes;
+                
+                // 📊 RECALCULAR PROMEDIO FINAL
+                participant1.finalScore = participant1.totalVotes > 0 ? 
+                    (participant1.totalScore / participant1.totalVotes) : 0;
+                
+                // ✅ VERIFICAR SI AHORA TIENE PARTICIPACIÓN COMPLETA
+                const totalGalas = selectedGalas.length;
+                participant1.attendedAllGalas = (participant1.galas.length === totalGalas);
+                
+                console.log(`📊 Después de unificar:`);
+                console.log(`   ${name1}: ${participant1.galas.length} galas, score=${participant1.finalScore.toFixed(1)}`);
+                console.log(`   Participación completa: ${participant1.attendedAllGalas ? 'SÍ ✅' : 'NO ❌'}`);
+                console.log(`   Galas: ${participant1.galas.join(', ')}`);
+                
                 // Eliminar el segundo participante
                 reportData.allParticipants.delete(name2);
                 
-                console.log(`✅ Unificación completada: ${name2} → ${name1}`);
+                console.log(`✅ Unificación completada: "${name2}" → "${name1}"`);
+            } else {
+                console.error(`❌ Error: No se encontraron los participantes para unificar`);
+                if (!participant1) console.error(`   No se encontró: ${name1}`);
+                if (!participant2) console.error(`   No se encontró: ${name2}`);
             }
         }
 
