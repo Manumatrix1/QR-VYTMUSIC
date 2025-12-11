@@ -159,7 +159,7 @@
                 <div class="glass-effect p-6 rounded-lg text-center">
                     <h3 class="text-xl font-bold mb-6 text-green-400">📱 Compartir Resultados</h3>
                     <div class="mb-6">
-                        <button onclick="generatePublicLink()" class="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-bold py-4 px-8 rounded-xl text-lg mb-4">
+                        <button onclick="generatePublicLink()" class="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-bold py-4 px-8 rounded-xl text-lg mb-4" id="public-link-btn">
                             🔗 GENERAR ENLACE PÚBLICO PARA ARTISTAS
                         </button>
                         <p class="text-sm text-gray-400 mb-6">👆 Crea un enlace directo solo con los resultados para compartir con los participantes</p>
@@ -1948,34 +1948,55 @@
         }
 
         function generatePublicLink() {
-            // Crear un ID único para este reporte
-            const reportId = Date.now().toString(36);
-            // Verificar que reportData existe
-            if (!reportData || !reportData.allParticipants) {
-                alert('❌ Error: No hay datos del reporte disponibles.\n\nGenera primero el reporte del certamen.');
+            console.log('🔗 Iniciando generatePublicLink()...');
+            console.log('📊 Estado de reportData:', reportData);
+            
+            // Verificar que reportData existe y tiene los datos necesarios
+            if (!reportData || Object.keys(reportData).length === 0) {
+                alert('❌ Error: No hay datos del reporte disponibles.\n\n🔄 Debes generar primero el reporte del certamen haciendo clic en "GENERAR REPORTE COMPLETO".');
                 return;
             }
 
+            if (!reportData.allParticipants || reportData.allParticipants.size === 0) {
+                alert('❌ Error: No hay participantes en el reporte.\n\n🔄 Asegúrate de que el reporte se haya generado correctamente con datos de artistas.');
+                return;
+            }
+
+            // Crear un ID único para este reporte
+            const reportId = Date.now().toString(36);
+            
             const ranking = Array.from(reportData.allParticipants.values())
                 .sort((a, b) => b.finalScore - a.finalScore);
             
+            console.log('📈 Ranking generado:', ranking.length, 'participantes');
+
             const publicReportData = {
                 id: reportId,
                 timestamp: new Date().toISOString(),
-                title: reportData.galas.length > 1 ? 'CERTAMEN VYT-MUSIC' : `GALA: ${reportData.galas[0].name}`,
+                title: reportData.galas && reportData.galas.length > 1 ? 'CERTAMEN VYT-MUSIC' : 
+                       reportData.galas && reportData.galas[0] ? `GALA: ${reportData.galas[0].name}` : 'CERTAMEN VYT-MUSIC',
                 period: reportData.period || { from: 'N/A', to: 'N/A' },
                 podium: ranking.slice(0, 3),
                 ranking: ranking
             };
 
+            console.log('📦 Datos públicos preparados:', publicReportData);
+
             // Guardar en localStorage
-            localStorage.setItem(`report_${reportId}`, JSON.stringify(publicReportData));
+            try {
+                localStorage.setItem(`report_${reportId}`, JSON.stringify(publicReportData));
+                console.log('💾 Datos guardados en localStorage con ID:', reportId);
+            } catch (error) {
+                console.error('❌ Error guardando en localStorage:', error);
+                alert('❌ Error: No se pudo guardar el reporte.\n\nPuede ser que el navegador tenga el almacenamiento lleno.');
+                return;
+            }
 
             // Generar URL del reporte público
             const currentUrl = window.location.origin + window.location.pathname;
             const publicUrl = currentUrl.replace('reporte_certamen_completo.html', `resultados.html?id=${reportId}`);
             
-            console.log(`🔗 Generando enlace público:`, {
+            console.log(`🔗 URL generada:`, {
                 reportId: reportId,
                 currentUrl: currentUrl,
                 publicUrl: publicUrl,
@@ -2072,6 +2093,62 @@
             // Restaurar elementos
             hideElements.forEach(el => el.style.display = '');
         }
+
+        // INICIALIZACIÓN Y ESTADO DEL SISTEMA
+        function checkSystemStatus() {
+            console.log('🔍 VERIFICANDO ESTADO DEL SISTEMA VYT-MUSIC');
+            console.log('📊 Estado actual de reportData:', reportData);
+            console.log('📋 Galas cargadas:', allGalas.length);
+            console.log('✅ Galas seleccionadas:', selectedGalas.length);
+            
+            // Verificar si hay reportes guardados en localStorage
+            const savedReports = [];
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key && key.startsWith('report_')) {
+                    savedReports.push(key);
+                }
+            }
+            console.log('💾 Reportes públicos guardados:', savedReports);
+
+            // Actualizar botón según el estado
+            updatePublicLinkButtonState();
+        }
+
+        function updatePublicLinkButtonState() {
+            const btn = document.getElementById('public-link-btn');
+            if (!btn) return;
+
+            if (!reportData || Object.keys(reportData).length === 0) {
+                btn.innerHTML = '⚠️ PRIMERO GENERA UN REPORTE';
+                btn.classList.add('opacity-50', 'cursor-not-allowed');
+                btn.disabled = true;
+            } else {
+                btn.innerHTML = '🔗 GENERAR ENLACE PÚBLICO PARA ARTISTAS';
+                btn.classList.remove('opacity-50', 'cursor-not-allowed');
+                btn.disabled = false;
+            }
+        }
+
+        // Ejecutar verificación cuando se carga la página
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('🚀 Página cargada - Inicializando sistema VYT-MUSIC');
+            safeInitialize();
+            
+            setTimeout(() => {
+                checkSystemStatus();
+            }, 3000);
+        });
+
+        // Verificar estado cada vez que se genera un reporte
+        const originalCompleteReportGeneration = completeReportGeneration;
+        completeReportGeneration = function() {
+            originalCompleteReportGeneration();
+            setTimeout(() => {
+                updatePublicLinkButtonState();
+                console.log('✅ Reporte generado - Enlace público ahora disponible');
+            }, 500);
+        };
 
         // Inicializar con manejo de errores
         safeInitialize();
