@@ -1668,7 +1668,17 @@
 
         function renderFinalRanking(ranking) {
             const container = document.getElementById('final-ranking-container');
+            if (!container) {
+                console.error('❌ Contenedor final-ranking-container no encontrado');
+                return;
+            }
             container.innerHTML = '';
+
+            // Verificar que tenemos datos
+            if (!reportData.galas || reportData.galas.length === 0) {
+                container.innerHTML = '<p class="text-red-400 text-center p-4">⚠️ No hay datos de galas disponibles</p>';
+                return;
+            }
 
             // 🏆 TABLA SIMPLIFICADA Y CLARA
             const tableHTML = `
@@ -1683,9 +1693,9 @@
                                 <th class="px-4 py-4 text-left text-white font-bold">🏅 Pos</th>
                                 <th class="px-4 py-4 text-left text-white font-bold">🎤 Artista</th>
                                 ${reportData.galas.map(gala => `
-                                    <th class="px-2 py-4 text-center text-white font-bold text-sm bg-blue-800/50">${gala.name.replace('GALA ', 'G')}</th>
+                                    <th class="px-2 py-4 text-center text-white font-bold text-sm bg-blue-800/50">${gala.name.substring(0, 20)}</th>
                                 `).join('')}
-                                <th class="px-3 py-4 text-center text-white font-bold bg-purple-800">📊 Evaluaciones</th>
+                                <th class="px-3 py-4 text-center text-white font-bold bg-purple-800">📊 Jurados</th>
                                 <th class="px-3 py-4 text-center text-white font-bold bg-green-800">🏆 Final</th>
                                 <th class="px-3 py-4 text-center text-white font-bold">⭐</th>
                             </tr>
@@ -1702,13 +1712,22 @@
                                                      index === 2 ? 'text-orange-400 bg-orange-900/30' : 
                                                      index < 10 ? 'text-blue-300 bg-blue-900/20' : 'text-white';
                                 
+                                // Calcular total de evaluaciones de jurados
+                                let totalJuryEvaluations = 0;
+                                if (participant.galaDetails) {
+                                    Object.values(participant.galaDetails).forEach(gala => {
+                                        totalJuryEvaluations += gala.juryCount || 0;
+                                    });
+                                }
+                                
                                 // Generar columnas por gala
                                 const galaScores = reportData.galas.map(gala => {
                                     const galaDetail = participant.galaDetails?.[gala.name];
                                     if (galaDetail) {
                                         const scoreClass = galaDetail.participated ? 'text-green-400' : 'text-orange-300';
                                         const badge = galaDetail.repeated ? '🔄' : '✅';
-                                        const votesInfo = galaDetail.participated ? `${galaDetail.votes} jurado${galaDetail.votes > 1 ? 's' : ''}` : 'repetida';
+                                        const juryCount = galaDetail.juryCount || 0;
+                                        const votesInfo = galaDetail.participated ? `${juryCount} jur.` : 'rep.';
                                         return `
                                             <td class="px-2 py-4 text-center">
                                                 <div class="${scoreClass} font-bold">${galaDetail.score.toFixed(1)}</div>
@@ -1736,8 +1755,8 @@
                                         </td>
                                         ${galaScores}
                                         <td class="px-3 py-4 text-center bg-purple-800/50">
-                                            <div class="text-purple-200 font-bold text-lg">${participant.totalVotes}</div>
-                                            <div class="text-purple-300 text-xs">jurados</div>
+                                            <div class="text-purple-200 font-bold text-lg">${totalJuryEvaluations}</div>
+                                            <div class="text-purple-300 text-xs">eval.</div>
                                         </td>
                                         <td class="px-3 py-4 text-center bg-green-800/50">
                                             <div class="text-green-300 font-bold text-xl">${participant.finalScore.toFixed(1)}</div>
@@ -1788,17 +1807,28 @@
 
         function renderGalaBreakdown() {
             const container = document.getElementById('gala-breakdown-container');
+            if (!container) {
+                console.error('❌ Contenedor gala-breakdown-container no encontrado');
+                return;
+            }
             container.innerHTML = '';
 
-            // Ordenar galas por fecha
-            const galasOrdenadas = selectedGalas.map(galaId => {
-                const galaInfo = allGalas.find(g => g.id === galaId);
+            // Verificar que tenemos datos
+            if (!reportData.galas || reportData.galas.length === 0) {
+                container.innerHTML = '<p class="text-gray-400 text-center p-4">No hay datos de galas disponibles</p>';
+                return;
+            }
+
+            // Usar directamente reportData.galas
+            const galasOrdenadas = reportData.galas.map(gala => {
+                // Buscar información adicional si está disponible
+                const galaInfo = allGalas.find(g => g.name === gala.name);
                 return {
-                    id: galaId,
-                    name: galaInfo?.name || 'Gala Desconocida',
-                    date: galaInfo?.date || 'Fecha no disponible'
+                    name: gala.name,
+                    date: galaInfo?.date || 'Fecha no disponible',
+                    participants: gala.participants || []
                 };
-            }).sort((a, b) => new Date(a.date) - new Date(b.date));
+            });
 
             galasOrdenadas.forEach(galaInfo => {
                 const galaCard = document.createElement('div');
@@ -1813,7 +1843,7 @@
                         participantesGala.push({
                             name: participant.name,
                             score: galaDetail.score,
-                            votes: galaDetail.votes,
+                            votes: galaDetail.juryCount || 0,
                             participated: galaDetail.participated,
                             repeated: galaDetail.repeated || false,
                             bonus: participant.bonusApplied && participant.bonus ? participant.bonus : 0
