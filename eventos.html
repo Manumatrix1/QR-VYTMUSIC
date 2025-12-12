@@ -77,6 +77,15 @@
                         <label for="event-date" class="block mb-1 font-semibold text-gray-300">Fecha del Evento</label>
                         <input type="date" id="event-date" required class="w-full p-3 rounded-md border border-gray-600 bg-gray-900 text-white">
                     </div>
+                    <div class="bg-blue-900 bg-opacity-30 p-4 rounded-lg border border-blue-500">
+                        <label class="flex items-center cursor-pointer">
+                            <input type="checkbox" id="event-active" class="w-5 h-5 mr-3 rounded">
+                            <div>
+                                <span class="font-bold text-blue-300">⭐ Marcar como Evento Activo</span>
+                                <p class="text-xs text-gray-400 mt-1">El evento activo es el que usarán los asistentes, jurados y público para votar</p>
+                            </div>
+                        </label>
+                    </div>
                     <button type="submit" class="w-full px-4 py-3 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700">Crear Evento</button>
                 </form>
             </section>
@@ -91,7 +100,18 @@
             </div>
 
             <section id="events-list-section">
-                <h2 class="text-2xl font-bold mb-4">Eventos Creados</h2>
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-2xl font-bold">Eventos Creados</h2>
+                    <button onclick="compartirAccesoDirecto()" class="px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 text-white font-bold rounded-lg hover:shadow-lg transition-all text-sm">
+                        📱 Compartir Acceso Directo
+                    </button>
+                </div>
+                <div id="active-event-alert" class="hidden bg-green-900 bg-opacity-30 border border-green-500 p-4 rounded-lg mb-4">
+                    <p class="text-green-300 text-sm">
+                        ⭐ <strong>Evento activo:</strong> <span id="active-event-name-alert">-</span>
+                    </p>
+                    <p class="text-xs text-gray-400 mt-1">Este es el evento que usarán asistentes, jurados y público</p>
+                </div>
                 <div id="events-list" class="space-y-4">
                     <p id="events-loader" class="text-center text-gray-400">Cargando eventos...</p>
                 </div>
@@ -101,7 +121,7 @@
 
     <script type="module">
         import { db, auth } from './firebase_config.js';
-        import { collection, addDoc, serverTimestamp, query, orderBy, onSnapshot, doc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { collection, addDoc, serverTimestamp, query, orderBy, onSnapshot, doc, updateDoc, deleteDoc, getDocs, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 
         // CAPTURAMOS LOS NUEVOS ELEMENTOS DE LA UI
@@ -143,21 +163,45 @@
                     eventsListDiv.innerHTML = '<p class="text-center text-gray-400">No hay eventos creados todavía.</p>';
                     return;
                 }
+                
+                // Actualizar alerta de evento activo
+                const activeEvent = events.find(e => e.data().isActive);
+                const activeEventAlert = document.getElementById('active-event-alert');
+                const activeEventNameAlert = document.getElementById('active-event-name-alert');
+                
+                if (activeEvent) {
+                    activeEventNameAlert.textContent = activeEvent.data().name;
+                    activeEventAlert.classList.remove('hidden');
+                } else {
+                    activeEventAlert.classList.add('hidden');
+                }
 
                 events.forEach(eventDoc => {
                     const event = { id: eventDoc.id, ...eventDoc.data() };
                     const eventCard = document.createElement('div');
-                    eventCard.className = 'event-card p-4 rounded-lg shadow-md';
+                    const isActive = event.isActive || false;
+                    eventCard.className = `event-card p-4 rounded-lg shadow-md ${isActive ? 'border-2 border-green-500' : ''}`;
                     eventCard.innerHTML = `
-                        <div class="flex justify-between items-center">
+                        <div class="flex justify-between items-center mb-3">
                             <a href="panel_evento_mejorado.html?eventId=${event.id}&eventName=${encodeURIComponent(event.name)}" class="flex-grow">
-                                <h3 class="text-xl font-bold text-sky-400">${event.name}</h3>
+                                <h3 class="text-xl font-bold text-sky-400">
+                                    ${isActive ? '⭐ ' : ''}${event.name}
+                                    ${isActive ? '<span class="ml-2 text-xs bg-green-600 px-2 py-1 rounded-full">ACTIVO</span>' : ''}
+                                </h3>
                                 <p class="text-gray-400">Fecha: ${event.date}</p>
                             </a>
                             <div class="flex space-x-2">
                                 <button data-id="${event.id}" data-name="${event.name}" class="edit-event-btn action-btn p-2 bg-gray-600 hover:bg-yellow-600 rounded-md" title="Editar nombre">✏️</button>
                                 <button data-id="${event.id}" class="delete-event-btn action-btn p-2 bg-gray-600 hover:bg-red-600 rounded-md" title="Eliminar evento">🗑️</button>
                             </div>
+                        </div>
+                        <div class="flex items-center bg-gray-700 p-3 rounded-lg">
+                            <label class="flex items-center cursor-pointer flex-grow">
+                                <input type="checkbox" class="toggle-active-checkbox w-4 h-4 mr-3" data-id="${event.id}" ${isActive ? 'checked' : ''}>
+                                <span class="text-sm ${isActive ? 'text-green-400 font-bold' : 'text-gray-300'}">
+                                    ${isActive ? '✅ Evento activo para votación y escaneo' : 'Activar para votación/escaneo'}
+                                </span>
+                            </label>
                         </div>
                     `;
                     eventsListDiv.appendChild(eventCard);
@@ -168,15 +212,59 @@
                 e.preventDefault();
                 const eventName = document.getElementById('event-name').value;
                 const eventDate = document.getElementById('event-date').value;
+                const makeActive = document.getElementById('event-active').checked;
 
                 if (eventName && eventDate) {
-                    await addDoc(eventsCol, { name: eventName, date: eventDate, createdAt: serverTimestamp(), ownerId: user.uid });
+                    // Si se marca como activo, desactivar todos los demás eventos primero
+                    if (makeActive) {
+                        const allEventsSnapshot = await getDocs(eventsCol);
+                        const batch = writeBatch(db);
+                        allEventsSnapshot.forEach(doc => {
+                            batch.update(doc.ref, { isActive: false });
+                        });
+                        await batch.commit();
+                    }
+                    
+                    await addDoc(eventsCol, { 
+                        name: eventName, 
+                        date: eventDate, 
+                        isActive: makeActive,
+                        createdAt: serverTimestamp(), 
+                        ownerId: user.uid 
+                    });
                     createEventForm.reset();
                 }
             });
 
             eventsListDiv.addEventListener('click', async (e) => {
                 const target = e.target.closest('button');
+                const checkbox = e.target.closest('.toggle-active-checkbox');
+                
+                // Manejar toggle de evento activo
+                if (checkbox) {
+                    const eventId = checkbox.dataset.id;
+                    const isChecked = checkbox.checked;
+                    
+                    if (isChecked) {
+                        // Desactivar todos los demás eventos primero
+                        const allEventsSnapshot = await getDocs(eventsCol);
+                        const batch = writeBatch(db);
+                        allEventsSnapshot.forEach(doc => {
+                            batch.update(doc.ref, { isActive: false });
+                        });
+                        await batch.commit();
+                        
+                        // Activar este evento
+                        const eventRef = doc(db, 'events', eventId);
+                        await updateDoc(eventRef, { isActive: true });
+                    } else {
+                        // Desactivar este evento
+                        const eventRef = doc(db, 'events', eventId);
+                        await updateDoc(eventRef, { isActive: false });
+                    }
+                    return;
+                }
+                
                 if (!target) return;
 
                 const eventId = target.dataset.id;
@@ -190,6 +278,20 @@
                     }
                 }
 
+        
+        // Función para compartir acceso directo al evento activo
+        window.compartirAccesoDirecto = function() {
+            const url = window.location.origin + window.location.pathname.replace('eventos.html', 'acceso_evento_activo.html');
+            const mensaje = `🎪 *VYT-MUSIC - Acceso Directo*\n\n` +
+                          `Accede al evento activo para:\n` +
+                          `📱 Escanear entradas (asistentes)\n` +
+                          `👨‍⚖️ Evaluar artistas (jurados)\n` +
+                          `🗳️ Votar con tu entrada (público)\n\n` +
+                          `${url}`;
+            
+            const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(mensaje)}`;
+            window.open(whatsappUrl, '_blank');
+        };
                 if (target.classList.contains('delete-event-btn')) {
                     if (confirm("¿Estás seguro de que quieres eliminar este evento? Se borrarán TODOS sus datos asociados. Esta acción no se puede deshacer.")) {
                         await deleteDoc(eventRef);
