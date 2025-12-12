@@ -2421,108 +2421,96 @@
                 return;
             }
 
-            // Generar texto simple para compartir fácilmente
+            // Generar ranking ordenado
             const ranking = Array.from(reportData.allParticipants.values())
                 .sort((a, b) => b.finalScore - a.finalScore);
             
             console.log('📈 Ranking generado:', ranking.length, 'participantes');
 
-            // Crear mensaje de texto completo con toda la información
-            let shareText = '🏆 RESULTADOS OFICIALES - CERTAMEN VYT-MUSIC 🏆\n\n';
+            // Crear ID único para este reporte
+            const reportId = Date.now().toString(36);
             
-            // Podium
-            shareText += '═══════════════════════════\n';
-            shareText += '👑 GANADORES OFICIALES 👑\n';
-            shareText += '═══════════════════════════\n\n';
-            
-            if (ranking.length >= 1) {
-                shareText += `🥇 1er LUGAR: ${ranking[0].name}\n`;
-                shareText += `   Puntaje: ${ranking[0].finalScore.toFixed(2)}/10\n`;
-                shareText += `   Galas: ${ranking[0].galas.join(', ')}\n\n`;
+            // Preparar datos para guardar
+            const publicReportData = {
+                id: reportId,
+                timestamp: new Date().toISOString(),
+                title: reportData.galas && reportData.galas.length > 1 ? 'CERTAMEN VYT-MUSIC' : 
+                       reportData.galas && reportData.galas[0] ? `GALA: ${reportData.galas[0].name}` : 'CERTAMEN VYT-MUSIC',
+                period: reportData.period || { from: 'N/A', to: 'N/A' },
+                podium: ranking.slice(0, 3),
+                ranking: ranking.map(p => ({
+                    name: p.name,
+                    finalScore: p.finalScore,
+                    galas: p.galas,
+                    totalPublicVotes: p.totalPublicVotes || 0,
+                    totalPublicScore: p.totalPublicScore || 0
+                }))
+            };
+
+            console.log('📦 Datos públicos preparados:', publicReportData);
+
+            // Guardar en localStorage
+            try {
+                localStorage.setItem(`report_${reportId}`, JSON.stringify(publicReportData));
+                console.log('💾 Datos guardados en localStorage con ID:', reportId);
+            } catch (error) {
+                console.error('❌ Error guardando en localStorage:', error);
+                alert('❌ Error: No se pudo guardar el reporte.\n\nPuede ser que el navegador tenga el almacenamiento lleno.');
+                return;
             }
+
+            // Generar URL del reporte público
+            const currentUrl = window.location.origin + window.location.pathname;
+            const publicUrl = currentUrl.replace('reporte_certamen_completo.html', `resultados.html?id=${reportId}`);
             
-            if (ranking.length >= 2) {
-                shareText += `🥈 2do LUGAR: ${ranking[1].name}\n`;
-                shareText += `   Puntaje: ${ranking[1].finalScore.toFixed(2)}/10\n`;
-                shareText += `   Galas: ${ranking[1].galas.join(', ')}\n\n`;
-            }
-            
-            if (ranking.length >= 3) {
-                shareText += `🥉 3er LUGAR: ${ranking[2].name}\n`;
-                shareText += `   Puntaje: ${ranking[2].finalScore.toFixed(2)}/10\n`;
-                shareText += `   Galas: ${ranking[2].galas.join(', ')}\n\n`;
-            }
-            
-            // Ranking completo
-            shareText += '═══════════════════════════\n';
-            shareText += '📊 RANKING COMPLETO\n';
-            shareText += '═══════════════════════════\n\n';
-            
-            ranking.forEach((participant, index) => {
-                shareText += `${index + 1}. ${participant.name}\n`;
-                shareText += `   📊 Puntaje: ${participant.finalScore.toFixed(2)}/10\n`;
-                shareText += `   🎭 Galas: ${participant.galas.join(', ')}\n`;
-                
-                // Mostrar votos del público si los tiene
-                if (participant.totalPublicVotes > 0) {
-                    const avgPublic = (participant.totalPublicScore / participant.totalPublicVotes).toFixed(1);
-                    shareText += `   👥 Votos Público: ${avgPublic}/10 (${participant.totalPublicVotes} votos)\n`;
-                }
-                
-                shareText += '\n';
+            console.log(`🔗 URL generada:`, {
+                reportId: reportId,
+                currentUrl: currentUrl,
+                publicUrl: publicUrl,
+                participantes: ranking.length
             });
             
-            // Información adicional
-            shareText += '═══════════════════════════\n';
-            shareText += `📅 Total Galas: ${selectedGalas.length}\n`;
-            shareText += `🎤 Participantes: ${ranking.length}\n`;
-            shareText += `📊 Evaluaciones de Jurados\n`;
-            shareText += '═══════════════════════════\n\n';
-            shareText += '🎵 ¡Felicitaciones a todos! 🎵\n';
-            shareText += 'VYT-MUSIC 2024';
-            
-            console.log('📝 Texto generado:', shareText.length, 'caracteres');
-            
-            // Mostrar modal con opciones de compartir
-            showPublicLinkModal(shareText);
+            // Mostrar modal con el enlace
+            showPublicLinkModal(publicUrl, publicReportData.title);
         }
 
-        function showPublicLinkModal(shareText) {
+        function showPublicLinkModal(url, title) {
             const modal = document.createElement('div');
-            modal.className = 'fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50';
+            modal.className = 'fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50';
             modal.innerHTML = `
-                <div class="bg-gray-800 p-8 rounded-2xl max-w-4xl mx-4 text-white" style="max-height: 90vh; overflow-y: auto;">
-                    <h3 class="text-2xl font-bold mb-6 text-center text-green-400">✅ Resultados Listos para Compartir</h3>
+                <div class="bg-gray-800 p-8 rounded-2xl max-w-2xl mx-4 text-white">
+                    <h3 class="text-2xl font-bold mb-6 text-center text-green-400">✅ Enlace Público Generado</h3>
                     <p class="text-center text-gray-300 mb-6">
-                        📱 Usa estos botones para compartir fácilmente con los artistas:
+                        Este enlace muestra SOLO los resultados oficiales. Perfecto para compartir con los artistas:
                     </p>
                     
-                    <div class="bg-gray-900 p-4 rounded-lg mb-6 border border-green-500" style="max-height: 400px; overflow-y: auto;">
-                        <p class="text-sm text-gray-400 mb-2">📋 Texto completo del reporte:</p>
-                        <pre class="text-green-400 text-sm whitespace-pre-wrap" id="public-share-text" style="font-family: monospace;">${shareText}</pre>
+                    <div class="bg-gray-900 p-4 rounded-lg mb-6 border-2 border-green-500">
+                        <p class="text-sm text-gray-400 mb-2">🔗 Enlace del reporte:</p>
+                        <p class="text-green-400 font-mono text-sm break-all select-all" id="public-url">${url}</p>
                     </div>
                     
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                        <button onclick="copyPublicText()" class="bg-blue-600 hover:bg-blue-700 px-6 py-4 rounded-lg font-bold flex items-center justify-center gap-2">
-                            📋 Copiar Texto
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+                        <button onclick="copyPublicUrl('${url}')" class="bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-lg font-bold flex items-center justify-center gap-2">
+                            📋 Copiar Enlace
                         </button>
-                        <button onclick="shareViaWhatsApp()" class="bg-green-600 hover:bg-green-700 px-6 py-4 rounded-lg font-bold flex items-center justify-center gap-2">
+                        <button onclick="sharePublicUrl('${url}', '${title}')" class="bg-green-600 hover:bg-green-700 px-6 py-3 rounded-lg font-bold flex items-center justify-center gap-2">
                             📱 WhatsApp
-                        </button>
-                        <button onclick="shareViaEmail()" class="bg-purple-600 hover:bg-purple-700 px-6 py-4 rounded-lg font-bold flex items-center justify-center gap-2">
-                            📧 Email
                         </button>
                     </div>
                     
                     <div class="bg-blue-900/50 border border-blue-500 rounded-lg p-4 mb-4">
                         <p class="text-blue-200 text-sm">
-                            💡 <strong>Tip:</strong> Copia el texto y pégalo directamente en WhatsApp, Telegram, Facebook o cualquier app de mensajería.
+                            💡 <strong>Consejo:</strong> Copia el enlace y envíalo por WhatsApp, Telegram, Facebook o email.
+                            Los artistas podrán ver los resultados completos en una página especial.
                         </p>
                     </div>
                     
-                    <div class="text-center">
+                    <div class="flex justify-center gap-4">
+                        <a href="${url}" target="_blank" class="bg-purple-600 hover:bg-purple-700 px-6 py-3 rounded-lg font-bold inline-flex items-center gap-2">
+                            👀 Ver Página
+                        </a>
                         <button onclick="this.parentElement.parentElement.parentElement.remove()" 
-                                class="bg-gray-600 hover:bg-gray-700 px-8 py-3 rounded-lg font-bold">
+                                class="bg-gray-600 hover:bg-gray-700 px-6 py-3 rounded-lg font-bold">
                             ✕ Cerrar
                         </button>
                     </div>
@@ -2530,38 +2518,27 @@
             `;
             
             document.body.appendChild(modal);
-            
-            // Guardar el texto en una variable global para que las funciones puedan accederlo
-            window.currentShareText = shareText;
         }
 
-        function copyPublicText() {
-            const shareText = window.currentShareText;
-            navigator.clipboard.writeText(shareText).then(() => {
-                alert('✅ ¡Texto copiado!\n\nYa puedes pegarlo en WhatsApp, Telegram, Facebook o cualquier aplicación.');
+        function copyPublicUrl(url) {
+            navigator.clipboard.writeText(url).then(() => {
+                alert('✅ ¡Enlace copiado!\n\nYa puedes enviarlo a los artistas por WhatsApp, Telegram o cualquier aplicación.');
             }).catch(() => {
                 // Fallback
                 const textArea = document.createElement('textarea');
-                textArea.value = shareText;
+                textArea.value = url;
                 document.body.appendChild(textArea);
                 textArea.select();
                 document.execCommand('copy');
                 document.body.removeChild(textArea);
-                alert('✅ Texto copiado!');
+                alert('✅ Enlace copiado!');
             });
         }
 
-        function shareViaWhatsApp() {
-            const shareText = window.currentShareText;
-            const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(shareText)}`;
+        function sharePublicUrl(url, title) {
+            const message = `🏆 ${title.toUpperCase()} 🏆\n\n¡Ya están los resultados oficiales del certamen!\n\n👉 Ver resultados completos:\n${url}\n\n🎵 ¡Felicitaciones a todos los participantes! 🎵\n\nVYT-MUSIC 2024`;
+            const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
             window.open(whatsappUrl, '_blank');
-        }
-
-        function shareViaEmail() {
-            const shareText = window.currentShareText;
-            const subject = 'Resultados Oficiales - Certamen VYT-MUSIC';
-            const mailtoUrl = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(shareText)}`;
-            window.location.href = mailtoUrl;
         }
 
         function copyResults() {
