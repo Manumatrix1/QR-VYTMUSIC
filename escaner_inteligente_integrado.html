@@ -491,6 +491,7 @@
                 this.lastScan = null;
                 this.lastScanTime = 0;
                 this.syncQueue = [];
+                this.syncRetryInterval = null; // Intervalo para reintentos automáticos
                 this.isSyncing = false;
                 this.connectionCheckInterval = null;
                 this.cameras = [];
@@ -640,11 +641,36 @@
                 
                 this.updateConnectionUI();
                 
-                // Si acabamos de conectarnos, sincronizar
+                // Si acabamos de conectarnos, sincronizar INMEDIATAMENTE
                 if (online && wasOffline && this.syncQueue.length > 0) {
                     console.log('🔄 Reconectado - iniciando sincronización automática');
-                    setTimeout(() => this.autoSync(), 1000);
+                    setTimeout(() => this.autoSync(), 500); // Más rápido
+                    
+                    // Iniciar reintentos automáticos cada 30 segundos mientras haya cola
+                    this.startAutoRetrySync();
                 }
+            }
+            
+            startAutoRetrySync() {
+                // Limpiar reintento previo si existe
+                if (this.syncRetryInterval) {
+                    clearInterval(this.syncRetryInterval);
+                }
+                
+                // Reintentar cada 30 segundos mientras haya datos pendientes
+                this.syncRetryInterval = setInterval(() => {
+                    if (this.syncQueue.length > 0 && this.isOnline && !this.isSyncing) {
+                        console.log(`⏰ Auto-retry sync: ${this.syncQueue.length} pendientes`);
+                        this.autoSync();
+                    } else if (this.syncQueue.length === 0) {
+                        // Si no hay más pendientes, detener reintentos
+                        clearInterval(this.syncRetryInterval);
+                        this.syncRetryInterval = null;
+                        console.log('✅ Auto-retry detenido: cola vacía');
+                    }
+                }, 30000); // Cada 30 segundos
+                
+                console.log('⏰ Auto-retry sync activado (cada 30s)');
             }
 
             updateConnectionUI() {
@@ -819,7 +845,7 @@
 
                     // Configuración optimizada
                     const config = {
-                        fps: 10,
+                        fps: 20, // FPS AUMENTADO para escaneo más rápido
                         qrbox: { width: 280, height: 280 },
                         aspectRatio: 1.0,
                         disableFlip: false,
@@ -1002,7 +1028,7 @@
                     };
                     
                     const qrCodeConfig = {
-                        fps: isMobile ? 5 : 10, // FPS más bajo en móviles
+                        fps: isMobile ? 15 : 20, // FPS AUMENTADO para escaneo más rápido
                         qrbox: function(viewfinderWidth, viewfinderHeight) {
                             // Configuración dinámica basada en el tamaño de pantalla
                             let minEdge = Math.min(viewfinderWidth, viewfinderHeight);
@@ -1217,9 +1243,9 @@
             async onScanSuccess(decodedText) {
                 if (!this.isActive) return;
 
-                // Prevenir escaneos duplicados rápidos
+                // Prevenir escaneos duplicados rápidos (REDUCIDO A 800ms para más velocidad)
                 const now = Date.now();
-                if (this.lastScan === decodedText && (now - this.lastScanTime) < 2000) {
+                if (this.lastScan === decodedText && (now - this.lastScanTime) < 800) {
                     return;
                 }
 
@@ -1228,9 +1254,9 @@
 
                 console.log(`🔍 Código escaneado: ${decodedText.substring(0, 30)}...`);
 
-                // Vibración inmediata
+                // Vibración rápida para feedback inmediato
                 if (navigator.vibrate) {
-                    navigator.vibrate([100, 50, 100]);
+                    navigator.vibrate(50);
                 }
 
                 await this.processQRCode(decodedText);
@@ -1303,7 +1329,10 @@
                     };
 
                     this.localEntries.push(entry);
-                    this.syncQueue.push({ ticketId: code, ticketData: ticket });
+                    this.syncQueue.push({ ticketId: code, ticketData: ticket, synced: false, attempts: 0 });
+                    
+                    // 💾 GUARDAR INMEDIATAMENTE en localStorage para persistencia
+                    this.saveToStorage();
 
                     // 🚨 CRÍTICO: REGISTRAR ASISTENTE EN FIREBASE PARA VERIFICADOR
                     try {
@@ -1327,9 +1356,13 @@
                         console.error(`❌ Error registrando asistente en Firebase:`, error);
                     }
 
-                    // Intentar sincronizar inmediatamente si hay conexión
+                    // Intentar sincronizar inmediatamente si hay conexión (SIN ESPERAR)
                     if (this.isOnline) {
-                        this.syncSingleTicket(code, ticket);
+                        this.syncSingleTicket(code, ticket).catch(err => {
+                            console.warn('⚠️ Error sync inmediato, quedará en cola:', err.message);
+                        });
+                    } else {
+                        console.log('📴 Sin conexión - dato guardado en cola offline');
                     }
                 }
 
