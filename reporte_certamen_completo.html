@@ -383,7 +383,7 @@
         <section class="mb-8">
             <div class="glass-effect p-6 rounded-lg">
                 <h2 class="text-3xl font-bold mb-6 text-center">⭐ Estadísticas Especiales</h2>
-                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                     <div class="bg-gradient-to-br from-indigo-600 to-indigo-800 p-6 rounded-lg text-center">
                         <h4 class="text-lg font-bold mb-3">🔥 Más Consistente</h4>
                         <p id="most-consistent" class="text-xl font-semibold">Calculando...</p>
@@ -398,6 +398,11 @@
                         <h4 class="text-lg font-bold mb-3">�‍⚖️ Más Evaluado</h4>
                         <p id="public-favorite" class="text-xl font-semibold">Calculando...</p>
                         <p class="text-sm opacity-80">Mayor cantidad de evaluaciones de jurados</p>
+                    </div>
+                    <div class="bg-gradient-to-br from-purple-600 to-purple-800 p-6 rounded-lg text-center">
+                        <h4 class="text-lg font-bold mb-3">👥 Favorito del Público</h4>
+                        <p id="public-votes-favorite" class="text-xl font-semibold">Calculando...</p>
+                        <p class="text-sm opacity-80">Mayor promedio de votos públicos</p>
                     </div>
                 </div>
             </div>
@@ -865,6 +870,9 @@
                         existing.totalScore += juryAverage;
                         existing.totalVotes++;
                         existing.hasJuryVotes = existing.hasJuryVotes || (artistJuryScores.length > 0);
+                        // 👥 SUMAR VOTOS DEL PÚBLICO
+                        existing.totalPublicScore = (existing.totalPublicScore || 0) + (artistData.totalScore || 0);
+                        existing.totalPublicVotes = (existing.totalPublicVotes || 0) + (artistData.totalRatingsCount || 0);
                     } else {
                         reportData.allParticipants.set(finalName, {
                             name: finalName,
@@ -886,7 +894,10 @@
                             bonus: 0,
                             bonusApplied: false,
                             hasJuryVotes: artistJuryScores.length > 0,
-                            attendedAllGalas: false // Se calculará después
+                            attendedAllGalas: false, // Se calculará después
+                            // 👥 VOTOS DEL PÚBLICO
+                            totalPublicScore: artistData.totalScore || 0,
+                            totalPublicVotes: artistData.totalRatingsCount || 0
                         });
                     }
                 });
@@ -1917,6 +1928,10 @@
             let publicFavorite = null;
             let mostVotes = 0;
             
+            // FAVORITO DEL PUBLICO REAL: Mayor promedio de votos publicos
+            let realPublicFavorite = null;
+            let highestPublicAverage = 0;
+            
             ranking.forEach(participant => {
                 // Solo analizar participantes que participaron en múltiples galas
                 const realParticipations = Object.values(participant.galaDetails || {})
@@ -1982,13 +1997,27 @@
                         galas: participant.galas.length
                     };
                 }
+                
+                // 👥 FAVORITO DEL PÚBLICO REAL: Votos del público
+                if (participant.totalPublicVotes > 0) {
+                    const publicAverage = participant.totalPublicScore / participant.totalPublicVotes;
+                    if (publicAverage > highestPublicAverage) {
+                        highestPublicAverage = publicAverage;
+                        realPublicFavorite = {
+                            name: participant.name,
+                            totalPublicVotes: participant.totalPublicVotes,
+                            avgPublicScore: publicAverage,
+                            totalPublicScore: participant.totalPublicScore
+                        };
+                    }
+                }
             });
             
             // Actualizar los elementos DOM
-            updateSpecialStatsUI(mostConsistent, mostImproved, publicFavorite);
+            updateSpecialStatsUI(mostConsistent, mostImproved, publicFavorite, realPublicFavorite);
         }
         
-        function updateSpecialStatsUI(mostConsistent, mostImproved, publicFavorite) {
+        function updateSpecialStatsUI(mostConsistent, mostImproved, publicFavorite, realPublicFavorite) {
             // 🔥 MÁS CONSISTENTE
             const consistentElement = document.getElementById('most-consistent');
             if (mostConsistent && consistentElement) {
@@ -2017,7 +2046,18 @@
                 `;
             }
             
-            console.log('✅ Estadísticas especiales actualizadas:', { mostConsistent, mostImproved, publicFavorite });
+            // 👥 FAVORITO DEL PÚBLICO REAL (Votos del público)
+            const realFavoriteElement = document.getElementById('public-votes-favorite');
+            if (realPublicFavorite && realFavoriteElement) {
+                realFavoriteElement.innerHTML = `
+                    <div class="font-bold text-lg">${realPublicFavorite.name}</div>
+                    <div class="text-sm">${realPublicFavorite.totalPublicVotes} votos • Promedio: ${realPublicFavorite.avgPublicScore.toFixed(1)}/10</div>
+                `;
+            } else if (realFavoriteElement) {
+                realFavoriteElement.innerHTML = `<div class="text-gray-400">Sin votos públicos</div>`;
+            }
+            
+            console.log('✅ Estadísticas especiales actualizadas:', { mostConsistent, mostImproved, publicFavorite, realPublicFavorite });
         }
 
         // Botón para nuevo reporte
