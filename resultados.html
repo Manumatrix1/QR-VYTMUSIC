@@ -118,7 +118,16 @@
         </div>
     </div>
 
-    <script>
+    <!-- FIREBASE -->
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
+        import { getFirestore, doc, getDoc } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+        import firebaseConfig from './firebase_config.js';
+
+        // Inicializar Firebase
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
         // Obtener ID del reporte desde URL
         const urlParams = new URLSearchParams(window.location.search);
         const reportId = urlParams.get('id');
@@ -134,10 +143,29 @@
             loadReport(reportId);
         }
 
-        function loadReport(id) {
+        async function loadReport(id) {
             console.log('📂 Buscando reporte con ID:', id);
             
-            // Intentar cargar desde localStorage primero
+            // Intentar cargar desde Firebase primero
+            try {
+                console.log('🔥 Buscando en Firebase...');
+                const docRef = doc(db, 'public_reports', id);
+                const docSnap = await getDoc(docRef);
+                
+                if (docSnap.exists()) {
+                    const reportData = docSnap.data();
+                    console.log('✅ Datos del reporte cargados desde Firebase:', reportData);
+                    displayReport(reportData);
+                    return;
+                } else {
+                    console.log('⚠️ Reporte no encontrado en Firebase, intentando localStorage...');
+                }
+            } catch (error) {
+                console.error('⚠️ Error cargando desde Firebase:', error);
+                console.log('🔄 Intentando cargar desde localStorage...');
+            }
+            
+            // Fallback a localStorage
             const savedReport = localStorage.getItem(`report_${id}`);
             
             console.log('💾 Datos encontrados en localStorage:', savedReport ? 'SÍ' : 'NO');
@@ -145,7 +173,7 @@
             if (savedReport) {
                 try {
                     const reportData = JSON.parse(savedReport);
-                    console.log('✅ Datos del reporte cargados correctamente:', reportData);
+                    console.log('✅ Datos del reporte cargados desde localStorage:', reportData);
                     displayReport(reportData);
                 } catch (error) {
                     console.error('❌ Error parsing report:', error);
@@ -296,6 +324,10 @@
                 alert('✅ Enlace copiado!');
             });
         }
+
+        // Exponer funciones globalmente para que puedan usarse desde onclick en los botones
+        window.sharePublic = sharePublic;
+        window.copyLink = copyLink;
     </script>
 </body>
 </html>

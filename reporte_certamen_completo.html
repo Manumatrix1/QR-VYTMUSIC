@@ -383,7 +383,7 @@
         <section class="mb-8">
             <div class="glass-effect p-6 rounded-lg">
                 <h2 class="text-3xl font-bold mb-6 text-center">⭐ Estadísticas Especiales</h2>
-                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
                     <div class="bg-gradient-to-br from-indigo-600 to-indigo-800 p-6 rounded-lg text-center">
                         <h4 class="text-lg font-bold mb-3">🔥 Más Consistente</h4>
                         <p id="most-consistent" class="text-xl font-semibold">Calculando...</p>
@@ -395,7 +395,7 @@
                         <p class="text-sm opacity-80">Mejor evolución entre galas</p>
                     </div>
                     <div class="bg-gradient-to-br from-teal-600 to-teal-800 p-6 rounded-lg text-center">
-                        <h4 class="text-lg font-bold mb-3">�‍⚖️ Más Evaluado</h4>
+                        <h4 class="text-lg font-bold mb-3">👨‍⚖️ Más Evaluado</h4>
                         <p id="public-favorite" class="text-xl font-semibold">Calculando...</p>
                         <p class="text-sm opacity-80">Mayor cantidad de evaluaciones de jurados</p>
                     </div>
@@ -403,6 +403,11 @@
                         <h4 class="text-lg font-bold mb-3">👥 Favorito del Público</h4>
                         <p id="public-votes-favorite" class="text-xl font-semibold">Calculando...</p>
                         <p class="text-sm opacity-80">Mayor promedio de votos públicos</p>
+                    </div>
+                    <div class="bg-gradient-to-br from-orange-600 to-orange-800 p-6 rounded-lg text-center">
+                        <h4 class="text-lg font-bold mb-3">🎟️ Más Entradas Vendidas</h4>
+                        <p id="top-seller" class="text-xl font-semibold">Calculando...</p>
+                        <p class="text-sm opacity-80">Mayor cantidad de QR generados</p>
                     </div>
                 </div>
             </div>
@@ -1258,6 +1263,25 @@
                     juryScores[artistId].push(juryScore);
                 });
 
+                // 🎟️ CARGAR QR GENERADOS (ENTRADAS VENDIDAS)
+                const ticketsSnapshot = await getDocs(collection(db, `events/${galaId}/tickets`));
+                const qrCounts = {};
+                
+                ticketsSnapshot.docs.forEach(ticketDoc => {
+                    const ticketData = ticketDoc.data();
+                    // Buscar el ID del artista en varios campos posibles
+                    const artistId = ticketData.artistId || ticketData.selectedArtist;
+                    
+                    if (artistId) {
+                        if (!qrCounts[artistId]) {
+                            qrCounts[artistId] = 0;
+                        }
+                        qrCounts[artistId]++;
+                    }
+                });
+
+                console.log(`🎟️ QR generados en ${gala.name}:`, qrCounts);
+
                 artistsSnapshot.docs.forEach(artistDoc => {
                     const artistData = artistDoc.data();
                     
@@ -1266,6 +1290,9 @@
                     const juryAverage = artistJuryScores.length > 0 
                         ? artistJuryScores.reduce((sum, score) => sum + score, 0) / artistJuryScores.length 
                         : 0;
+                    
+                    // 🎟️ OBTENER CANTIDAD DE QR GENERADOS
+                    const qrGenerated = qrCounts[artistDoc.id] || 0;
                     
                     const participantData = {
                         id: artistDoc.id,
@@ -1276,10 +1303,11 @@
                         galaName: gala.name,
                         juryScores: artistJuryScores, // Para debugging
                         publicScore: artistData.totalScore || 0, // Mantener score público por referencia
-                        publicVotes: artistData.totalRatingsCount || 0
+                        publicVotes: artistData.totalRatingsCount || 0,
+                        qrCodesGenerated: qrGenerated // 🎟️ Cantidad de entradas vendidas
                     };
 
-                    console.log(`🎭 ${artistData.name} en ${gala.name}: Jurados: ${juryAverage.toFixed(1)}/10 (${artistJuryScores.length} evaluaciones) | Público: ${participantData.publicScore}`);
+                    console.log(`🎭 ${artistData.name} en ${gala.name}: Jurados: ${juryAverage.toFixed(1)}/10 (${artistJuryScores.length} evaluaciones) | Público: ${participantData.publicScore} | QR: ${qrGenerated}`);
 
                     galaData.participants.push(participantData);
                     reportData.totalVotes += participantData.votes;
@@ -1302,6 +1330,8 @@
                         existing.totalScore += participantData.score;
                         existing.totalVotes += participantData.votes;
                         existing.galas.push(gala.name);
+                        // 🎟️ ACUMULAR QR GENERADOS
+                        existing.qrCodesGenerated = (existing.qrCodesGenerated || 0) + participantData.qrCodesGenerated;
                         // 📊 GUARDAR DETALLES DE CADA GALA
                         existing.galaDetails = existing.galaDetails || {};
                         existing.galaDetails[gala.name] = {
@@ -1322,6 +1352,7 @@
                             totalVotes: participantData.votes,
                             galas: [gala.name],
                             avgScore: 0,
+                            qrCodesGenerated: participantData.qrCodesGenerated || 0, // 🎟️ Inicializar contador de QR
                             // 📊 GUARDAR DETALLES DE CADA GALA
                             galaDetails: {
                                 [gala.name]: {
@@ -1924,13 +1955,17 @@
             let mostImproved = null;
             let biggestImprovement = -Infinity;
             
-            // �‍⚖️ MÁS EVALUADO: Mayor cantidad de evaluaciones de jurados (NO votos público)
+            // 👨‍⚖️ MÁS EVALUADO: Mayor cantidad de evaluaciones de jurados (NO votos público)
             let publicFavorite = null;
             let mostVotes = 0;
             
             // FAVORITO DEL PUBLICO REAL: Mayor promedio de votos publicos
             let realPublicFavorite = null;
             let highestPublicAverage = 0;
+            
+            // 🎟️ MÁS ENTRADAS VENDIDAS: Mayor cantidad de QR generados
+            let topSeller = null;
+            let maxTicketsSold = 0;
             
             ranking.forEach(participant => {
                 // Solo analizar participantes que participaron en múltiples galas
@@ -2021,13 +2056,24 @@
                         };
                     }
                 }
+                
+                // 🎟️ MÁS ENTRADAS VENDIDAS: Contar QR generados (si existe el dato)
+                const ticketsSold = participant.qrCodesGenerated || participant.ticketsSold || participant.totalInvitados || 0;
+                if (ticketsSold > maxTicketsSold) {
+                    maxTicketsSold = ticketsSold;
+                    topSeller = {
+                        name: participant.name,
+                        ticketsSold: ticketsSold,
+                        avgScore: participant.finalScore
+                    };
+                }
             });
             
             // Actualizar los elementos DOM
-            updateSpecialStatsUI(mostConsistent, mostImproved, publicFavorite, realPublicFavorite);
+            updateSpecialStatsUI(mostConsistent, mostImproved, publicFavorite, realPublicFavorite, topSeller);
         }
         
-        function updateSpecialStatsUI(mostConsistent, mostImproved, publicFavorite, realPublicFavorite) {
+        function updateSpecialStatsUI(mostConsistent, mostImproved, publicFavorite, realPublicFavorite, topSeller) {
             // 🔥 MÁS CONSISTENTE
             const consistentElement = document.getElementById('most-consistent');
             if (mostConsistent && consistentElement) {
@@ -2047,7 +2093,7 @@
                 `;
             }
             
-            // �‍⚖️ MÁS EVALUADO (Mayor cantidad de evaluaciones de jurados)
+            // 👨‍⚖️ MÁS EVALUADO (Mayor cantidad de evaluaciones de jurados)
             const favoriteElement = document.getElementById('public-favorite');
             if (publicFavorite && favoriteElement) {
                 favoriteElement.innerHTML = `
@@ -2067,7 +2113,18 @@
                 realFavoriteElement.innerHTML = `<div class="text-gray-400">Sin votos públicos</div>`;
             }
             
-            console.log('✅ Estadísticas especiales actualizadas:', { mostConsistent, mostImproved, publicFavorite, realPublicFavorite });
+            // 🎟️ MÁS ENTRADAS VENDIDAS (QR generados)
+            const topSellerElement = document.getElementById('top-seller');
+            if (topSeller && topSellerElement) {
+                topSellerElement.innerHTML = `
+                    <div class="font-bold text-lg">${topSeller.name}</div>
+                    <div class="text-sm">${topSeller.ticketsSold} entradas vendidas • Promedio: ${topSeller.avgScore.toFixed(1)}/10</div>
+                `;
+            } else if (topSellerElement) {
+                topSellerElement.innerHTML = `<div class="text-gray-400">No hay datos de ventas</div>`;
+            }
+            
+            console.log('✅ Estadísticas especiales actualizadas:', { mostConsistent, mostImproved, publicFavorite, realPublicFavorite, topSeller });
         }
 
         // Botón para nuevo reporte
@@ -2406,7 +2463,7 @@
             window.open(whatsappUrl, '_blank');
         }
 
-        function generatePublicLink() {
+        async function generatePublicLink() {
             console.log('🔗 Iniciando generatePublicLink()...');
             console.log('📊 Estado de reportData:', reportData);
             
@@ -2437,9 +2494,15 @@
                 title: reportData.galas && reportData.galas.length > 1 ? 'CERTAMEN VYT-MUSIC' : 
                        reportData.galas && reportData.galas[0] ? `GALA: ${reportData.galas[0].name}` : 'CERTAMEN VYT-MUSIC',
                 period: reportData.period || { from: 'N/A', to: 'N/A' },
-                podium: ranking.slice(0, 3),
+                podium: ranking.slice(0, 3).map(p => ({
+                    name: p.name,
+                    photoURL: p.photoURL || null,
+                    finalScore: p.finalScore,
+                    galas: p.galas
+                })),
                 ranking: ranking.map(p => ({
                     name: p.name,
+                    photoURL: p.photoURL || null,
                     finalScore: p.finalScore,
                     galas: p.galas,
                     totalPublicVotes: p.totalPublicVotes || 0,
@@ -2449,13 +2512,19 @@
 
             console.log('📦 Datos públicos preparados:', publicReportData);
 
-            // Guardar en localStorage
             try {
+                // Guardar en Firebase en lugar de localStorage
+                console.log('💾 Guardando en Firebase...');
+                await setDoc(doc(db, 'public_reports', reportId), publicReportData);
+                console.log('✅ Datos guardados en Firebase con ID:', reportId);
+
+                // También guardar en localStorage como respaldo
                 localStorage.setItem(`report_${reportId}`, JSON.stringify(publicReportData));
-                console.log('💾 Datos guardados en localStorage con ID:', reportId);
+                console.log('💾 Respaldo guardado en localStorage');
+
             } catch (error) {
-                console.error('❌ Error guardando en localStorage:', error);
-                alert('❌ Error: No se pudo guardar el reporte.\n\nPuede ser que el navegador tenga el almacenamiento lleno.');
+                console.error('❌ Error guardando en Firebase:', error);
+                alert('❌ Error: No se pudo guardar el reporte.\n\n' + error.message);
                 return;
             }
 
