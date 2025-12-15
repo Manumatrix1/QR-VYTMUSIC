@@ -976,40 +976,82 @@
                     participant.attendedAllGalas = (galasParticipadas === totalGalas);
                     
                     if (galasFaltantes > 0) {
-                        console.log(`📊 ${participantName}: Faltó a ${galasFaltantes} galas. SIN DUPLICAR puntuaciones (promedio real sobre total de galas)`);
+                        // 🎯 REGLA: Solo se duplica si faltó a 1 SOLA gala (puede seguir compitiendo)
+                        // Si faltó a 2+ galas, se penaliza con promedio real
                         
-                        // Marcar galas faltantes en los detalles (SOLO para visualización, SIN duplicar puntos)
-                        selectedGalas.forEach(galaId => {
-                            const gala = allGalas.find(g => g.id === galaId);
-                            if (!gala) {
-                                console.error(`❌ No se encontró gala con ID: ${galaId}`);
-                                return;
-                            }
+                        if (galasFaltantes === 1) {
+                            // ✅ FALTÓ SOLO 1 GALA: Duplicar promedio (puede seguir compitiendo)
+                            const promedioActual = participant.totalVotes > 0 ? 
+                                (participant.totalScore / participant.totalVotes) : 0;
+                        
+                            console.log(`📊 ${participantName}: Faltó a 1 gala. Duplicando promedio ${promedioActual.toFixed(1)} (puede competir)`);
+                        
+                            participant.totalScore += promedioActual * galasFaltantes;
+                            participant.totalVotes += galasFaltantes;
                             
-                            // 🔧 Asegurar que galaDetails existe
-                            if (!participant.galaDetails) {
-                                participant.galaDetails = {};
-                            }
-                            if (!participant.galaDetails[gala.name]) {
-                                participant.galaDetails[gala.name] = {
-                                    score: 0, // ⚠️ 0 puntos porque NO participó
-                                    juryCount: 0,
-                                    juryDetails: [],
-                                    publicScore: 0,
-                                    publicVotes: 0,
-                                    missed: true, // 🚫 MARCADA COMO FALTANTE
-                                    participated: false, // ❌ NO PARTICIPÓ
-                                    repeated: false, // 🔄 NO se repite nada
-                                    votes: 0 // 0 votos
-                                };
-                            }
-                        });
+                            // Marcar la gala faltante como duplicada
+                            selectedGalas.forEach(galaId => {
+                                const gala = allGalas.find(g => g.id === galaId);
+                                if (!gala) return;
+                                
+                                if (!participant.galaDetails) {
+                                    participant.galaDetails = {};
+                                }
+                                if (!participant.galaDetails[gala.name]) {
+                                    participant.galaDetails[gala.name] = {
+                                        score: promedioActual,
+                                        juryCount: 0,
+                                        juryDetails: [],
+                                        publicScore: 0,
+                                        publicVotes: 0,
+                                        missed: true,
+                                        participated: false,
+                                        repeated: true, // 🔄 DUPLICADO
+                                        votes: 1
+                                    };
+                                }
+                            });
+                            
+                            // Calcular promedio normal (con duplicación)
+                            participant.finalScore = participant.totalVotes > 0 ? 
+                                (participant.totalScore / participant.totalVotes) : 0;
+                                
+                        } else {
+                            // ❌ FALTÓ 2+ GALAS: Penalización total (NO puede competir)
+                            console.log(`📊 ${participantName}: Faltó a ${galasFaltantes} galas. PENALIZADO (no puede competir)`);
+                            
+                            // Marcar galas faltantes sin duplicar
+                            selectedGalas.forEach(galaId => {
+                                const gala = allGalas.find(g => g.id === galaId);
+                                if (!gala) return;
+                                
+                                if (!participant.galaDetails) {
+                                    participant.galaDetails = {};
+                                }
+                                if (!participant.galaDetails[gala.name]) {
+                                    participant.galaDetails[gala.name] = {
+                                        score: 0,
+                                        juryCount: 0,
+                                        juryDetails: [],
+                                        publicScore: 0,
+                                        publicVotes: 0,
+                                        missed: true,
+                                        participated: false,
+                                        repeated: false,
+                                        votes: 0
+                                    };
+                                }
+                            });
+                            
+                            // Dividir entre TOTAL de galas (penalización)
+                            participant.finalScore = totalGalas > 0 ? 
+                                (participant.totalScore / totalGalas) : 0;
+                        }
+                    } else {
+                        // ✅ Vino a todas las galas: Promedio normal
+                        participant.finalScore = participant.totalVotes > 0 ? 
+                            (participant.totalScore / participant.totalVotes) : 0;
                     }
-                
-                    // ⚖️ PROMEDIO JUSTO: Dividir entre TOTAL de galas del certamen (no solo las que asistió)
-                    // Esto penaliza correctamente a quien faltó a galas
-                    participant.finalScore = totalGalas > 0 ? 
-                        (participant.totalScore / totalGalas) : 0;
                         
                     console.log(`✅ ${participantName}: Final=${participant.finalScore.toFixed(1)}, Galas=${participant.galas.length}/${totalGalas}`);
                     
@@ -2272,9 +2314,11 @@
                 const galaDetailsHtml = participant.galaDetails ? 
                     Object.entries(participant.galaDetails)
                         .map(([galaName, details]) => {
-                            const missedClass = details.missed ? 'text-red-400' : 'text-green-400';
-                            const missedIcon = details.missed ? '❌' : '✅';
-                            const scoreText = details.missed ? '0.0/10 (FALTA)' : `${details.score.toFixed(1)}/10 (${details.juryCount} jurados)`;
+                            const missedClass = details.missed ? 'text-yellow-400' : 'text-green-400';
+                            const missedIcon = details.missed ? (details.repeated ? '🔄' : '❌') : '✅';
+                            const scoreText = details.missed ? 
+                                (details.repeated ? `${details.score.toFixed(1)}/10 (DUPLICADO)` : '0.0/10 (FALTA)') : 
+                                `${details.score.toFixed(1)}/10 (${details.juryCount} jurados)`;
                             return `
                                 <div class="${missedClass} text-xs">
                                     ${missedIcon} ${galaName}: ${scoreText}
