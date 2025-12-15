@@ -79,24 +79,26 @@
 
                 <!-- SELECTOR DE BONUS POR PARTICIPACIÓN COMPLETA -->
                 <div class="bg-green-800 bg-opacity-20 p-4 rounded-lg mb-6 border border-green-400" id="penalty-selector-section" style="display: none;">
-                    <h3 class="text-lg font-bold text-green-300 mb-3">🏆 Selector de Bonus por Participación Completa</h3>
+                    <h3 class="text-lg font-bold text-green-300 mb-3">⚖️ Selector de Bonus y Duplicaciones</h3>
                     <div class="bg-blue-900/30 border border-blue-500 rounded-lg p-4 mb-4">
                         <p class="text-blue-200 text-sm mb-2">
-                            📝 <strong>Instrucciones:</strong> Selecciona los participantes que asistieron a TODAS las galas para otorgarles un bonus de +0.5 puntos.
+                            📝 <strong>Instrucciones:</strong>
                         </p>
-                        <p class="text-blue-300 text-xs">
-                            ⭐ Este es un premio por dedicación y participación completa en el certamen.
-                        </p>
+                        <ul class="text-blue-200 text-sm space-y-1 ml-4">
+                            <li>✅ <strong class="text-green-400">Verde:</strong> Vino a todas las galas → BONUS +0.5 puntos (pre-seleccionado)</li>
+                            <li>🔄 <strong class="text-yellow-400">Amarillo:</strong> Faltó a 1 gala → DUPLICAR promedio (tú decides)</li>
+                            <li>❌ <strong class="text-red-400">Rojo:</strong> Faltó a 2+ galas → NO ELEGIBLE</li>
+                        </ul>
                     </div>
                     <div id="penalty-participants-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                         <!-- Se llenará dinámicamente -->
                     </div>
                     <div class="mt-4 text-center">
                         <button id="apply-bonuses-btn" class="px-6 py-3 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700">
-                            ⭐ Aplicar Bonus y Generar Reporte
+                            ⭐ Aplicar Selección y Generar Reporte
                         </button>
                         <button id="skip-bonus-btn" class="ml-3 px-6 py-3 bg-gray-600 text-white font-bold rounded-lg hover:bg-gray-700">
-                            ⏭️ Continuar Sin Bonus
+                            ⏭️ Continuar Sin Modificaciones
                         </button>
                     </div>
                 </div>
@@ -975,83 +977,44 @@
                     // Marcar si vino a todas las galas
                     participant.attendedAllGalas = (galasParticipadas === totalGalas);
                     
+                    // Guardar cuántas galas le faltaron (para el selector manual)
+                    participant.missedGalas = galasFaltantes;
+                    
                     if (galasFaltantes > 0) {
-                        // 🎯 REGLA: Solo se duplica si faltó a 1 SOLA gala (puede seguir compitiendo)
-                        // Si faltó a 2+ galas, se penaliza con promedio real
+                        console.log(`📊 ${participantName}: Faltó a ${galasFaltantes} galas. Esperando selección manual.`);
                         
-                        if (galasFaltantes === 1) {
-                            // ✅ FALTÓ SOLO 1 GALA: Duplicar promedio (puede seguir compitiendo)
-                            const promedioActual = participant.totalVotes > 0 ? 
-                                (participant.totalScore / participant.totalVotes) : 0;
-                        
-                            console.log(`📊 ${participantName}: Faltó a 1 gala. Duplicando promedio ${promedioActual.toFixed(1)} (puede competir)`);
-                        
-                            participant.totalScore += promedioActual * galasFaltantes;
-                            participant.totalVotes += galasFaltantes;
+                        // Marcar galas faltantes sin duplicar nada
+                        selectedGalas.forEach(galaId => {
+                            const gala = allGalas.find(g => g.id === galaId);
+                            if (!gala) return;
                             
-                            // Marcar la gala faltante como duplicada
-                            selectedGalas.forEach(galaId => {
-                                const gala = allGalas.find(g => g.id === galaId);
-                                if (!gala) return;
-                                
-                                if (!participant.galaDetails) {
-                                    participant.galaDetails = {};
-                                }
-                                if (!participant.galaDetails[gala.name]) {
-                                    participant.galaDetails[gala.name] = {
-                                        score: promedioActual,
-                                        juryCount: 0,
-                                        juryDetails: [],
-                                        publicScore: 0,
-                                        publicVotes: 0,
-                                        missed: true,
-                                        participated: false,
-                                        repeated: true, // 🔄 DUPLICADO
-                                        votes: 1
-                                    };
-                                }
-                            });
-                            
-                            // Calcular promedio normal (con duplicación)
-                            participant.finalScore = participant.totalVotes > 0 ? 
-                                (participant.totalScore / participant.totalVotes) : 0;
-                                
-                        } else {
-                            // ❌ FALTÓ 2+ GALAS: Penalización total (NO puede competir)
-                            console.log(`📊 ${participantName}: Faltó a ${galasFaltantes} galas. PENALIZADO (no puede competir)`);
-                            
-                            // Marcar galas faltantes sin duplicar
-                            selectedGalas.forEach(galaId => {
-                                const gala = allGalas.find(g => g.id === galaId);
-                                if (!gala) return;
-                                
-                                if (!participant.galaDetails) {
-                                    participant.galaDetails = {};
-                                }
-                                if (!participant.galaDetails[gala.name]) {
-                                    participant.galaDetails[gala.name] = {
-                                        score: 0,
-                                        juryCount: 0,
-                                        juryDetails: [],
-                                        publicScore: 0,
-                                        publicVotes: 0,
-                                        missed: true,
-                                        participated: false,
-                                        repeated: false,
-                                        votes: 0
-                                    };
-                                }
-                            });
-                            
-                            // Dividir entre TOTAL de galas (penalización)
-                            participant.finalScore = totalGalas > 0 ? 
-                                (participant.totalScore / totalGalas) : 0;
-                        }
-                    } else {
-                        // ✅ Vino a todas las galas: Promedio normal
-                        participant.finalScore = participant.totalVotes > 0 ? 
-                            (participant.totalScore / participant.totalVotes) : 0;
+                            if (!participant.galaDetails) {
+                                participant.galaDetails = {};
+                            }
+                            if (!participant.galaDetails[gala.name]) {
+                                participant.galaDetails[gala.name] = {
+                                    score: 0,
+                                    juryCount: 0,
+                                    juryDetails: [],
+                                    publicScore: 0,
+                                    publicVotes: 0,
+                                    missed: true,
+                                    participated: false,
+                                    repeated: false,
+                                    votes: 0
+                                };
+                            }
+                        });
                     }
+                    
+                    // 📊 CALCULAR PROMEDIO INICIAL (sin duplicar nada automáticamente)
+                    // Dividir entre TOTAL de galas para que sea equitativo
+                    participant.finalScore = totalGalas > 0 ? 
+                        (participant.totalScore / totalGalas) : 0;
+                    
+                    // Guardar el promedio base para duplicar después si el usuario lo elige
+                    participant.baseAverage = participant.totalVotes > 0 ?
+                        (participant.totalScore / participant.totalVotes) : 0;
                         
                     console.log(`✅ ${participantName}: Final=${participant.finalScore.toFixed(1)}, Galas=${participant.galas.length}/${totalGalas}`);
                     
@@ -2305,10 +2268,31 @@
             participantsArray.sort((a, b) => b.finalScore - a.finalScore);
             
             participantsList.innerHTML = participantsArray.map(participant => {
+                // ✅ Elegible para BONUS (+0.5): Vino a todas las galas
                 const isEligibleForBonus = participant.attendedAllGalas;
-                const galasText = participant.galas.length === selectedGalas.length ? 
-                    'Participación completa' : 
-                    `Participó en ${participant.galas.length}/${selectedGalas.length} galas`;
+                // 🔄 Elegible para DUPLICAR: Faltó a 1 SOLA gala
+                const isEligibleForDuplicate = participant.missedGalas === 1;
+                // ❌ NO elegible: Faltó a 2+ galas
+                const isDisqualified = participant.missedGalas >= 2;
+                
+                let galasText, borderColor, bgColor, checkboxState;
+                
+                if (isEligibleForBonus) {
+                    galasText = '✅ Participación completa - BONUS +0.5';
+                    borderColor = 'border-green-500';
+                    bgColor = 'bg-green-900/20';
+                    checkboxState = 'checked';
+                } else if (isEligibleForDuplicate) {
+                    galasText = '🔄 Faltó a 1 gala - DUPLICAR promedio';
+                    borderColor = 'border-yellow-500';
+                    bgColor = 'bg-yellow-900/20';
+                    checkboxState = ''; // No checked por defecto
+                } else {
+                    galasText = '❌ Faltó a 2+ galas - NO ELEGIBLE';
+                    borderColor = 'border-red-500';
+                    bgColor = 'bg-red-900/20';
+                    checkboxState = 'disabled';
+                }
                 
                 // 📋 DETALLES DE CADA GALA
                 const galaDetailsHtml = participant.galaDetails ? 
@@ -2327,16 +2311,17 @@
                         }).join('') : '';
                 
                 return `
-                    <div class="participant-card p-4 rounded-lg border-2 ${isEligibleForBonus ? 'border-green-500 bg-green-900/20' : 'border-yellow-500 bg-yellow-900/20'}">
+                    <div class="participant-card p-4 rounded-lg border-2 ${borderColor} ${bgColor}">
                         <div class="flex items-center justify-between mb-2">
                             <label class="flex items-center cursor-pointer">
                                 <input type="checkbox" 
-                                       ${isEligibleForBonus ? 'checked' : 'disabled'} 
-                                       data-participant="${participant.name}" 
+                                       ${checkboxState}
+                                       data-participant="${participant.name}"
+                                       data-type="${isEligibleForBonus ? 'bonus' : isEligibleForDuplicate ? 'duplicate' : 'none'}" 
                                        class="mr-3 w-5 h-5 text-green-600">
                                 <div>
                                     <div class="font-bold text-white">${participant.name}</div>
-                                    <div class="text-sm ${isEligibleForBonus ? 'text-green-400' : 'text-yellow-400'}">
+                                    <div class="text-sm font-semibold">
                                         ${galasText}
                                     </div>
                                 </div>
@@ -2419,38 +2404,58 @@
         }
         
         async function applyManualBonuses() {
-            const checkboxes = document.querySelectorAll('.bonus-checkbox');
+            const checkboxes = document.querySelectorAll('input[type="checkbox"][data-participant]');
             let bonusesApplied = 0;
+            let duplicationsApplied = 0;
             
-            // Resetear todos los bonus primero
+            // Resetear todos los cálculos primero
             for (let participant of reportData.allParticipants.values()) {
-                participant.finalScore = participant.totalVotes > 0 ? 
-                    (participant.totalScore / participant.totalVotes) : 0;
+                // Volver al cálculo base (dividido entre total de galas)
+                const totalGalas = selectedGalas.length;
+                participant.finalScore = totalGalas > 0 ? 
+                    (participant.totalScore / totalGalas) : 0;
                 participant.bonus = 0;
                 participant.bonusApplied = false;
-                participant.avgScore = participant.finalScore;
+                participant.duplicated = false;
             }
             
-            // Aplicar bonus seleccionados
+            // Aplicar selecciones del usuario
             checkboxes.forEach(checkbox => {
-                if (checkbox.checked) {
-                    // Limpiar el ID del checkbox para obtener el nombre real
-                    const participantName = checkbox.id.replace('bonus-', '').replace(/-/g, ' ');
-                    
-                    // Buscar el participante por nombre (Map usa nombres como keys)
+                if (checkbox.checked && !checkbox.disabled) {
+                    const participantName = checkbox.getAttribute('data-participant');
+                    const actionType = checkbox.getAttribute('data-type');
                     const participant = reportData.allParticipants.get(participantName);
                     
                     if (participant) {
-                        // ⭐ APLICAR BONUS POR PARTICIPACIÓN COMPLETA
-                        participant.bonus = 0.5;
-                        participant.finalScore = participant.finalScore + participant.bonus;
-                        participant.bonusApplied = true;
-                        participant.avgScore = participant.finalScore;
-                        
-                        bonusesApplied++;
-                        console.log(`⭐ Bonus aplicado a ${participantName}: ${participant.finalScore.toFixed(1)}/10 (+0.5)`);
-                    } else {
-                        console.warn(`⚠️ No se encontró participante: ${participantName}`);
+                        if (actionType === 'bonus') {
+                            // ⭐ BONUS +0.5 (vino a todas las galas)
+                            participant.bonus = 0.5;
+                            participant.finalScore = participant.finalScore + participant.bonus;
+                            participant.bonusApplied = true;
+                            bonusesApplied++;
+                            console.log(`⭐ Bonus aplicado a ${participantName}: ${participant.finalScore.toFixed(1)}/10 (+0.5)`);
+                            
+                        } else if (actionType === 'duplicate') {
+                            // 🔄 DUPLICAR (faltó a 1 sola gala)
+                            // Calcular con duplicación: (totalScore + promedio) / totalVotos + 1
+                            const totalGalas = selectedGalas.length;
+                            participant.finalScore = participant.totalVotes > 0 ? 
+                                ((participant.totalScore + participant.baseAverage) / totalGalas) : 0;
+                            participant.duplicated = true;
+                            duplicationsApplied++;
+                            
+                            // Marcar la gala faltante como duplicada en los detalles
+                            if (participant.galaDetails) {
+                                for (let [galaName, details] of Object.entries(participant.galaDetails)) {
+                                    if (details.missed) {
+                                        details.score = participant.baseAverage;
+                                        details.repeated = true;
+                                    }
+                                }
+                            }
+                            
+                            console.log(`🔄 Duplicación aplicada a ${participantName}: ${participant.finalScore.toFixed(1)}/10`);
+                        }
                     }
                 }
             });
@@ -2458,13 +2463,12 @@
             // Ocultar selector
             document.getElementById('penalty-selector-section').style.display = 'none';
             
-            // Mostrar confirmación
-            console.log(`🎉 ${bonusesApplied} bonus aplicados por participación completa`);
+            console.log(`🎉 ${bonusesApplied} bonus y ${duplicationsApplied} duplicaciones aplicadas`);
             
-            // Generar el reporte completo con los bonus aplicados
+            // Generar el reporte completo
             await generateCertamenReportWithBonus();
             
-            alert(`🎉 ¡Bonus aplicados exitosamente a ${bonusesApplied} participantes!\n\n⭐ Premio por participación completa otorgado.\n\nReporte generado con éxito.`);
+            alert(`🎉 ¡Aplicaciones exitosas!\n\n⭐ ${bonusesApplied} bonus (+0.5) aplicados\n🔄 ${duplicationsApplied} duplicaciones aplicadas\n\nReporte generado con éxito.`);
         }
 
         // 📱 FUNCIONES PARA COMPARTIR RESULTADOS
