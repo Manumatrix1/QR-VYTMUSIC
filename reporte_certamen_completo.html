@@ -399,12 +399,18 @@
                         <p id="public-favorite" class="text-xl font-semibold">Calculando...</p>
                         <p class="text-sm opacity-80">Mayor cantidad de evaluaciones de jurados</p>
                     </div>
-                    <div class="bg-gradient-to-br from-purple-600 to-purple-800 p-6 rounded-lg text-center">
+                    <div class="bg-gradient-to-br from-purple-600 to-purple-800 p-6 rounded-lg text-center relative">
+                        <button onclick="editPublicFavorite()" class="absolute top-2 right-2 bg-white/20 hover:bg-white/30 rounded-lg px-3 py-1 text-xs" title="Editar manualmente">
+                            ✏️ Editar
+                        </button>
                         <h4 class="text-lg font-bold mb-3">👥 Favorito del Público</h4>
                         <p id="public-votes-favorite" class="text-xl font-semibold">Calculando...</p>
                         <p class="text-sm opacity-80">Mayor promedio de votos públicos</p>
                     </div>
-                    <div class="bg-gradient-to-br from-orange-600 to-orange-800 p-6 rounded-lg text-center">
+                    <div class="bg-gradient-to-br from-orange-600 to-orange-800 p-6 rounded-lg text-center relative">
+                        <button onclick="editTopSeller()" class="absolute top-2 right-2 bg-white/20 hover:bg-white/30 rounded-lg px-3 py-1 text-xs" title="Editar manualmente">
+                            ✏️ Editar
+                        </button>
                         <h4 class="text-lg font-bold mb-3">🎟️ Más Entradas Vendidas</h4>
                         <p id="top-seller" class="text-xl font-semibold">Calculando...</p>
                         <p class="text-sm opacity-80">Mayor cantidad de QR generados</p>
@@ -2165,10 +2171,8 @@
         });
 
         document.getElementById('share-final-report').addEventListener('click', function() {
-            const shareUrl = window.location.href;
-            navigator.clipboard.writeText(shareUrl).then(() => {
-                alert('Enlace del reporte copiado al portapapeles');
-            });
+            // Generar enlace público que funcione desde cualquier dispositivo
+            generatePublicLink();
         });
 
         // Detectar si viene desde una gala específica
@@ -2610,6 +2614,88 @@
             window.open(whatsappUrl, '_blank');
         }
 
+        // Variables para almacenar ediciones manuales
+        let manualPublicFavorite = null;
+        let manualTopSeller = null;
+
+        function editPublicFavorite() {
+            const artistNames = Array.from(reportData.allParticipants.values())
+                .map(p => p.name)
+                .sort()
+                .join('\n');
+            
+            const currentName = document.getElementById('public-votes-favorite').textContent.split('\n')[0];
+            
+            const newName = prompt(
+                `✏️ EDITAR FAVORITO DEL PÚBLICO\n\n` +
+                `Artistas disponibles:\n${artistNames}\n\n` +
+                `Ingresa el nombre del artista que quieres mostrar como "Favorito del Público":\n\n` +
+                `(Actual: ${currentName})`,
+                currentName
+            );
+            
+            if (newName && newName.trim()) {
+                // Buscar el artista en los datos
+                const artist = Array.from(reportData.allParticipants.values())
+                    .find(p => p.name.toLowerCase() === newName.trim().toLowerCase());
+                
+                if (artist) {
+                    manualPublicFavorite = artist;
+                    const element = document.getElementById('public-votes-favorite');
+                    element.innerHTML = `
+                        <div class="flex items-center justify-center gap-2">
+                            <img src="${artist.photoURL || 'https://placehold.co/40x40/9333ea/ffffff?text=ART'}" 
+                                 class="w-10 h-10 rounded-full border-2 border-white">
+                            <div>${artist.name}</div>
+                        </div>
+                        <div class="text-sm mt-2">✏️ Editado manualmente</div>
+                    `;
+                    alert('✅ Favorito del Público actualizado!\n\n' + artist.name);
+                } else {
+                    alert('❌ No se encontró el artista.\n\nVerifica que el nombre esté escrito exactamente igual.');
+                }
+            }
+        }
+
+        function editTopSeller() {
+            const artistNames = Array.from(reportData.allParticipants.values())
+                .map(p => p.name)
+                .sort()
+                .join('\n');
+            
+            const currentName = document.getElementById('top-seller').textContent.split('\n')[0];
+            
+            const newName = prompt(
+                `✏️ EDITAR MÁS ENTRADAS VENDIDAS\n\n` +
+                `Artistas disponibles:\n${artistNames}\n\n` +
+                `Ingresa el nombre del artista que quieres mostrar como "Más Entradas Vendidas":\n\n` +
+                `(Actual: ${currentName})`,
+                currentName
+            );
+            
+            if (newName && newName.trim()) {
+                // Buscar el artista en los datos
+                const artist = Array.from(reportData.allParticipants.values())
+                    .find(p => p.name.toLowerCase() === newName.trim().toLowerCase());
+                
+                if (artist) {
+                    manualTopSeller = artist;
+                    const element = document.getElementById('top-seller');
+                    element.innerHTML = `
+                        <div class="flex items-center justify-center gap-2">
+                            <img src="${artist.photoURL || 'https://placehold.co/40x40/ea580c/ffffff?text=ART'}" 
+                                 class="w-10 h-10 rounded-full border-2 border-white">
+                            <div>${artist.name}</div>
+                        </div>
+                        <div class="text-sm mt-2">✏️ Editado manualmente</div>
+                    `;
+                    alert('✅ Más Entradas Vendidas actualizado!\n\n' + artist.name);
+                } else {
+                    alert('❌ No se encontró el artista.\n\nVerifica que el nombre esté escrito exactamente igual.');
+                }
+            }
+        }
+
         function copyResults() {
             const shareText = document.getElementById('share-text').textContent;
             navigator.clipboard.writeText(shareText).then(() => {
@@ -2687,6 +2773,10 @@
                 checkSystemStatus();
             }, 3000);
         });
+
+        // Exponer funciones de edición al scope global
+        window.editPublicFavorite = editPublicFavorite;
+        window.editTopSeller = editTopSeller;
 
         // Verificar estado cada vez que se genera un reporte
         const originalCompleteReportGeneration = completeReportGeneration;
