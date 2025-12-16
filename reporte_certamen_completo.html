@@ -47,7 +47,15 @@
             <div class="glass-effect p-6 rounded-lg">
                 <h2 class="text-2xl font-bold mb-6 text-center">🎯 Configurar Reporte del Certamen</h2>
                 
-
+                <!-- FILTRO POR GRUPO -->
+                <div class="bg-purple-900 bg-opacity-30 p-4 rounded-lg mb-6 border border-purple-500">
+                    <h3 class="text-lg font-bold text-purple-300 mb-4">📁 Filtrar por Grupo de Eventos</h3>
+                    <select id="group-filter" class="w-full p-3 rounded-md bg-gray-900 text-white border border-gray-600 text-lg">
+                        <option value="all">📋 Todos los grupos</option>
+                        <!-- Los grupos se cargarán aquí dinámicamente -->
+                    </select>
+                    <p class="text-gray-400 text-sm mt-2">💡 <strong>Recomendado:</strong> Filtra por grupo para generar reportes solo del certamen que necesitas (ej: "Certamen 2024", "Certamen 2025")</p>
+                </div>
                 
                 <!-- FILTROS POR FECHA -->
                 <div class="bg-gray-800 p-4 rounded-lg mb-6">
@@ -458,8 +466,10 @@
         import { collection, getDocs, query, orderBy, doc, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         let allGalas = [];
+        let allGroups = [];
         let selectedGalas = [];
         let reportData = {};
+        let currentGroupFilter = 'all';
 
         // Elementos del DOM
         const galasCheckboxContainer = document.getElementById('galas-checkbox-container');
@@ -472,6 +482,30 @@
         const galaSelectorSection = document.getElementById('gala-selector-section');
         const reportContent = document.getElementById('report-content');
         const newReportBtn = document.getElementById('new-report-btn');
+        const groupFilterSelect = document.getElementById('group-filter');
+
+        // Cargar grupos
+        async function loadGroups() {
+            try {
+                const groupsSnapshot = await getDocs(query(collection(db, 'event_groups'), orderBy('createdAt', 'asc')));
+                allGroups = groupsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                
+                // Actualizar selector
+                groupFilterSelect.innerHTML = '<option value="all">📋 Todos los grupos</option>';
+                allGroups.forEach(group => {
+                    const eventCount = allGalas.filter(g => g.groupId === group.id).length;
+                    groupFilterSelect.innerHTML += `<option value="${group.id}">📁 ${group.name} (${eventCount} eventos)</option>`;
+                });
+
+                // Event listener para filtro
+                groupFilterSelect.addEventListener('change', () => {
+                    currentGroupFilter = groupFilterSelect.value;
+                    renderGalaCheckboxes(allGalas);
+                });
+            } catch (error) {
+                console.error('Error cargando grupos:', error);
+            }
+        }
 
         // Cargar todas las galas disponibles
         async function loadAllGalas() {
@@ -543,9 +577,11 @@
                                     id: eventDoc.id,
                                     name: eventData.name,
                                     date: eventData.date,
+                                    groupId: eventData.groupId || null,
                                     artistCount: artistsSnapshot.size,
                                     totalVotes: totalVotes,
                                     totalScore: totalScore,
+                                    hasJuryEvaluations: hasJuryEvaluations,
                                     juryEvaluations: jurySnapshot.size,
                                     avgScore: totalVotes > 0 ? (totalScore / totalVotes).toFixed(1) : 0,
                                     hasData: true
@@ -570,7 +606,9 @@
                     return;
                 }
                 
-                renderGalasCheckboxes();
+                // Cargar grupos y renderizar
+                await loadGroups();
+                renderGalaCheckboxes();
                 
             } catch (error) {
                 console.error('❌ Error cargando galas:', error);
@@ -580,7 +618,7 @@
             }
         }
 
-        function renderGalasCheckboxes(filteredGalas = null) {
+        function renderGalaCheckboxes(filteredGalas = null) {
             console.log('🎨 Renderizando galas...');
             
             // Verificar que el contenedor existe
@@ -589,7 +627,13 @@
                 return;
             }
             
-            const galasToShow = filteredGalas || allGalas;
+            let galasToShow = filteredGalas || allGalas;
+            
+            // Filtrar por grupo si está seleccionado
+            if (currentGroupFilter !== 'all') {
+                galasToShow = galasToShow.filter(g => g.groupId === currentGroupFilter);
+            }
+            
             console.log(`📋 Galas a mostrar: ${galasToShow.length}`);
             console.log('🔍 Array de galas:', galasToShow);
             

@@ -146,6 +146,16 @@
                 <!-- Selector de Galas Específicas (Oculto inicialmente) -->
                 <div id="economic-gala-selector-container" class="hidden mb-6">
                     <div class="p-4 bg-gray-700 rounded-lg">
+                        <!-- Filtro por Grupo -->
+                        <div class="bg-purple-900 bg-opacity-30 p-4 rounded-lg mb-4 border border-purple-500">
+                            <h4 class="text-md font-bold text-purple-300 mb-3">📁 Filtrar por Grupo de Eventos</h4>
+                            <select id="economic-group-filter" class="w-full p-3 rounded-md bg-gray-900 text-white border border-gray-600">
+                                <option value="all">📋 Todos los grupos</option>
+                                <!-- Los grupos se cargarán aquí -->
+                            </select>
+                            <p class="text-gray-400 text-xs mt-2">💡 Filtra por grupo para ver solo eventos de un certamen específico</p>
+                        </div>
+                        
                         <h3 class="text-lg font-bold text-green-300 mb-3">🎪 Seleccionar Galas para Análisis Económico</h3>
                         <p class="text-gray-400 text-sm mb-4">Selecciona las galas que deseas incluir en el reporte económico. Esto te permite comparar diferentes períodos o separar certámenes.</p>
                         
@@ -225,7 +235,7 @@
 
     <script type="module">
         import { db } from './firebase_config.js';
-        import { collection, onSnapshot, query, addDoc, deleteDoc, doc, getDocs, updateDoc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { collection, onSnapshot, query, addDoc, deleteDoc, doc, getDocs, updateDoc, getDoc, orderBy } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // Configurar enlaces con eventId
         function setupEventLinks() {
@@ -455,6 +465,9 @@
 
         async function loadEventsForEconomicSelector() {
             try {
+                // Cargar grupos primero
+                await loadGroupsForFilter();
+                
                 const eventsQuery = query(collection(db, 'events'));
                 const eventsSnapshot = await getDocs(eventsQuery);
                 allEventsData = eventsSnapshot.docs.map(doc => ({
@@ -462,43 +475,80 @@
                     ...doc.data()
                 }));
 
-                const container = document.getElementById('economic-events-checkboxes');
-                container.innerHTML = '';
-
-                if (allEventsData.length === 0) {
-                    container.innerHTML = '<p class="text-gray-400">No hay eventos registrados</p>';
-                    return;
-                }
-
-                allEventsData.forEach(event => {
-                    const checkboxDiv = document.createElement('div');
-                    checkboxDiv.className = 'flex items-center space-x-3 p-3 bg-gray-800 rounded-lg hover:bg-gray-700 transition-colors';
-                    
-                    const checkbox = document.createElement('input');
-                    checkbox.type = 'checkbox';
-                    checkbox.id = `econ-event-${event.id}`;
-                    checkbox.value = event.id;
-                    checkbox.className = 'w-4 h-4 text-green-600 bg-gray-900 border-gray-600 rounded focus:ring-green-500';
-                    checkbox.addEventListener('change', updateEconomicGalasSelection);
-
-                    const label = document.createElement('label');
-                    label.htmlFor = checkbox.id;
-                    label.className = 'flex-1 text-sm font-medium text-gray-300 cursor-pointer';
-                    label.innerHTML = `
-                        <span class="text-green-400">🎭 ${event.name}</span>
-                        <br>
-                        <span class="text-xs text-gray-400">📅 ${event.date || 'Sin fecha'} • 🆔 ${event.id.substring(0, 8)}...</span>
-                    `;
-
-                    checkboxDiv.appendChild(checkbox);
-                    checkboxDiv.appendChild(label);
-                    container.appendChild(checkboxDiv);
-                });
-
+                renderEconomicEvents();
             } catch (error) {
                 console.error('Error cargando eventos:', error);
                 document.getElementById('economic-events-checkboxes').innerHTML = '<p class="text-red-400">Error al cargar eventos</p>';
             }
+        }
+
+        async function loadGroupsForFilter() {
+            try {
+                const groupsQuery = query(collection(db, 'event_groups'), orderBy('createdAt'));
+                const groupsSnapshot = await getDocs(groupsQuery);
+                
+                const groupFilterSelect = document.getElementById('economic-group-filter');
+                if (!groupFilterSelect) return;
+                
+                // Limpiar y agregar opción "Todos"
+                groupFilterSelect.innerHTML = '<option value="all">📋 Todos los eventos</option>';
+                
+                groupsSnapshot.docs.forEach(doc => {
+                    const option = document.createElement('option');
+                    option.value = doc.id;
+                    option.textContent = doc.data().name;
+                    groupFilterSelect.appendChild(option);
+                });
+                
+                // Event listener para filtrado
+                groupFilterSelect.addEventListener('change', renderEconomicEvents);
+            } catch (error) {
+                console.error('Error cargando grupos:', error);
+            }
+        }
+
+        function renderEconomicEvents() {
+            const container = document.getElementById('economic-events-checkboxes');
+            const groupFilterSelect = document.getElementById('economic-group-filter');
+            const selectedGroup = groupFilterSelect ? groupFilterSelect.value : 'all';
+            
+            container.innerHTML = '';
+
+            // Filtrar eventos por grupo
+            let eventsToShow = allEventsData;
+            if (selectedGroup !== 'all') {
+                eventsToShow = allEventsData.filter(event => event.groupId === selectedGroup);
+            }
+
+            if (eventsToShow.length === 0) {
+                container.innerHTML = '<p class="text-gray-400">No hay eventos en este grupo</p>';
+                return;
+            }
+
+            eventsToShow.forEach(event => {
+                const checkboxDiv = document.createElement('div');
+                checkboxDiv.className = 'flex items-center space-x-3 p-3 bg-gray-800 rounded-lg hover:bg-gray-700 transition-colors';
+                
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.id = `econ-event-${event.id}`;
+                checkbox.value = event.id;
+                checkbox.className = 'w-4 h-4 text-green-600 bg-gray-900 border-gray-600 rounded focus:ring-green-500';
+                checkbox.addEventListener('change', updateEconomicGalasSelection);
+
+                const label = document.createElement('label');
+                label.htmlFor = checkbox.id;
+                label.className = 'flex-1 text-sm font-medium text-gray-300 cursor-pointer';
+                label.innerHTML = `
+                    <span class="text-green-400">🎭 ${event.name}</span>
+                    <br>
+                    <span class="text-xs text-gray-400">📅 ${event.date || 'Sin fecha'} • 🆔 ${event.id.substring(0, 8)}...</span>
+                `;
+
+                checkboxDiv.appendChild(checkbox);
+                checkboxDiv.appendChild(label);
+                container.appendChild(checkboxDiv);
+            });
         }
 
         function updateEconomicGalasSelection() {
