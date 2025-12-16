@@ -171,8 +171,8 @@
                     <div class="bg-gray-700 p-4 rounded-lg mb-6">
                         <h3 class="text-lg font-bold text-purple-300 mb-3">Crear Nuevo Grupo</h3>
                         <div class="flex gap-2">
-                            <input type="text" id="new-group-name" placeholder="Ej: Certamen 2025" class="flex-1 p-3 rounded-md bg-gray-900 text-white border border-gray-600">
-                            <button onclick="createGroup()" class="px-6 py-3 bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg">
+                            <input type="text" id="new-group-name" placeholder="Ej: Certamen 2025" class="flex-1 p-3 rounded-md bg-gray-900 text-white border border-gray-600" onkeypress="if(event.key==='Enter'){event.preventDefault();createGroup();}">
+                            <button onclick="createGroup()" type="button" class="px-6 py-3 bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg">
                                 ➕ Crear
                             </button>
                         </div>
@@ -359,7 +359,7 @@
                             <button onclick="renameGroup('${group.id}', '${group.name.replace(/'/g, "\\'")}')" class="px-3 py-1 bg-yellow-600 hover:bg-yellow-700 text-white rounded">
                                 ✏️ Renombrar
                             </button>
-                            <button onclick="deleteGroup('${group.id}')" class="px-3 py-1 bg-red-600 hover:bg-red-700 text-white rounded" ${eventCount > 0 ? 'disabled title="Elimina primero los eventos de este grupo"' : ''}>
+                            <button onclick="deleteGroup('${group.id}', ${eventCount})" class="px-3 py-1 bg-red-600 hover:bg-red-700 text-white rounded">
                                 🗑️ Eliminar
                             </button>
                         </div>
@@ -587,20 +587,33 @@
                 }
             };
 
-            window.deleteGroup = async function(groupId) {
-                if (confirm('¿Estás seguro de eliminar este grupo?\n\nLos eventos NO se eliminarán, solo quedarán sin grupo.')) {
-                    const groupRef = doc(db, 'event_groups', groupId);
-                    await deleteDoc(groupRef);
+            window.deleteGroup = async function(groupId, eventCount) {
+                const message = eventCount > 0 
+                    ? `¿Estás seguro de eliminar este grupo?\n\n⚠️ Hay ${eventCount} evento(s) en este grupo.\nLos eventos NO se eliminarán, pasarán a "Sin grupo".`
+                    : '¿Estás seguro de eliminar este grupo?';
                     
-                    // Actualizar eventos que tenían este grupo
-                    const eventsWithGroup = await getDocs(query(eventsCol, where('groupId', '==', groupId)));
-                    const batch = writeBatch(db);
-                    eventsWithGroup.forEach(eventDoc => {
-                        batch.update(eventDoc.ref, { groupId: deleteField() });
-                    });
-                    await batch.commit();
-                    
-                    await loadGroups();
+                if (confirm(message)) {
+                    try {
+                        // Primero actualizar eventos que tenían este grupo
+                        const eventsWithGroup = await getDocs(query(eventsCol, where('groupId', '==', groupId)));
+                        const batch = writeBatch(db);
+                        eventsWithGroup.forEach(eventDoc => {
+                            batch.update(eventDoc.ref, { groupId: deleteField() });
+                        });
+                        if (eventsWithGroup.size > 0) {
+                            await batch.commit();
+                        }
+                        
+                        // Luego eliminar el grupo
+                        const groupRef = doc(db, 'event_groups', groupId);
+                        await deleteDoc(groupRef);
+                        
+                        await loadGroups();
+                        alert(`Grupo eliminado. ${eventsWithGroup.size} evento(s) movido(s) a "Sin grupo".`);
+                    } catch (error) {
+                        console.error('Error eliminando grupo:', error);
+                        alert('Error al eliminar el grupo. Intenta de nuevo.');
+                    }
                 }
             };
 
