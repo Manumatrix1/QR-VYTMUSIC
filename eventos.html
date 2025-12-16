@@ -32,6 +32,12 @@
         .event-card:hover { transform: translateY(-4px); background-color: #374151; }
         .action-btn { transition: background-color 0.2s; }
         .hidden { display: none; }
+        .group-filter-btn { transition: all 0.2s; }
+        .group-filter-btn.active { 
+            background-color: white !important; 
+            color: #581c87 !important; 
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
     </style>
 </head>
 <body class="antialiased">
@@ -137,9 +143,67 @@
         </section>
 
         <main class="space-y-8">
+            <!-- Gestión de Grupos -->
+            <section class="bg-gradient-to-r from-purple-900 to-indigo-900 p-6 rounded-lg shadow-xl">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-2xl font-bold text-purple-200">📁 Grupos de Eventos</h2>
+                    <button id="manage-groups-btn" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-lg">
+                        ⚙️ Gestionar Grupos
+                    </button>
+                </div>
+                <div id="groups-list" class="flex flex-wrap gap-2">
+                    <button data-group="all" class="group-filter-btn px-4 py-2 bg-white text-purple-900 font-bold rounded-lg hover:bg-purple-100 active">
+                        📋 Todos
+                    </button>
+                    <!-- Los grupos se cargarán aquí dinámicamente -->
+                </div>
+            </section>
+
+            <!-- Modal para Gestionar Grupos -->
+            <div id="manage-groups-modal" class="fixed inset-0 bg-black bg-opacity-80 hidden flex items-center justify-center z-50 p-4">
+                <div class="bg-gray-800 rounded-2xl max-w-2xl w-full p-8 shadow-2xl">
+                    <div class="flex justify-between items-center mb-6">
+                        <h2 class="text-2xl font-bold text-purple-400">📁 Gestionar Grupos</h2>
+                        <button onclick="closeGroupsModal()" class="text-gray-400 hover:text-white text-3xl">&times;</button>
+                    </div>
+                    
+                    <!-- Crear Nuevo Grupo -->
+                    <div class="bg-gray-700 p-4 rounded-lg mb-6">
+                        <h3 class="text-lg font-bold text-purple-300 mb-3">Crear Nuevo Grupo</h3>
+                        <div class="flex gap-2">
+                            <input type="text" id="new-group-name" placeholder="Ej: Certamen 2025" class="flex-1 p-3 rounded-md bg-gray-900 text-white border border-gray-600">
+                            <button onclick="createGroup()" class="px-6 py-3 bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg">
+                                ➕ Crear
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Lista de Grupos Existentes -->
+                    <div class="bg-gray-700 p-4 rounded-lg">
+                        <h3 class="text-lg font-bold text-purple-300 mb-3">Grupos Existentes</h3>
+                        <div id="existing-groups-list" class="space-y-2">
+                            <!-- Los grupos se cargarán aquí -->
+                        </div>
+                    </div>
+
+                    <div class="mt-6 text-center">
+                        <button onclick="closeGroupsModal()" class="px-6 py-3 bg-gray-600 hover:bg-gray-700 text-white font-bold rounded-lg">
+                            ← Cerrar
+                        </button>
+                    </div>
+                </div>
+            </div>
+
             <section id="create-event-section" class="bg-gray-800 p-6 rounded-lg shadow-xl">
                 <h2 class="text-2xl font-bold mb-4">Crear Nuevo Evento</h2>
                 <form id="create-event-form" class="space-y-4">
+                    <div>
+                        <label for="event-group" class="block mb-1 font-semibold text-gray-300">Grupo del Evento</label>
+                        <select id="event-group" class="w-full p-3 rounded-md border border-gray-600 bg-gray-900 text-white">
+                            <option value="">Sin grupo</option>
+                            <!-- Los grupos se cargarán aquí dinámicamente -->
+                        </select>
+                    </div>
                     <div>
                         <label for="event-name" class="block mb-1 font-semibold text-gray-300">Nombre del Evento</label>
                         <input type="text" id="event-name" placeholder="Ej: Semifinal 1" required class="w-full p-3 rounded-md border border-gray-600 bg-gray-900 text-white">
@@ -192,7 +256,7 @@
 
     <script type="module">
         import { db, auth } from './firebase_config.js';
-        import { collection, addDoc, serverTimestamp, query, orderBy, onSnapshot, doc, updateDoc, deleteDoc, getDocs, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { collection, addDoc, serverTimestamp, query, orderBy, onSnapshot, doc, updateDoc, deleteDoc, getDocs, writeBatch, where, deleteField } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 
         // CAPTURAMOS LOS NUEVOS ELEMENTOS DE LA UI
@@ -222,16 +286,101 @@
 
         function startApp(user) {
             const eventsCol = collection(db, 'events');
+            const groupsCol = collection(db, 'event_groups');
             const createEventForm = document.getElementById('create-event-form');
             const eventsListDiv = document.getElementById('events-list');
             const loader = document.getElementById('events-loader');
             
+            let currentFilter = 'all';
+            let allGroups = [];
+            let allEvents = [];
+
+            // Cargar grupos
+            async function loadGroups() {
+                const groupsSnapshot = await getDocs(query(groupsCol, orderBy('createdAt', 'asc')));
+                allGroups = groupsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                
+                // Actualizar selector de grupos en formulario
+                const groupSelect = document.getElementById('event-group');
+                groupSelect.innerHTML = '<option value="">Sin grupo</option>';
+                allGroups.forEach(group => {
+                    groupSelect.innerHTML += `<option value="${group.id}">${group.name}</option>`;
+                });
+
+                // Actualizar filtros de grupos
+                const groupsList = document.getElementById('groups-list');
+                const currentButtons = groupsList.innerHTML;
+                const allButton = currentButtons.split('<!--')[0];
+                
+                let groupButtons = '';
+                allGroups.forEach(group => {
+                    const eventCount = allEvents.filter(e => e.data().groupId === group.id).length;
+                    groupButtons += `
+                        <button data-group="${group.id}" class="group-filter-btn px-4 py-2 bg-purple-600 text-white font-bold rounded-lg hover:bg-purple-700">
+                            📁 ${group.name} <span class="text-xs">(${eventCount})</span>
+                        </button>
+                    `;
+                });
+                
+                groupsList.innerHTML = allButton + groupButtons + '<!-- Los grupos se cargarán aquí dinámicamente -->';
+
+                // Event listeners para filtros
+                document.querySelectorAll('.group-filter-btn').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        document.querySelectorAll('.group-filter-btn').forEach(b => b.classList.remove('active', 'bg-white', 'text-purple-900'));
+                        btn.classList.add('active', 'bg-white', 'text-purple-900');
+                        currentFilter = btn.dataset.group;
+                        renderEvents(allEvents);
+                    });
+                });
+
+                // Cargar lista de grupos en modal de gestión
+                updateExistingGroupsList();
+            }
+
+            function updateExistingGroupsList() {
+                const existingGroupsList = document.getElementById('existing-groups-list');
+                if (allGroups.length === 0) {
+                    existingGroupsList.innerHTML = '<p class="text-gray-400 text-center">No hay grupos creados</p>';
+                    return;
+                }
+
+                existingGroupsList.innerHTML = '';
+                allGroups.forEach(group => {
+                    const eventCount = allEvents.filter(e => e.data().groupId === group.id).length;
+                    const groupDiv = document.createElement('div');
+                    groupDiv.className = 'flex items-center justify-between bg-gray-800 p-3 rounded-lg';
+                    groupDiv.innerHTML = `
+                        <div>
+                            <span class="text-white font-bold">📁 ${group.name}</span>
+                            <span class="text-gray-400 text-sm ml-2">(${eventCount} eventos)</span>
+                        </div>
+                        <div class="flex gap-2">
+                            <button onclick="renameGroup('${group.id}', '${group.name.replace(/'/g, "\\'")}')" class="px-3 py-1 bg-yellow-600 hover:bg-yellow-700 text-white rounded">
+                                ✏️ Renombrar
+                            </button>
+                            <button onclick="deleteGroup('${group.id}')" class="px-3 py-1 bg-red-600 hover:bg-red-700 text-white rounded" ${eventCount > 0 ? 'disabled title="Elimina primero los eventos de este grupo"' : ''}>
+                                🗑️ Eliminar
+                            </button>
+                        </div>
+                    `;
+                    existingGroupsList.appendChild(groupDiv);
+                });
+            }
+
             function renderEvents(events) {
+                allEvents = events;
                 eventsListDiv.innerHTML = '';
                 loader.style.display = 'none';
                 
-                if (events.length === 0) {
-                    eventsListDiv.innerHTML = '<p class="text-center text-gray-400">No hay eventos creados todavía.</p>';
+                // Filtrar eventos por grupo
+                let filteredEvents = events;
+                if (currentFilter !== 'all') {
+                    filteredEvents = events.filter(e => e.data().groupId === currentFilter);
+                }
+                
+                if (filteredEvents.length === 0) {
+                    eventsListDiv.innerHTML = '<p class="text-center text-gray-400">No hay eventos en este grupo.</p>';
                     return;
                 }
                 
@@ -247,42 +396,77 @@
                     activeEventAlert.classList.add('hidden');
                 }
 
-                events.forEach(eventDoc => {
+                // Agrupar eventos por grupo
+                const eventsByGroup = {};
+                filteredEvents.forEach(eventDoc => {
                     const event = { id: eventDoc.id, ...eventDoc.data() };
-                    const eventCard = document.createElement('div');
-                    const isActive = event.isActive || false;
-                    eventCard.className = `event-card p-4 rounded-lg shadow-md ${isActive ? 'border-2 border-green-500' : ''}`;
-                    eventCard.innerHTML = `
-                        <div class="flex justify-between items-center mb-3">
-                            <a href="panel_evento.html?eventId=${event.id}&eventName=${encodeURIComponent(event.name)}" class="flex-grow">
-                                <h3 class="text-xl font-bold text-sky-400">
-                                    ${isActive ? '⭐ ' : ''}${event.name}
-                                    ${isActive ? '<span class="ml-2 text-xs bg-green-600 px-2 py-1 rounded-full">ACTIVO</span>' : ''}
-                                </h3>
-                                <p class="text-gray-400">Fecha: ${event.date}</p>
-                            </a>
-                            <div class="flex space-x-2">
-                                <button data-id="${event.id}" data-name="${event.name}" class="edit-event-btn action-btn p-2 bg-gray-600 hover:bg-yellow-600 rounded-md" title="Editar nombre">✏️</button>
-                                <button data-id="${event.id}" class="delete-event-btn action-btn p-2 bg-gray-600 hover:bg-red-600 rounded-md" title="Eliminar evento">🗑️</button>
-                            </div>
-                        </div>
-                        <div class="flex items-center bg-gray-700 p-3 rounded-lg">
-                            <label class="flex items-center cursor-pointer flex-grow">
-                                <input type="checkbox" class="toggle-active-checkbox w-4 h-4 mr-3" data-id="${event.id}" ${isActive ? 'checked' : ''}>
-                                <span class="text-sm ${isActive ? 'text-green-400 font-bold' : 'text-gray-300'}">
-                                    ${isActive ? '✅ Evento activo para votación y escaneo' : 'Activar para votación/escaneo'}
-                                </span>
-                            </label>
-                        </div>
-                    `;
-                    eventsListDiv.appendChild(eventCard);
+                    const groupId = event.groupId || 'no-group';
+                    if (!eventsByGroup[groupId]) {
+                        eventsByGroup[groupId] = [];
+                    }
+                    eventsByGroup[groupId].push({ doc: eventDoc, event });
                 });
+
+                // Renderizar por grupos
+                Object.keys(eventsByGroup).forEach(groupId => {
+                    const groupName = groupId === 'no-group' 
+                        ? '📋 Sin grupo' 
+                        : '📁 ' + (allGroups.find(g => g.id === groupId)?.name || 'Grupo desconocido');
+                    
+                    // Solo mostrar encabezado de grupo si NO estamos filtrando por un grupo específico
+                    if (currentFilter === 'all') {
+                        const groupHeader = document.createElement('div');
+                        groupHeader.className = 'bg-gradient-to-r from-purple-900 to-purple-800 p-3 rounded-lg mb-2 mt-4';
+                        groupHeader.innerHTML = `<h3 class="text-lg font-bold text-purple-200">${groupName}</h3>`;
+                        eventsListDiv.appendChild(groupHeader);
+                    }
+
+                    eventsByGroup[groupId].forEach(({ doc: eventDoc, event }) => {
+                        const isActive = event.isActive || false;
+                        const eventCard = document.createElement('div');
+                        eventCard.className = `event-card p-4 rounded-lg shadow-md mb-3 ${isActive ? 'border-2 border-green-500' : ''}`;
+                        
+                        const groupBadge = event.groupId 
+                            ? `<span class="text-xs bg-purple-700 px-2 py-1 rounded-full ml-2">${allGroups.find(g => g.id === event.groupId)?.name || ''}</span>` 
+                            : '';
+                        
+                        eventCard.innerHTML = `
+                            <div class="flex justify-between items-center mb-3">
+                                <a href="panel_evento.html?eventId=${event.id}&eventName=${encodeURIComponent(event.name)}" class="flex-grow">
+                                    <h3 class="text-xl font-bold text-sky-400">
+                                        ${isActive ? '⭐ ' : ''}${event.name}
+                                        ${isActive ? '<span class="ml-2 text-xs bg-green-600 px-2 py-1 rounded-full">ACTIVO</span>' : ''}
+                                        ${groupBadge}
+                                    </h3>
+                                    <p class="text-gray-400">Fecha: ${event.date}</p>
+                                </a>
+                                <div class="flex space-x-2">
+                                    <button data-id="${event.id}" data-name="${event.name}" class="edit-event-btn action-btn p-2 bg-gray-600 hover:bg-yellow-600 rounded-md" title="Editar nombre">✏️</button>
+                                    <button data-id="${event.id}" class="delete-event-btn action-btn p-2 bg-gray-600 hover:bg-red-600 rounded-md" title="Eliminar evento">🗑️</button>
+                                </div>
+                            </div>
+                            <div class="flex items-center bg-gray-700 p-3 rounded-lg">
+                                <label class="flex items-center cursor-pointer flex-grow">
+                                    <input type="checkbox" class="toggle-active-checkbox w-4 h-4 mr-3" data-id="${event.id}" ${isActive ? 'checked' : ''}>
+                                    <span class="text-sm ${isActive ? 'text-green-400 font-bold' : 'text-gray-300'}">
+                                        ${isActive ? '✅ Evento activo para votación y escaneo' : 'Activar para votación/escaneo'}
+                                    </span>
+                                </label>
+                            </div>
+                        `;
+                        eventsListDiv.appendChild(eventCard);
+                    });
+                });
+
+                // Actualizar contadores en filtros
+                loadGroups();
             }
 
             createEventForm.addEventListener('submit', async (e) => {
                 e.preventDefault();
                 const eventName = document.getElementById('event-name').value;
                 const eventDate = document.getElementById('event-date').value;
+                const eventGroup = document.getElementById('event-group').value;
                 const makeActive = document.getElementById('event-active').checked;
 
                 if (eventName && eventDate) {
@@ -296,13 +480,19 @@
                         await batch.commit();
                     }
                     
-                    await addDoc(eventsCol, { 
+                    const eventData = { 
                         name: eventName, 
                         date: eventDate, 
                         isActive: makeActive,
                         createdAt: serverTimestamp(), 
                         ownerId: user.uid 
-                    });
+                    };
+                    
+                    if (eventGroup) {
+                        eventData.groupId = eventGroup;
+                    }
+                    
+                    await addDoc(eventsCol, eventData);
                     createEventForm.reset();
                 }
             });
@@ -361,6 +551,62 @@
             onSnapshot(q, (snapshot) => {
                 renderEvents(snapshot.docs);
             });
+
+            // Cargar grupos inicialmente
+            loadGroups();
+
+            // Event listener para abrir modal de gestión de grupos
+            document.getElementById('manage-groups-btn').addEventListener('click', () => {
+                document.getElementById('manage-groups-modal').classList.remove('hidden');
+            });
+
+            // Funciones globales para gestión de grupos
+            window.createGroup = async function() {
+                const groupName = document.getElementById('new-group-name').value.trim();
+                if (!groupName) {
+                    alert('Ingresa un nombre para el grupo');
+                    return;
+                }
+
+                await addDoc(groupsCol, {
+                    name: groupName,
+                    createdAt: serverTimestamp(),
+                    ownerId: user.uid
+                });
+
+                document.getElementById('new-group-name').value = '';
+                await loadGroups();
+            };
+
+            window.renameGroup = async function(groupId, currentName) {
+                const newName = prompt('Ingresa el nuevo nombre para el grupo:', currentName);
+                if (newName && newName.trim() !== '') {
+                    const groupRef = doc(db, 'event_groups', groupId);
+                    await updateDoc(groupRef, { name: newName.trim() });
+                    await loadGroups();
+                }
+            };
+
+            window.deleteGroup = async function(groupId) {
+                if (confirm('¿Estás seguro de eliminar este grupo?\n\nLos eventos NO se eliminarán, solo quedarán sin grupo.')) {
+                    const groupRef = doc(db, 'event_groups', groupId);
+                    await deleteDoc(groupRef);
+                    
+                    // Actualizar eventos que tenían este grupo
+                    const eventsWithGroup = await getDocs(query(eventsCol, where('groupId', '==', groupId)));
+                    const batch = writeBatch(db);
+                    eventsWithGroup.forEach(eventDoc => {
+                        batch.update(eventDoc.ref, { groupId: deleteField() });
+                    });
+                    await batch.commit();
+                    
+                    await loadGroups();
+                }
+            };
+
+            window.closeGroupsModal = function() {
+                document.getElementById('manage-groups-modal').classList.add('hidden');
+            };
         }
         
         // Función para abrir modal con los 3 links de acceso directo
