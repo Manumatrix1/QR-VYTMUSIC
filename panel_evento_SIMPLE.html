@@ -159,7 +159,12 @@
 
         <!-- FUNCIONES PRINCIPALES - DISEÑO LIMPIO -->
         <div class="mb-12">
-            <h2 class="text-4xl font-black text-center mb-8 text-white">Panel de Control</h2>
+            <div class="flex justify-between items-center mb-8">
+                <h2 class="text-4xl font-black text-white">Panel de Control</h2>
+                <button onclick="compartirAccesoDirecto()" class="px-6 py-3 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white font-bold rounded-full shadow-xl transition transform hover:scale-105 text-lg">
+                    📱 Compartir Links
+                </button>
+            </div>
             <div class="grid grid-cols-2 md:grid-cols-4 gap-6">
                 
                 <!-- Gestión de Artistas -->
@@ -288,6 +293,78 @@
 
     </div>
 
+    <!-- Modal para Compartir Links de Acceso Directo -->
+    <div id="share-links-modal" class="fixed inset-0 bg-black bg-opacity-80 hidden flex items-center justify-center z-50 p-4">
+        <div class="bg-gray-800 rounded-2xl max-w-2xl w-full p-8 shadow-2xl">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-2xl font-bold text-sky-400">📱 Compartir Links de Acceso Directo</h2>
+                <button onclick="closeShareLinksModal()" class="text-gray-400 hover:text-white text-3xl">&times;</button>
+            </div>
+            
+            <p class="text-gray-300 mb-6">Comparte estos links según el rol de cada persona:</p>
+            
+            <!-- Link para Asistentes -->
+            <div class="mb-6 bg-gray-700 p-4 rounded-lg">
+                <div class="flex items-center mb-2">
+                    <span class="text-2xl mr-2">🏠</span>
+                    <h3 class="font-bold text-white">Para Asistentes (Escáner de Entradas)</h3>
+                </div>
+                <p class="text-xs text-gray-400 mb-3">Los asistentes escanean QRs de entradas y marcan ingreso del público</p>
+                <div class="flex gap-2">
+                    <input type="text" id="link-asistentes" readonly class="flex-1 bg-gray-900 text-gray-300 px-3 py-2 rounded text-sm" />
+                    <button onclick="copyLink(event, 'link-asistentes')" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-semibold transition">
+                        📋 Copiar
+                    </button>
+                    <button onclick="shareWhatsApp('link-asistentes')" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded font-semibold transition">
+                        📲 WhatsApp
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Link para Jurados -->
+            <div class="mb-6 bg-gray-700 p-4 rounded-lg">
+                <div class="flex items-center mb-2">
+                    <span class="text-2xl mr-2">⚖️</span>
+                    <h3 class="font-bold text-white">Para Jurados (Panel de Evaluación)</h3>
+                </div>
+                <p class="text-xs text-gray-400 mb-3">Los jurados evalúan y puntúan a los artistas durante el evento</p>
+                <div class="flex gap-2">
+                    <input type="text" id="link-jurados" readonly class="flex-1 bg-gray-900 text-gray-300 px-3 py-2 rounded text-sm" />
+                    <button onclick="copyLink(event, 'link-jurados')" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-semibold transition">
+                        📋 Copiar
+                    </button>
+                    <button onclick="shareWhatsApp('link-jurados')" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded font-semibold transition">
+                        📲 WhatsApp
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Link para Público -->
+            <div class="mb-6 bg-gray-700 p-4 rounded-lg">
+                <div class="flex items-center mb-2">
+                    <span class="text-2xl mr-2">👥</span>
+                    <h3 class="font-bold text-white">Para Público (Votación con Entrada)</h3>
+                </div>
+                <p class="text-xs text-gray-400 mb-3">El público que compró entrada vota validando su QR</p>
+                <div class="flex gap-2">
+                    <input type="text" id="link-publico" readonly class="flex-1 bg-gray-900 text-gray-300 px-3 py-2 rounded text-sm" />
+                    <button onclick="copyLink(event, 'link-publico')" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-semibold transition">
+                        📋 Copiar
+                    </button>
+                    <button onclick="shareWhatsApp('link-publico')" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded font-semibold transition">
+                        📲 WhatsApp
+                    </button>
+                </div>
+            </div>
+
+            <div class="text-center mt-6">
+                <button onclick="closeShareLinksModal()" class="px-6 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-semibold transition">
+                    Cerrar
+                </button>
+            </div>
+        </div>
+    </div>
+
     <script type="module">
         import { db } from './firebase_config.js';
         import { collection, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
@@ -390,6 +467,53 @@
                 document.getElementById('total-judges').textContent = active.length;
             });
         }
+
+        // ======================================
+        // FUNCIÓN PARA COMPARTIR ACCESO DIRECTO
+        // ======================================
+        window.compartirAccesoDirecto = function() {
+            const baseUrl = 'https://vytmusic.netlify.app/';
+            
+            // Generar los 3 links del EVENTO ACTUAL (desde los parámetros URL)
+            const linkAsistentes = baseUrl + 'gestion_asistentes.html?eventId=' + eventId + '&eventName=' + encodeURIComponent(eventName);
+            const linkJurados = baseUrl + 'votacion_jurados_FINAL.html?eventId=' + eventId + '&eventName=' + encodeURIComponent(eventName);
+            const linkPublico = baseUrl + 'voting_page.html?eventId=' + eventId + '&eventName=' + encodeURIComponent(eventName);
+            
+            // Actualizar los inputs del modal
+            document.getElementById('link-asistentes').value = linkAsistentes;
+            document.getElementById('link-jurados').value = linkJurados;
+            document.getElementById('link-publico').value = linkPublico;
+            
+            // Mostrar el modal
+            document.getElementById('share-links-modal').classList.remove('hidden');
+        };
+
+        window.closeShareLinksModal = function() {
+            document.getElementById('share-links-modal').classList.add('hidden');
+        };
+
+        window.copyLink = function(e, inputId) {
+            const input = document.getElementById(inputId);
+            input.select();
+            document.execCommand('copy');
+            
+            const btn = e.target;
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '✅ Copiado!';
+            btn.classList.add('bg-green-700');
+            
+            setTimeout(() => {
+                btn.innerHTML = originalText;
+                btn.classList.remove('bg-green-700');
+            }, 2000);
+        };
+
+        window.shareWhatsApp = function(inputId) {
+            const input = document.getElementById(inputId);
+            const link = input.value;
+            const message = encodeURIComponent(`🎵 VYTMUSIC - ${eventName}\n\n${link}`);
+            window.open(`https://wa.me/?text=${message}`, '_blank');
+        };
     </script>
 </body>
 </html>
