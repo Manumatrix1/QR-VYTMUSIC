@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Forzar Actualización - VYTMUSIC</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Poppins', sans-serif;
+            background: linear-gradient(135deg, #1e3a8a 0%, #7c3aed 50%, #db2777 100%);
+        }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl p-6 max-w-md w-full">
+        <div class="text-center mb-6">
+            <div class="text-6xl mb-4">🔄</div>
+            <h1 class="text-2xl font-bold text-gray-800 mb-2">Forzar Actualización</h1>
+            <p class="text-gray-600 text-sm">Limpia el caché y actualiza la app</p>
+        </div>
+
+        <div id="status" class="mb-6 p-4 rounded-lg bg-blue-50 text-blue-800 text-sm">
+            Presiona el botón para forzar la actualización
+        </div>
+
+        <button id="updateBtn" onclick="forceUpdate()" class="w-full bg-gradient-to-r from-blue-600 to-purple-600 text-white font-bold py-4 rounded-xl shadow-lg hover:shadow-xl transition transform hover:scale-105 mb-4">
+            🚀 Actualizar Ahora
+        </button>
+
+        <button onclick="reloadApp()" class="w-full bg-gradient-to-r from-green-600 to-emerald-600 text-white font-bold py-4 rounded-xl shadow-lg hover:shadow-xl transition transform hover:scale-105 mb-4">
+            ✅ Volver a la App
+        </button>
+
+        <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded text-sm">
+            <p class="font-bold text-yellow-800 mb-2">⚠️ Si el problema persiste:</p>
+            <ol class="text-yellow-700 space-y-1 ml-4 list-decimal">
+                <li>Cierra COMPLETAMENTE el navegador</li>
+                <li>Abre Ajustes → Apps → Navegador</li>
+                <li>Almacenamiento → Borrar datos</li>
+                <li>Vuelve a abrir vytmusic.netlify.app</li>
+            </ol>
+        </div>
+    </div>
+
+    <script>
+        async function forceUpdate() {
+            const statusDiv = document.getElementById('status');
+            const btn = document.getElementById('updateBtn');
+            
+            try {
+                btn.disabled = true;
+                btn.textContent = '🔄 Actualizando...';
+                statusDiv.className = 'mb-6 p-4 rounded-lg bg-blue-50 text-blue-800 text-sm';
+                statusDiv.textContent = 'Paso 1/4: Desregistrando Service Workers...';
+                
+                // 1. Desregistrar todos los service workers
+                if ('serviceWorker' in navigator) {
+                    const registrations = await navigator.serviceWorker.getRegistrations();
+                    for (let registration of registrations) {
+                        await registration.unregister();
+                    }
+                    statusDiv.textContent = `✅ ${registrations.length} Service Workers desregistrados`;
+                }
+                
+                await sleep(1000);
+                
+                // 2. Limpiar todos los cachés
+                statusDiv.textContent = 'Paso 2/4: Limpiando cachés...';
+                if ('caches' in window) {
+                    const cacheNames = await caches.keys();
+                    for (let name of cacheNames) {
+                        await caches.delete(name);
+                    }
+                    statusDiv.textContent = `✅ ${cacheNames.length} cachés eliminados`;
+                }
+                
+                await sleep(1000);
+                
+                // 3. Limpiar localStorage y sessionStorage
+                statusDiv.textContent = 'Paso 3/4: Limpiando almacenamiento local...';
+                try {
+                    localStorage.clear();
+                    sessionStorage.clear();
+                    statusDiv.textContent = '✅ Almacenamiento local limpiado';
+                } catch (e) {
+                    console.log('No se pudo limpiar storage:', e);
+                }
+                
+                await sleep(1000);
+                
+                // 4. Registrar nuevo service worker
+                statusDiv.textContent = 'Paso 4/4: Registrando nuevo Service Worker...';
+                if ('serviceWorker' in navigator) {
+                    await navigator.serviceWorker.register('/service-worker.js');
+                    statusDiv.textContent = '✅ Nuevo Service Worker registrado';
+                }
+                
+                await sleep(1000);
+                
+                // Completado
+                statusDiv.className = 'mb-6 p-4 rounded-lg bg-green-50 text-green-800 text-sm font-bold';
+                statusDiv.innerHTML = `
+                    ✅ ¡Actualización completa!<br>
+                    <span class="font-normal">Presiona "Volver a la App" para ver los cambios</span>
+                `;
+                btn.textContent = '✅ Actualización Completa';
+                btn.className = 'w-full bg-gradient-to-r from-green-600 to-emerald-600 text-white font-bold py-4 rounded-xl shadow-lg mb-4 cursor-not-allowed opacity-75';
+                
+            } catch (error) {
+                statusDiv.className = 'mb-6 p-4 rounded-lg bg-red-50 text-red-800 text-sm';
+                statusDiv.textContent = '❌ Error: ' + error.message;
+                btn.disabled = false;
+                btn.textContent = '🔄 Reintentar';
+                btn.className = 'w-full bg-gradient-to-r from-red-600 to-pink-600 text-white font-bold py-4 rounded-xl shadow-lg hover:shadow-xl transition transform hover:scale-105 mb-4';
+            }
+        }
+        
+        function reloadApp() {
+            window.location.href = '/index.html?v=' + Date.now();
+        }
+        
+        function sleep(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+        
+        // Mostrar info del navegador
+        window.addEventListener('load', () => {
+            console.log('User Agent:', navigator.userAgent);
+            console.log('Service Worker support:', 'serviceWorker' in navigator);
+            console.log('Cache API support:', 'caches' in window);
+        });
+    </script>
+</body>
+</html>
