@@ -1,12 +1,14 @@
-// Service Worker para VYT MUSIC PWA - VERSIÓN CÁMARA OPTIMIZADA
-const CACHE_NAME = 'vyt-music-camera-v2'; // Cambiado para forzar actualización
+// Service Worker para VYT MUSIC PWA - VERSIÓN PANEL SIMPLIFICADO
+const CACHE_NAME = 'vyt-music-simple-v3'; // 🔥 Nueva versión - forzar actualización
 const urlsToCache = [
   '/',
   '/index.html',
   '/eventos.html',
-  '/escaner_inteligente_integrado.html', // ✅ AÑADIDO
-  '/test_camara_directo.html', // ✅ AÑADIDO
-  '/solucion_camara.html', // ✅ AÑADIDO
+  '/panel_evento_SIMPLE.html', // ✅ NUEVO PANEL
+  '/panel_evento.html',
+  '/escaner_inteligente_integrado.html',
+  '/test_camara_directo.html',
+  '/solucion_camara.html',
   '/votacion_jurados_FINAL.html',
   '/manifest.json',
   '/imagenes/logo-192x192.png',
@@ -21,7 +23,7 @@ const noCacheUrls = [
 
 // Instalación del Service Worker
 self.addEventListener('install', (event) => {
-  console.log('🔧 Service Worker: Instalando v2 (Cámara optimizada)');
+  console.log('🔧 Service Worker: Instalando v3 (Panel Simplificado)');
   // Forzar activación inmediata
   self.skipWaiting();
   
