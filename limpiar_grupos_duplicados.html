@@ -40,31 +40,43 @@
                 groups.push({ id: doc.id, ...doc.data() });
             });
 
-            // Agrupar por nombre
+            // Agrupar por nombre NORMALIZADO (lowercase, sin espacios extras)
             const groupsByName = {};
+            const normalizedToOriginal = {}; // Mapeo de nombre normalizado a nombre original
+            
             groups.forEach(group => {
-                if (!groupsByName[group.name]) {
-                    groupsByName[group.name] = [];
+                const normalizedName = group.name.toLowerCase().replace(/\s+/g, ' ').trim();
+                
+                if (!groupsByName[normalizedName]) {
+                    groupsByName[normalizedName] = [];
+                    normalizedToOriginal[normalizedName] = group.name; // Guardar primer nombre original
                 }
-                groupsByName[group.name].push(group);
+                groupsByName[normalizedName].push(group);
             });
 
             groupsList.innerHTML = '';
             let hasDuplicates = false;
 
-            Object.keys(groupsByName).forEach(name => {
-                const groupsWithName = groupsByName[name];
+            Object.keys(groupsByName).forEach(normalizedName => {
+                const groupsWithName = groupsByName[normalizedName];
                 if (groupsWithName.length > 1) {
                     hasDuplicates = true;
                     const div = document.createElement('div');
                     div.className = 'bg-red-900 border border-red-500 rounded-lg p-4';
+                    
+                    // Mostrar todas las variaciones de nombres encontradas
+                    const nameVariations = [...new Set(groupsWithName.map(g => g.name))];
+                    const displayName = nameVariations.length > 1 
+                        ? `${nameVariations[0]} (${nameVariations.length} variaciones)`
+                        : normalizedToOriginal[normalizedName];
+                    
                     div.innerHTML = `
-                        <h3 class="font-bold text-lg mb-2">📁 ${name}</h3>
+                        <h3 class="font-bold text-lg mb-2">📁 ${displayName}</h3>
                         <p class="text-sm text-gray-300 mb-2">⚠️ ${groupsWithName.length} duplicados encontrados:</p>
                         <ul class="space-y-1">
                             ${groupsWithName.map((g, idx) => `
                                 <li class="text-xs ${idx === 0 ? 'text-green-300' : 'text-red-300'}">
-                                    ${idx === 0 ? '✓ MANTENER' : '✗ ELIMINAR'}: ID ${g.id.substring(0, 8)}... (${new Date(g.createdAt?.seconds * 1000).toLocaleString()})
+                                    ${idx === 0 ? '✓ MANTENER' : '✗ ELIMINAR'}: "${g.name}" - ID ${g.id.substring(0, 8)}... (${g.createdAt?.seconds ? new Date(g.createdAt.seconds * 1000).toLocaleString() : 'Sin fecha'})
                                 </li>
                             `).join('')}
                         </ul>
@@ -97,25 +109,27 @@
                     groups.push({ id: doc.id, ...doc.data() });
                 });
 
-                // Agrupar por nombre
+                // Agrupar por nombre NORMALIZADO
                 const groupsByName = {};
                 groups.forEach(group => {
-                    if (!groupsByName[group.name]) {
-                        groupsByName[group.name] = [];
+                    const normalizedName = group.name.toLowerCase().replace(/\s+/g, ' ').trim();
+                    if (!groupsByName[normalizedName]) {
+                        groupsByName[normalizedName] = [];
                     }
-                    groupsByName[group.name].push(group);
+                    groupsByName[normalizedName].push(group);
                 });
 
                 let deletedCount = 0;
 
-                // Eliminar duplicados (mantener el primero de cada grupo)
-                for (const name in groupsByName) {
-                    const groupsWithName = groupsByName[name];
+                // Eliminar duplicados (mantener el primero/más antiguo de cada grupo)
+                for (const normalizedName in groupsByName) {
+                    const groupsWithName = groupsByName[normalizedName];
                     if (groupsWithName.length > 1) {
                         // Eliminar todos excepto el primero (más antiguo)
                         for (let i = 1; i < groupsWithName.length; i++) {
                             await deleteDoc(doc(db, 'event_groups', groupsWithName[i].id));
                             deletedCount++;
+                            console.log(`Eliminado: "${groupsWithName[i].name}" (ID: ${groupsWithName[i].id})`);
                         }
                     }
                 }
