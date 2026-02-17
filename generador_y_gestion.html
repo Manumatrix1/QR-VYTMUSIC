@@ -150,7 +150,7 @@
 
     <script type="module">
         import { db, storage } from './firebase_config.js';
-        import { collection, writeBatch, doc, query, where, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { collection, writeBatch, doc, query, where, getDocs, runTransaction } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
 
         const urlParams = new URLSearchParams(window.location.search);
@@ -283,7 +283,10 @@
                         </a>
                     </div>`;
 
+                const ticketNumberDisplay = ticket.ticketNumberFormatted ? `<div class="bg-sky-600 text-white px-4 py-2 rounded-lg font-bold text-xl mb-2">N° ${ticket.ticketNumberFormatted}</div>` : '';
+                
                 cardWrapper.innerHTML = `
+                    ${ticketNumberDisplay}
                     ${artistImageHTML}
                     <div class="w-full"><h3 class="text-2xl font-bold text-sky-400">${ticket.name}</h3><p class="text-gray-300">${ticket.seatLocation || 'Ubicación General'}</p></div>
                     ${codesContainer}
@@ -419,10 +422,27 @@
             const ticketsCol = collection(db, `events/${eventId}/tickets`);
             const priceTiers = getPriceTiers();
 
-            people.forEach(person => {
+            // 🎫 Obtener números secuenciales para las entradas
+            const counterDocRef = doc(db, `events/${eventId}/config`, 'ticketCounter');
+            const startNumber = await runTransaction(db, async (transaction) => {
+                const counterDoc = await transaction.get(counterDocRef);
+                let currentCount = 0;
+                if (counterDoc.exists()) {
+                    currentCount = counterDoc.data().count || 0;
+                }
+                const newCount = currentCount + people.length;
+                transaction.set(counterDocRef, { count: newCount }, { merge: true });
+                return currentCount + 1; // Retorna el primer número a usar
+            });
+
+            people.forEach((person, index) => {
+                const ticketNumber = startNumber + index;
                 const ticketId = `${prefix}-${crypto.randomUUID().substring(0, 8)}`;
                 const ticketData = { 
-                    id: ticketId, prefix, showName, showLocation, showAddress, seatLocation,
+                    id: ticketId, 
+                    ticketNumber: ticketNumber,
+                    ticketNumberFormatted: ticketNumber.toString().padStart(4, '0'),
+                    prefix, showName, showLocation, showAddress, seatLocation,
                     artistPhotoURL,
                     name: person.name, 
                     paymentStatus: person.status, 
