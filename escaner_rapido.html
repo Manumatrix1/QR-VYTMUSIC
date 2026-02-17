@@ -231,13 +231,16 @@
     <!-- Modal de búsqueda -->
     <div class="search-modal hidden" id="search-modal">
         <div class="search-content">
-            <h2 class="text-2xl font-black mb-4 text-center text-blue-400">
+            <h2 class="text-2xl font-black mb-2 text-center text-blue-400">
                 🔍 BÚSQUEDA MANUAL
             </h2>
+            <p class="text-sm text-gray-300 mb-4 text-center">
+                Buscá por: <strong class="text-yellow-300">N° de entrada</strong>, <strong class="text-yellow-300">Nombre</strong> o <strong class="text-yellow-300">ID</strong>
+            </p>
             <input type="text" 
                    class="search-input" 
                    id="search-input"
-                   placeholder="Número (ej: 0045) o Nombre..."
+                   placeholder="Ej: 1, 0045, María López..."
                    autocomplete="off">
             <div id="search-results"></div>
             <button class="btn btn-close w-full mt-4" id="close-search">
@@ -295,7 +298,8 @@
                     state.tickets.set(doc.id, {
                         id: doc.id,
                         name: data.name || 'Sin nombre',
-                        number: data.ticketNumber || '',
+                        ticketNumber: data.ticketNumber || null,
+                        ticketNumberFormatted: data.ticketNumberFormatted || null,
                         used: data.used || false,
                         ...data
                     });
@@ -370,7 +374,7 @@
                 state.counter++;
                 ui.counter.textContent = state.counter;
                 
-                showFeedback('success', ticket.name, `Nº ${ticket.number || 'S/N'}`);
+                showFeedback('success', ticket.name, ticket.ticketNumberFormatted ? `Nº ${ticket.ticketNumberFormatted}` : 'Entrada registrada');
             } catch (error) {
                 console.error('❌ Error actualizando:', error);
                 showFeedback('error', 'ERROR', 'No se pudo registrar');
@@ -417,16 +421,17 @@
         function performSearch(query) {
             const normalized = query.toLowerCase().trim();
             
-            if (normalized.length < 2) {
-                ui.searchResults.innerHTML = '<div class="no-results">Escribe al menos 2 caracteres</div>';
+            if (normalized.length < 1) {
+                ui.searchResults.innerHTML = '<div class="no-results">Escribe al menos 1 carácter</div>';
                 return;
             }
 
             const results = Array.from(state.tickets.values()).filter(ticket => {
                 const nameMatch = ticket.name.toLowerCase().includes(normalized);
-                const numberMatch = ticket.number.includes(query.trim());
+                const numberMatch = ticket.ticketNumber && ticket.ticketNumber.toString().includes(query.trim());
+                const formattedMatch = ticket.ticketNumberFormatted && ticket.ticketNumberFormatted.includes(query.trim());
                 const idMatch = ticket.id.toLowerCase().includes(normalized);
-                return nameMatch || numberMatch || idMatch;
+                return nameMatch || numberMatch || formattedMatch || idMatch;
             });
 
             if (results.length === 0) {
@@ -438,7 +443,7 @@
                 <div class="search-result ${ticket.used ? 'used' : ''}" 
                      onclick="window.selectTicket('${ticket.id}', ${ticket.used})">
                     <div class="result-name">
-                        ${ticket.number ? `<span class="result-number">Nº ${ticket.number}</span>` : ''}
+                        ${ticket.ticketNumberFormatted ? `<span class="result-number">Nº ${ticket.ticketNumberFormatted}</span>` : ''}
                         ${ticket.name}
                     </div>
                     <div class="result-id">${ticket.id}</div>
