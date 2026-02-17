@@ -61,16 +61,6 @@
             </div>
         </header>
 
-        <!-- VERIFICADOR CRÍTICO DE DATOS -->
-        <section class="bg-red-900 border-2 border-red-600 p-6 rounded-lg shadow-xl mb-8">
-            <h2 class="text-2xl font-bold mb-4 text-red-300">🚨 VERIFICADOR DE DATOS CRÍTICOS</h2>
-            <p class="text-red-200 mb-4">Audita la integridad de votaciones del jurado, votos del público y conteo de asistentes</p>
-            <a href="verificador_datos_criticos.html?eventId=gmxINHvzSJ18Zt3SNeW7" 
-               class="block w-full text-center px-4 py-3 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700 transition-colors">
-                🔍 VERIFICAR DATOS VITALES
-            </a>
-        </section>
-
         <main class="space-y-8">
             <!-- Gestión de Grupos -->
             <section class="bg-gradient-to-r from-purple-900 to-indigo-900 p-6 rounded-lg shadow-xl">
@@ -175,6 +165,14 @@
                     <p id="events-loader" class="text-center text-gray-400">Cargando eventos...</p>
                 </div>
             </section>
+
+            <!-- VERIFICADOR DE DATOS CRÍTICOS (Herramienta de auditoría) -->
+            <div class="mt-8 pt-6 border-t border-gray-700">
+                <a href="verificador_datos_criticos.html?eventId=gmxINHvzSJ18Zt3SNeW7" 
+                   class="block text-center px-4 py-2 bg-gray-700 text-gray-300 text-sm font-semibold rounded-lg hover:bg-red-900 hover:text-red-200 transition-colors">
+                    🔍 Verificador de Datos Críticos
+                </a>
+            </div>
         </main>
     </div>
 
@@ -492,10 +490,32 @@
                     return;
                 }
 
-                // Verificar si ya existe un grupo con ese nombre
-                const existingGroup = allGroups.find(g => g.name.toLowerCase() === groupName.toLowerCase());
+                // Normalizar nombre para comparación (lowercase, sin espacios extras, sin caracteres especiales)
+                const normalizedInputName = groupName.toLowerCase().replace(/\s+/g, ' ').trim();
+
+                // Verificar si ya existe un grupo con ese nombre (comparación normalizada)
+                const existingGroup = allGroups.find(g => {
+                    const normalizedExistingName = g.name.toLowerCase().replace(/\s+/g, ' ').trim();
+                    return normalizedExistingName === normalizedInputName;
+                });
+                
                 if (existingGroup) {
-                    alert(`Ya existe un grupo llamado "${existingGroup.name}"`);
+                    alert(`Ya existe un grupo llamado "${existingGroup.name}". Por favor elige otro nombre.`);
+                    document.getElementById('new-group-name').focus();
+                    return;
+                }
+
+                // Verificar también en Firebase directamente por si hay cambios no sincronizados
+                const allGroupsSnapshot = await getDocs(groupsCol);
+                const duplicateInFirebase = allGroupsSnapshot.docs.find(doc => {
+                    const existingName = doc.data().name.toLowerCase().replace(/\s+/g, ' ').trim();
+                    return existingName === normalizedInputName;
+                });
+                
+                if (duplicateInFirebase) {
+                    alert(`Ya existe un grupo llamado "${duplicateInFirebase.data().name}". Por favor elige otro nombre.`);
+                    document.getElementById('new-group-name').focus();
+                    await loadGroups(); // Recargar por si había desincronización
                     return;
                 }
 
@@ -508,6 +528,7 @@
 
                     document.getElementById('new-group-name').value = '';
                     await loadGroups();
+                    alert(`✅ Grupo "${groupName}" creado exitosamente`);
                 } catch (error) {
                     console.error('Error creando grupo:', error);
                     alert('Error al crear el grupo. Intenta de nuevo.');
