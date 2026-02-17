@@ -71,9 +71,10 @@
         <p class="text-xl mb-4">La persona ya puede ingresar al evento</p>
         <div id="success-ticket-info" class="ticket-info max-w-md"></div>
         <div id="success-qr-container" class="qr-preview mt-6"></div>
-        <button id="close-success-btn" class="mt-6 px-8 py-4 bg-white text-green-600 font-bold rounded-lg text-xl hover:bg-gray-100">
-            ✅ Continuar
+                <button id="close-success-btn" class="mt-8 px-8 py-4 bg-white text-green-600 font-bold rounded-lg text-xl hover:bg-gray-100 transform hover:scale-105 transition-all">
+            ✅ Continuar Generando Entradas
         </button>
+                <p class="text-white text-sm mt-4 opacity-80">⏱️ Esta ventana se cerrará automáticamente en 30 segundos</p>
     </div>
 
     <div class="container mx-auto max-w-2xl p-4 sm:p-6">
@@ -154,7 +155,8 @@
                 <button id="generate-ticket-btn" class="w-full max-w-md px-8 py-4 bg-gradient-to-r from-green-600 to-green-700 text-white font-bold rounded-lg text-xl hover:from-green-700 hover:to-green-800 transform transition-all duration-200 hover:scale-105 shadow-lg">
                     🎫 GENERAR ENTRADA INMEDIATA
                 </button>
-                <p class="text-gray-400 mt-3 text-sm">La entrada se marca automáticamente como "cobrada" y queda habilitada para votación</p>
+                <p class="text-gray-400 mt-3 text-sm">✅ Entrada con QR grande legible + número secuencial</p>
+                <p class="text-gray-400 mt-1 text-sm">✅ Marcada como "cobrada" y habilitada para votación automáticamente</p>
             </section>
 
             <!-- Historial Rápido -->
@@ -169,7 +171,7 @@
 
     <script type="module">
         import { db, auth, storage } from './firebase_config.js';
-        import { collection, addDoc, doc, writeBatch, serverTimestamp, query, orderBy, limit, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { collection, addDoc, doc, writeBatch, serverTimestamp, query, orderBy, limit, onSnapshot, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 
         // Obtener parámetros del evento
@@ -218,39 +220,98 @@
             ui.loadingOverlay.classList.add('hidden');
         }
 
+        function displayMessage(message, type = 'success') {
+            console.log(`[${type.toUpperCase()}] ${message}`);
+            // Opcional: agregar toast visual aquí
+        }
+
         function showSuccess(ticketData) {
             // Mostrar información del ticket
             ui.successTicketInfo.innerHTML = `
                 <div class="text-left">
-                    <p class="font-bold text-lg">👤 ${ticketData.name}</p>
+                    <p class="font-bold text-2xl mb-2">👤 ${ticketData.name}</p>
+                    <p class="text-lg font-mono bg-yellow-400 text-black px-3 py-1 rounded-lg inline-block mb-2">N° ${ticketData.ticketNumber}</p>
                     <p class="text-sm opacity-80">ID: ${ticketData.id}</p>
                     <p class="text-sm opacity-80">💰 $${ticketData.price} - ${ticketData.paymentMethod}</p>
                     <p class="text-sm opacity-80">👔 Vendido por: ${ticketData.soldBy}</p>
                 </div>
             `;
 
-            // Generar QR
+            // Generar QR más grande y con mayor corrección de errores
             ui.successQrContainer.innerHTML = '';
             new QRCode(ui.successQrContainer, {
                 text: ticketData.id,
-                width: 200,
-                height: 200,
+                width: 300,  // ✅ MÁS GRANDE - mejor legibilidad
+                height: 300,
                 colorDark: "#000000",
                 colorLight: "#ffffff",
-                correctLevel: QRCode.CorrectLevel.M
+                correctLevel: QRCode.CorrectLevel.H  // ✅ MAYOR CORRECCIÓN - resiste manchas/daños
             });
+
+            // Botón para descargar QR
+            const downloadBtn = document.createElement('button');
+            downloadBtn.textContent = '📥 Descargar QR como Imagen';
+            downloadBtn.className = 'mt-4 px-6 py-3 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 transition-all';
+            downloadBtn.onclick = () => downloadQRImage(ticketData.id, ticketData.name);
+            ui.successQrContainer.appendChild(downloadBtn);
 
             ui.successOverlay.classList.remove('hidden');
 
-            // Auto-cerrar después de 10 segundos
+            // Auto-cerrar después de 30 segundos (más tiempo para escanear/descargar)
             setTimeout(() => {
                 hideSuccess();
-            }, 10000);
+            }, 30000);
         }
 
         function hideSuccess() {
             ui.successOverlay.classList.add('hidden');
             clearForm();
+        }
+
+        // Función para descargar QR como imagen
+        function downloadQRImage(ticketId, clientName) {
+            const qrCanvas = ui.successQrContainer.querySelector('canvas');
+            if (!qrCanvas) return;
+            
+            // Crear canvas más grande con margen blanco
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = 400;
+            canvas.height = 480;
+            
+            // Fondo blanco
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Título
+            ctx.fillStyle = '#000000';
+            ctx.font = 'bold 20px Inter, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('🎫 ENTRADA VYT MUSIC', 200, 35);
+            
+            // Nombre
+            ctx.font = '16px Inter, sans-serif';
+            ctx.fillText(clientName, 200, 60);
+            
+            // QR
+            ctx.drawImage(qrCanvas, 50, 80, 300, 300);
+            
+            // ID
+            ctx.font = '12px monospace';
+            ctx.fillText(ticketId, 200, 405);
+            
+            // Instrucciones
+            ctx.font = '14px Inter, sans-serif';
+            ctx.fillText('Presentar al ingresar al evento', 200, 440);
+            ctx.fillText('vytmusic.netlify.app', 200, 465);
+            
+            // Descargar
+            const link = document.createElement('a');
+            link.download = `Entrada_${clientName.replace(/\s+/g, '_')}_${ticketId.substring(0, 15)}.png`;
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+            
+            displayMessage('✅ QR descargado exitosamente', 'success');
         }
 
         function clearForm() {
@@ -271,7 +332,7 @@
                 <div class="bg-gray-700 p-3 rounded-lg border-l-4 border-green-500">
                     <div class="flex justify-between items-center">
                         <div>
-                            <p class="font-semibold">${ticket.name}</p>
+                            <p class="font-semibold">${ticket.name} <span class="text-yellow-400 text-xs ml-2">N° ${ticket.ticketNumber}</span></p>
                             <p class="text-sm text-gray-300">$${ticket.price} - ${ticket.paymentMethod}</p>
                         </div>
                         <div class="text-right">
@@ -307,12 +368,28 @@
             try {
                 showLoading('Generando entrada en puerta...');
 
+                // Obtener número secuencial
+                let ticketNumber = null;
+                try {
+                    const counterRef = doc(db, `events/${eventId}/meta`, 'ticket_counter');
+                    const counterDoc = await getDoc(counterRef);
+                    const currentCount = counterDoc.exists() ? (counterDoc.data().count || 0) : 0;
+                    ticketNumber = currentCount + 1;
+                    
+                    // Actualizar contador
+                    await setDoc(counterRef, { count: ticketNumber }, { merge: true });
+                } catch (error) {
+                    console.warn('⚠️ Error obteniendo número secuencial:', error);
+                    ticketNumber = Date.now() % 10000; // Fallback
+                }
+
                 // Generar ID único para la entrada
                 const ticketId = `PUERTA-${Date.now()}-${crypto.randomUUID().substring(0, 6)}`;
                 
                 // Crear datos del ticket
                 const ticketData = {
                     id: ticketId,
+                    ticketNumber: ticketNumber.toString().padStart(4, '0'), // ✅ NÚMERO SECUENCIAL: 0001, 0002...
                     prefix: 'PUERTA',
                     showName: eventName,
                     showLocation: 'Evento en Vivo',
