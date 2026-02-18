@@ -1,0 +1,100 @@
+﻿            const seatLocation = ui.ticketSeatLocationInput.value.trim();
+            const photoFile = ui.artistPhotoInput.files[0];
+            
+            if (!showName || !prefix || !showLocation) { 
+                alert('Completa el nombre del show, el lugar y el prefijo.'); 
+                return; 
+            }
+            
+            setLoading(true);
+
+            let artistPhotoURL = null;
+            if (photoFile) {
+                setLoading(true, 'Subiendo foto...');
+                const photoRef = ref(storage, `events/${eventId}/ticket_assets/${Date.now()}-${photoFile.name}`);
+                await uploadBytes(photoRef, photoFile);
+                artistPhotoURL = await getDownloadURL(photoRef);
+            }
+
+            setLoading(true, 'Generando entradas...');
+            generatedTicketsData = [];
+            const batch = writeBatch(db);
+            const ticketsCol = collection(db, `events/${eventId}/tickets`);
+            const priceTiers = getPriceTiers();
+
+            // Obtener contador para numeración
+            const counterRef = doc(db, `events/${eventId}/config`, 'ticketCounter');
+            let startNum = 1;
+            try {
+                startNum = await runTransaction(db, async (t) => {
+                    const counterDoc = await t.get(counterRef);
+                    const current = counterDoc.exists() ? (counterDoc.data().count || 0) : 0;
+                    t.set(counterRef, { count: current + people.length }, { merge: true });
+                    return current + 1;
+                });
+            } catch (e) { console.error('Error contador:', e); }
+
+            people.forEach((person, idx) => {
+                const ticketNum = startNum + idx;
+                const ticketId = `${prefix}-${crypto.randomUUID().substring(0, 8)}`;
+                const ticketData = { 
+                    id: ticketId, prefix, showName, showLocation, showAddress, seatLocation,
+                    artistPhotoURL,
+                    name: person.name, 
+                    paymentStatus: person.status, 
+                    price: priceTiers[person.tier] || 0, 
+                    tierName: person.tier, 
+                    used: false,
+                    ticketNumber: ticketNum,
+                    ticketNumberFormatted: ticketNum.toString().padStart(4, '0'),
+                    generatedAt: new Date().toISOString() 
+                };
+                batch.set(doc(ticketsCol, ticketId), ticketData);
+                generatedTicketsData.push(ticketData);
+            });
+            
+            await batch.commit();
+            setLoading(false);
+            
+            generatedPrefix = prefix;
+
+            ui.formContainer.classList.add('hidden');
+            ui.generatedTicketsContainer.classList.remove('hidden');
+            renderGeneratedTickets();
+        });
+        
+        ui.shareBatchQrsBtn.addEventListener('click', () => {
+            if (!generatedPrefix) return alert('Genera entradas primero para compartir el enlace.');
+            const path = window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/'));
+            const baseUrl = `${window.location.origin}${path}`;
+            const shareableLink = `${baseUrl}/visor_qr_compartido.html?eventId=${eventId}&artist=${encodeURIComponent(generatedPrefix)}`; 
+            ui.shareLinkDisplay.value = shareableLink;
+            ui.shareLinkModal.classList.remove('hidden');
+        });
+        
+        ui.deleteBatchBtn.addEventListener('click', async () => {
+            if (!generatedPrefix) {
+                alert('No hay entradas generadas recientemente para borrar.');
+                return;
+            }
+            
+            if (!confirm(`┬┐Est├ís seguro de que quieres borrar TODAS las entradas del artista "${generatedPrefix}"? Esta acci├│n no se puede deshacer.`)) {
+                return;
+            }
+
+            setLoading(true, 'Borrando entradas...');
+            try {
+                const ticketsToDeleteQuery = query(collection(db, `events/${eventId}/tickets`), where("prefix", "==", generatedPrefix));
+                const ticketsSnapshot = await getDocs(ticketsToDeleteQuery);
+
+                if (ticketsSnapshot.empty) {
+                    alert('No se encontraron entradas para este artista.');
+                    setLoading(false);
+                    return;
+                }
+
+                const batch = writeBatch(db);
+                ticketsSnapshot.forEach((doc) => {
+                    batch.delete(doc.ref);
+                });
+                await batch.commit();
