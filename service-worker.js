@@ -1,12 +1,12 @@
 // Service Worker para VYT MUSIC PWA - VERSIÓN PANEL SIMPLIFICADO
-const CACHE_NAME = 'vyt-music-simple-v7'; // 🔥 Responsive con Tailwind nativo
+const CACHE_NAME = 'vyt-music-simple-v8'; // 🔥 Actualizado con escaner_rapido.html
 const urlsToCache = [
   '/',
   '/index.html',
   '/eventos.html',
   '/panel_evento_SIMPLE.html', // ✅ NUEVO PANEL
   '/panel_evento.html',
-  '/escaner_inteligente_integrado.html',
+  '/escaner_rapido.html', // ✅ NUEVO ESCÁNER CON MODO OFFLINE
   '/test_camara_directo.html',
   '/solucion_camara.html',
   '/votacion_jurados_FINAL.html',
