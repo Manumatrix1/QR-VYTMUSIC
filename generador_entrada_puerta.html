@@ -119,6 +119,24 @@
                                class="w-full p-3 rounded-md border border-gray-600 bg-gray-900 text-white">
                     </div>
                     
+                    <!-- NUEVO: Buscador de Artista -->
+                    <div>
+                        <label for="artist-search" class="block mb-2 font-semibold text-gray-300">
+                            🎤 Artista que viene a ver
+                            <span class="text-yellow-400 text-sm ml-2">(Importante para "Elegido del Público")</span>
+                        </label>
+                        <div class="relative">
+                            <input type="text" id="artist-search" placeholder="Buscar artista por nombre..." autocomplete="off"
+                                   class="w-full p-3 rounded-md border border-gray-600 bg-gray-900 text-white focus:border-yellow-400 focus:ring-2 focus:ring-yellow-400">
+                            <div id="artist-results" class="absolute z-50 w-full mt-1 bg-gray-800 border border-gray-600 rounded-lg shadow-xl hidden max-h-60 overflow-y-auto"></div>
+                        </div>
+                        <input type="hidden" id="selected-artist-id">
+                        <div id="selected-artist-display" class="hidden mt-2 p-3 bg-green-900 border border-green-600 rounded-lg">
+                            <p class="text-green-300 font-semibold">✅ Seleccionado: <span id="selected-artist-name"></span></p>
+                            <button type="button" onclick="clearArtistSelection()" class="text-xs text-red-400 hover:text-red-300 mt-1">❌ Cambiar artista</button>
+                        </div>
+                    </div>
+                    
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                             <label for="ticket-price" class="block mb-2 font-semibold text-gray-300">Precio Cobrado ($)</label>
@@ -172,7 +190,7 @@
 
     <script type="module">
         import { db, auth, storage } from './firebase_config.js';
-        import { collection, addDoc, doc, writeBatch, serverTimestamp, query, orderBy, limit, onSnapshot, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { collection, addDoc, doc, writeBatch, serverTimestamp, query, orderBy, limit, onSnapshot, getDoc, setDoc, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 
         // Obtener parámetros del evento
@@ -205,11 +223,99 @@
             closeSuccessBtn: document.getElementById('close-success-btn'),
             successTicketInfo: document.getElementById('success-ticket-info'),
             successQrContainer: document.getElementById('success-qr-container'),
-            recentTickets: document.getElementById('recent-tickets')
+            recentTickets: document.getElementById('recent-tickets'),
+            artistSearch: document.getElementById('artist-search'),
+            artistResults: document.getElementById('artist-results'),
+            selectedArtistId: document.getElementById('selected-artist-id'),
+            selectedArtistDisplay: document.getElementById('selected-artist-display'),
+            selectedArtistName: document.getElementById('selected-artist-name')
         };
 
         // Array para almacenar entradas generadas en esta sesión
         let sessionTickets = [];
+        
+        // 🎭 ARTISTAS DISPONIBLES EN ESTA GALA
+        let availableArtists = [];
+        
+        // Cargar artistas al iniciar
+        async function loadArtists() {
+            try {
+                const artistsCol = collection(db, `events/${eventId}/artists`);
+                const artistsSnapshot = await getDocs(artistsCol);
+                availableArtists = artistsSnapshot.docs.map(doc => ({
+                    id: doc.id,
+                    ...doc.data()
+                }));
+                console.log(`✅ Cargados ${availableArtists.length} artistas`);
+            } catch (error) {
+                console.error('❌ Error cargando artistas:', error);
+            }
+        }
+        
+        // Buscar artistas mientras escribe
+        function searchArtists(query) {
+            const normalized = query.toLowerCase().trim();
+            
+            if (normalized.length < 2) {
+                ui.artistResults.classList.add('hidden');
+                return;
+            }
+            
+            const results = availableArtists.filter(artist => 
+                artist.name.toLowerCase().includes(normalized)
+            );
+            
+            if (results.length === 0) {
+                ui.artistResults.innerHTML = '<div class="p-3 text-gray-400 text-sm">❌ No se encontraron artistas</div>';
+                ui.artistResults.classList.remove('hidden');
+                return;
+            }
+            
+            ui.artistResults.innerHTML = results.map(artist => `
+                <div class="p-3 hover:bg-gray-700 cursor-pointer border-b border-gray-700 last:border-0" 
+                     onclick="selectArtist('${artist.id}', '${artist.name.replace(/'/g, "\\'")}')"
+                     onmousedown="event.preventDefault()">
+                    <p class="font-semibold text-white">🎸 ${artist.name}</p>
+                    ${artist.genre ? `<p class="text-xs text-gray-400">${artist.genre}</p>` : ''}
+                </div>
+            `).join('');
+            
+            ui.artistResults.classList.remove('hidden');
+        }
+        
+        // Seleccionar un artista
+        window.selectArtist = function(artistId, artistName) {
+            ui.selectedArtistId.value = artistId;
+            ui.selectedArtistName.textContent = artistName;
+            ui.artistSearch.value = '';
+            ui.artistResults.classList.add('hidden');
+            ui.selectedArtistDisplay.classList.remove('hidden');
+        };
+        
+        // Limpiar selección de artista
+        window.clearArtistSelection = function() {
+            ui.selectedArtistId.value = '';
+            ui.selectedArtistName.textContent = '';
+            ui.artistSearch.value = '';
+            ui.selectedArtistDisplay.classList.add('hidden');
+        };
+        
+        // Event listeners para el buscador
+        ui.artistSearch.addEventListener('input', (e) => {
+            searchArtists(e.target.value);
+        });
+        
+        ui.artistSearch.addEventListener('blur', () => {
+            setTimeout(() => {
+                ui.artistResults.classList.add('hidden');
+            }, 200);
+        });
+        
+        ui.artistSearch.addEventListener('focus', () => {
+            if (ui.artistSearch.value.length >= 2) {
+                searchArtists(ui.artistSearch.value);
+            }
+        });
 
         // Funciones de utilidad
         function showLoading(text = 'Procesando...') {
@@ -228,6 +334,8 @@
 
         function showSuccess(ticketData) {
             // Mostrar información del ticket
+            const artistInfo = ticketData.supportingArtist ? `<p class="text-sm opacity-80 bg-yellow-600 px-2 py-1 rounded mt-2">🎸 Viene a ver: ${ticketData.supportingArtist.name}</p>` : '';
+            
             ui.successTicketInfo.innerHTML = `
                 <div class="text-left">
                     <p class="font-bold text-2xl mb-2">👤 ${ticketData.name}</p>
@@ -235,6 +343,7 @@
                     <p class="text-sm opacity-80">ID: ${ticketData.id}</p>
                     <p class="text-sm opacity-80">💰 $${ticketData.price} - ${ticketData.paymentMethod}</p>
                     <p class="text-sm opacity-80">👔 Vendido por: ${ticketData.soldBy}</p>
+                    ${artistInfo}
                 </div>
             `;
 
@@ -320,6 +429,7 @@
             ui.ticketPrice.value = '';
             ui.clientPhone.value = '';
             ui.ticketNotes.value = '';
+            clearArtistSelection();
             ui.clientName.focus();
         }
 
@@ -329,11 +439,13 @@
                 return;
             }
 
-            ui.recentTickets.innerHTML = sessionTickets.slice(-5).reverse().map(ticket => `
+            ui.recentTickets.innerHTML = sessionTickets.slice(-5).reverse().map(ticket => {
+                const artistBadge = ticket.supportingArtist ? `<span class="text-xs bg-yellow-600 px-2 py-1 rounded ml-2">🎸 ${ticket.supportingArtist.name}</span>` : '';
+                return `
                 <div class="bg-gray-700 p-3 rounded-lg border-l-4 border-green-500">
                     <div class="flex justify-between items-center">
                         <div>
-                            <p class="font-semibold">${ticket.name} <span class="text-yellow-400 text-xs ml-2">N° ${ticket.ticketNumber}</span></p>
+                            <p class="font-semibold">${ticket.name} <span class="text-yellow-400 text-xs ml-2">N° ${ticket.ticketNumber}</span>${artistBadge}</p>
                             <p class="text-sm text-gray-300">$${ticket.price} - ${ticket.paymentMethod}</p>
                         </div>
                         <div class="text-right">
@@ -342,7 +454,8 @@
                         </div>
                     </div>
                 </div>
-            `).join('');
+                `;
+            }).join('');
         }
 
         // Generar entrada inmediata
@@ -387,6 +500,20 @@
                 // Generar ID único para la entrada
                 const ticketId = `PUERTA-${Date.now()}-${crypto.randomUUID().substring(0, 6)}`;
                 
+                // 🎭 Obtener artista seleccionado
+                const selectedArtistId = ui.selectedArtistId.value;
+                let supportingArtist = null;
+                if (selectedArtistId) {
+                    const artist = availableArtists.find(a => a.id === selectedArtistId);
+                    if (artist) {
+                        supportingArtist = {
+                            id: artist.id,
+                            name: artist.name,
+                            genre: artist.genre || null
+                        };
+                    }
+                }
+                
                 // Crear datos del ticket
                 const ticketData = {
                     id: ticketId,
@@ -414,6 +541,9 @@
                     notes: ui.ticketNotes.value.trim() || null,
                     soldAt: serverTimestamp(),
                     autoEntry: true, // ✅ MARCA DE INGRESO AUTOMÁTICO
+                    
+                    // 🎸 ARTISTA QUE VIENE A VER (para "Elegido del Público")
+                    supportingArtist: supportingArtist,
                     
                     // 🎯 HABILITACIÓN PARA VOTACIÓN
                     canVote: true,
@@ -446,6 +576,9 @@
         // Event Listeners
         ui.generateBtn.addEventListener('click', generateDoorTicket);
         ui.closeSuccessBtn.addEventListener('click', hideSuccess);
+        
+        // 🏁 INICIALIZAR
+        loadArtists();
 
         // Enter para generar entrada rápida
         [ui.clientName, ui.ticketPrice].forEach(input => {
