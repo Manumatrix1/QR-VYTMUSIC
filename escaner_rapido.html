@@ -225,6 +225,11 @@
             <div class="counter-number" id="counter">0</div>
             <div class="counter-label">✅ Ingresaron</div>
         </div>
+        <div style="position: absolute; right: 15px; top: 50%; transform: translateY(-50%);">
+            <div id="connection-status" style="display: flex; align-items: center; gap: 8px; padding: 10px 15px; border-radius: 8px; font-size: 0.9rem; font-weight: 700; background: rgba(16, 185, 129, 0.3); border: 2px solid #10b981; color: #10b981;">
+                🟢 ONLINE
+            </div>
+        </div>
     </div>
 
     <!-- Cámara -->
@@ -276,7 +281,7 @@
 
     <script type="module">
         import { db } from './firebase_config.js';
-        import { collection, getDocs, doc, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { collection, getDocs, doc, updateDoc, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // Estado
         const state = {
@@ -285,7 +290,10 @@
             scanner: null,
             tickets: new Map(),
             counter: 0,
-            scanning: true
+            scanning: true,
+            isOnline: navigator.onLine,
+            syncQueue: [], // Cola de sincronización offline
+            unsubscribe: null // Para detener listener de tiempo real
         };
 
         // UI
@@ -298,8 +306,24 @@
             searchModal: document.getElementById('search-modal'),
             searchInput: document.getElementById('search-input'),
             searchResults: document.getElementById('search-results'),
-            closeSearch: document.getElementById('close-search')
+            closeSearch: document.getElementById('close-search'),
+            connectionStatus: document.getElementById('connection-status')
         };
+
+        // Actualizar indicador de conexión
+        function updateConnectionStatus() {
+            if (state.isOnline) {
+                ui.connectionStatus.style.background = 'rgba(16, 185, 129, 0.3)';
+                ui.connectionStatus.style.borderColor = '#10b981';
+                ui.connectionStatus.style.color = '#10b981';
+                ui.connectionStatus.innerHTML = '🟢 ONLINE';
+            } else {
+                ui.connectionStatus.style.background = 'rgba(239, 68, 68, 0.3)';
+                ui.connectionStatus.style.borderColor = '#ef4444';
+                ui.connectionStatus.style.color = '#ef4444';
+                ui.connectionStatus.innerHTML = `🔴 OFFLINE${state.syncQueue.length > 0 ? ` (${state.syncQueue.length} pendientes)` : ''}`;
+            }
+        }
 
         // Obtener parámetros
         const params = new URLSearchParams(window.location.search);
@@ -314,28 +338,66 @@
         // Configurar enlace de volver
         document.getElementById('back-link').href = `panel_evento_SIMPLE.html?eventId=${state.eventId}&eventName=${encodeURIComponent(state.eventName || 'Evento')}`;
 
-        // Cargar tickets
+        // Cargar tickets con TIEMPO REAL y OFFLINE
         async function loadTickets() {
             try {
-                const ticketsRef = collection(db, `events/${state.eventId}/tickets`);
-                const snapshot = await getDocs(ticketsRef);
-                
-                snapshot.docs.forEach(doc => {
-                    const data = doc.data();
-                    state.tickets.set(doc.id, {
-                        id: doc.id,
-                        name: data.name || 'Sin nombre',
-                        ticketNumber: data.ticketNumber || null,
-                        ticketNumberFormatted: data.ticketNumberFormatted || null,
-                        used: data.used || false,
-                        ...data
+                // Cargar desde localStorage primero (para modo offline)
+                const cached = localStorage.getItem(`tickets_${state.eventId}`);
+                if (cached) {
+                    const cachedTickets = JSON.parse(cached);
+                    cachedTickets.forEach(ticket => {
+                        state.tickets.set(ticket.id, ticket);
                     });
-                });
+                    updateCounter();
+                    console.log(`💾 ${state.tickets.size} tickets cargados desde cache`);
+                }
 
-                console.log(`✅ ${state.tickets.size} tickets cargados`);
+                // Listener en TIEMPO REAL (actualiza entre todos los asistentes)
+                const ticketsRef = collection(db, `events/${state.eventId}/tickets`);
+                state.unsubscribe = onSnapshot(ticketsRef, 
+                    (snapshot) => {
+                        snapshot.docChanges().forEach(change => {
+                            const data = change.doc.data();
+                            const ticket = {
+                                id: change.doc.id,
+                                name: data.name || 'Sin nombre',
+                                ticketNumber: data.ticketNumber || null,
+                                ticketNumberFormatted: data.ticketNumberFormatted || null,
+                                used: data.used || false,
+                                ...data
+                            };
+
+                            if (change.type === 'added' || change.type === 'modified') {
+                                state.tickets.set(ticket.id, ticket);
+                            } else if (change.type === 'removed') {
+                                state.tickets.delete(ticket.id);
+                            }
+                        });
+
+                        updateCounter();
+                        
+                        // Guardar en localStorage
+                        localStorage.setItem(`tickets_${state.eventId}`, 
+                            JSON.stringify(Array.from(state.tickets.values())));
+                        
+                        console.log(`🔄 Tickets actualizados en tiempo real: ${state.tickets.size}`);
+                    },
+                    (error) => {
+                        console.warn('⚠️ Error en tiempo real, usando modo offline:', error);
+                        state.isOnline = false;
+                    }
+                );
+
             } catch (error) {
                 console.error('❌ Error cargando tickets:', error);
+                state.isOnline = false;
             }
+        }
+
+        // Actualizar contador
+        function updateCounter() {
+            state.counter = Array.from(state.tickets.values()).filter(t => t.used).length;
+            ui.counter.textContent = state.counter;
         }
 
         // Mostrar feedback
@@ -373,7 +435,7 @@
             setTimeout(() => flash.remove(), 1000);
         }
 
-        // Procesar escaneo
+        // Procesar escaneo con MODO OFFLINE
         async function processTicket(ticketId) {
             if (!state.scanning) return;
             
@@ -389,22 +451,51 @@
                 return;
             }
 
-            // ✅ Marcar como usado
-            try {
-                const ticketRef = doc(db, `events/${state.eventId}/tickets`, ticketId);
-                await updateDoc(ticketRef, {
-                    used: true,
-                    usedAt: new Date().toISOString()
-                });
+            // ✅ Actualizar LOCAL primero (instantáneo)
+            ticket.used = true;
+            ticket.usedAt = new Date().toISOString();
+            state.tickets.set(ticketId, ticket);
+            state.counter++;
+            ui.counter.textContent = state.counter;
+            
+            // Guardar en localStorage inmediatamente
+            localStorage.setItem(`tickets_${state.eventId}`, 
+                JSON.stringify(Array.from(state.tickets.values())));
 
-                ticket.used = true;
-                state.counter++;
-                ui.counter.textContent = state.counter;
-                
-                showFeedback('success', ticket.name, ticket.ticketNumberFormatted ? `Nº ${ticket.ticketNumberFormatted}` : 'Entrada registrada');
+            showFeedback('success', ticket.name, ticket.ticketNumberFormatted ? `Nº ${ticket.ticketNumberFormatted}` : 'Entrada registrada');
+
+            // ✅ Sincronizar con Firebase (si hay conexión)
+            try {
+                if (state.isOnline) {
+                    const ticketRef = doc(db, `events/${state.eventId}/tickets`, ticketId);
+                    await updateDoc(ticketRef, {
+                        used: true,
+                        usedAt: ticket.usedAt
+                    });
+                    console.log('🔄 Sincronizado con Firebase');
+                } else {
+                    // MODO OFFLINE: Agregar a cola de sincronización
+                    state.syncQueue.push({
+                        ticketId,
+                        action: 'markUsed',
+                        data: { used: true, usedAt: ticket.usedAt },
+                        timestamp: Date.now()
+                    });
+                    localStorage.setItem(`syncQueue_${state.eventId}`, JSON.stringify(state.syncQueue));
+                    console.log(`📴 OFFLINE: Guardado en cola (${state.syncQueue.length} pendientes)`);
+                    updateConnectionStatus();
+                }
             } catch (error) {
-                console.error('❌ Error actualizando:', error);
-                showFeedback('error', 'ERROR', 'No se pudo registrar');
+                // Si falla, guardar en cola offline
+                state.syncQueue.push({
+                    ticketId,
+                    action: 'markUsed',
+                    data: { used: true, usedAt: ticket.usedAt },
+                    timestamp: Date.now()
+                });
+                localStorage.setItem(`syncQueue_${state.eventId}`, JSON.stringify(state.syncQueue));
+                console.warn('⚠️ Error Firebase, guardado offline:', error);
+                updateConnectionStatus();
             }
         }
 
@@ -491,6 +582,62 @@
             await processTicket(ticketId);
         };
 
+        // 🔄 SINCRONIZACIÓN AUTOMÁTICA cuando vuelve internet
+        async function syncOfflineData() {
+            if (state.syncQueue.length === 0) return;
+            
+            console.log(`🔄 Sincronizando ${state.syncQueue.length} operaciones pendientes...`);
+            
+            const pendingOps = [...state.syncQueue];
+            state.syncQueue = [];
+            
+            for (const op of pendingOps) {
+                try {
+                    if (op.action === 'markUsed') {
+                        const ticketRef = doc(db, `events/${state.eventId}/tickets`, op.ticketId);
+                        await updateDoc(ticketRef, op.data);
+                        console.log(`✅ Sincronizado: ${op.ticketId}`);
+                    }
+                } catch (error) {
+                    console.warn(`⚠️ Error sincronizando ${op.ticketId}, volviendo a la cola`, error);
+                    state.syncQueue.push(op);
+                }
+            }
+            
+            // Actualizar localStorage con la cola restante
+            localStorage.setItem(`syncQueue_${state.eventId}`, JSON.stringify(state.syncQueue));
+            
+            if (state.syncQueue.length === 0) {
+                console.log('✅ Todas las operaciones offline sincronizadas');
+            } else {
+                console.log(`⚠️ ${state.syncQueue.length} operaciones aún pendientes`);
+            }
+        }
+
+        // 📡 DETECTORES DE CONEXIÓN
+        window.addEventListener('online', async () => {
+            console.log('🟢 Conexión restaurada');
+            state.isOnline = true;
+            updateConnectionStatus();
+            await syncOfflineData();
+            updateConnectionStatus(); // Actualizar después de sincronizar
+        });
+
+        window.addEventListener('offline', () => {
+            console.log('🔴 Sin conexión - Modo OFFLINE activado');
+            state.isOnline = false;
+            updateConnectionStatus();
+        });
+
+        // Cargar cola offline al iniciar
+        function loadOfflineQueue() {
+            const savedQueue = localStorage.getItem(`syncQueue_${state.eventId}`);
+            if (savedQueue) {
+                state.syncQueue = JSON.parse(savedQueue);
+                console.log(`📴 ${state.syncQueue.length} operaciones offline pendientes cargadas`);
+            }
+        }
+
         // Event listeners
         ui.btnSearch.addEventListener('click', () => {
             ui.searchModal.classList.remove('hidden');
@@ -526,10 +673,28 @@
             }
         });
 
-        // Inicializar
+        // Inicializar con SOPORTE OFFLINE
         (async () => {
+            console.log('🚀 Iniciando escáner con soporte OFFLINE + MULTI-ASISTENTE');
+            
+            // 1. Cargar cola de sincronización offline
+            loadOfflineQueue();
+            updateConnectionStatus();
+            
+            // 2. Cargar tickets (con tiempo real)
             await loadTickets();
+            
+            // 3. Si hay internet, sincronizar operaciones pendientes
+            if (state.isOnline && state.syncQueue.length > 0) {
+                await syncOfflineData();
+                updateConnectionStatus();
+            }
+            
+            // 4. Iniciar escáner
             await startScanner();
+            
+            console.log('✅ Escáner listo | Modo:', state.isOnline ? 'ONLINE 🟢' : 'OFFLINE 🔴');
+            console.log(`📊 Total tickets: ${state.tickets.size} | Ya ingresaron: ${state.counter}`);
         })();
     </script>
 </body>
