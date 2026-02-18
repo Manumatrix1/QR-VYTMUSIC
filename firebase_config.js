@@ -10,7 +10,7 @@ export const firebaseConfig = {
     apiKey: "AIzaSyC_2Ukoxf_ry7QfKtou1Cz6nY-qTVw4qTU", 
     authDomain: "vyt-music.firebaseapp.com",
     projectId: "vyt-music", 
-    storageBucket: "vyt-music.firebasestorage.app", 
+    storageBucket: "vyt-music.appspot.com", 
     messagingSenderId: "574981837817", 
     appId: "1:574981837817:web:a29933a22bbfd51a086328"
 };
