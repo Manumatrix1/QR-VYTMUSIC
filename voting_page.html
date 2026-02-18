@@ -663,10 +663,10 @@
                 <div class="text-center mb-6">
                     <div class="text-6xl mb-4 animate-pulse">🎫</div>
                     <h2 class="text-3xl font-black text-yellow-300 mb-2 drop-shadow-lg">✨ ¡VALIDÁ TU ENTRADA!</h2>
-                    <p class="text-cyan-200 text-lg font-semibold">👇 Ingresá tu nombre o ID para votar</p>
+                    <p class="text-cyan-200 text-lg font-semibold">👇 Ingresá tu nombre como aparece en tu entrada</p>
                 </div>
                 <input type="text" id="ticket-name-input" 
-                       placeholder="🎵 Tu Nombre, Nº Entrada (ej: 0001) o ID" 
+                       placeholder="🎵 Tu Nombre (como aparece en tu entrada)" 
                        class="w-full p-4 rounded-xl border-4 border-cyan-400 bg-gray-900 text-white text-lg font-bold focus:outline-none focus:ring-4 focus:ring-yellow-400 mb-4 transform hover:scale-105 transition-all" 
                        required>
                 <button id="validate-ticket-btn" 
@@ -712,33 +712,66 @@
         function setLoading(show) { ui.loadingOverlay.classList.toggle('hidden', !show); }
 
         async function validateTicket(input) {
-            const normalizedInput = input.toLowerCase().trim();
-            if (normalizedInput === 'elratonperez') {
-                state.currentValidatedTicket = { id: 'ADMIN_ACCESS', name: 'Administrador' };
-                return { success: true, message: "Acceso de administrador concedido." };
-            }
-            const ticketsPath = collection(db, `events/${activeEventId}/tickets`);
-            const querySnapshot = await getDocs(ticketsPath);
-            let foundTicket = null;
-            for (const doc of querySnapshot.docs) {
-                const ticketData = doc.data();
-                const normalizedName = (ticketData.name || '').toLowerCase().trim();
-                const ticketId = (ticketData.id || '').trim();
-                const ticketNumber = (ticketData.ticketNumber || '').trim(); // ✅ NUEVO: búsqueda por número
+            try {
+                const normalizedInput = input.toLowerCase().trim();
                 
-                // Búsqueda mejorada: nombre, ID completo, o número secuencial
-                if (normalizedName.includes(normalizedInput) || 
-                    ticketId === input.trim() || 
-                    ticketNumber === input.trim()) {
-                    foundTicket = { id: doc.id, ...ticketData };
-                    break;
+                // Validación mínima de input
+                if (!normalizedInput || normalizedInput.length < 2) {
+                    return { success: false, message: "❌ Por favor, ingresá al menos 2 caracteres de tu nombre." };
                 }
+                
+                // Acceso admin
+                if (normalizedInput === 'elratonperez') {
+                    state.currentValidatedTicket = { id: 'ADMIN_ACCESS', name: 'Administrador' };
+                    return { success: true, message: "✅ Acceso de administrador concedido." };
+                }
+                
+                console.log('🔍 Buscando entrada para:', normalizedInput);
+                
+                const ticketsPath = collection(db, `events/${activeEventId}/tickets`);
+                const querySnapshot = await getDocs(ticketsPath);
+                
+                console.log(`📋 Total de entradas en el sistema: ${querySnapshot.size}`);
+                
+                let foundTicket = null;
+                let matchCount = 0;
+                
+                for (const docSnapshot of querySnapshot.docs) {
+                    const ticketData = docSnapshot.data();
+                    const normalizedName = (ticketData.name || '').toLowerCase().trim();
+                    
+                    // 🔒 SEGURIDAD: Solo búsqueda por NOMBRE (case-insensitive, parcial)
+                    if (normalizedName.includes(normalizedInput)) {
+                        foundTicket = { id: docSnapshot.id, ...ticketData };
+                        matchCount++;
+                        console.log(`✅ Coincidencia encontrada: ${ticketData.name}`);
+                        break; // Tomamos la primera coincidencia
+                    }
+                }
+                
+                if (foundTicket) {
+                    state.currentValidatedTicket = foundTicket;
+                    console.log('✅ Ticket validado:', foundTicket.name);
+                    return { 
+                        success: true, 
+                        message: `✅ ¡Bienvenido/a ${foundTicket.name}! Ya podés votar.`, 
+                        ticket: foundTicket 
+                    };
+                }
+                
+                console.log('❌ No se encontró ninguna entrada con ese nombre');
+                return { 
+                    success: false, 
+                    message: `❌ No encontramos "${input}" en el sistema. Verificá que esté bien escrito.` 
+                };
+                
+            } catch (error) {
+                console.error('❌ Error en validateTicket:', error);
+                return { 
+                    success: false, 
+                    message: `⚠️ Error de conexión: ${error.message}. Intentá de nuevo.` 
+                };
             }
-            if (foundTicket) {
-                state.currentValidatedTicket = foundTicket;
-                return { success: true, message: "Entrada validada. ¡Puedes votar!", ticket: foundTicket };
-            }
-            return { success: false, message: "Nombre o ID de entrada no encontrado." };
         }
         
         function updateStarVisuals(starContainer, value) {
@@ -1161,24 +1194,55 @@
                 const userCredential = await signInAnonymously(auth);
                 state.userId = userCredential.user.uid;
 
-                ui.validateTicketBtn.addEventListener('click', async () => {
+                // 🎯 Función de validación reutilizable
+                const performValidation = async () => {
                     const nameInput = ui.ticketNameInput.value.trim();
-                    if (!nameInput) return displayMessage('Por favor, ingresa tu nombre o ID.', 'warning');
-                    setLoading(true);
-                    const result = await validateTicket(nameInput);
-                    if (result.success) {
-                        displayMessage(result.message, 'success');
-                        ui.validationScreen.classList.add('hidden'); 
-                        ui.votingContent.classList.remove('hidden');
-                        attachArtistListener();
-                        attachSponsorsListener(); // Agregamos el listener de sponsors
-                        
-                        // 🎯 MOSTRAR PATROCINADORES INMEDIATAMENTE
-                        renderSponsors([]);
-                    } else {
-                        displayMessage(result.message, 'error');
+                    if (!nameInput) {
+                        displayMessage('⚠️ Por favor, ingresá tu nombre.', 'warning');
+                        return;
                     }
-                    setLoading(false);
+                    
+                    try {
+                        setLoading(true);
+                        console.log('🔐 Validando entrada para:', nameInput);
+                        
+                        // Timeout de 10 segundos para evitar bloqueos
+                        const timeoutPromise = new Promise((_, reject) => 
+                            setTimeout(() => reject(new Error('Timeout: La conexión tardó demasiado')), 10000)
+                        );
+                        
+                        const result = await Promise.race([
+                            validateTicket(nameInput),
+                            timeoutPromise
+                        ]);
+                        
+                        if (result.success) {
+                            displayMessage(result.message, 'success', 3000);
+                            ui.validationScreen.classList.add('hidden'); 
+                            ui.votingContent.classList.remove('hidden');
+                            attachArtistListener();
+                            attachSponsorsListener();
+                            renderSponsors([]);
+                        } else {
+                            displayMessage(result.message, 'error', 7000);
+                        }
+                    } catch (error) {
+                        console.error('❌ Error en validación:', error);
+                        displayMessage(`⚠️ ${error.message || 'Error de conexión'}. Intentá de nuevo.`, 'error', 7000);
+                    } finally {
+                        setLoading(false);
+                    }
+                };
+
+                // Click en botón
+                ui.validateTicketBtn.addEventListener('click', performValidation);
+                
+                // Enter en input
+                ui.ticketNameInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        performValidation();
+                    }
                 });
                 
                 ui.artistsListContainer.addEventListener('click', (e) => {
