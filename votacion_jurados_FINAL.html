@@ -413,9 +413,22 @@
             <div class="flex items-center gap-4 mb-6 p-4 card">
                 <img id="modal-artist-photo" src="" alt="Foto del artista" 
                      class="w-20 h-20 object-cover rounded-full border-2 border-blue-300">
-                <div>
+                <div class="flex-1">
                     <h3 id="modal-artist-name" class="text-2xl font-bold"></h3>
                     <p id="modal-artist-info" class="text-gray-300"></p>
+                </div>
+                
+                <!-- 🗳️ CONTROL VOTACIÓN PÚBLICA -->
+                <div id="modal-public-voting-control" class="flex flex-col items-center justify-center gap-2 px-4 py-3 rounded-lg border-2 transition-all">
+                    <span class="text-xs font-bold uppercase">Voto Público</span>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" 
+                               id="modal-public-voting-toggle" 
+                               onchange="togglePublicVotingFromModal(this.checked)"
+                               class="sr-only peer">
+                        <div class="w-14 h-7 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-green-500"></div>
+                    </label>
+                    <span id="modal-public-voting-status" class="text-xs font-bold"></span>
                 </div>
             </div>
 
@@ -1370,7 +1383,7 @@ Formato de respuesta:
                                     `}
                                     
                                     <!-- 🎤 CONTROL DE VOTACIÓN PÚBLICA -->
-                                    <div class="flex items-center gap-2 px-3 py-1 rounded-full ${artist.publicVotingEnabled ? 'bg-blue-600' : 'bg-gray-600'} transition-colors">
+                                    <div class="flex items-center gap-2 px-3 py-1 rounded-full ${artist.publicVotingEnabled ? 'bg-green-600' : 'bg-red-600'} transition-colors">
                                         <span class="text-xs font-bold">🗳️ Voto público:</span>
                                         <label class="relative inline-flex items-center cursor-pointer">
                                             <input type="checkbox" 
@@ -1381,7 +1394,7 @@ Formato de respuesta:
                                             <div class="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-500"></div>
                                         </label>
                                         <span class="text-xs font-bold" id="public-status-${artist.id}">
-                                            ${artist.publicVotingEnabled ? 'HABILITADO' : 'BLOQUEADO'}
+                                            ${artist.publicVotingEnabled ? 'DESBLOQUEADO' : 'BLOQUEADO'}
                                         </span>
                                     </div>
                                 </div>
@@ -1615,6 +1628,9 @@ Formato de respuesta:
                     statusTextGrid.textContent = enabled ? 'DESBLOQUEADO' : 'BLOQUEADO';
                 }
                 
+                // Actualizar UI en Modal si está abierto para este artista
+                updateModalPublicVotingUI(enabled);
+                
                 // Mensaje de confirmación
                 showMessage(
                     enabled ? 
@@ -1632,10 +1648,45 @@ Formato de respuesta:
                 // Revertir ambos checkboxes
                 const checkbox = document.getElementById(`public-voting-${artistId}`);
                 const checkboxGrid = document.getElementById(`public-voting-grid-${artistId}`);
+                const checkboxModal = document.getElementById('modal-public-voting-toggle');
                 if (checkbox) checkbox.checked = !enabled;
                 if (checkboxGrid) checkboxGrid.checked = !enabled;
+                if (checkboxModal) checkboxModal.checked = !enabled;
             }
         };
+        
+        // 🗳️ TOGGLE DESDE EL MODAL
+        window.togglePublicVotingFromModal = async function(enabled) {
+            if (!currentModalArtist || !currentModalArtist.id) {
+                console.error('❌ No hay artista activo en el modal');
+                return;
+            }
+            
+            // Llamar a la función principal con el artistId del modal
+            await togglePublicVoting(currentModalArtist.id, enabled);
+        };
+        
+        // 🎨 ACTUALIZAR UI DEL MODAL
+        function updateModalPublicVotingUI(enabled) {
+            const modalControl = document.getElementById('modal-public-voting-control');
+            const modalStatus = document.getElementById('modal-public-voting-status');
+            const modalToggle = document.getElementById('modal-public-voting-toggle');
+            
+            if (modalControl) {
+                // Cambiar colores del contenedor
+                modalControl.className = `flex flex-col items-center justify-center gap-2 px-4 py-3 rounded-lg border-2 transition-all ${
+                    enabled ? 'bg-green-600 border-green-400' : 'bg-red-600 border-red-400'
+                }`;
+            }
+            
+            if (modalStatus) {
+                modalStatus.textContent = enabled ? 'DESBLOQUEADO' : 'BLOQUEADO';
+            }
+            
+            if (modalToggle) {
+                modalToggle.checked = enabled;
+            }
+        }
 
         window.editVote = function(artistId) {
             const artist = artists.find(a => a.id === artistId);
@@ -3234,23 +3285,6 @@ Formato de respuesta:
                     ` : `
                         <p class="text-yellow-300 text-sm">Pendiente de votar</p>
                     `}
-                    
-                    <!-- 🎤 CONTROL DE VOTACIÓN PÚBLICA (VISTA ORGANIZADA) -->
-                    <div class="mt-3 flex items-center justify-center gap-2 px-3 py-2 rounded-full ${artist.publicVotingEnabled ? 'bg-green-600' : 'bg-red-600'} transition-colors">
-                        <span class="text-xs font-bold">🗳️</span>
-                        <label class="relative inline-flex items-center cursor-pointer" onclick="event.stopPropagation()">
-                            <input type="checkbox" 
-                                   id="public-voting-grid-${artist.id}" 
-                                   ${artist.publicVotingEnabled ? 'checked' : ''}
-                                   onchange="togglePublicVoting('${artist.id}', this.checked); event.stopPropagation();"
-                                   onclick="event.stopPropagation()"
-                                   class="sr-only peer">
-                            <div class="w-9 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-green-500"></div>
-                        </label>
-                        <span class="text-xs font-bold" id="public-status-grid-${artist.id}">
-                            ${artist.publicVotingEnabled ? 'DESBLOQUEADO' : 'BLOQUEADO'}
-                        </span>
-                    </div>
                 `;
 
                 gridContainer.appendChild(artistCard);
@@ -3310,6 +3344,11 @@ Formato de respuesta:
             if (hasAllVotes) {
                 generateAndShowModalFeedback(artistVotes).catch(console.error);
             }
+            
+            // 🗳️ INICIALIZAR CONTROL DE VOTACIÓN PÚBLICA EN MODAL
+            const publicVotingEnabled = artist.publicVotingEnabled === true;
+            updateModalPublicVotingUI(publicVotingEnabled);
+            console.log(`🗳️ Control votación pública inicializado: ${publicVotingEnabled ? 'DESBLOQUEADO' : 'BLOQUEADO'}`);
             
             // Mostrar modal
             document.getElementById('voting-modal').classList.remove('hidden');
