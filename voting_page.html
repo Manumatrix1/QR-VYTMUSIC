@@ -306,6 +306,65 @@
             50% { opacity: 0.5; }
         }
         
+        /* 🔴 Badge EN VIVO */
+        .live-badge {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            background: linear-gradient(135deg, #ef4444, #dc2626);
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 2rem;
+            font-weight: bold;
+            font-size: 0.875rem;
+            z-index: 9999;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            box-shadow: 0 4px 12px rgba(239, 68, 68, 0.5);
+        }
+        .live-badge .pulse-dot {
+            width: 10px;
+            height: 10px;
+            background: white;
+            border-radius: 50%;
+            animation: pulse-dot 1.5s infinite;
+        }
+        @keyframes pulse-dot {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.3); opacity: 0.7; }
+        }
+        
+        /* 🎉 Notificación Toast de desbloqueo */
+        .unlock-toast {
+            position: fixed;
+            top: 80px;
+            left: 50%;
+            transform: translateX(-50%) translateY(-100px);
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: white;
+            padding: 1rem 1.5rem;
+            border-radius: 1rem;
+            font-weight: bold;
+            font-size: 1rem;
+            z-index: 10000;
+            box-shadow: 0 8px 20px rgba(16, 185, 129, 0.5);
+            animation: slideDown 0.5s ease forwards;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+        @keyframes slideDown {
+            to { transform: translateX(-50%) translateY(0); }
+        }
+        .unlock-toast.fade-out {
+            animation: slideUp 0.5s ease forwards;
+        }
+        @keyframes slideUp {
+            from { transform: translateX(-50%) translateY(0); opacity: 1; }
+            to { transform: translateX(-50%) translateY(-100px); opacity: 0; }
+        }
+        
         /* Eliminar barra del bottom */
         .sponsor-banner { 
             display: block; 
@@ -593,6 +652,12 @@
     <div id="offline-badge" class="offline-badge hidden">
         📡 Sin conexión - Los votos se guardarán al reconectar
     </div>
+    
+    <!-- 🔴 BADGE EN VIVO -->
+    <div id="live-badge" class="live-badge hidden">
+        <div class="pulse-dot"></div>
+        <span>EN VIVO - Actualización automática</span>
+    </div>
 
     <!-- Banner Hero Inspiracional -->
     <div class="hero-banner">
@@ -790,7 +855,7 @@
         let tiebreakerArtists = [];
 
         function cacheUIElements() {
-             const ids = ['loading-overlay', 'message-container', 'artists-list-container', 'voted-status-message', 'validation-screen', 'ticket-name-input', 'validate-ticket-btn', 'voting-content', 'event-name-display', 'sponsors-container', 'vote-success-modal', 'close-vote-modal', 'vote-artist-name', 'vote-status-text', 'offline-badge'];
+             const ids = ['loading-overlay', 'message-container', 'artists-list-container', 'voted-status-message', 'validation-screen', 'ticket-name-input', 'validate-ticket-btn', 'voting-content', 'event-name-display', 'sponsors-container', 'vote-success-modal', 'close-vote-modal', 'vote-artist-name', 'vote-status-text', 'offline-badge', 'live-badge'];
             ids.forEach(id => { ui[id.replace(/-(\w)/g, (_, c) => c.toUpperCase())] = document.getElementById(id); });
             
             // Listener para cerrar modal
@@ -1417,18 +1482,76 @@
             });
         }
         
+        // 🎉 Mostrar notificación de desbloqueo
+        function showUnlockNotification(artistName) {
+            const toast = document.createElement('div');
+            toast.className = 'unlock-toast';
+            toast.innerHTML = `
+                <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                </svg>
+                <span>¡Ya podés votar a <strong>${artistName}</strong>!</span>
+            `;
+            document.body.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.classList.add('fade-out');
+                setTimeout(() => toast.remove(), 500);
+            }, 4000);
+        }
+        
+        // Variable global para trackear estados previos
+        let previousArtistStates = new Map();
+        
         function attachArtistListener() {
             setLoading(true);
             const artistsQuery = query(collection(db, `events/${activeEventId}/artists`), orderBy('name'));
             onSnapshot(artistsQuery, async (snapshot) => {
                 const artists = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                
+                // 🔍 DETECTAR DESBLOQUEOS EN TIEMPO REAL
+                snapshot.docChanges().forEach(change => {
+                    if (change.type === 'modified') {
+                        const artist = change.doc.data();
+                        const artistId = change.doc.id;
+                        const wasEnabled = previousArtistStates.get(artistId);
+                        const isNowEnabled = artist.publicVotingEnabled === true;
+                        
+                        // Si cambió de bloqueado a desbloqueado, mostrar notificación
+                        if (wasEnabled === false && isNowEnabled === true) {
+                            console.log(`🔓 Artista desbloqueado: ${artist.name}`);
+                            showUnlockNotification(artist.name);
+                        }
+                        
+                        // Actualizar estado previo
+                        previousArtistStates.set(artistId, isNowEnabled);
+                    }
+                });
+                
+                // Inicializar estados en primera carga
+                if (previousArtistStates.size === 0) {
+                    artists.forEach(artist => {
+                        previousArtistStates.set(artist.id, artist.publicVotingEnabled === true);
+                    });
+                }
+                
                 await checkIfUserVoted(); 
                 renderArtists(artists);
                 setLoading(false);
+                
+                // 🔴 Mostrar badge EN VIVO cuando el listener esté activo
+                if (ui.liveBadge) {
+                    ui.liveBadge.classList.remove('hidden');
+                }
             }, (error) => {
                 console.error("Error al cargar artistas: ", error);
                 displayMessage('Error al cargar la lista de artistas.', 'error');
                 setLoading(false);
+                
+                // Ocultar badge si hay error
+                if (ui.liveBadge) {
+                    ui.liveBadge.classList.add('hidden');
+                }
             });
         }
 
