@@ -563,7 +563,7 @@
             alert(`🔍 DEBUG COMPLETADO\n\nTotal docs: ${totalDocs}\nJurados encontrados: ${juradosEncontrados.size}\nLista: ${Array.from(juradosEncontrados).join(', ')}\n\nRevisa la consola para detalles`);
         };
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getFirestore, collection, getDocs, getDoc, query, orderBy, doc, setDoc, deleteDoc, limit, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, collection, getDocs, getDoc, query, orderBy, doc, setDoc, updateDoc, deleteDoc, limit, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         
         // Configuración Firebase
         const firebaseConfig = {
@@ -1358,15 +1358,33 @@ Formato de respuesta:
                             <div class="flex-grow">
                                 <h3 class="text-2xl font-bold">${artist.name}</h3>
                                 <p class="opacity-75">🎵 Participante del certamen</p>
-                                ${isComplete && !isEditing ? `
-                                    <div class="mt-2 px-3 py-1 bg-green-600 rounded-full inline-block">
-                                        <span class="text-sm font-bold">✅ VOTADO - Promedio: ${average.toFixed(1)} pts</span>
+                                <div class="flex items-center gap-3 mt-2 flex-wrap">
+                                    ${isComplete && !isEditing ? `
+                                        <div class="px-3 py-1 bg-green-600 rounded-full inline-block">
+                                            <span class="text-sm font-bold">✅ VOTADO - Promedio: ${average.toFixed(1)} pts</span>
+                                        </div>
+                                    ` : `
+                                        <div class="px-3 py-1 bg-yellow-600 rounded-full inline-block">
+                                            <span class="text-sm font-bold">${isEditing ? '✏️ EDITANDO' : '⏳ PENDIENTE DE VOTAR'}</span>
+                                        </div>
+                                    `}
+                                    
+                                    <!-- 🎤 CONTROL DE VOTACIÓN PÚBLICA -->
+                                    <div class="flex items-center gap-2 px-3 py-1 rounded-full ${artist.publicVotingEnabled ? 'bg-blue-600' : 'bg-gray-600'} transition-colors">
+                                        <span class="text-xs font-bold">🗳️ Voto público:</span>
+                                        <label class="relative inline-flex items-center cursor-pointer">
+                                            <input type="checkbox" 
+                                                   id="public-voting-${artist.id}" 
+                                                   ${artist.publicVotingEnabled ? 'checked' : ''}
+                                                   onchange="togglePublicVoting('${artist.id}', this.checked)"
+                                                   class="sr-only peer">
+                                            <div class="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-500"></div>
+                                        </label>
+                                        <span class="text-xs font-bold" id="public-status-${artist.id}">
+                                            ${artist.publicVotingEnabled ? 'HABILITADO' : 'BLOQUEADO'}
+                                        </span>
                                     </div>
-                                ` : `
-                                    <div class="mt-2 px-3 py-1 bg-yellow-600 rounded-full inline-block">
-                                        <span class="text-sm font-bold">${isEditing ? '✏️ EDITANDO' : '⏳ PENDIENTE DE VOTAR'}</span>
-                                    </div>
-                                `}
+                                </div>
                             </div>
                         </div>
 
@@ -1565,6 +1583,52 @@ Formato de respuesta:
             // Re-renderizar solo este artista para actualizar la UI
             renderArtists();
             updateStats();
+        };
+
+        // 🗳️ CONTROL DE VOTACIÓN PÚBLICA POR ARTISTA
+        window.togglePublicVoting = async function(artistId, enabled) {
+            try {
+                console.log(`🗳️ ${enabled ? 'Habilitando' : 'Bloqueando'} votación pública para: ${artistId}`);
+                
+                const artistRef = doc(db, `artistas_${eventId}`, artistId);
+                await updateDoc(artistRef, {
+                    publicVotingEnabled: enabled,
+                    publicVotingUpdatedAt: new Date().toISOString(),
+                    publicVotingUpdatedBy: currentJurorName || "Jurado"
+                });
+                
+                // Actualizar objeto local
+                const artist = artists.find(a => a.id === artistId);
+                if (artist) {
+                    artist.publicVotingEnabled = enabled;
+                }
+                
+                // Actualizar UI
+                const statusText = document.getElementById(`public-status-${artistId}`);
+                if (statusText) {
+                    statusText.textContent = enabled ? 'HABILITADO' : 'BLOQUEADO';
+                }
+                
+                // Mensaje de confirmación
+                showMessage(
+                    enabled ? 
+                        `✅ Votación pública HABILITADA para "${artist?.name || artistId}". La gente ya puede votar!` :
+                        `🔒 Votación pública BLOQUEADA para "${artist?.name || artistId}". La gente no puede votar todavía.`,
+                    'success'
+                );
+                
+                console.log(`✅ Votación pública ${enabled ? 'habilitada' : 'bloqueada'} exitosamente`);
+                
+            } catch (error) {
+                console.error('❌ Error al actualizar votación pública:', error);
+                showMessage('❌ Error al actualizar. Intenta de nuevo.', 'error');
+                
+                // Revertir el checkbox
+                const checkbox = document.getElementById(`public-voting-${artistId}`);
+                if (checkbox) {
+                    checkbox.checked = !enabled;
+                }
+            }
         };
 
         window.editVote = function(artistId) {
