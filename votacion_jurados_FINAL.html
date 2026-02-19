@@ -419,16 +419,15 @@
                 </div>
                 
                 <!-- 🗳️ CONTROL VOTACIÓN PÚBLICA -->
-                <div id="modal-public-voting-control" class="flex flex-col items-center justify-center gap-2 px-4 py-3 rounded-lg border-2 transition-all">
-                    <span class="text-xs font-bold uppercase">Voto Público</span>
+                <div id="modal-public-voting-control" class="flex flex-col items-center justify-center gap-2 px-4 py-3 rounded-lg border-2 transition-all bg-red-600 border-red-400">
+                    <span class="text-xs font-bold uppercase text-white">Voto Público</span>
                     <label class="relative inline-flex items-center cursor-pointer">
                         <input type="checkbox" 
                                id="modal-public-voting-toggle" 
-                               onchange="togglePublicVotingFromModal(this.checked)"
                                class="sr-only peer">
                         <div class="w-14 h-7 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-green-500"></div>
                     </label>
-                    <span id="modal-public-voting-status" class="text-xs font-bold"></span>
+                    <span id="modal-public-voting-status" class="text-xs font-bold text-white">BLOQUEADO</span>
                 </div>
             </div>
 
@@ -1659,8 +1658,11 @@ Formato de respuesta:
         window.togglePublicVotingFromModal = async function(enabled) {
             if (!currentModalArtist || !currentModalArtist.id) {
                 console.error('❌ No hay artista activo en el modal');
+                alert('❌ Error: No hay artista seleccionado');
                 return;
             }
+            
+            console.log(`🗳️ Toggle modal: ${enabled ? 'DESBLOQUEAR' : 'BLOQUEAR'} voto público para ${currentModalArtist.name}`);
             
             // Llamar a la función principal con el artistId del modal
             await togglePublicVoting(currentModalArtist.id, enabled);
@@ -1672,6 +1674,8 @@ Formato de respuesta:
             const modalStatus = document.getElementById('modal-public-voting-status');
             const modalToggle = document.getElementById('modal-public-voting-toggle');
             
+            console.log(`🎨 Actualizando UI modal: ${enabled ? 'DESBLOQUEADO' : 'BLOQUEADO'}`);
+            
             if (modalControl) {
                 // Cambiar colores del contenedor
                 modalControl.className = `flex flex-col items-center justify-center gap-2 px-4 py-3 rounded-lg border-2 transition-all ${
@@ -1681,6 +1685,7 @@ Formato de respuesta:
             
             if (modalStatus) {
                 modalStatus.textContent = enabled ? 'DESBLOQUEADO' : 'BLOQUEADO';
+                modalStatus.className = 'text-xs font-bold text-white';
             }
             
             if (modalToggle) {
@@ -3347,8 +3352,22 @@ Formato de respuesta:
             
             // 🗳️ INICIALIZAR CONTROL DE VOTACIÓN PÚBLICA EN MODAL
             const publicVotingEnabled = artist.publicVotingEnabled === true;
+            console.log(`🗳️ Inicializando control para ${artist.name}: ${publicVotingEnabled ? 'DESBLOQUEADO' : 'BLOQUEADO'}`);
             updateModalPublicVotingUI(publicVotingEnabled);
-            console.log(`🗳️ Control votación pública inicializado: ${publicVotingEnabled ? 'DESBLOQUEADO' : 'BLOQUEADO'}`);
+            
+            // Agregar listener al toggle del modal
+            const modalToggle = document.getElementById('modal-public-voting-toggle');
+            if (modalToggle) {
+                // Remover listeners anteriores
+                const newToggle = modalToggle.cloneNode(true);
+                modalToggle.parentNode.replaceChild(newToggle, modalToggle);
+                
+                // Agregar nuevo listener
+                newToggle.addEventListener('change', async function() {
+                    console.log(`🔄 Toggle cambiado: ${this.checked}`);
+                    await togglePublicVotingFromModal(this.checked);
+                });
+            }
             
             // Mostrar modal
             document.getElementById('voting-modal').classList.remove('hidden');
