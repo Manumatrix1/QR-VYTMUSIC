@@ -62,6 +62,7 @@
                 <button id="export-pdf-btn" class="px-6 py-3 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700 transition-colors">📄 Exportar PDF</button>
                 <button id="export-excel-btn" class="px-6 py-3 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700 transition-colors">📈 Exportar Excel</button>
                 <button id="share-report-btn" class="px-6 py-3 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 transition-colors">🔗 Compartir Reporte</button>
+                <button id="reset-votes-btn" class="px-6 py-3 bg-orange-600 text-white font-bold rounded-lg hover:bg-orange-700 transition-colors border-2 border-orange-400">🔄 REINICIAR VOTOS</button>
                 <button id="change-gala-btn" class="px-6 py-3 bg-gray-600 text-white font-bold rounded-lg hover:bg-gray-700 transition-colors">🔄 Cambiar Gala</button>
             </div>
         </header>
@@ -200,7 +201,7 @@
 
     <script type="module">
         import { db } from './firebase_config.js';
-        import { collection, getDocs, query, where, orderBy, doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { collection, getDocs, query, where, orderBy, doc, getDoc, setDoc, updateDoc, writeBatch, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         const urlParams = new URLSearchParams(window.location.search);
         let eventId = urlParams.get('eventId');
@@ -219,6 +220,7 @@
         const reportActions = document.getElementById('report-actions');
         const eventNameDisplay = document.getElementById('event-name-display');
         const changeGalaBtn = document.getElementById('change-gala-btn');
+        const resetVotesBtn = document.getElementById('reset-votes-btn');
 
         // Cargar lista de eventos al inicio
         async function loadEventsList() {
@@ -311,6 +313,102 @@
                 jurors: [],
                 observations: ''
             };
+        });
+
+        // 🔄 REINICIAR VOTOS - Eliminar todos los votos del público
+        resetVotesBtn.addEventListener('click', async function() {
+            if (!selectedEventId) {
+                alert('⚠️ No hay una gala seleccionada');
+                return;
+            }
+
+            // ⚠️ Primera confirmación
+            const confirm1 = confirm(`⚠️ ATENCIÓN: ¿Estás segura de querer ELIMINAR TODOS los votos del público de esta gala?\n\n"${selectedEventName}"\n\n❌ Esta acción NO se puede deshacer.\n\n¿Continuar?`);
+            
+            if (!confirm1) {
+                console.log('❌ Usuario canceló el reinicio');
+                return;
+            }
+
+            // ⚠️ Segunda confirmación (seguridad extra)
+            const confirm2 = prompt('🔐 Para confirmar, escribí "ELIMINAR" (en mayúsculas):');
+            
+            if (confirm2 !== 'ELIMINAR') {
+                alert('❌ Confirmación incorrecta. No se eliminó nada.');
+                console.log('❌ Usuario no escribió ELIMINAR correctamente');
+                return;
+            }
+
+            // Proceder con la eliminación
+            try {
+                resetVotesBtn.disabled = true;
+                resetVotesBtn.textContent = '⏳ Eliminando votos...';
+                
+                console.log(`🗑️ Iniciando eliminación de votos para evento: ${selectedEventId}`);
+                
+                let deletedCount = 0;
+                let artistsResetCount = 0;
+
+                // 1. Eliminar todos los documentos de ticket_votes
+                const ticketVotesRef = collection(db, `events/${selectedEventId}/ticket_votes`);
+                const ticketVotesSnapshot = await getDocs(ticketVotesRef);
+                
+                console.log(`📋 Encontrados ${ticketVotesSnapshot.size} tickets con votos`);
+
+                for (const ticketDoc of ticketVotesSnapshot.docs) {
+                    // Obtener subcolección de votos
+                    const votesRef = collection(db, `events/${selectedEventId}/ticket_votes/${ticketDoc.id}/votes`);
+                    const votesSnapshot = await getDocs(votesRef);
+                    
+                    // Eliminar cada voto
+                    for (const voteDoc of votesSnapshot.docs) {
+                        await deleteDoc(voteDoc.ref);
+                        deletedCount++;
+                    }
+                    
+                    // Eliminar el documento padre del ticket
+                    // NO lo eliminamos porque necesitamos mantener el registro de tickets
+                    // Solo limpiamos los votos
+                }
+
+                console.log(`✅ ${deletedCount} votos eliminados`);
+
+                // 2. Resetear contadores de artistas
+                const artistsRef = collection(db, `events/${selectedEventId}/artists`);
+                const artistsSnapshot = await getDocs(artistsRef);
+                
+                console.log(`🎤 Reseteando ${artistsSnapshot.size} artistas`);
+
+                for (const artistDoc of artistsSnapshot.docs) {
+                    await updateDoc(artistDoc.ref, {
+                        totalSingingScore: 0,
+                        totalTransmissionScore: 0,
+                        totalAttitudeScore: 0,
+                        totalOriginalityScore: 0,
+                        totalCostumeScore: 0,
+                        totalStagingScore: 0,
+                        totalScore: 0,
+                        totalRatingsCount: 0
+                    });
+                    artistsResetCount++;
+                }
+
+                console.log(`✅ ${artistsResetCount} artistas reseteados`);
+
+                // Mostrar éxito
+                alert(`✅ ¡REINICIO COMPLETO!\n\n🗑️ ${deletedCount} votos eliminados\n🎤 ${artistsResetCount} artistas reseteados\n\nLa gala está lista para votación real.`);
+                
+                // Recargar el reporte
+                console.log('🔄 Recargando reporte...');
+                await loadGalaReport(selectedEventId, selectedEventName);
+                
+            } catch (error) {
+                console.error('❌ Error al reiniciar votos:', error);
+                alert(`❌ Error al eliminar votos: ${error.message}\n\nPor favor, intentá de nuevo o contactá al administrador.`);
+            } finally {
+                resetVotesBtn.disabled = false;
+                resetVotesBtn.textContent = '🔄 REINICIAR VOTOS';
+            }
         });
 
         // Inicialización
