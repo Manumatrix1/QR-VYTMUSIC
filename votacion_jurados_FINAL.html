@@ -504,6 +504,29 @@
                 <p class="text-xs text-blue-300 mt-2 text-center">💡 Basado en tus puntuaciones - Puedes usarlas como guía</p>
             </div>
 
+            <!-- 🔒 OPCIÓN DE VOTO SECRETO -->
+            <div class="bg-orange-800 bg-opacity-30 p-5 rounded-lg border-2 border-orange-500 mb-6">
+                <div class="flex items-start gap-4">
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" id="modal-secret-vote" class="sr-only peer">
+                        <div class="w-14 h-7 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-orange-600"></div>
+                    </label>
+                    <div class="flex-1">
+                        <h4 class="text-lg font-bold text-orange-300 mb-2 flex items-center gap-2">
+                            <span>🔒</span>
+                            <span>Marcar como Voto Secreto</span>
+                        </h4>
+                        <p class="text-sm text-orange-200 leading-relaxed">
+                            Al activar esta opción, tu votación <strong>NO se incluirá en el promedio de la gala</strong>. 
+                            Este voto solo se revelará al final del certamen completo. Los organizadores pueden verlo, pero no se mostrará en reportes parciales.
+                        </p>
+                        <p class="text-xs text-orange-300 mt-2 italic">
+                            💡 Úsalo cuando necesites dar una puntuación privada que no afecte los resultados parciales
+                        </p>
+                    </div>
+                </div>
+            </div>
+
             <!-- Botones -->
             <div class="flex gap-4 justify-end">
                 <button onclick="closeVotingModal()" class="btn btn-red">
@@ -2040,6 +2063,10 @@ Formato de respuesta:
                 const autoFeedback = generateFallbackFeedback(artistVotes);
                 console.log('✅ Feedback generado:', autoFeedback);
                 
+                // 🔒 VERIFICAR SI ES VOTO SECRETO
+                const isSecretVote = document.getElementById('modal-secret-vote')?.checked || false;
+                console.log('🔒 Voto secreto:', isSecretVote);
+                
                 const voteData = {
                     artistId: String(artistId),
                     artistName: String(artist.name || 'Artista'),
@@ -2050,6 +2077,8 @@ Formato de respuesta:
                     jurorTypeLabel: String(currentJuror.typeLabel || 'Jurado'),
                     jurorAdditional: String(currentJuror.additional || ''),
                     isAnonymous: Boolean(currentJuror.isAnonymous || false),
+                    // 🔒 CAMPO NUEVO: VOTO SECRETO
+                    isSecretVote: Boolean(isSecretVote),
                     scores: artistVotes,
                     score: Number(average),
                     average: Number(average),
@@ -4919,6 +4948,8 @@ Formato de respuesta:
          */
         // Variable global para almacenar las evaluaciones y poder filtrarlas
         let allFeedbackEvaluations = [];
+        // Variable global para almacenar promedios generales de todos los jurados
+        let artistGeneralAverages = {};
 
         window.closeFeedbackPanel = function() {
             document.getElementById('feedback-panel-modal').classList.add('hidden');
@@ -4927,6 +4958,83 @@ Formato de respuesta:
             document.getElementById('feedback-artists-grid').style.display = 'grid';
             document.getElementById('feedback-artist-search').value = '';
         };
+
+        /**
+         * Calcula los promedios generales de cada artista (todos los jurados, excluyendo votos secretos)
+         */
+        async function calculateGeneralAverages() {
+            console.log('📊 Calculando promedios generales de todos los jurados...');
+            artistGeneralAverages = {};
+
+            try {
+                // Obtener TODAS las evaluaciones del evento (de todos los jurados)
+                const evaluationsRef = collection(db, `events/${eventId}/jury_evaluations`);
+                const allEvaluationsSnapshot = await getDocs(evaluationsRef);
+
+                console.log('📋 Total evaluaciones en el evento:', allEvaluationsSnapshot.size);
+
+                // Agrupar por artista
+                const artistVotes = {};
+
+                allEvaluationsSnapshot.forEach((doc) => {
+                    const data = doc.data();
+                    const artistId = data.artistId;
+                    const isSecret = data.isSecretVote || false;
+
+                    if (!artistVotes[artistId]) {
+                        artistVotes[artistId] = {
+                            publicVotes: [],
+                            secretVotes: [],
+                            artistName: data.artistName
+                        };
+                    }
+
+                    // Separar votos públicos de secretos
+                    if (isSecret) {
+                        artistVotes[artistId].secretVotes.push({
+                            score: data.average || data.score || 0,
+                            jurorName: data.jurorName,
+                            jurorId: data.jurorId
+                        });
+                    } else {
+                        artistVotes[artistId].publicVotes.push({
+                            score: data.average || data.score || 0,
+                            jurorName: data.jurorName,
+                            jurorId: data.jurorId
+                        });
+                    }
+                });
+
+                // Calcular promedios solo con votos públicos
+                for (const artistId in artistVotes) {
+                    const publicVotes = artistVotes[artistId].publicVotes;
+                    const secretVotes = artistVotes[artistId].secretVotes;
+                    
+                    let publicAverage = 0;
+                    if (publicVotes.length > 0) {
+                        const sum = publicVotes.reduce((acc, vote) => acc + vote.score, 0);
+                        publicAverage = sum / publicVotes.length;
+                    }
+
+                    artistGeneralAverages[artistId] = {
+                        publicAverage: publicAverage,
+                        publicCount: publicVotes.length,
+                        secretCount: secretVotes.length,
+                        totalJurors: publicVotes.length + secretVotes.length,
+                        allPublicVotes: publicVotes,
+                        allSecretVotes: secretVotes,
+                        artistName: artistVotes[artistId].artistName
+                    };
+
+                    console.log(`📊 ${artistVotes[artistId].artistName}: Promedio público ${publicAverage.toFixed(1)} (${publicVotes.length} votos públicos, ${secretVotes.length} secretos)`);
+                }
+
+                console.log('✅ Promedios generales calculados:', Object.keys(artistGeneralAverages).length, 'artistas');
+
+            } catch (error) {
+                console.error('❌ Error calculando promedios generales:', error);
+            }
+        }
 
         /**
          * Carga todas las evaluaciones del jurado actual desde Firebase
@@ -4976,6 +5084,9 @@ Formato de respuesta:
 
                 // Actualizar contador
                 document.getElementById('feedback-total-votes').textContent = allFeedbackEvaluations.length;
+
+                // 📊 CALCULAR PROMEDIOS GENERALES DE TODOS LOS JURADOS
+                await calculateGeneralAverages();
 
                 // Renderizar grid visual
                 renderFeedbackGrid(allFeedbackEvaluations);
@@ -5119,6 +5230,14 @@ Formato de respuesta:
                 minute: '2-digit' 
             });
 
+            // 📊 OBTENER PROMEDIO GENERAL (sin votos secretos)
+            const generalData = artistGeneralAverages[evaluation.artistId] || {
+                publicAverage: 0,
+                publicCount: 0,
+                secretCount: 0,
+                totalJurors: 0
+            };
+
             // Construir HTML de la tarjeta
             card.innerHTML = `
                 <!-- Header con foto y datos básicos -->
@@ -5129,9 +5248,30 @@ Formato de respuesta:
                          onerror="this.src='https://via.placeholder.com/150?text=Sin+Foto'">
                     <div class="flex-1">
                         <h3 class="text-2xl font-bold text-purple-200 mb-1">${evaluation.artistName}</h3>
-                        <div class="flex items-center gap-3 text-sm text-gray-300">
+                        <div class="flex items-center gap-3 text-sm text-gray-300 mb-2">
                             <span>📅 ${formattedDate}</span>
-                            <span class="text-2xl font-bold ${getScoreColor(evaluation.average)}">${evaluation.average?.toFixed(1) || 'N/A'}/100</span>
+                        </div>
+                        
+                        <!-- 📊 PUNTAJES: TU VOTO VS PROMEDIO GENERAL -->
+                        <div class="grid grid-cols-2 gap-3 mt-3">
+                            <!-- Tu puntaje -->
+                            <div class="bg-blue-900 bg-opacity-50 p-3 rounded-lg border border-blue-400">
+                                <p class="text-xs text-blue-300 mb-1">👤 Tu Puntaje</p>
+                                <p class="text-2xl font-bold ${getScoreColor(evaluation.average)}">${evaluation.average?.toFixed(1) || 'N/A'}/100</p>
+                                ${evaluation.isSecretVote ? '<p class="text-xs text-orange-300 mt-1">🔒 Voto Secreto</p>' : ''}
+                            </div>
+                            
+                            <!-- Promedio General -->
+                            <div class="bg-green-900 bg-opacity-50 p-3 rounded-lg border border-green-400">
+                                <p class="text-xs text-green-300 mb-1">📊 Promedio General</p>
+                                ${generalData.publicCount > 0 ? `
+                                    <p class="text-2xl font-bold ${getScoreColor(generalData.publicAverage)}">${generalData.publicAverage.toFixed(1)}/100</p>
+                                    <p class="text-xs text-green-200 mt-1">
+                                        👥 ${generalData.publicCount} jurado${generalData.publicCount > 1 ? 's' : ''}
+                                        ${generalData.secretCount > 0 ? ` • 🔒 ${generalData.secretCount} secreto${generalData.secretCount > 1 ? 's' : ''}` : ''}
+                                    </p>
+                                ` : '<p class="text-sm text-gray-400">Solo tú votaste</p>'}
+                            </div>
                         </div>
                     </div>
                 </div>
