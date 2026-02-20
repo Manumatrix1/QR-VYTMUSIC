@@ -2083,13 +2083,17 @@ Formato de respuesta:
                 
                 console.log('✅ Voto guardado exitosamente en Firebase');
                 
-                // Generar y mostrar feedback después de guardar
-                const feedbackSuggestions = generateAutoFeedback(artistVotes);
-                if (feedbackSuggestions.length > 0) {
-                    const feedbackText = feedbackSuggestions.map(item => 
-                        `${item.category}: ${item.suggestion}`
-                    ).join('\n\n');
-                    console.log('💬 Feedback generado:', feedbackText);
+                // Generar y mostrar feedback después de guardar (con manejo de errores)
+                try {
+                    const feedbackSuggestions = generateAutoFeedback(artistVotes);
+                    if (feedbackSuggestions.length > 0) {
+                        const feedbackText = feedbackSuggestions.map(item => 
+                            `${item.category}: ${item.suggestion}`
+                        ).join('\n\n');
+                        console.log('💬 Feedback generado:', feedbackText);
+                    }
+                } catch (feedbackError) {
+                    console.warn('⚠️ Error generando feedback (no crítico):', feedbackError);
                 }
                 
                 // Mostrar alerta solo si no es envío silencioso
@@ -2101,9 +2105,27 @@ Formato de respuesta:
                     alert(`${voteTypeMessage}\n\nArtista: ${artist.name}\nPromedio: ${average.toFixed(1)} puntos\n\nRevisa el feedback generado en la sección azul del modal.`);
                 }
                 
-                renderArtists();
-                preserveFilter(); // Mantener filtro
-                updateStats();
+                // Actualizar UI (con manejo de errores independiente)
+                try {
+                    renderArtists();
+                } catch (renderError) {
+                    console.warn('⚠️ Error en renderArtists (no crítico):', renderError);
+                }
+                
+                try {
+                    preserveFilter(); // Mantener filtro
+                } catch (filterError) {
+                    console.warn('⚠️ Error en preserveFilter (no crítico):', filterError);
+                }
+                
+                try {
+                    updateStats();
+                } catch (statsError) {
+                    console.warn('⚠️ Error en updateStats (no crítico):', statsError);
+                }
+                
+                // Si llegamos aquí, el voto se guardó exitosamente
+                return true;
 
             } catch (error) {
                 console.error('❌ Error completo:', error);
@@ -2112,18 +2134,9 @@ Formato de respuesta:
                 console.error('❌ Error code:', error.code);
                 console.error('❌ EventId actual:', eventId);
                 console.error('❌ CurrentJuror:', currentJuror);
-                console.error('❌ VoteData generada:', JSON.stringify(voteData, null, 2));
                 
-                let errorMessage = 'Error al guardar la votación.\n\n';
-                errorMessage += `Detalles del error:\n`;
-                errorMessage += `• Mensaje: ${error.message || 'Error desconocido'}\n`;
-                errorMessage += `• Código: ${error.code || 'Sin código'}\n`;
-                errorMessage += `• EventId: ${eventId}\n`;
-                errorMessage += `• Jurado: ${currentJuror?.name || 'Sin nombre'}\n\n`;
-                errorMessage += 'Revisa la consola (F12) para más detalles.\n';
-                errorMessage += 'Puedes intentar usar "💾 GUARDAR VOTO" (botón verde) como alternativa.';
-                
-                alert(errorMessage);
+                // Solo lanzar error si realmente falló el guardado en Firebase
+                throw error;
             }
         };
 
@@ -2786,26 +2799,45 @@ Formato de respuesta:
             }
             
             try {
-                // Guardar el voto en Firebase
-                await submitVote(currentModalArtist.id);
+                console.log('💾 Guardando voto para:', currentModalArtist.name);
+                
+                // Guardar el voto en Firebase (silent = true para no mostrar alert dentro de submitVote)
+                await submitVote(currentModalArtist.id, true);
+                
+                console.log('✅ Voto guardado exitosamente');
                 
                 // Cerrar el modal
                 closeVotingModal();
                 
-                // Actualizar vista actual
-                if (currentViewMode === 'grid') {
-                    renderArtistsGrid();
-                } else {
-                    renderArtists();
+                // Actualizar vista actual (con manejo de errores independiente)
+                try {
+                    if (currentViewMode === 'grid') {
+                        renderArtistsGrid();
+                    } else {
+                        renderArtists();
+                    }
+                    updateStats();
+                } catch (renderError) {
+                    console.warn('⚠️ Error actualizando vista (no crítico):', renderError);
                 }
                 
-                updateStats();
-                
-                // Mostrar confirmación
+                // Mostrar confirmación de éxito
                 alert(`✅ Votación guardada exitosamente para ${currentModalArtist.name}`);
+                
             } catch (error) {
                 console.error('❌ Error guardando voto:', error);
-                alert('⚠️ Error guardando la votación. Intenta de nuevo.');
+                console.error('Stack:', error.stack);
+                
+                // Solo mostrar error si realmente falló el guardado
+                // Si el error menciona que ya guardó, no mostrar error
+                if (error.message && error.message.includes('guardado exitosamente')) {
+                    // El voto se guardó, solo mostrar success
+                    closeVotingModal();
+                    alert(`✅ Votación guardada exitosamente para ${currentModalArtist.name}`);
+                } else {
+                    // Error real de guardado
+                    alert(`⚠️ Hubo un problema al guardar.\n\nDetalle: ${error.message}\n\nPor favor verifica en la consola.`);
+                }
             }
         };
         
