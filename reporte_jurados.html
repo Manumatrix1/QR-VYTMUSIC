@@ -752,8 +752,14 @@
         function generateJurorsTable() {
             const jurorAnalysis = jurors.map(juror => {
                 const jurorVotes = votes.filter(vote => vote.jurorId === juror.id);
-                const avgGiven = jurorVotes.length > 0 
-                    ? jurorVotes.reduce((sum, vote) => sum + vote.averageScore, 0) / jurorVotes.length
+                
+                // 🔒 SEPARAR VOTOS PÚBLICOS Y SECRETOS
+                const publicVotes = jurorVotes.filter(vote => !vote.isSecretVote && !vote.isSecret);
+                const secretVotes = jurorVotes.filter(vote => vote.isSecretVote || vote.isSecret);
+                
+                // Calcular promedio solo de votos públicos
+                const avgGiven = publicVotes.length > 0 
+                    ? publicVotes.reduce((sum, vote) => sum + (vote.averageScore || vote.average || vote.score || 0), 0) / publicVotes.length
                     : 0;
                 
                 const lastActivity = jurorVotes.length > 0 
@@ -765,6 +771,8 @@
                 return {
                     ...juror,
                     votesCount: jurorVotes.length,
+                    publicVotesCount: publicVotes.length,
+                    secretVotesCount: secretVotes.length,
                     avgGiven,
                     lastActivity,
                     completionRate
@@ -779,8 +787,22 @@
                             ${juror.isSecret ? 'Secreto' : 'Público'}
                         </span>
                     </td>
-                    <td>${juror.votesCount}</td>
-                    <td>${juror.avgGiven.toFixed(1)}</td>
+                    <td>
+                        <span class="font-bold">${juror.votesCount}</span>
+                        ${juror.secretVotesCount > 0 ? `
+                            <span class="text-xs text-orange-400 block">
+                                (🔒 ${juror.secretVotesCount} secreto${juror.secretVotesCount !== 1 ? 's' : ''})
+                            </span>
+                        ` : ''}
+                    </td>
+                    <td>
+                        <span class="font-bold">${juror.avgGiven.toFixed(1)}</span>
+                        ${juror.secretVotesCount > 0 ? `
+                            <span class="text-xs text-gray-400 block">
+                                (promedio público)
+                            </span>
+                        ` : ''}
+                    </td>
                     <td>${juror.lastActivity}</td>
                     <td>
                         <div class="flex items-center gap-2">

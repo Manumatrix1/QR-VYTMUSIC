@@ -585,9 +585,45 @@
             const artistsSnapshot = await getDocs(collection(db, 'events', eventId, 'artists'));
             allArtists = artistsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-            // Cargar votos de jurados
-            const votesSnapshot = await getDocs(collection(db, 'events', eventId, 'jury_votes'));
-            allVotes = votesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            // 🔥 CARGAR VOTOS DE JURADOS DESDE MÚLTIPLES FUENTES
+            allVotes = [];
+            
+            // Cargar desde jury_votes (sistema antiguo)
+            try {
+                const votesSnapshot = await getDocs(collection(db, 'events', eventId, 'jury_votes'));
+                const juryVotes = votesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                allVotes.push(...juryVotes);
+                console.log('📊 Votos cargados desde jury_votes:', juryVotes.length);
+            } catch (error) {
+                console.warn('⚠️ No se pudo cargar jury_votes:', error.message);
+            }
+            
+            // 🆕 Cargar desde jury_evaluations (sistema actual con votos secretos)
+            try {
+                const evaluationsSnapshot = await getDocs(collection(db, 'events', eventId, 'jury_evaluations'));
+                const evaluations = evaluationsSnapshot.docs.map(doc => {
+                    const data = doc.data();
+                    return {
+                        id: doc.id,
+                        artistId: data.artistId,
+                        galaId: data.eventId, // eventId es la gala en este contexto
+                        scores: data.scores || {},
+                        isSecretVote: data.isSecretVote || false, // 🔒 NUEVO CAMPO
+                        isSecret: data.isSecretVote || false, // Compatibilidad
+                        isCollaborative: data.jurorType === 'grupal',
+                        jurorName: data.jurorName,
+                        jurorId: data.jurorId,
+                        timestamp: data.timestamp,
+                        average: data.average || data.score || 0
+                    };
+                });
+                allVotes.push(...evaluations);
+                console.log('📊 Evaluaciones cargadas desde jury_evaluations:', evaluations.length);
+            } catch (error) {
+                console.warn('⚠️ No se pudo cargar jury_evaluations:', error.message);
+            }
+            
+            console.log('✅ Total votos de jurados cargados:', allVotes.length);
 
             // Cargar votos del público
             const publicVotesSnapshot = await getDocs(collection(db, 'events', eventId, 'votes'));
@@ -745,7 +781,9 @@
         async function generateJuryRanking(includeSecret, votingModeFilter) {
             // Filtrar votos según configuración
             let filteredVotes = allVotes.filter(vote => {
-                if (!includeSecret && vote.isSecret) return false;
+                // 🔒 USAR CAMPO isSecretVote (nuevo) o isSecret (compatibilidad)
+                const isSecretVote = vote.isSecretVote || vote.isSecret || false;
+                if (!includeSecret && isSecretVote) return false;
                 
                 if (votingModeFilter === 'individual' && vote.isCollaborative) return false;
                 if (votingModeFilter === 'collaborative' && !vote.isCollaborative) return false;
@@ -761,6 +799,7 @@
                     artist: artist,
                     totalScore: 0,
                     voteCount: 0,
+                    secretVoteCount: 0, // 🆕 Contador de votos secretos
                     galaScores: {},
                     averageScore: 0,
                     evolution: []
@@ -1398,6 +1437,9 @@
         function updateJuryRanking() {
             ui.juryRanking.innerHTML = '';
             
+            // Verificar si se incluyeron votos secretos
+            const includeSecret = ui.includeSecret.checked;
+            
             juryRanking.forEach((artistData, index) => {
                 const position = index + 1;
                 const card = document.createElement('div');
@@ -1428,10 +1470,15 @@
                                     `).join('')}
                                 </div>
                             </div>
+                            ${artistData.secretVoteCount > 0 && includeSecret ? `
+                                <div class="mt-2 text-xs text-orange-300">
+                                    🔒 Incluye ${artistData.secretVoteCount} voto${artistData.secretVoteCount !== 1 ? 's' : ''} secreto${artistData.secretVoteCount !== 1 ? 's' : ''}
+                                </div>
+                            ` : ''}
                         </div>
                         <div class="text-right">
                             <div class="text-2xl font-bold text-yellow-400">${artistData.averageScore}</div>
-                            <p class="text-sm text-gray-400">promedio</p>
+                            <p class="text-sm text-gray-400">${includeSecret ? 'promedio total' : 'promedio público'}</p>
                             <p class="text-xs text-gray-500">${artistData.voteCount} galas</p>
                         </div>
                     </div>

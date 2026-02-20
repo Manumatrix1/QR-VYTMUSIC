@@ -1008,10 +1008,16 @@
             sortedArtists.forEach((artist, index) => {
                 const artistVotes = galaData.juryVotes[artist.id] || [];
                 
-                // Calcular promedios por criterio desde todas las evaluaciones
+                // 🔒 SEPARAR VOTOS PÚBLICOS Y SECRETOS
+                const publicVotes = artistVotes.filter(vote => !vote.isSecretVote);
+                const secretVotes = artistVotes.filter(vote => vote.isSecretVote);
+                
+                // Calcular promedios por criterio desde todas las evaluaciones (solo públicas)
                 const criteriaAverages = calculateCriteriaAverages(artist.id);
                 const overallAverage = calculateArtistJuryAverage(artist.id);
                 const totalJuryVotes = artistVotes.length;
+                const publicVotesCount = publicVotes.length;
+                const secretVotesCount = secretVotes.length;
 
                 // Crear tarjeta visual similar al análisis del público
                 const analysisCard = document.createElement('div');
@@ -1020,11 +1026,15 @@
                     <div class="flex items-center justify-between mb-4">
                         <div>
                             <h4 class="text-lg font-bold text-white">${artist.name}</h4>
-                            <p class="text-sm text-gray-400">${totalJuryVotes} jurado(s) evaluaron • Posición: #${index + 1}</p>
+                            <p class="text-sm text-gray-400">
+                                ${publicVotesCount} voto${publicVotesCount !== 1 ? 's' : ''} público${publicVotesCount !== 1 ? 's' : ''}
+                                ${secretVotesCount > 0 ? ` • <span class="text-orange-400">🔒 ${secretVotesCount} secreto${secretVotesCount !== 1 ? 's' : ''}</span>` : ''}
+                                • Posición: #${index + 1}
+                            </p>
                         </div>
                         <div class="text-right">
-                            <p class="text-xl font-bold text-green-400">${Math.min(overallAverage, 10).toFixed(1)}/10</p>
-                            <p class="text-xs text-gray-400">Promedio General</p>
+                            <p class="text-xl font-bold text-green-400">${publicVotesCount > 0 ? Math.min(overallAverage, 10).toFixed(1) : 'N/A'}/10</p>
+                            <p class="text-xs text-gray-400">${publicVotesCount > 0 ? 'Promedio Público' : 'Solo votos secretos'}</p>
                         </div>
                     </div>
                     
@@ -1075,15 +1085,23 @@
             const artistVotes = galaData.juryVotes[artistId] || [];
             if (artistVotes.length === 0) return 0;
             
+            // 🔒 FILTRAR VOTOS SECRETOS - NO se incluyen en promedios de gala
+            const publicVotes = artistVotes.filter(vote => !vote.isSecretVote);
+            if (publicVotes.length === 0) {
+                console.log(`⚠️ Solo hay votos secretos para ${artistId}`);
+                return 0;
+            }
+            
             // ✅ LOS DATOS YA ESTÁN EN ESCALA 1-10, NO DIVIDIR POR 10
-            const totalScore = artistVotes.reduce((sum, vote) => {
+            const totalScore = publicVotes.reduce((sum, vote) => {
                 const voteAverage = vote.average || vote.score || 0;
                 console.log(`📊 Voto de ${vote.jurorName}: ${voteAverage}/10`);
                 return sum + voteAverage;
             }, 0);
             
-            const finalAverage = totalScore / artistVotes.length;
-            console.log(`🎯 Promedio final para artista ${artistId}: ${finalAverage.toFixed(1)}/10 (${artistVotes.length} votos)`);
+            const finalAverage = totalScore / publicVotes.length;
+            const secretCount = artistVotes.length - publicVotes.length;
+            console.log(`🎯 Promedio final para artista ${artistId}: ${finalAverage.toFixed(1)}/10 (${publicVotes.length} votos públicos, ${secretCount} secretos)`);
             
             return finalAverage;
         }
@@ -1125,12 +1143,14 @@
 
             return jurySpecificCriteria.map(criteriaId => {
                 const scores = [];
-                artistVotes.forEach(vote => {
+                // 🔒 FILTRAR VOTOS SECRETOS al calcular promedios por criterio
+                const publicVotes = artistVotes.filter(vote => !vote.isSecretVote);
+                publicVotes.forEach(vote => {
                     if (vote.scores && vote.scores[criteriaId] !== undefined) {
                         const score = vote.scores[criteriaId];
                         // ✅ LOS DATOS YA ESTÁN EN ESCALA 1-10, USAR DIRECTAMENTE
                         scores.push(score);
-                        console.log(`📊 ${criteriaId}: ${score}/10`);
+                        console.log(`📊 ${criteriaId}: ${score}/10 (público)`);
                     }
                 });
                 
@@ -1185,9 +1205,16 @@
         function generateDetailedJuryEvaluations(artistId) {
             const artistVotes = galaData.juryVotes[artistId] || [];
             
-            return artistVotes.map(vote => {
-                // Ocultar puntuaciones de jurados anónimos/secretos
-                const isAnonymous = vote.isAnonymous || vote.jurorName.toLowerCase().includes('secreto') || vote.jurorName.toLowerCase().includes('anónimo');
+            // 🔒 FILTRAR VOTOS SECRETOS en reportes parciales de gala
+            const publicVotes = artistVotes.filter(vote => !vote.isSecretVote);
+            const secretCount = artistVotes.length - publicVotes.length;
+            
+            let html = '';
+            
+            // Mostrar solo votos públicos
+            html += publicVotes.map(vote => {
+                // Mantener lógica de anónimos para compatibilidad
+                const isAnonymous = vote.isAnonymous || vote.jurorName.toLowerCase().includes('anónimo');
                 
                 const jurorDisplay = isAnonymous ? 
                     `🤐 ${vote.jurorName}` : 
@@ -1241,6 +1268,18 @@
                     </div>
                 `;
             }).join('');
+            
+            // Agregar mensaje si hay votos secretos
+            if (secretCount > 0) {
+                html += `
+                    <div class="bg-orange-900/30 p-3 rounded border border-orange-600 text-center">
+                        <div class="text-orange-300 font-medium mb-1">🔒 ${secretCount} Voto${secretCount !== 1 ? 's' : ''} Secreto${secretCount !== 1 ? 's' : ''}</div>
+                        <p class="text-xs text-orange-200">Se revelar${secretCount !== 1 ? 'án' : 'á'} al final del certamen completo</p>
+                    </div>
+                `;
+            }
+            
+            return html;
                     
                     // Intentar TODAS las formas posibles de coincidencia
                     vote = artistVotes.find(v => {
