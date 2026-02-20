@@ -4936,8 +4936,9 @@ Formato de respuesta:
                 const evaluationsRef = collection(db, `events/${eventId}/jury_evaluations`);
                 const q = query(
                     evaluationsRef,
-                    where('jurorId', '==', currentJuror.id),
-                    orderBy('timestamp', 'desc') // Más recientes primero (o cambia a 'asc' para cronológico)
+                    where('jurorId', '==', currentJuror.id)
+                    // Nota: orderBy removido para evitar necesidad de índice compuesto
+                    // Ordenaremos en JavaScript después
                 );
 
                 const querySnapshot = await getDocs(q);
@@ -4955,13 +4956,27 @@ Formato de respuesta:
                     return;
                 }
 
+                // Convertir a array y ordenar por timestamp (más recientes primero)
+                const evaluations = [];
+                querySnapshot.forEach((doc) => {
+                    evaluations.push(doc.data());
+                });
+                
+                // Ordenar por timestamp descendente (más recientes primero)
+                evaluations.sort((a, b) => {
+                    const timeA = new Date(a.timestamp).getTime();
+                    const timeB = new Date(b.timestamp).getTime();
+                    return timeB - timeA; // DESC (cambia a timeA - timeB para ASC)
+                });
+
+                console.log('📊 Evaluaciones ordenadas:', evaluations.length);
+
                 // Actualizar contador
-                document.getElementById('feedback-total-votes').textContent = querySnapshot.size;
+                document.getElementById('feedback-total-votes').textContent = evaluations.length;
 
                 // Renderizar cada evaluación
                 feedbackList.innerHTML = '';
-                querySnapshot.forEach((doc) => {
-                    const evaluation = doc.data();
+                evaluations.forEach((evaluation) => {
                     console.log('📝 Evaluación:', evaluation);
                     
                     const artistCard = createFeedbackCard(evaluation);
