@@ -176,14 +176,26 @@
         .score-lock-container {
             display: flex;
             align-items: center;
-            gap: 8px;
-            margin-bottom: 8px;
+            gap: 6px;
         }
         
         .lock-checkbox {
-            width: 18px;
-            height: 18px;
+            width: 20px;
+            height: 20px;
             cursor: pointer;
+            accent-color: #3b82f6;
+        }
+        
+        .lock-checkbox + label {
+            font-size: 0.75rem;
+            color: #9ca3af;
+            user-select: none;
+            transition: color 0.2s;
+        }
+        
+        .lock-checkbox:checked + label {
+            color: #fbbf24;
+            font-weight: 600;
         }
         
         .slider-locked {
@@ -1835,6 +1847,45 @@ Formato de respuesta:
                 }
             });
         };
+        
+        // 🔒 FUNCIÓN PARA BLOQUEAR/DESBLOQUEAR PUNTUACIONES EN EL MODAL
+        window.toggleModalScoreLock = function(artistId, criteriaId) {
+            const lockKey = `${artistId}_${criteriaId}`;
+            const checkbox = document.getElementById(`lock-modal-${artistId}-${criteriaId}`);
+            const slider = document.getElementById(`modal-${criteriaId}-slider`);
+            
+            if (!checkbox || !slider) {
+                console.warn('⚠️ No se encontraron elementos de bloqueo del modal:', lockKey);
+                return;
+            }
+            
+            // Alternar estado de bloqueo
+            window.scoreLocks[lockKey] = checkbox.checked;
+            
+            if (checkbox.checked) {
+                // BLOQUEAR puntuación
+                slider.disabled = true;
+                slider.classList.add('slider-locked');
+                console.log(`🔒 Puntuación bloqueada (modal): ${lockKey}`);
+                
+                // Feedback táctil en móviles
+                if (navigator.vibrate) {
+                    navigator.vibrate(50);
+                }
+            } else {
+                // DESBLOQUEAR puntuación
+                slider.disabled = false;
+                slider.classList.remove('slider-locked');
+                console.log(`🔓 Puntuación desbloqueada (modal): ${lockKey}`);
+                
+                if (navigator.vibrate) {
+                    navigator.vibrate([25, 25, 25]);
+                }
+            }
+            
+            // Guardar estado en localStorage
+            localStorage.setItem('score_locks', JSON.stringify(window.scoreLocks));
+        };
 
         // FUNCIÓN PARA OBTENER COMENTARIOS SEGÚN LA VISTA ACTUAL - MEJORADA
         function getArtistComments(artistId) {
@@ -3355,23 +3406,36 @@ Formato de respuesta:
 
             CRITERIA.forEach(criteria => {
                 const currentValue = currentVotes[criteria.id] || 50;
+                const lockKey = `${artist.id}_${criteria.id}`;
+                const isLocked = window.scoreLocks[lockKey] || false;
 
                 const categoryDiv = document.createElement('div');
                 categoryDiv.className = 'card p-4';
                 categoryDiv.innerHTML = `
                     <div class="flex justify-between items-center mb-2">
                         <label class="font-bold text-white">${criteria.name}</label>
-                        <div class="flex items-center gap-2">
+                        <div class="flex items-center gap-3">
+                            <!-- 🔒 CHECKBOX DE BLOQUEO -->
+                            <div class="score-lock-container">
+                                <input type="checkbox" 
+                                       id="lock-modal-${artist.id}-${criteria.id}" 
+                                       class="lock-checkbox" 
+                                       ${isLocked ? 'checked' : ''}
+                                       onchange="toggleModalScoreLock('${artist.id}', '${criteria.id}')"
+                                       title="Bloquear para evitar cambios accidentales">
+                                <label for="lock-modal-${artist.id}-${criteria.id}" class="text-sm cursor-pointer select-none">🔒 Fijar</label>
+                            </div>
                             <span id="modal-${criteria.id}-display" class="text-xl font-bold text-blue-300">${currentValue}</span>
                             <span id="modal-${criteria.id}-label" class="px-2 py-1 rounded text-xs font-bold"></span>
                         </div>
                     </div>
                     <input type="range" 
                            id="modal-${criteria.id}-slider" 
-                           class="category-slider" 
+                           class="category-slider ${isLocked ? 'slider-locked' : ''}" 
                            min="25" 
                            max="100" 
                            value="${currentValue}"
+                           ${isLocked ? 'disabled' : ''}
                            oninput="updateModalScore('${criteria.id}', this.value)">
                     <div class="flex justify-between text-xs text-gray-300 mt-1">
                         <span>MALO</span>
