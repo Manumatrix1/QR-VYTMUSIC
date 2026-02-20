@@ -4917,16 +4917,23 @@ Formato de respuesta:
         /**
          * Cierra el modal de devoluciones
          */
+        // Variable global para almacenar las evaluaciones y poder filtrarlas
+        let allFeedbackEvaluations = [];
+
         window.closeFeedbackPanel = function() {
             document.getElementById('feedback-panel-modal').classList.add('hidden');
+            // Resetear vista al cerrar
+            document.getElementById('feedback-detail-section').classList.add('hidden');
+            document.getElementById('feedback-artists-grid').style.display = 'grid';
+            document.getElementById('feedback-artist-search').value = '';
         };
 
         /**
          * Carga todas las evaluaciones del jurado actual desde Firebase
          */
         async function loadJurorFeedback() {
-            const feedbackList = document.getElementById('feedback-artists-list');
-            feedbackList.innerHTML = '<div class="text-center text-gray-400 py-8"><div class="text-4xl mb-2">⏳</div><p>Cargando tus evaluaciones...</p></div>';
+            const gridContainer = document.getElementById('feedback-artists-grid');
+            gridContainer.innerHTML = '<div class="col-span-full text-center text-gray-400 py-8"><div class="text-4xl mb-2">⏳</div><p>Cargando tus evaluaciones...</p></div>';
 
             try {
                 console.log('🔍 Cargando evaluaciones del jurado:', currentJuror.id);
@@ -4937,16 +4944,14 @@ Formato de respuesta:
                 const q = query(
                     evaluationsRef,
                     where('jurorId', '==', currentJuror.id)
-                    // Nota: orderBy removido para evitar necesidad de índice compuesto
-                    // Ordenaremos en JavaScript después
                 );
 
                 const querySnapshot = await getDocs(q);
                 console.log('📊 Evaluaciones encontradas:', querySnapshot.size);
 
                 if (querySnapshot.empty) {
-                    feedbackList.innerHTML = `
-                        <div class="text-center text-gray-400 py-8">
+                    gridContainer.innerHTML = `
+                        <div class="col-span-full text-center text-gray-400 py-8">
                             <div class="text-4xl mb-2">📭</div>
                             <p class="text-lg">Aún no has evaluado ningún artista</p>
                             <p class="text-sm mt-2">Las devoluciones aparecerán aquí después de votar</p>
@@ -4956,37 +4961,29 @@ Formato de respuesta:
                     return;
                 }
 
-                // Convertir a array y ordenar por timestamp (más recientes primero)
-                const evaluations = [];
+                // Convertir a array y ordenar por nombre del artista (alfabético)
+                allFeedbackEvaluations = [];
                 querySnapshot.forEach((doc) => {
-                    evaluations.push(doc.data());
+                    allFeedbackEvaluations.push(doc.data());
                 });
                 
-                // Ordenar por timestamp descendente (más recientes primero)
-                evaluations.sort((a, b) => {
-                    const timeA = new Date(a.timestamp).getTime();
-                    const timeB = new Date(b.timestamp).getTime();
-                    return timeB - timeA; // DESC (cambia a timeA - timeB para ASC)
+                // Ordenar alfabéticamente por nombre de artista
+                allFeedbackEvaluations.sort((a, b) => {
+                    return (a.artistName || '').localeCompare(b.artistName || '');
                 });
 
-                console.log('📊 Evaluaciones ordenadas:', evaluations.length);
+                console.log('📊 Evaluaciones ordenadas:', allFeedbackEvaluations.length);
 
                 // Actualizar contador
-                document.getElementById('feedback-total-votes').textContent = evaluations.length;
+                document.getElementById('feedback-total-votes').textContent = allFeedbackEvaluations.length;
 
-                // Renderizar cada evaluación
-                feedbackList.innerHTML = '';
-                evaluations.forEach((evaluation) => {
-                    console.log('📝 Evaluación:', evaluation);
-                    
-                    const artistCard = createFeedbackCard(evaluation);
-                    feedbackList.appendChild(artistCard);
-                });
+                // Renderizar grid visual
+                renderFeedbackGrid(allFeedbackEvaluations);
 
             } catch (error) {
                 console.error('❌ Error cargando devoluciones:', error);
-                feedbackList.innerHTML = `
-                    <div class="text-center text-red-400 py-8">
+                gridContainer.innerHTML = `
+                    <div class="col-span-full text-center text-red-400 py-8">
                         <div class="text-4xl mb-2">⚠️</div>
                         <p class="text-lg">Error al cargar las devoluciones</p>
                         <p class="text-sm mt-2">${error.message}</p>
@@ -4994,6 +4991,113 @@ Formato de respuesta:
                 `;
             }
         }
+
+        /**
+         * Renderiza el grid visual de artistas evaluados
+         */
+        function renderFeedbackGrid(evaluations) {
+            const gridContainer = document.getElementById('feedback-artists-grid');
+            gridContainer.innerHTML = '';
+
+            if (evaluations.length === 0) {
+                gridContainer.innerHTML = `
+                    <div class="col-span-full text-center text-gray-400 py-8">
+                        <div class="text-4xl mb-2">🔍</div>
+                        <p class="text-lg">No se encontraron artistas</p>
+                    </div>
+                `;
+                return;
+            }
+
+            evaluations.forEach((evaluation) => {
+                const artist = artists.find(a => a.id === evaluation.artistId);
+                const artistPhoto = artist?.photoURL || 'https://via.placeholder.com/200?text=Sin+Foto';
+
+                const artistCard = document.createElement('div');
+                artistCard.className = 'relative bg-gray-800 rounded-lg overflow-hidden border-2 border-purple-400 hover:border-purple-300 cursor-pointer transition-all transform hover:scale-105 artist-feedback-card';
+                artistCard.dataset.artistId = evaluation.artistId;
+                artistCard.dataset.artistName = evaluation.artistName?.toLowerCase() || '';
+                artistCard.onclick = () => showFeedbackDetail(evaluation);
+
+                artistCard.innerHTML = `
+                    <!-- Foto del artista -->
+                    <div class="relative" style="padding-top: 100%;">
+                        <img src="${artistPhoto}" 
+                             alt="${evaluation.artistName}"
+                             class="absolute inset-0 w-full h-full object-cover"
+                             onerror="this.src='https://via.placeholder.com/200?text=Sin+Foto'">
+                        
+                        <!-- Badge de puntaje -->
+                        <div class="absolute top-2 right-2 bg-black bg-opacity-80 px-3 py-1 rounded-full">
+                            <span class="text-lg font-bold ${getScoreColor(evaluation.average)}">${evaluation.average?.toFixed(1) || 'N/A'}</span>
+                        </div>
+                    </div>
+
+                    <!-- Nombre del artista -->
+                    <div class="p-3 bg-purple-900 bg-opacity-50">
+                        <h3 class="font-bold text-white text-center truncate">${evaluation.artistName}</h3>
+                        <p class="text-xs text-purple-200 text-center mt-1">Clic para ver devolución</p>
+                    </div>
+                `;
+
+                gridContainer.appendChild(artistCard);
+            });
+        }
+
+        /**
+         * Muestra la devolución detallada de un artista
+         */
+        function showFeedbackDetail(evaluation) {
+            console.log('📋 Mostrando devolución de:', evaluation.artistName);
+            
+            // Ocultar grid y mostrar sección de detalle
+            document.getElementById('feedback-artists-grid').style.display = 'none';
+            const detailSection = document.getElementById('feedback-detail-section');
+            detailSection.classList.remove('hidden');
+            
+            // Renderizar tarjeta completa
+            const detailContent = document.getElementById('feedback-detail-content');
+            detailContent.innerHTML = '';
+            const fullCard = createFeedbackCard(evaluation);
+            detailContent.appendChild(fullCard);
+            
+            // Scroll al inicio de la sección
+            detailSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        /**
+         * Vuelve al grid de artistas
+         */
+        window.closeFeedbackDetail = function() {
+            document.getElementById('feedback-detail-section').classList.add('hidden');
+            document.getElementById('feedback-artists-grid').style.display = 'grid';
+        };
+
+        /**
+         * Filtra los artistas en el grid según el texto de búsqueda
+         */
+        window.filterFeedbackArtists = function() {
+            const searchText = document.getElementById('feedback-artist-search').value.toLowerCase().trim();
+            
+            if (searchText === '') {
+                // Mostrar todos
+                renderFeedbackGrid(allFeedbackEvaluations);
+            } else {
+                // Filtrar por nombre
+                const filtered = allFeedbackEvaluations.filter(evaluation => 
+                    (evaluation.artistName || '').toLowerCase().includes(searchText)
+                );
+                renderFeedbackGrid(filtered);
+            }
+        };
+
+        /**
+         * Limpia el campo de búsqueda y muestra todos los artistas
+         */
+        window.clearFeedbackSearch = function() {
+            document.getElementById('feedback-artist-search').value = '';
+            renderFeedbackGrid(allFeedbackEvaluations);
+        };
 
         /**
          * Crea una tarjeta visual para una evaluación individual
@@ -5132,13 +5236,56 @@ Formato de respuesta:
             <div class="bg-purple-800 bg-opacity-30 p-4 rounded-lg border border-purple-400 mb-6">
                 <h3 class="text-lg font-bold text-purple-200 mb-2">👨‍⚖️ <span id="feedback-juror-name">Jurado</span></h3>
                 <p class="text-sm text-purple-300">
-                    <span id="feedback-total-votes">0</span> artistas evaluados • 
-                    Ordenados por fecha de votación
+                    <span id="feedback-total-votes">0</span> artistas evaluados
                 </p>
             </div>
 
-            <!-- Lista de Artistas Evaluados -->
-            <div id="feedback-artists-list" class="space-y-6">
+            <!-- BUSCADOR DE ARTISTAS -->
+            <div class="bg-gray-800 p-4 rounded-lg mb-6 border-2 border-purple-400">
+                <div class="flex items-center space-x-3">
+                    <div class="text-2xl">🔍</div>
+                    <div class="flex-1">
+                        <input 
+                            type="text" 
+                            id="feedback-artist-search" 
+                            placeholder="Buscar artista por nombre..." 
+                            class="w-full p-3 rounded bg-white text-black border-2 border-purple-300 focus:border-purple-500 text-lg"
+                            oninput="filterFeedbackArtists()"
+                        >
+                    </div>
+                    <button onclick="clearFeedbackSearch()" class="btn bg-purple-600 hover:bg-purple-500 px-4 py-3">Limpiar</button>
+                </div>
+                <p class="text-sm mt-2 text-purple-200 text-center">💡 Haz clic en un artista para ver su devolución completa</p>
+            </div>
+
+            <!-- GRID DE ARTISTAS (VISUAL RÁPIDO) -->
+            <div id="feedback-artists-grid" class="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 mb-8">
+                <div class="col-span-full text-center text-gray-400 py-8">
+                    <div class="text-4xl mb-2">⏳</div>
+                    <p>Cargando devoluciones...</p>
+                </div>
+            </div>
+
+            <!-- DEVOLUCIÓN DETALLADA (SE MUESTRA AL HACER CLIC) -->
+            <div id="feedback-detail-section" class="hidden">
+                <div class="bg-yellow-800 bg-opacity-20 p-4 rounded-lg border-2 border-yellow-500 mb-4">
+                    <h3 class="text-2xl font-bold text-yellow-300 text-center mb-2">
+                        📋 Devolución Detallada
+                    </h3>
+                    <p class="text-center text-yellow-200 text-sm">Esta información la puedes compartir con el artista</p>
+                </div>
+                <div id="feedback-detail-content" class="space-y-6">
+                    <!-- Aquí se cargará la tarjeta detallada -->
+                </div>
+                <div class="text-center mt-6">
+                    <button onclick="closeFeedbackDetail()" class="btn bg-gray-600 hover:bg-gray-500 px-8 py-3 text-lg">
+                        ← Volver al listado
+                    </button>
+                </div>
+            </div>
+
+            <!-- Lista Completa (OCULTA - se usa solo para tener los datos) -->
+            <div id="feedback-artists-list" style="display: none;">
                 <div class="text-center text-gray-400 py-8">
                     <div class="text-4xl mb-2">⏳</div>
                     <p>Cargando tus evaluaciones...</p>
