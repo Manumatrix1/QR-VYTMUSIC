@@ -330,7 +330,7 @@
                     📊 Ver Resultados Completos
                 </a>
                 <button onclick="resetPublicVotes()" class="block text-center px-6 py-3 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white font-bold rounded-xl shadow-lg transition transform hover:scale-105">
-                    🗑️ Reiniciar Ranking (Eliminar Pruebas)
+                    🗑️ REINICIAR TODO (Público + Jurados)
                 </button>
             </div>
         </div>
@@ -604,56 +604,97 @@
         
         // ======================================
         // ======================================
-        // REINICIAR RANKING - ELIMINAR VOTOS DE PRUEBA
+        // REINICIAR TODO - ELIMINAR VOTOS DE PRUEBA (PÚBLICO + JURADOS)
         // ======================================
         window.resetPublicVotes = async function() {
             const confirmed = confirm(
-                '⚠️ ¿ESTÁS SEGURA?\n\n' +
-                'Esto eliminará TODOS los votos del público y reseteará el ranking a CERO.\n\n' +
+                '⚠️⚠️⚠️ ¿ESTÁS COMPLETAMENTE SEGURA? ⚠️⚠️⚠️\n\n' +
+                'Esto eliminará:\n' +
+                '- TODOS los votos del PÚBLICO\n' +
+                '- TODAS las evaluaciones de JURADOS\n' +
+                '- Reseteará el ranking a CERO\n\n' +
                 'Esta acción NO SE PUEDE DESHACER.\n\n' +
                 '¿Continuar?'
             );
             
             if (!confirmed) return;
             
+            // Segunda confirmación
+            const doubleConfirm = confirm(
+                '🚨 ÚLTIMA ADVERTENCIA 🚨\n\n' +
+                'Se eliminarán TODOS los votos de prueba.\n' +
+                'Público + Jurados = TODO A CERO\n\n' +
+                '¿Proceder con la eliminación?'
+            );
+            
+            if (!doubleConfirm) return;
+            
             try {
-                console.log('🗑️ Iniciando eliminación de votos del público...');
+                console.log('🗑️ Iniciando eliminación COMPLETA de votos...');
                 
-                // 1. Eliminar todos los documentos de votaciones_publicas_{eventId}
-                const votesCollection = collection(db, `votaciones_publicas_${eventId}`);
-                const votesSnapshot = await getDocs(votesCollection);
+                // 1. Eliminar votos del PÚBLICO
+                const publicVotesCollection = collection(db, `votaciones_publicas_${eventId}`);
+                const publicVotesSnapshot = await getDocs(publicVotesCollection);
                 
-                console.log(`📊 Se encontraron ${votesSnapshot.size} votos para eliminar`);
+                console.log(`📊 Votos del público encontrados: ${publicVotesSnapshot.size}`);
                 
-                // Usar batch para eliminar todos los votos
-                const batch = writeBatch(db);
-                votesSnapshot.docs.forEach((voteDoc) => {
-                    batch.delete(voteDoc.ref);
+                const batch1 = writeBatch(db);
+                publicVotesSnapshot.docs.forEach((voteDoc) => {
+                    batch1.delete(voteDoc.ref);
                 });
-                await batch.commit();
+                await batch1.commit();
+                console.log('✅ Votos del público eliminados');
                 
-                // 2. Resetear totalScore de todos los artistas a 0
+                // 2. Eliminar evaluaciones de JURADOS
+                const juryVotesCollection = collection(db, `votaciones_jurados_${eventId}`);
+                const juryVotesSnapshot = await getDocs(juryVotesCollection);
+                
+                console.log(`⚖️ Evaluaciones de jurados encontradas: ${juryVotesSnapshot.size}`);
+                
+                const batch2 = writeBatch(db);
+                juryVotesSnapshot.docs.forEach((voteDoc) => {
+                    batch2.delete(voteDoc.ref);
+                });
+                await batch2.commit();
+                console.log('✅ Evaluaciones de jurados eliminadas');
+                
+                // 3. Resetear TODOS los contadores de artistas
                 const artistsCollection = collection(db, `events/${eventId}/artists`);
                 const artistsSnapshot = await getDocs(artistsCollection);
                 
                 console.log(`🎭 Reseteando ${artistsSnapshot.size} artistas...`);
                 
-                const batch2 = writeBatch(db);
+                const batch3 = writeBatch(db);
                 artistsSnapshot.docs.forEach((artistDoc) => {
-                    batch2.update(artistDoc.ref, { totalScore: 0 });
+                    batch3.update(artistDoc.ref, { 
+                        // Votos del público
+                        totalScore: 0,
+                        // Evaluaciones de jurados
+                        totalSingingScore: 0,
+                        totalTransmissionScore: 0,
+                        totalAttitudeScore: 0,
+                        totalOriginalityScore: 0,
+                        totalRatingsCount: 0
+                    });
                 });
-                await batch2.commit();
+                await batch3.commit();
                 
-                alert('✅ Ranking reiniciado exitosamente\n\nTodos los votos del público han sido eliminados.\nLos artistas comienzan en 0 votos.');
+                alert(
+                    '✅✅✅ REINICIO COMPLETADO ✅✅✅\n\n' +
+                    `- ${publicVotesSnapshot.size} votos del público eliminados\n` +
+                    `- ${juryVotesSnapshot.size} evaluaciones de jurados eliminadas\n` +
+                    `- ${artistsSnapshot.size} artistas reseteados a 0\n\n` +
+                    '¡Sistema limpio para empezar el domingo!'
+                );
                 
-                console.log('✅ Reinicio completado');
+                console.log('✅ Reinicio COMPLETO');
                 
                 // Recargar el ranking
                 loadArtistRanking();
                 
             } catch (error) {
-                console.error('❌ Error al reiniciar ranking:', error);
-                alert('❌ Error al reiniciar el ranking: ' + error.message);
+                console.error('❌ Error al reiniciar:', error);
+                alert('❌ Error al reiniciar: ' + error.message);
             }
         };
 
