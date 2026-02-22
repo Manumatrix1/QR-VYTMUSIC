@@ -161,52 +161,70 @@
             ui.qrsContainer.appendChild(cardWrapper);
             
             // 🔧 ESPERAR A QUE EL DOM SE RENDERICE (CRÍTICO EN MÓVIL)
-            // Sin este setTimeout, en móvil los elementos pueden no estar disponibles
-            setTimeout(() => {
-                try {
-                    const qrElement = document.getElementById(`qrcode-${ticket.id}`);
-                    const barcodeElement = document.getElementById(`barcode-${ticket.id}`);
-                    
-                    // Validar que los elementos existen antes de generar códigos
-                    if (!qrElement) {
-                        console.error(`❌ Elemento QR no encontrado: qrcode-${ticket.id}`);
-                        return;
+            // Usamos requestAnimationFrame + setTimeout para asegurar renderizado completo
+            requestAnimationFrame(() => {
+                setTimeout(() => {
+                    try {
+                        const qrElement = document.getElementById(`qrcode-${ticket.id}`);
+                        const barcodeElement = document.getElementById(`barcode-${ticket.id}`);
+                        
+                        // Validar que los elementos existen
+                        if (!qrElement) {
+                            console.error(`❌ Elemento QR no encontrado: qrcode-${ticket.id}`);
+                            return;
+                        }
+                        if (!barcodeElement) {
+                            console.error(`❌ Elemento barcode no encontrado: barcode-${ticket.id}`);
+                            return;
+                        }
+                        
+                        // Validar que las librerías están disponibles
+                        if (typeof QRCode === 'undefined') {
+                            console.error('❌ Librería QRCode no cargada');
+                            qrElement.innerHTML = '<p class="text-red-500 text-xs p-2">QRCode librería no disponible. Recarga la página.</p>';
+                            return;
+                        }
+                        if (typeof JsBarcode === 'undefined') {
+                            console.error('❌ Librería JsBarcode no cargada');
+                            return;
+                        }
+                        
+                        console.log(`✅ Generando códigos para: ${ticket.id}`);
+                        
+                        // Generar QR Code
+                        new QRCode(qrElement, { 
+                            text: ticket.id, 
+                            width: 256, 
+                            height: 256, 
+                            correctLevel: QRCode.CorrectLevel.H 
+                        });
+                        
+                        // Generar Barcode
+                        JsBarcode(barcodeElement, ticket.id, { 
+                            format: "CODE128", 
+                            lineColor: "#000", 
+                            width: 2, 
+                            height: 30, 
+                            displayValue: true, 
+                            fontSize: 14, 
+                            textMargin: 2, 
+                            background: "transparent", 
+                            margin: 10 
+                        });
+                        
+                        console.log(`✅ Códigos generados OK para: ${ticket.id}`);
+                        
+                    } catch (error) {
+                        console.error(`❌ Error al generar códigos para entrada ${ticket.id}:`, error);
+                        console.error(`❌ Stack trace:`, error.stack);
+                        // Mostrar mensaje visual con más info
+                        const qrElement = document.getElementById(`qrcode-${ticket.id}`);
+                        if (qrElement) {
+                            qrElement.innerHTML = `<p class="text-red-500 text-xs p-2">Error: ${error.message}. Recarga la página.</p>`;
+                        }
                     }
-                    if (!barcodeElement) {
-                        console.error(`❌ Elemento barcode no encontrado: barcode-${ticket.id}`);
-                        return;
-                    }
-                    
-                    // Generar QR Code
-                    new QRCode(qrElement, { 
-                        text: ticket.id, 
-                        width: 256, 
-                        height: 256, 
-                        correctLevel: QRCode.CorrectLevel.H 
-                    });
-                    
-                    // Generar Barcode
-                    JsBarcode(barcodeElement, ticket.id, { 
-                        format: "CODE128", 
-                        lineColor: "#000", 
-                        width: 2, 
-                        height: 30, 
-                        displayValue: true, 
-                        fontSize: 14, 
-                        textMargin: 2, 
-                        background: "transparent", 
-                        margin: 10 
-                    });
-                    
-                } catch (error) {
-                    console.error(`❌ Error al generar códigos para entrada ${ticket.id}:`, error);
-                    // Mostrar un mensaje visual en la tarjeta
-                    const qrElement = document.getElementById(`qrcode-${ticket.id}`);
-                    if (qrElement) {
-                        qrElement.innerHTML = '<p class="text-red-500 text-sm p-4">Error al generar QR. Recarga la página.</p>';
-                    }
-                }
-            }, 100); // Pequeño delay de 100ms para que el DOM se renderice
+                }, 250); // Aumentado a 250ms para móviles lentos
+            });
 
             cardWrapper.querySelector('.download-btn').addEventListener('click', () => {
                 const elementToPrint = document.getElementById(`card-${ticket.id}`);
