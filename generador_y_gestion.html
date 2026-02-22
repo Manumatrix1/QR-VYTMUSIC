@@ -408,61 +408,73 @@
                 return; 
             }
             
-            setLoading(true);
-
-            let artistPhotoURL = null;
-            if (photoFile) {
-                setLoading(true, 'Subiendo foto...');
-                const photoRef = ref(storage, `events/${eventId}/ticket_assets/${Date.now()}-${photoFile.name}`);
-                await uploadBytes(photoRef, photoFile);
-                artistPhotoURL = await getDownloadURL(photoRef);
-            }
-
-            setLoading(true, 'Generando entradas...');
-            generatedTicketsData = [];
-            const batch = writeBatch(db);
-            const ticketsCol = collection(db, `events/${eventId}/tickets`);
-            const priceTiers = getPriceTiers();
-
-            // Obtener contador para numeración
-            const counterRef = doc(db, `events/${eventId}/config`, 'ticketCounter');
-            let startNum = 1;
             try {
-                startNum = await runTransaction(db, async (t) => {
-                    const counterDoc = await t.get(counterRef);
-                    const current = counterDoc.exists() ? (counterDoc.data().count || 0) : 0;
-                    t.set(counterRef, { count: current + people.length }, { merge: true });
-                    return current + 1;
+                setLoading(true);
+
+                let artistPhotoURL = null;
+                if (photoFile) {
+                    setLoading(true, 'Subiendo foto...');
+                    const photoRef = ref(storage, `events/${eventId}/ticket_assets/${Date.now()}-${photoFile.name}`);
+                    await uploadBytes(photoRef, photoFile);
+                    artistPhotoURL = await getDownloadURL(photoRef);
+                }
+
+                setLoading(true, 'Generando entradas...');
+                generatedTicketsData = [];
+                const batch = writeBatch(db);
+                const ticketsCol = collection(db, `events/${eventId}/tickets`);
+                const priceTiers = getPriceTiers();
+
+                // Obtener contador para numeración
+                const counterRef = doc(db, `events/${eventId}/config`, 'ticketCounter');
+                let startNum = 1;
+                try {
+                    startNum = await runTransaction(db, async (t) => {
+                        const counterDoc = await t.get(counterRef);
+                        const current = counterDoc.exists() ? (counterDoc.data().count || 0) : 0;
+                        t.set(counterRef, { count: current + people.length }, { merge: true });
+                        return current + 1;
+                    });
+                } catch (e) { 
+                    console.error('Error contador:', e);
+                    // Continuar con numeración desde 1 si falla
+                }
+
+                people.forEach((person, idx) => {
+                    const ticketNum = startNum + idx;
+                    const ticketId = `${prefix}-${crypto.randomUUID().substring(0, 8)}`;
+                    const ticketData = { 
+                        id: ticketId, prefix, showName, showLocation, showAddress, seatLocation,
+                        artistPhotoURL,
+                        name: person.name, 
+                        paymentStatus: person.status, 
+                        price: priceTiers[person.tier] || 0, 
+                        tierName: person.tier, 
+                        used: false,
+                        ticketNumber: ticketNum,
+                        ticketNumberFormatted: ticketNum.toString().padStart(4, '0'),
+                        generatedAt: new Date().toISOString() 
+                    };
+                    batch.set(doc(ticketsCol, ticketId), ticketData);
+                    generatedTicketsData.push(ticketData);
                 });
-            } catch (e) { console.error('Error contador:', e); }
+                
+                await batch.commit();
+                setLoading(false);
+                
+                generatedPrefix = prefix;
 
-            people.forEach((person, idx) => {
-                const ticketNum = startNum + idx;
-                const ticketId = `${prefix}-${crypto.randomUUID().substring(0, 8)}`;
-                const ticketData = { 
-                    id: ticketId, prefix, showName, showLocation, showAddress, seatLocation,
-                    artistPhotoURL,
-                    name: person.name, 
-                    paymentStatus: person.status, 
-                    price: priceTiers[person.tier] || 0, 
-                    tierName: person.tier, 
-                    used: false,
-                    ticketNumber: ticketNum,
-                    ticketNumberFormatted: ticketNum.toString().padStart(4, '0'),
-                    generatedAt: new Date().toISOString() 
-                };
-                batch.set(doc(ticketsCol, ticketId), ticketData);
-                generatedTicketsData.push(ticketData);
-            });
-            
-            await batch.commit();
-            setLoading(false);
-            
-            generatedPrefix = prefix;
-
-            ui.formContainer.classList.add('hidden');
-            ui.generatedTicketsContainer.classList.remove('hidden');
-            renderGeneratedTickets();
+                ui.formContainer.classList.add('hidden');
+                ui.generatedTicketsContainer.classList.remove('hidden');
+                renderGeneratedTickets();
+                
+                console.log(`✅ ${people.length} entradas generadas exitosamente`);
+                
+            } catch (error) {
+                setLoading(false);
+                console.error('❌ Error al generar entradas:', error);
+                alert(`❌ Error al generar entradas:\n\n${error.message}\n\nRevisa la consola para más detalles.`);
+            }
         });
         
         ui.shareBatchQrsBtn.addEventListener('click', () => {
