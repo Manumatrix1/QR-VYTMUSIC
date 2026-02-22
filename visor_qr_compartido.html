@@ -249,20 +249,46 @@
             renderTickets(filtered);
         }
         
+        // Función para normalizar texto (quitar acentos y convertir a minúsculas)
+        function normalizeText(text) {
+            if (!text) return '';
+            return text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+        }
+
         async function loadTickets(eventId, artistPrefix = null) {
             setLoading(true);
             ui.qrsContainer.innerHTML = ''; 
             
             try {
                 const ticketsCollectionRef = collection(db, `events/${eventId}/tickets`);
-                let q = artistPrefix 
-                    ? query(ticketsCollectionRef, where("prefix", "==", artistPrefix))
-                    : query(ticketsCollectionRef);
-
-                ui.artistNameDisplay.textContent = artistPrefix ? `Entradas para: ${decodeURIComponent(artistPrefix)}` : `Todas las Entradas del Evento`;
-
+                
+                // 🔧 CAMBIO CRÍTICO: Cargar TODAS las entradas en vez de filtrar en Firebase
+                // Esto permite comparar sin acentos en JavaScript
+                const q = query(ticketsCollectionRef);
+                
                 const querySnapshot = await getDocs(q);
-                state.allTicketsData = querySnapshot.docs.map(doc => doc.data()).sort((a,b) => (a.name || '').localeCompare(b.name || ''));
+                let allTickets = querySnapshot.docs.map(doc => doc.data()).sort((a,b) => (a.name || '').localeCompare(b.name || ''));
+                
+                // Si hay filtro de artista, filtrar localmente SIN distinguir acentos
+                if (artistPrefix) {
+                    const normalizedArtist = normalizeText(artistPrefix);
+                    console.log(`🔍 Buscando entradas con prefix similar a: "${artistPrefix}" (normalizado: "${normalizedArtist}")`);
+                    
+                    allTickets = allTickets.filter(ticket => {
+                        const normalizedPrefix = normalizeText(ticket.prefix);
+                        const matches = normalizedPrefix === normalizedArtist;
+                        if (matches) {
+                            console.log(`✅ Coincidencia: "${ticket.prefix}" (normalizado: "${normalizedPrefix}") = "${artistPrefix}"`);
+                        }
+                        return matches;
+                    });
+                    
+                    ui.artistNameDisplay.textContent = `Entradas para: ${decodeURIComponent(artistPrefix)} (${allTickets.length} encontradas)`;
+                } else {
+                    ui.artistNameDisplay.textContent = `Todas las Entradas del Evento`;
+                }
+
+                state.allTicketsData = allTickets;
 
                 if (state.allTicketsData.length > 0) {
                     ui.showNameDisplay.textContent = `Show: ${state.allTicketsData[0].showName || 'N/A'}`;
@@ -270,13 +296,13 @@
                     displayMessage(`${state.allTicketsData.length} entradas cargadas.`, 'success');
                     ui.controlsContainer.classList.remove('hidden');
                 } else {
-                    displayMessage('No se encontraron entradas con este criterio.', 'warning');
+                    displayMessage('No se encontraron entradas con este criterio. Verifica que el nombre del artista sea correcto.', 'warning');
                     ui.showNameDisplay.textContent = 'Show: No disponible';
                     ui.controlsContainer.classList.add('hidden');
                 }
             } catch (error) {
-                console.error('Error al cargar las entradas:', error);
-                displayMessage('Error al cargar las entradas. Revisa la consola.', 'error');
+                console.error('❌ Error al cargar las entradas:', error);
+                displayMessage(`Error al cargar las entradas: ${error.message}`, 'error');
             } finally {
                 setLoading(false);
             }
