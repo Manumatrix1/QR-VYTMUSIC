@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>⚡ Generador Lote Express - VYTMUSIC</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <style>
+        body { font-family: 'Inter', -apple-system, sans-serif; background: linear-gradient(135deg, #1e293b, #0f172a); color: #f8fafc; }
+        .hidden { display: none !important; }
+        .loading-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.95); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 1000; }
+        .spinner { border: 4px solid rgba(255,255,255,0.1); border-top: 4px solid #eab308; border-radius: 50%; width: 60px; height: 60px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .ticket-mini { background: #374151; border-radius: 8px; padding: 10px; margin-bottom: 8px; border-left: 4px solid #10b981; }
+        .success-ping { animation: ping 1s cubic-bezier(0, 0, 0.2, 1) infinite; }
+        @keyframes ping { 75%, 100% { transform: scale(2); opacity: 0; } }
+    </style>
+</head>
+<body>
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="loading-overlay hidden">
+        <div class="spinner"></div>
+        <p id="loading-text" class="text-2xl font-bold mt-6 text-yellow-400">Generando entradas...</p>
+        <p id="loading-progress" class="text-lg text-gray-400 mt-2">0 / 0</p>
+    </div>
+
+    <div class="min-h-screen p-4 sm:p-6">
+        <div class="max-w-4xl mx-auto">
+            <!-- Header -->
+            <header class="text-center mb-8">
+                <a id="back-link" href="#" class="text-sky-400 hover:text-sky-300 text-lg inline-block mb-4">
+                    ← Volver al Panel
+                </a>
+                <h1 class="text-4xl sm:text-5xl font-black mb-3">
+                    <span class="text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-orange-500">
+                        ⚡ GENERADOR LOTE EXPRESS
+                    </span>
+                </h1>
+                <p id="event-name" class="text-xl text-gray-300 font-semibold mb-2"></p>
+                <p class="text-gray-400">Genera 50+ entradas en 2 minutos. Ideal para filas largas.</p>
+            </header>
+
+            <!-- Sección de Generación -->
+            <section id="generation-section" class="bg-gradient-to-br from-gray-800 to-gray-900 rounded-2xl p-6 sm:p-8 shadow-2xl border border-yellow-500/30">
+                <!-- Paso 1: Vendedor -->
+                <div class="mb-8">
+                    <h2 class="text-2xl font-bold mb-4 flex items-center">
+                        <span class="bg-yellow-500 text-black rounded-full w-8 h-8 flex items-center justify-center mr-3">1</span>
+                        Vendedor
+                    </h2>
+                    <input type="text" id="seller-name" placeholder="Tu nombre (ej: María López)" 
+                           class="w-full p-4 bg-gray-700 border-2 border-gray-600 rounded-lg text-white text-lg focus:border-yellow-500 focus:outline-none">
+                </div>
+
+                <!-- Paso 2: Precio -->
+                <div class="mb-8">
+                    <h2 class="text-2xl font-bold mb-4 flex items-center">
+                        <span class="bg-yellow-500 text-black rounded-full w-8 h-8 flex items-center justify-center mr-3">2</span>
+                        Precio Único para Todos
+                    </h2>
+                    <div class="flex gap-4">
+                        <input type="number" id="ticket-price" placeholder="10000" value="10000" min="0"
+                               class="flex-1 p-4 bg-gray-700 border-2 border-gray-600 rounded-lg text-white text-lg focus:border-yellow-500 focus:outline-none">
+                        <select id="payment-method" class="p-4 bg-gray-700 border-2 border-gray-600 rounded-lg text-white focus:border-yellow-500 focus:outline-none">
+                            <option value="Efectivo">Efectivo</option>
+                            <option value="Transferencia">Transferencia</option>
+                            <option value="Tarjeta">Tarjeta</option>
+                            <option value="MercadoPago">MercadoPago</option>
+                            <option value="Cortesía">Cortesía</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Paso 3: Lista de Nombres -->
+                <div class="mb-8">
+                    <h2 class="text-2xl font-bold mb-4 flex items-center">
+                        <span class="bg-yellow-500 text-black rounded-full w-8 h-8 flex items-center justify-center mr-3">3</span>
+                        Pegar Lista de Nombres
+                    </h2>
+                    <textarea id="names-list" rows="12" placeholder="Pega la lista aquí, un nombre por línea:&#10;&#10;Juan Pérez&#10;María González&#10;Pedro Rodríguez&#10;Ana Martínez&#10;...&#10;&#10;Tip: Copia desde Excel o Word"
+                              class="w-full p-4 bg-gray-700 border-2 border-gray-600 rounded-lg text-white font-mono text-base focus:border-yellow-500 focus:outline-none resize-none"></textarea>
+                    <div class="flex items-center justify-between mt-3">
+                        <p class="text-gray-400 text-sm">
+                            💡 Tip: Ctrl+V para pegar desde Excel/Word
+                        </p>
+                        <p class="text-yellow-400 font-bold text-lg">
+                            <span id="names-count">0</span> personas
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Vista Previa -->
+                <div id="preview-section" class="mb-8 hidden">
+                    <h3 class="text-xl font-bold mb-4 text-green-400">✅ Vista Previa</h3>
+                    <div id="preview-list" class="max-h-60 overflow-y-auto bg-gray-900 rounded-lg p-4 space-y-2">
+                        <!-- Llenado dinámicamente -->
+                    </div>
+                </div>
+
+                <!-- Botón Generar -->
+                <button id="generate-btn" disabled
+                        class="w-full py-6 bg-gradient-to-r from-yellow-500 to-orange-500 text-black font-black text-2xl rounded-xl hover:from-yellow-400 hover:to-orange-400 transform hover:scale-105 transition-all shadow-2xl disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100">
+                    ⚡ GENERAR <span id="btn-count">0</span> ENTRADAS AHORA
+                </button>
+                
+                <p class="text-center mt-4 text-gray-400 text-sm">
+                    Todas las entradas se marcarán como ingresadas automáticamente
+                </p>
+            </section>
+
+            <!-- Sección de Resultados -->
+            <section id="results-section" class="hidden mt-8 bg-gradient-to-br from-green-900 to-green-800 rounded-2xl p-6 sm:p-8 shadow-2xl border-2 border-green-500">
+                <h2 class="text-3xl font-black text-center mb-6 flex items-center justify-center">
+                    <span class="inline-block w-12 h-12 bg-green-500 rounded-full flex items-center justify-center mr-3">
+                        ✅
+                    </span>
+                    ¡ENTRADAS GENERADAS!
+                </h2>
+                
+                <div class="text-center mb-6">
+                    <p class="text-5xl font-black text-white mb-2">
+                        <span id="success-count">0</span>
+                    </p>
+                    <p class="text-xl text-green-200">entradas creadas con éxito</p>
+                </div>
+
+                <!-- Lista de Entradas Generadas -->
+                <div class="bg-gray-900 rounded-xl p-6 mb-6 max-h-96 overflow-y-auto">
+                    <h3 class="text-lg font-bold mb-4 text-yellow-400">📋 Listado Completo</h3>
+                    <div id="tickets-list" class="space-y-2">
+                        <!-- Llenado dinámicamente -->
+                    </div>
+                </div>
+
+                <!-- Botones de Acción -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <button id="download-pdf-btn" 
+                            class="py-4 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 transition-all">
+                        📥 Descargar PDF con QRs
+                    </button>
+                    <button id="generate-another-btn"
+                            class="py-4 bg-gray-700 text-white font-bold rounded-lg hover:bg-gray-600 transition-all">
+                        🔄 Generar Otro Lote
+                    </button>
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <script type="module">
+        import { db } from './firebase_config.js';
+        import { collection, addDoc, doc, getDoc, setDoc, writeBatch, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Parámetros
+        const params = new URLSearchParams(window.location.search);
+        const eventId = params.get('eventId');
+        const eventName = params.get('eventName');
+
+        if (!eventId || !eventName) {
+            alert('❌ Error: Falta información del evento');
+            window.location.href = 'eventos.html';
+        }
+
+        // Configurar UI
+        document.getElementById('back-link').href = `panel_evento_SIMPLE.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`;
+        document.getElementById('event-name').textContent = eventName;
+
+        // Referencias DOM
+        const ui = {
+            sellerName: document.getElementById('seller-name'),
+            ticketPrice: document.getElementById('ticket-price'),
+            paymentMethod: document.getElementById('payment-method'),
+            namesList: document.getElementById('names-list'),
+            namesCount: document.getElementById('names-count'),
+            btnCount: document.getElementById('btn-count'),
+            previewSection: document.getElementById('preview-section'),
+            previewList: document.getElementById('preview-list'),
+            generateBtn: document.getElementById('generate-btn'),
+            loadingOverlay: document.getElementById('loading-overlay'),
+            loadingText: document.getElementById('loading-text'),
+            loadingProgress: document.getElementById('loading-progress'),
+            generationSection: document.getElementById('generation-section'),
+            resultsSection: document.getElementById('results-section'),
+            successCount: document.getElementById('success-count'),
+            ticketsList: document.getElementById('tickets-list'),
+            downloadPdfBtn: document.getElementById('download-pdf-btn'),
+            generateAnotherBtn: document.getElementById('generate-another-btn')
+        };
+
+        let generatedTickets = [];
+
+        // Auto-cargar vendedor
+        const savedSeller = localStorage.getItem('vyt_door_seller');
+        if (savedSeller) {
+            const sellerData = JSON.parse(savedSeller);
+            ui.sellerName.value = sellerData.name || '';
+        }
+
+        // Contar nombres mientras escribe
+        ui.namesList.addEventListener('input', updateNamesCount);
+
+        function updateNamesCount() {
+            const text = ui.namesList.value.trim();
+            const names = text ? text.split('\n').filter(n => n.trim().length > 0) : [];
+            const count = names.length;
+            
+            ui.namesCount.textContent = count;
+            ui.btnCount.textContent = count;
+            
+            // Habilitar botón si hay nombres
+            ui.generateBtn.disabled = count === 0 || !ui.sellerName.value.trim();
+            
+            // Mostrar vista previa
+            if (count > 0 && count <= 20) {
+                ui.previewSection.classList.remove('hidden');
+                ui.previewList.innerHTML = names.map((name, i) => `
+                    <div class="ticket-mini">
+                        <span class="text-yellow-400 font-bold">N° ${i + 1}</span> - ${name}
+                    </div>
+                `).join('');
+            } else if (count > 20) {
+                ui.previewSection.classList.remove('hidden');
+                ui.previewList.innerHTML = `
+                    <div class="text-center text-gray-400 py-4">
+                        <p class="text-2xl font-bold text-yellow-400">${count} personas</p>
+                        <p class="mt-2">Demasiadas para previsualizar, pero todas se generarán correctamente</p>
+                    </div>
+                `;
+            } else {
+                ui.previewSection.classList.add('hidden');
+            }
+        }
+
+        ui.sellerName.addEventListener('input', () => {
+            ui.generateBtn.disabled = !ui.sellerName.value.trim() || ui.namesCount.textContent === '0';
+        });
+
+        // Generar entradas
+        ui.generateBtn.addEventListener('click', async () => {
+            const sellerName = ui.sellerName.value.trim();
+            const price = parseFloat(ui.ticketPrice.value) || 0;
+            const paymentMethod = ui.paymentMethod.value;
+            const text = ui.namesList.value.trim();
+            const names = text.split('\n').filter(n => n.trim().length > 0);
+
+            if (!sellerName) {
+                alert('❌ Por favor ingresa tu nombre');
+                ui.sellerName.focus();
+                return;
+            }
+
+            if (names.length === 0) {
+                alert('❌ Por favor ingresa al menos un nombre');
+                ui.namesList.focus();
+                return;
+            }
+
+            // Confirmar
+            if (!confirm(`¿Generar ${names.length} entradas por $${price} c/u?`)) {
+                return;
+            }
+
+            try {
+                showLoading('Generando entradas en lote...', 0, names.length);
+
+                // Obtener número secuencial base
+                const counterRef = doc(db, `events/${eventId}/meta`, 'ticket_counter');
+                let startNumber = 1;
+                
+                try {
+                    const counterDoc = await getDoc(counterRef);
+                    startNumber = counterDoc.exists() ? (counterDoc.data().count || 0) + 1 : 1;
+                } catch (error) {
+                    console.warn('⚠️ Error obteniendo contador:', error);
+                    startNumber = Date.now() % 10000;
+                }
+
+                // Generar entradas en batches de 500 (límite Firebase)
+                const batchSize = 500;
+                const totalBatches = Math.ceil(names.length / batchSize);
+                generatedTickets = [];
+
+                for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
+                    const batchStart = batchIndex * batchSize;
+                    const batchEnd = Math.min((batchIndex + 1) * batchSize, names.length);
+                    const batchNames = names.slice(batchStart, batchEnd);
+
+                    const batch = writeBatch(db);
+                    
+                    for (let i = 0; i < batchNames.length; i++) {
+                        const globalIndex = batchStart + i;
+                        const name = batchNames[i].trim();
+                        const ticketNumber = (startNumber + globalIndex).toString().padStart(4, '0');
+                        const ticketId = `LOTE-${Date.now()}-${globalIndex}-${crypto.randomUUID().substring(0, 6)}`;
+
+                        const ticketData = {
+                            id: ticketId,
+                            ticketNumber: ticketNumber,
+                            prefix: 'LOTE-PUERTA',
+                            name: name,
+                            showName: eventName,
+                            price: price,
+                            paymentMethod: paymentMethod,
+                            paymentStatus: 'cobrada',
+                            used: true,  // ✅ AUTO-INGRESADO
+                            usedAt: serverTimestamp(),
+                            scannedBy: sellerName,
+                            generatedAt: new Date().toISOString(),
+                            isDoorSale: true,
+                            isBatchGenerated: true,
+                            soldBy: sellerName,
+                            soldAt: serverTimestamp(),
+                            canVote: true,
+                            voteEligible: true,
+                            entryAuthorized: true
+                        };
+
+                        const ticketRef = doc(collection(db, `events/${eventId}/tickets`));
+                        batch.set(ticketRef, ticketData);
+                        
+                        generatedTickets.push(ticketData);
+
+                        // Actualizar progreso
+                        showLoading('Generando entradas...', globalIndex + 1, names.length);
+                    }
+
+                    await batch.commit();
+                }
+
+                // Actualizar contador
+                await setDoc(counterRef, { count: startNumber + names.length - 1 }, { merge: true });
+
+                // Guardar vendedor
+                localStorage.setItem('vyt_door_seller', JSON.stringify({
+                    name: sellerName,
+                    role: 'Taquilla'
+                }));
+
+                hideLoading();
+                showResults();
+
+            } catch (error) {
+                hideLoading();
+                console.error('❌ Error:', error);
+                alert(`❌ Error al generar entradas:\n\n${error.message}`);
+            }
+        });
+
+        function showLoading(text, current, total) {
+            ui.loadingText.textContent = text;
+            ui.loadingProgress.textContent = `${current} / ${total}`;
+            ui.loadingOverlay.classList.remove('hidden');
+        }
+
+        function hideLoading() {
+            ui.loadingOverlay.classList.add('hidden');
+        }
+
+        function showResults() {
+            ui.generationSection.classList.add('hidden');
+            ui.resultsSection.classList.remove('hidden');
+            ui.successCount.textContent = generatedTickets.length;
+
+            // Mostrar lista
+            ui.ticketsList.innerHTML = generatedTickets.map(ticket => `
+                <div class="ticket-mini flex justify-between items-center">
+                    <div>
+                        <span class="text-yellow-400 font-bold text-lg">N° ${ticket.ticketNumber}</span>
+                        <span class="text-white ml-3">${ticket.name}</span>
+                    </div>
+                    <span class="text-green-400 text-sm">✅ Ingresado</span>
+                </div>
+            `).join('');
+        }
+
+        // Generar otro lote
+        ui.generateAnotherBtn.addEventListener('click', () => {
+            ui.resultsSection.classList.add('hidden');
+            ui.generationSection.classList.remove('hidden');
+            ui.namesList.value = '';
+            updateNamesCount();
+            ui.namesList.focus();
+        });
+
+        // Descargar PDF (básico - para mejorar)
+        ui.downloadPdfBtn.addEventListener('click', () => {
+            alert('📥 Función de descarga PDF en desarrollo.\n\nPor ahora, puedes hacer screenshot de la lista de entradas.');
+        });
+
+        console.log('⚡ Generador de Lote Express inicializado');
+    </script>
+</body>
+</html>

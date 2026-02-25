@@ -66,17 +66,17 @@
             height: 100% !important;
         }
         
-        /* Marco de escaneo - MÁS GRANDE */
+        /* Marco de escaneo - OPTIMIZADO MÁS GRANDE */
         .scan-frame {
             position: fixed; top: 50%; left: 50%; 
             transform: translate(-50%, -50%);
-            width: 400px; height: 400px; z-index: 60;
+            width: 500px; height: 500px; z-index: 60;  /* ⚡ Aumentado de 400 a 500 */
             pointer-events: none;
         }
         
         .scan-corner {
-            position: absolute; width: 60px; height: 60px;
-            border: 5px solid #10b981;
+            position: absolute; width: 70px; height: 70px;  /* ⚡ Aumentado de 60 a 70 */
+            border: 6px solid #10b981;  /* ⚡ Más grueso para mejor visibilidad */
         }
         .corner-tl { top: 0; left: 0; border-right: 0; border-bottom: 0; }
         .corner-tr { top: 0; right: 0; border-left: 0; border-bottom: 0; }
@@ -402,6 +402,29 @@
             ui.counter.textContent = state.counter;
         }
 
+        // 🔊 Sonido de escaneo exitoso
+        function playBeep() {
+            try {
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const oscillator = audioContext.createOscillator();
+                const gainNode = audioContext.createGain();
+                
+                oscillator.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+                
+                oscillator.frequency.value = 800; // Frecuencia del beep
+                oscillator.type = 'sine';
+                
+                gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+                
+                oscillator.start(audioContext.currentTime);
+                oscillator.stop(audioContext.currentTime + 0.1);
+            } catch (error) {
+                console.log('Audio no disponible:', error);
+            }
+        }
+
         // Mostrar feedback
         function showFeedback(type, name, detail) {
             const colors = {
@@ -427,6 +450,11 @@
             `;
             
             document.body.appendChild(flash);
+            
+            // 🔊 Sonido
+            if (type === 'success') {
+                playBeep();
+            }
             
             // Vibración si disponible
             if (navigator.vibrate) {
@@ -507,16 +535,23 @@
                 state.scanner = new Html5Qrcode("qr-reader");
                 
                 const config = {
-                    fps: 30, // MÁS RÁPIDO - antes 20
-                    qrbox: { width: 400, height: 400 }, // MÁS GRANDE - antes 250x250
+                    fps: 60, // ⚡ OPTIMIZADO - 2x más rápido que antes
+                    qrbox: { width: 500, height: 500 }, // 📱 OPTIMIZADO - 25% más grande
                     aspectRatio: 1.0,
+                    experimentalFeatures: {
+                        useBarCodeDetectorIfSupported: true  // 🚀 API nativa del navegador
+                    },
                     formatsToSupport: [
                         Html5QrcodeSupportedFormats.QR_CODE,
                         Html5QrcodeSupportedFormats.CODE_128,  // ✅ CÓDIGO DE BARRAS
                         Html5QrcodeSupportedFormats.CODE_39,   // ✅ CÓDIGO DE BARRAS
-                        Html5QrcodeSupportedFormats.EAN_13,    // ✅ CÓDIGO DE BARRAS ADICIONAL
-                        Html5QrcodeSupportedFormats.EAN_8      // ✅ CÓDIGO DE BARRAS ADICIONAL
-                    ]
+                        Html5QrcodeSupportedFormats.EAN_13,    // ✅ CÓDIGO DE BARRAS
+                        Html5QrcodeSupportedFormats.EAN_8,     // ✅ CÓDIGO DE BARRAS
+                        Html5QrcodeSupportedFormats.UPC_A,     // ✨ NUEVO FORMATO
+                        Html5QrcodeSupportedFormats.UPC_E      // ✨ NUEVO FORMATO
+                    ],
+                    rememberLastUsedCamera: true,
+                    showTorchButtonIfSupported: true  // 🔦 Linterna automática
                 };
 
                 await state.scanner.start(
