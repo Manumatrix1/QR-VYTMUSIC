@@ -29,6 +29,15 @@
             <a id="back-to-reportes" href="reportes.html" class="no-print text-sky-400 hover:underline mb-4 inline-block">&larr; Volver a Reportes</a>
             <h1 class="text-4xl font-bold text-sky-400 mb-2">📊 Reporte de Participación por Gala</h1>
             
+            <!-- ✨ FILTRO POR GRUPOS (NUEVO) -->
+            <div id="groups-filter-section" class="no-print bg-gradient-to-r from-purple-900 to-blue-900 p-6 rounded-lg mb-6 max-w-4xl mx-auto border border-purple-500">
+                <h2 class="text-2xl font-bold mb-4 text-white">📁 Seleccionar Grupo / Certamen</h2>
+                <p class="text-gray-300 mb-4 text-sm">Filtra las galas por grupo para ver solo un certamen específico (ej: Generación 13)</p>
+                <div id="groups-selector" class="flex flex-wrap gap-3 justify-center">
+                    <!-- Los botones de grupos se cargarán aquí dinámicamente -->
+                </div>
+            </div>
+
             <!-- SELECTOR DE GALA -->
             <div id="gala-selector-container" class="no-print bg-gray-800 p-6 rounded-lg mb-6 max-w-2xl mx-auto">
                 <h2 class="text-xl font-bold mb-4">🎯 Seleccionar Gala para Reporte</h2>
@@ -202,6 +211,7 @@
     <script type="module">
         import { db } from './firebase_config.js';
         import { collection, getDocs, query, where, orderBy, doc, getDoc, setDoc, updateDoc, writeBatch, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { loadGroups, renderGroupsSelector, getFilteredEvents } from './groups-filter-manager.js';
 
         const urlParams = new URLSearchParams(window.location.search);
         let eventId = urlParams.get('eventId');
@@ -209,6 +219,7 @@
         
         // Variables para el selector
         let allEvents = [];
+        let filteredEventsByGroup = []; // Eventos filtrados por grupo
         let selectedEventId = null;
         let selectedEventName = null;
 
@@ -222,20 +233,54 @@
         const changeGalaBtn = document.getElementById('change-gala-btn');
         const resetVotesBtn = document.getElementById('reset-votes-btn');
 
-        // Cargar lista de eventos al inicio
+        // ✨ NUEVAS FUNCIONES PARA FILTRO DE GRUPOS
+        async function initializeGroupsAndEvents() {
+            try {
+                await loadGroups(db);
+                renderGroupsSelector('groups-selector', onGroupChange);
+            } catch (error) {
+                console.error('Error cargando grupos:', error);
+                // Si falla, cargar todos los eventos sin filtro
+                await loadEventsList();
+            }
+        }
+
+        // Callback cuando cambia la selección de grupo
+        function onGroupChange(groupId, events, selectedGroup) {
+            if (groupId) {
+                console.log(`📁 Grupo seleccionado: ${selectedGroup.name} con ${events.length} eventos`);
+            } else {
+                console.log(`📋 Mostrando todos los eventos (${events.length})`);
+            }
+            filteredEventsByGroup = events;
+            loadEventsList();
+        }
+
+        // Cargar lista de eventos (ahora filtra por grupo si está activo)
         async function loadEventsList() {
             try {
-                const eventsSnapshot = await getDocs(collection(db, 'events'));
+                // Si hay filtro de grupo activo, usar esos eventos
+                let eventsToShow;
+                if (filteredEventsByGroup.length > 0) {
+                    eventsToShow = filteredEventsByGroup;
+                } else {
+                    // Si no hay filtro, cargar todos
+                    const eventsSnapshot = await getDocs(collection(db, 'events'));
+                    eventsToShow = eventsSnapshot.docs.map(doc => ({ 
+                        id: doc.id, 
+                        ...doc.data() 
+                    }));
+                }
+                
                 allEvents = [];
                 
-                for (const eventDoc of eventsSnapshot.docs) {
-                    const eventData = eventDoc.data();
+                for (const eventData of eventsToShow) {
                     // Verificar si el evento tiene artistas
-                    const artistsSnapshot = await getDocs(collection(db, `events/${eventDoc.id}/artists`));
+                    const artistsSnapshot = await getDocs(collection(db, `events/${eventData.id}/artists`));
                     
                     if (artistsSnapshot.size > 0) {
                         allEvents.push({
-                            id: eventDoc.id,
+                            id: eventData.id,
                             name: eventData.name,
                             date: eventData.date,
                             artistCount: artistsSnapshot.size
@@ -257,6 +302,12 @@
 
         function populateGalaSelector() {
             galaSelector.innerHTML = '<option value="">-- Selecciona una gala --</option>';
+            
+            if (allEvents.length === 0) {
+                galaSelector.innerHTML = '<option value="">No hay galas disponibles</option>';
+                loadGalaBtn.disabled = true;
+                return;
+            }
             
             allEvents.forEach(event => {
                 const option = document.createElement('option');
@@ -420,8 +471,8 @@
             eventNameDisplay.textContent = eventName;
             loadGalaData();
         } else {
-            // Si no, mostrar selector
-            loadEventsList();
+            // Si no, mostrar selector con filtro de grupos
+            initializeGroupsAndEvents();
         }
 
         let galaData = {
