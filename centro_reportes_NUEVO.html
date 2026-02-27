@@ -90,14 +90,14 @@
             <p id="event-name-display" class="text-xl text-gray-300 font-semibold"></p>
         </header>
 
-        <!-- SELECTOR DE GRUPOS (Principal Feature) -->
+        <!-- SELECTOR DE GRUPOS (Filtro Opcional) -->
         <section class="mb-8 p-6 rounded-2xl bg-gradient-to-br from-purple-900/40 to-blue-900/40 border border-purple-500/30">
             <h2 class="text-2xl font-bold text-white mb-4 flex items-center gap-3">
                 <span class="text-3xl">📁</span>
-                Seleccionar Grupo / Certamen
+                Filtrar por Grupo / Certamen (Opcional)
             </h2>
             <p class="text-gray-300 mb-4 text-sm">
-                Selecciona un grupo para ver todos sus datos económicos y reportes consolidados
+                Por defecto se muestran TODOS los eventos. Selecciona un grupo específico para filtrar (ej: Generación 13)
             </p>
             
             <div id="groups-selector" class="flex flex-wrap gap-3 mb-4">
@@ -116,8 +116,8 @@
             </div>
         </section>
 
-        <!-- DASHBOARD ECONÓMICO DEL GRUPO -->
-        <section id="economic-dashboard" class="hidden mb-8">
+        <!-- DASHBOARD ECONÓMICO -->
+        <section id="economic-dashboard" class="mb-8">
             <h2 class="text-3xl font-bold text-white mb-6 flex items-center gap-3">
                 <span>💰</span>
                 Dashboard Económico
@@ -452,6 +452,8 @@
             const container = document.getElementById('groups-selector');
             if (allGroups.length === 0) {
                 container.innerHTML = '<p class="text-gray-400">No hay grupos creados. Crea grupos en la página de eventos.</p>';
+                // 🔥 MOSTRAR TODOS LOS EVENTOS aunque no haya grupos
+                selectGroup(null, null, true);
                 return;
             }
 
@@ -459,9 +461,10 @@
             
             // Botón "Todos los eventos"
             const allBtn = document.createElement('button');
+            allBtn.id = 'all-events-btn';
             allBtn.className = 'group-selector-btn px-6 py-3 bg-gray-700 hover:bg-gray-600 text-white font-bold rounded-lg';
             allBtn.textContent = '📋 Todos los Eventos';
-            allBtn.onclick = () => selectGroup(null);
+            allBtn.onclick = () => selectGroup(null, allBtn);
             container.appendChild(allBtn);
 
             // Botones de grupos
@@ -470,32 +473,43 @@
                 const btn = document.createElement('button');
                 btn.className = 'group-selector-btn px-6 py-3 bg-purple-700 hover:bg-purple-600 text-white font-bold rounded-lg';
                 btn.innerHTML = `📁 ${group.name} <span class="text-sm opacity-75">(${eventsInGroup.length})</span>`;
-                btn.onclick = () => selectGroup(group.id);
+                btn.dataset.groupId = group.id;
+                btn.onclick = () => selectGroup(group.id, btn);
                 container.appendChild(btn);
             });
+            
+            // 🔥 AUTO-SELECCIONAR "Todos los eventos" al cargar
+            selectGroup(null, allBtn, true);
         }
 
-        async function selectGroup(groupId) {
+        async function selectGroup(groupId, buttonElement, isInitialLoad = false) {
             // Actualizar botones activos
             document.querySelectorAll('.group-selector-btn').forEach(btn => btn.classList.remove('active'));
-            event.target.classList.add('active');
+            if (buttonElement) {
+                buttonElement.classList.add('active');
+            }
 
             if (!groupId) {
-                // Mostrar todos los eventos
+                // 🔥 MOSTRAR TODOS LOS EVENTOS (no ocultar el dashboard)
+                console.log('📊 Mostrando TODOS los eventos:', allEvents.length);
                 document.getElementById('selected-group-info').classList.add('hidden');
-                document.getElementById('economic-dashboard').classList.add('hidden');
+                
+                // Cargar datos económicos de TODOS los eventos
+                await loadEconomicData(allEvents);
                 return;
             }
 
             const group = allGroups.find(g => g.id === groupId);
             const eventsInGroup = allEvents.filter(e => e.groupId === groupId);
+            
+            console.log(`📁 Mostrando grupo: ${group.name} con ${eventsInGroup.length} eventos`);
 
             // Mostrar info del grupo
             document.getElementById('selected-group-name').textContent = group.name;
             document.getElementById('selected-group-galas').textContent = `${eventsInGroup.length} gala(s)`;
             document.getElementById('selected-group-info').classList.remove('hidden');
 
-            // Cargar datos económicos
+            // Cargar datos económicos del grupo específico
             await loadEconomicData(eventsInGroup);
         }
 
