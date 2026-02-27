@@ -89,10 +89,22 @@
                     <!-- Crear Nuevo Grupo -->
                     <div class="bg-gray-700 p-3 sm:p-4 rounded-lg mb-4 sm:mb-6">
                         <h3 class="text-base sm:text-lg font-bold text-purple-300 mb-3">Crear Nuevo Grupo</h3>
-                        <div class="flex flex-col sm:flex-row gap-2">
-                            <input type="text" id="new-group-name" placeholder="Ej: Certamen 2025" class="flex-1 p-3 rounded-md bg-gray-900 text-white border border-gray-600 text-base" onkeypress="if(event.key==='Enter'){event.preventDefault();createGroup();}">
-                            <button onclick="createGroup()" type="button" class="w-full sm:w-auto px-6 py-3 bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg whitespace-nowrap">
-                                ➕ Crear Grupo
+                        <div class="space-y-3">
+                            <input type="text" id="new-group-name" placeholder="Ej: Certamen 2025" class="w-full p-3 rounded-md bg-gray-900 text-white border border-gray-600 text-base">
+                            
+                            <!-- Selector de Galas para el Grupo -->
+                            <div class="bg-gray-800 p-3 rounded-lg border border-gray-600">
+                                <label class="block text-sm font-semibold text-purple-200 mb-2">
+                                    🎭 Seleccionar Galas para este Grupo
+                                    <span class="text-xs text-gray-400 font-normal">(marca las que quieres incluir)</span>
+                                </label>
+                                <div id="events-selector-create" class="space-y-2 max-h-48 overflow-y-auto">
+                                    <p class="text-gray-400 text-sm">Cargando eventos...</p>
+                                </div>
+                            </div>
+                            
+                            <button onclick="createGroup()" type="button" class="w-full px-6 py-3 bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg">
+                                ➕ Crear Grupo con Galas Seleccionadas
                             </button>
                         </div>
                     </div>
@@ -276,6 +288,55 @@
 
                 existingGroupsList.innerHTML = '';
                 allGroups.forEach(group => {
+                    const eventCount = allEvents.filter(e => e.data().groupId === group.id).length;
+                    const groupItem = document.createElement('div');
+                    groupItem.className = 'flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 p-3 bg-gray-800 rounded-lg border border-gray-600';
+                    groupItem.innerHTML = `
+                        <div class="flex-1">
+                            <span class="font-bold text-purple-200">📁 ${group.name}</span>
+                            <span class="ml-2 text-xs text-gray-400">(${eventCount} eventos)</span>
+                        </div>
+                        <div class="flex gap-2 flex-wrap">
+                            <button onclick="manageGroupEvents('${group.id}', '${group.name.replace(/'/g, "\\'")}', ${eventCount})" class="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg font-semibold">
+                                🎭 Gestionar Galas
+                            </button>
+                            <button onclick="renameGroup('${group.id}', '${group.name.replace(/'/g, "\\'")}', ${eventCount})" class="px-3 py-1 bg-yellow-600 hover:bg-yellow-700 text-white text-sm rounded-lg font-semibold">
+                                ✏️ Renombrar
+                            </button>
+                            <button onclick="deleteGroup('${group.id}', ${eventCount})" class="px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-sm rounded-lg font-semibold">
+                                🗑️ Eliminar
+                            </button>
+                        </div>
+                    `;
+                    existingGroupsList.appendChild(groupItem);
+                });
+                
+                // Actualizar selector de eventos para crear grupo
+                updateEventsSelector();
+            }
+            
+            // Nueva función para actualizar el selector de eventos
+            function updateEventsSelector() {
+                const eventsSelector = document.getElementById('events-selector-create');
+                if (!eventsSelector) return;
+                
+                if (allEvents.length === 0) {
+                    eventsSelector.innerHTML = '<p class="text-gray-400 text-sm">No hay eventos creados aún</p>';
+                    return;
+                }
+                
+                eventsSelector.innerHTML = '';
+                allEvents.forEach(eventDoc => {
+                    const event = eventDoc.data();
+                    const eventItem = document.createElement('label');
+                    eventItem.className = 'flex items-center p-2 hover:bg-gray-700 rounded cursor-pointer';
+                    eventItem.innerHTML = `
+                        <input type="checkbox" class="w-4 h-4 mr-3" value="${event.id}" data-event-checkbox>
+                        <span class="text-sm text-white">${event.name} <span class="text-xs text-gray-400">(${event.date})</span></span>
+                    `;
+                    eventsSelector.appendChild(eventItem);
+                });
+            }
                     const eventCount = allEvents.filter(e => e.data().groupId === group.id).length;
                     const groupDiv = document.createElement('div');
                     groupDiv.className = 'flex flex-col sm:flex-row items-start sm:items-center justify-between bg-gray-800 p-3 rounded-lg gap-2';
@@ -527,27 +588,148 @@
                 }
 
                 try {
-                    await addDoc(groupsCol, {
+                    // Obtener eventos seleccionados
+                    const selectedCheckboxes = document.querySelectorAll('#events-selector-create input[type="checkbox"]:checked');
+                    const selectedEventIds = Array.from(selectedCheckboxes).map(cb => cb.value);
+                    
+                    // Crear el grupo
+                    const newGroupRef = await addDoc(groupsCol, {
                         name: groupName,
                         createdAt: serverTimestamp(),
                         ownerId: user.uid
                     });
+                    
+                    // Asignar eventos seleccionados al grupo
+                    if (selectedEventIds.length > 0) {
+                        const batch = writeBatch(db);
+                        selectedEventIds.forEach(eventId => {
+                            const eventRef = doc(db, 'events', eventId);
+                            batch.update(eventRef, { groupId: newGroupRef.id });
+                        });
+                        await batch.commit();
+                    }
 
                     document.getElementById('new-group-name').value = '';
+                    // Desmarcar todos los checkboxes
+                    document.querySelectorAll('#events-selector-create input[type="checkbox"]').forEach(cb => cb.checked = false);
+                    
                     await loadGroups();
-                    alert(`✅ Grupo "${groupName}" creado exitosamente`);
+                    alert(`✅ Grupo "${groupName}" creado exitosamente con ${selectedEventIds.length} gala(s)`);
                 } catch (error) {
                     console.error('Error creando grupo:', error);
                     alert('Error al crear el grupo. Intenta de nuevo.');
                 }
             };
 
-            window.renameGroup = async function(groupId, currentName) {
+            window.renameGroup = async function(groupId, currentName, eventCount) {
                 const newName = prompt('Ingresa el nuevo nombre para el grupo:', currentName);
                 if (newName && newName.trim() !== '') {
                     const groupRef = doc(db, 'event_groups', groupId);
                     await updateDoc(groupRef, { name: newName.trim() });
                     await loadGroups();
+                }
+            };
+            
+            // Nueva función para gestionar galas de un grupo
+            window.manageGroupEvents = async function(groupId, groupName, currentEventCount) {
+                // Crear modal dinámico
+                const modal = document.createElement('div');
+                modal.className = 'fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50 p-4';
+                modal.id = 'manage-group-events-modal';
+                
+                // Obtener eventos del grupo
+                const eventsInGroup = allEvents.filter(e => e.data().groupId === groupId).map(e => e.data().id);
+                
+                let eventsHTML = '';
+                if (allEvents.length === 0) {
+                    eventsHTML = '<p class="text-gray-400 text-sm text-center">No hay eventos creados aún</p>';
+                } else {
+                    allEvents.forEach(eventDoc => {
+                        const event = eventDoc.data();
+                        const isChecked = eventsInGroup.includes(event.id);
+                        eventsHTML += `
+                            <label class="flex items-center p-3 hover:bg-gray-700 rounded cursor-pointer border border-gray-700">
+                                <input type="checkbox" class="w-5 h-5 mr-3" value="${event.id}" ${isChecked ? 'checked' : ''} data-group-event-checkbox>
+                                <div class="flex-1">
+                                    <span class="text-sm font-semibold text-white">${event.name}</span>
+                                    <span class="text-xs text-gray-400 ml-2">(${event.date})</span>
+                                </div>
+                            </label>
+                        `;
+                    });
+                }
+                
+                modal.innerHTML = `
+                    <div class="bg-gray-800 rounded-2xl max-w-2xl w-full p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+                        <div class="flex justify-between items-center mb-6">
+                            <div>
+                                <h2 class="text-2xl font-bold text-blue-400">🎭 Gestionar Galas del Grupo</h2>
+                                <p class="text-gray-300 mt-1">📁 ${groupName}</p>
+                            </div>
+                            <button onclick="closeManageGroupEventsModal()" class="text-gray-400 hover:text-white text-3xl leading-none">&times;</button>
+                        </div>
+                        
+                        <div class="bg-gray-700 p-4 rounded-lg mb-4">
+                            <p class="text-sm text-gray-300 mb-3">Selecciona las galas que quieres incluir en este grupo:</p>
+                            <div class="space-y-2 max-h-96 overflow-y-auto">
+                                ${eventsHTML}
+                            </div>
+                        </div>
+                        
+                        <div class="flex gap-3">
+                            <button onclick="saveGroupEvents('${groupId}', '${groupName.replace(/'/g, "\\'")}' )" class="flex-1 px-6 py-3 bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg">
+                                ✅ Guardar Cambios
+                            </button>
+                            <button onclick="closeManageGroupEventsModal()" class="px-6 py-3 bg-gray-600 hover:bg-gray-700 text-white font-bold rounded-lg">
+                                Cancelar
+                            </button>
+                        </div>
+                    </div>
+                `;
+                
+                document.body.appendChild(modal);
+            };
+            
+            window.saveGroupEvents = async function(groupId, groupName) {
+                try {
+                    const selectedCheckboxes = document.querySelectorAll('[data-group-event-checkbox]:checked');
+                    const selectedEventIds = Array.from(selectedCheckboxes).map(cb => cb.value);
+                    
+                    // Obtener eventos que actualmente están en el grupo
+                    const currentEventsInGroup = allEvents.filter(e => e.data().groupId === groupId).map(e => e.data().id);
+                    
+                    const batch = writeBatch(db);
+                    
+                    // Quitar groupId de eventos que ya no están seleccionados
+                    currentEventsInGroup.forEach(eventId => {
+                        if (!selectedEventIds.includes(eventId)) {
+                            const eventRef = doc(db, 'events', eventId);
+                            batch.update(eventRef, { groupId: deleteField() });
+                        }
+                    });
+                    
+                    // Agregar groupId a eventos nuevamente seleccionados
+                    selectedEventIds.forEach(eventId => {
+                        if (!currentEventsInGroup.includes(eventId)) {
+                            const eventRef = doc(db, 'events', eventId);
+                            batch.update(eventRef, { groupId: groupId });
+                        }
+                    });
+                    
+                    await batch.commit();
+                    await loadGroups();
+                    closeManageGroupEventsModal();
+                    alert(`✅ Galas actualizadas para "${groupName}"\n\nTotal: ${selectedEventIds.length} gala(s)`);
+                } catch (error) {
+                    console.error('Error actualizando galas del grupo:', error);
+                    alert('Error al actualizar las galas. Intenta de nuevo.');
+                }
+            };
+            
+            window.closeManageGroupEventsModal = function() {
+                const modal = document.getElementById('manage-group-events-modal');
+                if (modal) {
+                    modal.remove();
                 }
             };
 
