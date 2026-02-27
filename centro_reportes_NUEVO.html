@@ -80,15 +80,15 @@
 <body class="min-h-screen p-4 sm:p-6">
     
     <!-- 🔥 MODAL DE SELECCIÓN INICIAL DE GRUPO -->
-    <div id="group-selection-modal" class="fixed inset-0 bg-black bg-opacity-95 flex items-center justify-center z-50 p-4">
-        <div class="bg-gradient-to-br from-gray-800 to-gray-900 rounded-3xl max-w-3xl w-full p-8 shadow-2xl border-2 border-purple-500">
+    <div id="group-selection-modal" class="fixed inset-0 bg-black bg-opacity-95 flex items-center justify-center z-50 p-4" style="pointer-events: auto;">
+        <div class="bg-gradient-to-br from-gray-800 to-gray-900 rounded-3xl max-w-3xl w-full p-8 shadow-2xl border-2 border-purple-500" style="pointer-events: auto; position: relative; z-index: 100;">
             <div class="text-center mb-8">
                 <div class="text-6xl mb-4">🎭</div>
                 <h2 class="text-4xl font-black text-white mb-3">¡Bienvenido al Centro de Reportes!</h2>
                 <p class="text-xl text-gray-300">Selecciona qué grupo quieres analizar</p>
             </div>
             
-            <div id="modal-groups-list" class="space-y-3 max-h-96 overflow-y-auto mb-6">
+            <div id="modal-groups-list" class="space-y-3 max-h-96 overflow-y-auto mb-6" style="pointer-events: auto;">
                 <!-- Los grupos se cargarán aquí -->
                 <div class="text-center text-gray-400 py-8">
                     <div class="animate-spin rounded-full h-12 w-12 border-4 border-purple-500 border-t-transparent mx-auto mb-4"></div>
@@ -512,21 +512,29 @@
             const allBtn = document.createElement('button');
             allBtn.type = 'button'; // 🔥 Importante para prevenir submit
             allBtn.className = 'w-full p-5 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-bold rounded-xl text-left flex items-center justify-between group transition-all transform hover:scale-102 cursor-pointer';
+            allBtn.style.cssText = 'pointer-events: auto !important; position: relative !important; z-index: 1000 !important;'; // 🔥 FORZAR interacción
             allBtn.innerHTML = `
-                <div class="flex items-center gap-4">
+                <div class="flex items-center gap-4" style="pointer-events: none;">
                     <span class="text-4xl">📋</span>
                     <div>
                         <div class="text-2xl font-black">Todos los Eventos</div>
                         <div class="text-sm opacity-90">Ver estadísticas completas de todas las galas (${allEvents.length} eventos)</div>
                     </div>
                 </div>
-                <span class="text-3xl group-hover:translate-x-2 transition-transform">→</span>
+                <span class="text-3xl group-hover:translate-x-2 transition-transform" style="pointer-events: none;">→</span>
             `;
-            allBtn.onclick = async (e) => {
+            
+            // 🔥 Usar addEventListener en lugar de onclick
+            allBtn.addEventListener('click', async (e) => {
                 e.preventDefault();
-                console.log('🖱️ Clic en botón: Todos los Eventos');
+                e.stopPropagation();
+                console.log('🖱️ CLICK DETECTADO: Todos los Eventos');
                 await closeModalAndLoadData(null);
-            };
+            });
+            
+            // Debug hover
+            allBtn.addEventListener('mouseenter', () => console.log('🖱️ Mouse sobre: Todos los Eventos'));
+            
             modalContainer.appendChild(allBtn);
             
             if (allGroups.length === 0) {
@@ -551,21 +559,29 @@
                 const btn = document.createElement('button');
                 btn.type = 'button'; // 🔥 Importante
                 btn.className = 'w-full p-5 bg-gradient-to-r from-purple-700 to-pink-600 hover:from-purple-800 hover:to-pink-700 text-white font-bold rounded-xl text-left flex items-center justify-between group transition-all transform hover:scale-102 cursor-pointer';
+                btn.style.cssText = 'pointer-events: auto !important; position: relative !important; z-index: 1000 !important;'; // 🔥 FORZAR interacción
                 btn.innerHTML = `
-                    <div class="flex items-center gap-4">
+                    <div class="flex items-center gap-4" style="pointer-events: none;">
                         <span class="text-4xl">📁</span>
                         <div>
                             <div class="text-2xl font-black">${group.name}</div>
                             <div class="text-sm opacity-90">${eventsInGroup.length} gala(s) en este certamen</div>
                         </div>
                     </div>
-                    <span class="text-3xl group-hover:translate-x-2 transition-transform">→</span>
+                    <span class="text-3xl group-hover:translate-x-2 transition-transform" style="pointer-events: none;">→</span>
                 `;
-                btn.onclick = async (e) => {
+                
+                // 🔥 Usar addEventListener en lugar de onclick
+                btn.addEventListener('click', async (e) => {
                     e.preventDefault();
-                    console.log(`🖱️ Clic en botón: ${group.name}`);
+                    e.stopPropagation();
+                    console.log(`🖱️ CLICK DETECTADO: ${group.name}`);
                     await closeModalAndLoadData(group.id);
-                };
+                });
+                
+                // Debug hover
+                btn.addEventListener('mouseenter', () => console.log(`🖱️ Mouse sobre: ${group.name}`));
+                
                 modalContainer.appendChild(btn);
             });
             
@@ -840,6 +856,26 @@
             console.log('✅ Desglose de galas renderizado');
             console.log('🎉 loadEconomicData COMPLETADA - Dashboard debería estar visible');
         }
+
+        // 🔍 DEBUG GLOBAL DE CLICS
+        document.addEventListener('click', (e) => {
+            console.log('🖱️ CLICK GLOBAL detectado en:', {
+                tag: e.target.tagName,
+                id: e.target.id,
+                classes: e.target.className,
+                text: e.target.textContent?.substring(0, 30),
+                pointerEvents: window.getComputedStyle(e.target).pointerEvents
+            });
+        }, true); // true = capturing phase (detecta antes que bubbling)
+        
+        // 🔍 DEBUG: Verificar pointer-events del modal al cargar
+        window.addEventListener('load', () => {
+            const modal = document.getElementById('group-selection-modal');
+            const modalList = document.getElementById('modal-groups-list');
+            console.log('🔍 Pointer-events al cargar:');
+            console.log('   Modal:', window.getComputedStyle(modal).pointerEvents);
+            console.log('   Modal list:', window.getComputedStyle(modalList).pointerEvents);
+        });
 
         // Inicializar
         loadGroupsAndEvents();
