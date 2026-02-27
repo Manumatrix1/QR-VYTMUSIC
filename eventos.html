@@ -684,34 +684,52 @@
                     const selectedCheckboxes = document.querySelectorAll('[data-group-event-checkbox]:checked');
                     const selectedEventIds = Array.from(selectedCheckboxes).map(cb => cb.value);
                     
+                    console.log('📝 Guardando galas para grupo:', groupName);
+                    console.log('✅ Galas seleccionadas:', selectedEventIds);
+                    
                     // Obtener eventos que actualmente están en el grupo
                     const currentEventsInGroup = allEvents.filter(e => e.data().groupId === groupId).map(e => e.data().id);
+                    console.log('📋 Galas actuales en el grupo:', currentEventsInGroup);
                     
                     const batch = writeBatch(db);
+                    let changesCount = 0;
                     
-                    // Quitar groupId de eventos que ya no están seleccionados
+                    // 1. AGREGAR groupId a TODAS las galas seleccionadas (nuevas o ya existentes)
+                    selectedEventIds.forEach(eventId => {
+                        const eventRef = doc(db, 'events', eventId);
+                        batch.update(eventRef, { groupId: groupId });
+                        changesCount++;
+                        console.log(`➕ Añadiendo "${eventId}" al grupo`);
+                    });
+                    
+                    // 2. QUITAR groupId de eventos que estaban en el grupo pero ya NO están seleccionados
                     currentEventsInGroup.forEach(eventId => {
                         if (!selectedEventIds.includes(eventId)) {
                             const eventRef = doc(db, 'events', eventId);
                             batch.update(eventRef, { groupId: deleteField() });
+                            changesCount++;
+                            console.log(`➖ Quitando "${eventId}" del grupo`);
                         }
                     });
                     
-                    // Agregar groupId a eventos nuevamente seleccionados
-                    selectedEventIds.forEach(eventId => {
-                        if (!currentEventsInGroup.includes(eventId)) {
-                            const eventRef = doc(db, 'events', eventId);
-                            batch.update(eventRef, { groupId: groupId });
-                        }
-                    });
+                    if (changesCount === 0) {
+                        console.log('ℹ️ No hay cambios que guardar');
+                        closeManageGroupEventsModal();
+                        alert(`ℹ️ No hay cambios que guardar para "${groupName}"`);
+                        return;
+                    }
                     
+                    console.log(`💾 Guardando ${changesCount} cambios...`);
                     await batch.commit();
+                    
+                    // Recargar lista
                     await loadGroups();
                     closeManageGroupEventsModal();
-                    alert(`✅ Galas actualizadas para "${groupName}"\n\nTotal: ${selectedEventIds.length} gala(s)`);
+                    
+                    alert(`✅ Galas actualizadas para "${groupName}"\n\n📊 Total en el grupo: ${selectedEventIds.length} gala(s)\n🔄 Cambios aplicados: ${changesCount}`);
                 } catch (error) {
-                    console.error('Error actualizando galas del grupo:', error);
-                    alert('Error al actualizar las galas. Intenta de nuevo.');
+                    console.error('❌ Error actualizando galas del grupo:', error);
+                    alert(`❌ Error al actualizar las galas:\n\n${error.message}\n\nMira la consola para más detalles.`);
                 }
             };
             
