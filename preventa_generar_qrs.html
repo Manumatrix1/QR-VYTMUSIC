@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Generar QRs Pre-venta | VYTMUSIC</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+</head>
+<body class="bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 min-h-screen text-white">
+    <div class="container mx-auto max-w-4xl p-6">
+        <!-- Header -->
+        <header class="text-center mb-8">
+            <a href="#" id="back-btn" class="text-sky-400 hover:text-sky-300 mb-4 inline-block text-lg font-semibold">
+                ← Volver
+            </a>
+            <h1 class="text-5xl font-black mb-3 bg-gradient-to-r from-purple-400 to-pink-600 bg-clip-text text-transparent">
+                🎟️ Generar QRs
+            </h1>
+            <p class="text-xl text-gray-300" id="event-name">Cargando...</p>
+        </header>
+
+        <!-- Order Info -->
+        <div id="order-info" class="bg-gray-800/50 rounded-2xl p-6 border-2 border-gray-700 mb-6">
+            <div class="animate-pulse text-center py-4">
+                <p class="text-gray-400">Cargando orden...</p>
+            </div>
+        </div>
+
+        <!-- Names Form -->
+        <div id="names-section" class="bg-gray-800/50 rounded-2xl p-8 border-2 border-gray-700 mb-6 hidden">
+            <h2 class="text-3xl font-bold mb-6 flex items-center gap-3">
+                <span class="text-4xl">📝</span> Nombres de Invitados
+            </h2>
+
+            <div class="mb-6">
+                <label class="block text-lg font-semibold mb-3">
+                    Nombres Completos (<span id="names-count">0</span>/<span id="names-total">0</span>)
+                </label>
+                <textarea id="attendee-names" rows="12" class="w-full p-4 rounded-lg bg-gray-700 border-2 border-gray-600 focus:border-purple-500 focus:outline-none text-white font-mono text-lg" placeholder="Ingresa un nombre por línea:&#10;&#10;Juan Pérez Gómez&#10;María López Silva&#10;Carlos Rodríguez Torres&#10;..."></textarea>
+                <p class="text-sm text-gray-400 mt-2">💡 Un nombre por línea. Nombres completos para facilitar el ingreso.</p>
+            </div>
+
+            <button id="generate-btn" disabled class="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-bold py-5 px-8 rounded-xl text-xl transition-all transform hover:scale-105 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none">
+                🎟️ Generar <span id="button-count">0</span> QRs
+            </button>
+        </div>
+
+        <!-- Progress -->
+        <div id="progress-section" class="bg-gray-800/50 rounded-2xl p-8 border-2 border-gray-700 mb-6 hidden">
+            <h2 class="text-3xl font-bold mb-6 text-center">⏳ Generando QRs...</h2>
+            <div class="relative pt-1">
+                <div class="flex mb-2 items-center justify-between">
+                    <div>
+                        <span class="text-xs font-semibold inline-block py-1 px-2 uppercase rounded-full text-purple-600 bg-purple-200">
+                            Progreso
+                        </span>
+                    </div>
+                    <div class="text-right">
+                        <span class="text-xs font-semibold inline-block text-purple-600">
+                            <span id="progress-current">0</span>/<span id="progress-total">0</span>
+                        </span>
+                    </div>
+                </div>
+                <div class="overflow-hidden h-4 mb-4 text-xs flex rounded-full bg-gray-700">
+                    <div id="progress-bar" style="width: 0%" class="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-gradient-to-r from-purple-600 to-pink-600 transition-all duration-500"></div>
+                </div>
+            </div>
+            <p class="text-center text-gray-400" id="progress-message">Preparando...</p>
+        </div>
+
+        <!-- QR Container (hidden, for generation) -->
+        <div id="qr-container" class="hidden"></div>
+
+        <!-- Success -->
+        <div id="success-section" class="bg-gray-800/50 rounded-2xl p-8 border-2 border-green-500 mb-6 hidden">
+            <div class="text-center">
+                <div class="text-8xl mb-6">✅</div>
+                <h2 class="text-4xl font-bold mb-4">¡QRs Generados!</h2>
+                <p class="text-xl text-gray-300 mb-6">Se generaron <span id="success-count" class="text-green-400 font-bold">0</span> códigos QR exitosamente</p>
+                
+                <div class="grid gap-4 max-w-md mx-auto">
+                    <button id="download-all-btn" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-4 px-8 rounded-xl text-lg transition-all">
+                        📥 Descargar Todos los QRs
+                    </button>
+                    <a href="#" id="view-tickets-link" class="block bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-8 rounded-xl text-lg transition-all">
+                        📱 Ver Entradas en Sistema
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { db, auth, storage } from './firebase_config.js';
+        import { getFirestore, collection, addDoc, doc, getDoc, updateDoc, writeBatch, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getStorage, ref as storageRef, uploadString, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
+
+        // Get params
+        const params = new URLSearchParams(window.location.search);
+        const eventId = params.get('eventId');
+        const eventName = params.get('eventName') || 'Evento';
+        const orderId = params.get('orderId');
+
+        if (!eventId || !orderId) {
+            alert('❌ Error: Parámetros inválidos');
+            window.history.back();
+        }
+
+        document.getElementById('event-name').textContent = eventName;
+        document.getElementById('back-btn').href = `admin_preventa.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`;
+
+        let orderData = null;
+        let ticketPrice = 10000;
+
+        // Cargar orden
+        async function loadOrder() {
+            try {
+                const orderDoc = await getDoc(doc(db, `ticket_orders_${eventId}`, orderId));
+                
+                if (!orderDoc.exists()) {
+                    alert('❌ Orden no encontrada');
+                    window.history.back();
+                    return;
+                }
+
+                orderData = { id: orderDoc.id, ...orderDoc.data() };
+                ticketPrice = orderData.pricePerTicket || 10000;
+
+                if (orderData.status !== 'approved') {
+                    alert('⚠️ Esta orden aún no ha sido aprobada');
+                    window.history.back();
+                    return;
+                }
+
+                renderOrderInfo();
+                showNamesSection();
+            } catch (error) {
+                console.error('Error cargando orden:', error);
+                alert('❌ Error al cargar orden');
+            }
+        }
+
+        // Renderizar info de la orden
+        function renderOrderInfo() {
+            document.getElementById('order-info').innerHTML = `
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div>
+                        <p class="text-sm text-gray-400">Artista</p>
+                        <p class="font-bold text-lg">${orderData.artistName}</p>
+                    </div>
+                    <div>
+                        <p class="text-sm text-gray-400">Cantidad</p>
+                        <p class="font-bold text-lg text-green-400">${orderData.quantity} entradas</p>
+                    </div>
+                    <div>
+                        <p class="text-sm text-gray-400">Total</p>
+                        <p class="font-bold text-lg text-green-400">$${orderData.totalAmount.toLocaleString()}</p>
+                    </div>
+                    <div>
+                        <p class="text-sm text-gray-400">Estado</p>
+                        <p class="font-bold text-lg text-green-400">✅ Aprobado</p>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Mostrar sección de nombres
+        function showNamesSection() {
+            document.getElementById('names-section').classList.remove('hidden');
+            document.getElementById('names-total').textContent = orderData.quantity;
+            document.getElementById('button-count').textContent = orderData.quantity;
+        }
+
+        // Contar nombres ingresados
+        document.getElementById('attendee-names').addEventListener('input', (e) => {
+            const names = e.target.value.split('\n').filter(n => n.trim().length > 0);
+            const count = names.length;
+            const needed = orderData.quantity;
+
+            document.getElementById('names-count').textContent = count;
+            
+            const btn = document.getElementById('generate-btn');
+            if (count === needed) {
+                btn.disabled = false;
+                btn.classList.add('animate-pulse');
+            } else {
+                btn.disabled = true;
+                btn.classList.remove('animate-pulse');
+            }
+        });
+
+        // Generar QRs
+        document.getElementById('generate-btn').addEventListener('click', async () => {
+            const namesText = document.getElementById('attendee-names').value;
+            const names = namesText.split('\n').filter(n => n.trim().length > 0);
+
+            if (names.length !== orderData.quantity) {
+                alert(`❌ Debes ingresar exactamente ${orderData.quantity} nombres (tienes ${names.length})`);
+                return;
+            }
+
+            if (!confirm(`¿Generar ${names.length} códigos QR para estas entradas?`)) {
+                return;
+            }
+
+            // Ocultar formulario, mostrar progreso
+            document.getElementById('names-section').classList.add('hidden');
+            document.getElementById('progress-section').classList.remove('hidden');
+            document.getElementById('progress-total').textContent = names.length;
+
+            try {
+                const ticketIds = [];
+                const batch = writeBatch(db);
+
+                for (let i = 0; i < names.length; i++) {
+                    const name = names[i].trim();
+                    
+                    // Actualizar progreso
+                    updateProgress(i + 1, names.length, `Generando entrada para ${name}...`);
+
+                    // Crear ticket en Firestore
+                    const ticketRef = doc(collection(db, `events/${eventId}/tickets`));
+                    const ticketData = {
+                        name: name,
+                        price: ticketPrice,
+                        scanned: false,
+                        scanTimestamp: null,
+                        createdAt: serverTimestamp(),
+                        createdBy: orderData.artistEmail,
+                        source: 'preventa',
+                        orderId: orderId
+                    };
+
+                    batch.set(ticketRef, ticketData);
+                    ticketIds.push(ticketRef.id);
+
+                    // Pequeña pausa para no saturar
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                }
+
+                // Commit batch
+                updateProgress(names.length, names.length, 'Guardando entradas...');
+                await batch.commit();
+
+                // Actualizar orden
+                await updateDoc(doc(db, `ticket_orders_${eventId}`, orderId), {
+                    status: 'tickets_generated',
+                    ticketIds: ticketIds,
+                    attendeeNames: names,
+                    ticketsGeneratedAt: serverTimestamp()
+                });
+
+                // Mostrar éxito
+                document.getElementById('progress-section').classList.add('hidden');
+                document.getElementById('success-section').classList.remove('hidden');
+                document.getElementById('success-count').textContent = names.length;
+                document.getElementById('view-tickets-link').href = `lista_artistas_qr.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`;
+
+            } catch (error) {
+                console.error('Error generando QRs:', error);
+                alert('❌ Error al generar QRs: ' + error.message);
+                document.getElementById('progress-section').classList.add('hidden');
+                document.getElementById('names-section').classList.remove('hidden');
+            }
+        });
+
+        // Actualizar barra de progreso
+        function updateProgress(current, total, message) {
+            const percent = (current / total) * 100;
+            document.getElementById('progress-bar').style.width = percent + '%';
+            document.getElementById('progress-current').textContent = current;
+            document.getElementById('progress-message').textContent = message;
+        }
+
+        // Descargar todos los QRs
+        document.getElementById('download-all-btn').addEventListener('click', async () => {
+            alert('📥 Generando archivo ZIP con todos los QRs...\n\nEsta función se completará en la próxima versión. Por ahora puedes ver y descargar los QRs individualmente desde la lista de entradas.');
+            
+            // Redirigir a lista
+            window.location.href = `lista_artistas_qr.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`;
+        });
+
+        // Inicializar
+        loadOrder();
+    </script>
+</body>
+</html>

@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Pre-venta | VYTMUSIC</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 min-h-screen text-white">
+    <div class="container mx-auto max-w-7xl p-6">
+        <!-- Header -->
+        <header class="text-center mb-8">
+            <a href="#" id="back-btn" class="text-sky-400 hover:text-sky-300 mb-4 inline-block text-lg font-semibold">
+                ← Volver al Panel
+            </a>
+            <h1 class="text-5xl font-black mb-3 bg-gradient-to-r from-purple-400 to-pink-600 bg-clip-text text-transparent">
+                🎫 Gestión de Pre-venta
+            </h1>
+            <p class="text-xl text-gray-300" id="event-name">Cargando evento...</p>
+        </header>
+
+        <!-- Stats -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+            <div class="bg-yellow-900/30 border-2 border-yellow-500 rounded-xl p-6 text-center">
+                <div class="text-4xl mb-2">⏳</div>
+                <h3 class="text-3xl font-black" id="stat-pending">0</h3>
+                <p class="text-sm text-gray-300">Pendientes</p>
+            </div>
+            <div class="bg-green-900/30 border-2 border-green-500 rounded-xl p-6 text-center">
+                <div class="text-4xl mb-2">✅</div>
+                <h3 class="text-3xl font-black" id="stat-approved">0</h3>
+                <p class="text-sm text-gray-300">Aprobadas</p>
+            </div>
+            <div class="bg-blue-900/30 border-2 border-blue-500 rounded-xl p-6 text-center">
+                <div class="text-4xl mb-2">🎟️</div>
+                <h3 class="text-3xl font-black" id="stat-tickets">0</h3>
+                <p class="text-sm text-gray-300">Entradas Totales</p>
+            </div>
+            <div class="bg-purple-900/30 border-2 border-purple-500 rounded-xl p-6 text-center">
+                <div class="text-4xl mb-2">💰</div>
+                <h3 class="text-3xl font-black" id="stat-money">$0</h3>
+                <p class="text-sm text-gray-300">Total Recaudado</p>
+            </div>
+        </div>
+
+        <!-- Filters -->
+        <div class="bg-gray-800/50 rounded-xl p-4 mb-6 flex flex-wrap gap-3">
+            <button class="filter-btn active px-6 py-2 rounded-lg font-semibold transition-all" data-status="all">
+                📋 Todas
+            </button>
+            <button class="filter-btn px-6 py-2 rounded-lg font-semibold transition-all" data-status="payment_uploaded">
+                ⏳ Pendientes Verificación
+            </button>
+            <button class="filter-btn px-6 py-2 rounded-lg font-semibold transition-all" data-status="approved">
+                ✅ Aprobadas
+            </button>
+            <button class="filter-btn px-6 py-2 rounded-lg font-semibold transition-all" data-status="tickets_generated">
+                🎟️ QRs Generados
+            </button>
+            <button class="filter-btn px-6 py-2 rounded-lg font-semibold transition-all" data-status="rejected">
+                ❌ Rechazadas
+            </button>
+        </div>
+
+        <!-- Orders List -->
+        <div id="orders-container" class="space-y-4">
+            <div class="text-center py-12">
+                <div class="animate-spin rounded-full h-16 w-16 border-4 border-purple-500 border-t-transparent mx-auto mb-4"></div>
+                <p class="text-gray-400">Cargando órdenes...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Ver Comprobante -->
+    <div id="proof-modal" class="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50 hidden p-4">
+        <div class="bg-gray-800 rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto p-6 relative">
+            <button onclick="closeProofModal()" class="absolute top-4 right-4 text-white text-3xl hover:text-gray-300">
+                ×
+            </button>
+            <h2 class="text-2xl font-bold mb-4">📄 Comprobante de Pago</h2>
+            <div id="proof-content" class="text-center">
+                <img id="proof-image" src="" alt="Comprobante" class="max-w-full rounded-lg shadow-lg">
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { db, auth } from './firebase_config.js';
+        import { getFirestore, collection, getDocs, doc, updateDoc, query, where, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Get event info
+        const params = new URLSearchParams(window.location.search);
+        const eventId = params.get('eventId');
+        const eventName = params.get('eventName') || 'Evento';
+
+        if (!eventId) {
+            alert('❌ Error: No se especificó el evento');
+            window.location.href = 'eventos.html';
+        }
+
+        document.getElementById('event-name').textContent = eventName;
+        document.getElementById('back-btn').href = `panel_evento.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`;
+
+        let allOrders = [];
+        let currentFilter = 'all';
+
+        // Cargar órdenes
+        async function loadOrders() {
+            try {
+                const ordersSnapshot = await getDocs(collection(db, `ticket_orders_${eventId}`));
+                allOrders = ordersSnapshot.docs.map(doc => ({
+                    id: doc.id,
+                    ...doc.data()
+                }));
+
+                // Ordenar por fecha (más recientes primero)
+                allOrders.sort((a, b) => {
+                    const dateA = a.createdAt?.toDate() || new Date(0);
+                    const dateB = b.createdAt?.toDate() || new Date(0);
+                    return dateB - dateA;
+                });
+
+                updateStats();
+                renderOrders();
+            } catch (error) {
+                console.error('Error cargando órdenes:', error);
+                document.getElementById('orders-container').innerHTML = `
+                    <div class="text-center py-12">
+                        <p class="text-red-400 text-xl">❌ Error al cargar órdenes</p>
+                    </div>
+                `;
+            }
+        }
+
+        // Actualizar estadísticas
+        function updateStats() {
+            const pending = allOrders.filter(o => o.status === 'payment_uploaded').length;
+            const approved = allOrders.filter(o => o.status === 'approved' || o.status === 'tickets_generated').length;
+            const totalTickets = allOrders
+                .filter(o => o.status !== 'rejected')
+                .reduce((sum, o) => sum + (o.quantity || 0), 0);
+            const totalMoney = allOrders
+                .filter(o => o.status === 'approved' || o.status === 'tickets_generated')
+                .reduce((sum, o) => sum + (o.totalAmount || 0), 0);
+
+            document.getElementById('stat-pending').textContent = pending;
+            document.getElementById('stat-approved').textContent = approved;
+            document.getElementById('stat-tickets').textContent = totalTickets;
+            document.getElementById('stat-money').textContent = `$${totalMoney.toLocaleString()}`;
+        }
+
+        // Renderizar órdenes
+        function renderOrders() {
+            const container = document.getElementById('orders-container');
+            
+            let filteredOrders = allOrders;
+            if (currentFilter !== 'all') {
+                filteredOrders = allOrders.filter(o => o.status === currentFilter);
+            }
+
+            if (filteredOrders.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-12">
+                        <p class="text-gray-400 text-xl">No hay órdenes para mostrar</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = filteredOrders.map(order => {
+                const statusConfig = {
+                    pending: { color: 'gray', text: 'Solicitud Creada', icon: '📝' },
+                    payment_uploaded: { color: 'yellow', text: 'Pendiente Verificación', icon: '⏳' },
+                    approved: { color: 'green', text: 'Aprobada', icon: '✅' },
+                    tickets_generated: { color: 'blue', text: 'QRs Generados', icon: '🎟️' },
+                    rejected: { color: 'red', text: 'Rechazada', icon: '❌' }
+                };
+
+                const status = statusConfig[order.status] || statusConfig.pending;
+                const dateStr = order.createdAt?.toDate().toLocaleString('es-ES') || 'Sin fecha';
+
+                return `
+                    <div class="bg-gray-800/50 rounded-xl border-2 border-${status.color}-500/30 p-6">
+                        <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-4">
+                            <div>
+                                <h3 class="text-2xl font-bold">${order.artistName}</h3>
+                                <p class="text-gray-400">Orden #${order.id.substring(0, 8).toUpperCase()}</p>
+                                <p class="text-sm text-gray-500">${dateStr}</p>
+                            </div>
+                            <div class="flex items-center gap-3">
+                                <span class="px-4 py-2 bg-${status.color}-900/50 border border-${status.color}-500 rounded-lg text-${status.color}-400 font-semibold">
+                                    ${status.icon} ${status.text}
+                                </span>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                            <div>
+                                <p class="text-sm text-gray-400">Email</p>
+                                <p class="font-semibold">${order.artistEmail}</p>
+                            </div>
+                            <div>
+                                <p class="text-sm text-gray-400">Teléfono</p>
+                                <p class="font-semibold">${order.artistPhone || 'N/A'}</p>
+                            </div>
+                            <div>
+                                <p class="text-sm text-gray-400">Cantidad</p>
+                                <p class="font-semibold text-xl">${order.quantity} entradas</p>
+                            </div>
+                            <div>
+                                <p class="text-sm text-gray-400">Total</p>
+                                <p class="font-semibold text-xl text-green-400">$${order.totalAmount.toLocaleString()}</p>
+                            </div>
+                        </div>
+
+                        ${order.status === 'payment_uploaded' ? `
+                            <div class="flex flex-wrap gap-3 mt-4">
+                                <button onclick="viewProof('${order.paymentProof}')" class="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition-all">
+                                    👁️ Ver Comprobante
+                                </button>
+                                <button onclick="approveOrder('${order.id}')" class="px-6 py-3 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg transition-all">
+                                    ✅ Aprobar Pago
+                                </button>
+                                <button onclick="rejectOrder('${order.id}')" class="px-6 py-3 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg transition-all">
+                                    ❌ Rechazar
+                                </button>
+                            </div>
+                        ` : ''}
+
+                        ${order.status === 'approved' ? `
+                            <div class="mt-4">
+                                <a href="preventa_generar_qrs.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}&orderId=${order.id}" 
+                                   class="inline-block px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white font-semibold rounded-lg transition-all">
+                                    🎟️ Cargar Nombres y Generar QRs
+                                </a>
+                            </div>
+                        ` : ''}
+
+                        ${order.status === 'tickets_generated' ? `
+                            <div class="bg-green-900/30 border border-green-500 rounded-lg p-4 mt-4">
+                                <p class="text-green-400 font-semibold">✅ QRs generados: ${order.ticketIds?.length || 0} entradas</p>
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Ver comprobante
+        window.viewProof = function(proofUrl) {
+            const modal = document.getElementById('proof-modal');
+            const image = document.getElementById('proof-image');
+            
+            image.src = proofUrl;
+            modal.classList.remove('hidden');
+        };
+
+        window.closeProofModal = function() {
+            document.getElementById('proof-modal').classList.add('hidden');
+        };
+
+        // Aprobar orden
+        window.approveOrder = async function(orderId) {
+            if (!confirm('¿Confirmar que el pago fue recibido?')) return;
+
+            try {
+                const adminEmail = auth.currentUser?.email || 'admin';
+                
+                await updateDoc(doc(db, `ticket_orders_${eventId}`, orderId), {
+                    status: 'approved',
+                    approvedAt: serverTimestamp(),
+                    approvedBy: adminEmail
+                });
+
+                alert('✅ Orden aprobada exitosamente');
+                loadOrders();
+
+                // TODO: Enviar email al artista notificando aprobación
+                console.log('📧 Enviar email al artista:', orderId);
+            } catch (error) {
+                console.error('Error aprobando orden:', error);
+                alert('❌ Error al aprobar: ' + error.message);
+            }
+        };
+
+        // Rechazar orden
+        window.rejectOrder = async function(orderId) {
+            const reason = prompt('Motivo del rechazo (opcional):');
+            if (reason === null) return; // Cancelled
+
+            try {
+                await updateDoc(doc(db, `ticket_orders_${eventId}`, orderId), {
+                    status: 'rejected',
+                    rejectedAt: serverTimestamp(),
+                    rejectionReason: reason || 'Sin motivo especificado'
+                });
+
+                alert('❌ Orden rechazada');
+                loadOrders();
+
+                // TODO: Enviar email al artista notificando rechazo
+                console.log('📧 Enviar email de rechazo:', orderId);
+            } catch (error) {
+                console.error('Error rechazando orden:', error);
+                alert('❌ Error al rechazar: ' + error.message);
+            }
+        };
+
+        // Filtros
+        document.querySelectorAll('.filter-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active', 'bg-purple-600'));
+                btn.classList.add('active', 'bg-purple-600');
+                
+                currentFilter = btn.dataset.status;
+                renderOrders();
+            });
+        });
+
+        // Inicializar
+        loadOrders();
+
+        // Auto-refresh cada 30 segundos
+        setInterval(loadOrders, 30000);
+    </script>
+
+    <style>
+        .filter-btn {
+            background-color: rgba(75, 85, 99, 0.5);
+        }
+        .filter-btn.active {
+            background-color: rgb(139, 92, 246);
+        }
+        .filter-btn:hover {
+            background-color: rgba(139, 92, 246, 0.7);
+        }
+    </style>
+</body>
+</html>
