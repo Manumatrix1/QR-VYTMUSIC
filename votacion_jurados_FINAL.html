@@ -206,6 +206,24 @@
     </style>
 </head>
 <body class="p-4">
+    <!-- 🆕 INDICADOR DE ESTADO DE CONEXIÓN (Marzo 2026) -->
+    <!-- Se muestra automáticamente cuando no hay internet -->
+    <div id="connection-status" style="display: none;"></div>
+    
+    <!-- 🆕 INDICADOR DE VOTOS PENDIENTES (Marzo 2026) -->
+    <!-- Muestra votos que esperan sincronizarse con el servidor -->
+    <div id="pending-votes-indicator" 
+         style="display: none; position: fixed; bottom: 20px; right: 20px; z-index: 9998; 
+                background: linear-gradient(135deg, #f59e0b, #d97706); 
+                color: white; padding: 12px 20px; border-radius: 12px; 
+                box-shadow: 0 4px 15px rgba(0,0,0,0.3); 
+                font-weight: bold; font-size: 14px; border: 2px solid #fff;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <span style="font-size: 20px;">📥</span>
+            <span id="pending-count">0</span> votos pendientes de sincronizar
+        </div>
+    </div>
+    
     <div class="max-w-4xl mx-auto">
         <!-- HEADER -->
         <div class="text-center mb-8">
@@ -397,7 +415,7 @@
                     <p class="text-sm text-purple-200 mb-4">
                         Revisa tus evaluaciones, comentarios y consejos de mejora para cada artista
                     </p>
-                    <button onclick="openFeedbackPanel()" 
+                    <button onclick="goToMisDevoluciones()" 
                             class="btn text-xl px-10 py-4 w-full max-w-md mx-auto bg-purple-600 hover:bg-purple-500 transition-all shadow-lg">
                         📋 VER MIS DEVOLUCIONES
                     </button>
@@ -648,6 +666,216 @@
         
         // Actualizar enlace inmediatamente
         updateJuryLinkDisplay();
+
+        // ========================================
+        // 🆕 SISTEMA DE GESTIÓN OFFLINE (Marzo 2026)
+        // Sistema de cola para votos cuando no hay internet
+        // NO afecta funcionalidad existente - solo agrega respaldo
+        // ========================================
+        class VoteQueueManager {
+            constructor() {
+                this.queueKey = 'pending_votes_queue';
+                this.syncInProgress = false;
+            }
+
+            // Guardar voto en cola local
+            addVoteToQueue(voteData) {
+                const queue = this.getQueue();
+                const voteWithTimestamp = {
+                    ...voteData,
+                    queuedAt: new Date().toISOString(),
+                    attempts: 0
+                };
+                queue.push(voteWithTimestamp);
+                localStorage.setItem(this.queueKey, JSON.stringify(queue));
+                console.log('📥 Voto guardado en cola local:', voteData.artistName);
+                this.updatePendingIndicator();
+            }
+
+            // Obtener cola de votos pendientes
+            getQueue() {
+                try {
+                    const stored = localStorage.getItem(this.queueKey);
+                    return stored ? JSON.parse(stored) : [];
+                } catch (error) {
+                    console.error('Error leyendo cola:', error);
+                    return [];
+                }
+            }
+
+            // Intentar sincronizar votos pendientes
+            async syncPendingVotes() {
+                if (this.syncInProgress) {
+                    console.log('⏳ Sincronización ya en progreso...');
+                    return false;
+                }
+
+                if (!navigator.onLine) {
+                    console.log('📡 Sin conexión - esperando...');
+                    return false;
+                }
+
+                this.syncInProgress = true;
+                const queue = this.getQueue();
+                
+                if (queue.length === 0) {
+                    this.syncInProgress = false;
+                    return true;
+                }
+
+                console.log(`🔄 Sincronizando ${queue.length} votos pendientes...`);
+                const failedVotes = [];
+                let successCount = 0;
+
+                for (const vote of queue) {
+                    try {
+                        const docId = `${vote.jurorId}_${vote.artistId}`;
+                        
+                        // Intentar guardar en Firebase (usa el mismo sistema de fallback existente)
+                        try {
+                            await window.setDoc(window.doc(window.db, `events/${vote.eventId}/jury_evaluations`, docId), vote);
+                            console.log(`✅ Voto sincronizado: ${vote.artistName}`);
+                            successCount++;
+                        } catch (err1) {
+                            try {
+                                await window.setDoc(window.doc(window.db, `events/${vote.eventId}/jury_votes`, docId), vote);
+                                console.log(`✅ Voto sincronizado (jury_votes): ${vote.artistName}`);
+                                successCount++;
+                            } catch (err2) {
+                                throw err2;
+                            }
+                        }
+                    } catch (error) {
+                        console.error(`❌ Error sincronizando voto: ${vote.artistName}`, error);
+                        vote.attempts = (vote.attempts || 0) + 1;
+                        if (vote.attempts < 3) {
+                            failedVotes.push(vote);
+                        } else {
+                            console.error(`🚫 Voto descartado tras 3 intentos: ${vote.artistName}`);
+                        }
+                    }
+                }
+
+                // Actualizar cola con votos fallidos
+                localStorage.setItem(this.queueKey, JSON.stringify(failedVotes));
+                this.syncInProgress = false;
+                this.updatePendingIndicator();
+
+                if (failedVotes.length === 0) {
+                    console.log(`✅ Todos los votos sincronizados (${successCount})`);
+                    this.showSyncSuccess(successCount);
+                    return true;
+                } else {
+                    console.log(`⚠️ ${failedVotes.length} votos aún pendientes`);
+                    return false;
+                }
+            }
+
+            // Obtener contador de votos pendientes
+            getPendingCount() {
+                return this.getQueue().length;
+            }
+
+            // Actualizar indicador visual
+            updatePendingIndicator() {
+                const pendingCount = this.getPendingCount();
+                const indicator = document.getElementById('pending-votes-indicator');
+                const countElement = document.getElementById('pending-count');
+                
+                if (indicator && countElement) {
+                    if (pendingCount > 0) {
+                        indicator.style.display = 'block';
+                        countElement.textContent = pendingCount;
+                    } else {
+                        indicator.style.display = 'none';
+                    }
+                }
+            }
+
+            // Mostrar mensaje de éxito
+            showSyncSuccess(count) {
+                const statusBar = document.getElementById('connection-status');
+                if (statusBar) {
+                    statusBar.className = 'bg-green-600 text-white';
+                    statusBar.innerHTML = `✅ ${count} votos sincronizados exitosamente`;
+                    statusBar.style.display = 'block';
+                    setTimeout(() => {
+                        statusBar.style.display = 'none';
+                    }, 3000);
+                }
+            }
+        }
+
+        // Instanciar el gestor de cola
+        window.voteQueue = new VoteQueueManager();
+
+        // Detectar cambios de conectividad
+        window.addEventListener('online', () => {
+            console.log('✅ Conexión restaurada');
+            showConnectionStatus('online');
+            setTimeout(() => {
+                window.voteQueue.syncPendingVotes();
+            }, 1000);
+        });
+
+        window.addEventListener('offline', () => {
+            console.log('📡 Conexión perdida');
+            showConnectionStatus('offline');
+        });
+
+        // Función para mostrar estado de conexión
+        function showConnectionStatus(status) {
+            let statusBar = document.getElementById('connection-status');
+            if (!statusBar) {
+                statusBar = document.createElement('div');
+                statusBar.id = 'connection-status';
+                statusBar.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; padding: 12px; text-align: center; z-index: 9999; font-weight: bold;';
+                document.body.prepend(statusBar);
+            }
+
+            if (status === 'offline') {
+                statusBar.className = 'bg-red-600 text-white';
+                statusBar.innerHTML = '⚠️ SIN CONEXIÓN - Los votos se guardarán localmente y se sincronizarán cuando vuelva internet';
+                statusBar.style.display = 'block';
+            } else {
+                statusBar.className = 'bg-green-600 text-white';
+                statusBar.innerHTML = '✅ CONEXIÓN RESTAURADA - Sincronizando votos pendientes...';
+                statusBar.style.display = 'block';
+                setTimeout(() => {
+                    statusBar.style.display = 'none';
+                }, 5000);
+            }
+        }
+
+        // Verificar estado inicial de conexión
+        if (!navigator.onLine) {
+            showConnectionStatus('offline');
+        }
+
+        // Verificar votos pendientes al cargar la página
+        window.addEventListener('DOMContentLoaded', () => {
+            const pendingCount = window.voteQueue.getPendingCount();
+            if (pendingCount > 0) {
+                console.log(`⚠️ ${pendingCount} votos pendientes de sincronizar`);
+                window.voteQueue.updatePendingIndicator();
+                if (navigator.onLine) {
+                    setTimeout(() => {
+                        window.voteQueue.syncPendingVotes();
+                    }, 2000);
+                }
+            }
+        });
+
+        // Intentar sincronizar cada 30 segundos
+        setInterval(() => {
+            if (navigator.onLine && window.voteQueue.getPendingCount() > 0) {
+                window.voteQueue.syncPendingVotes();
+            }
+        }, 30000);
+
+        // ========================================
+        // FIN DEL SISTEMA DE GESTIÓN OFFLINE
+        // ========================================
 
         // 🔧 FUNCIONES AUXILIARES PARA OBTENER DATOS DEL EVENTO
         function getEventId() {
@@ -2077,37 +2305,54 @@ Formato de respuesta:
                 // Simplificar el guardado para evitar errores
                 const docId = `${currentJuror.id}_${artistId}`;
                 
-                // Intentar múltiples formas de guardado con las rutas correctas del evento
+                // ========================================
+                // 🆕 SISTEMA DE GUARDADO CON FALLBACK OFFLINE
+                // Primero intenta Firebase, si falla guarda en cola local
+                // ========================================
                 let saveSuccess = false;
+                let usedOfflineQueue = false;
                 
                 try {
-                    await setDoc(doc(db, `events/${eventId}/jury_evaluations`, docId), voteData);
-                    console.log('✅ Guardado en events/' + eventId + '/jury_evaluations:', docId);
-                    saveSuccess = true;
-                } catch (err1) {
-                    console.warn('⚠️ Error en jury_evaluations, intentando jury_votes:', err1.message);
+                    // Intentar múltiples formas de guardado con las rutas correctas del evento
                     try {
-                        await setDoc(doc(db, `events/${eventId}/jury_votes`, docId), voteData);
-                        console.log('✅ Guardado en events/' + eventId + '/jury_votes:', docId);
+                        await setDoc(doc(db, `events/${eventId}/jury_evaluations`, docId), voteData);
+                        console.log('✅ Guardado en events/' + eventId + '/jury_evaluations:', docId);
                         saveSuccess = true;
-                    } catch (err2) {
-                        console.warn('⚠️ Error en jury_votes, intentando votes:', err2.message);
+                    } catch (err1) {
+                        console.warn('⚠️ Error en jury_evaluations, intentando jury_votes:', err1.message);
                         try {
-                            await setDoc(doc(db, `events/${eventId}/votes`, docId), voteData);
-                            console.log('✅ Guardado en events/' + eventId + '/votes:', docId);
+                            await setDoc(doc(db, `events/${eventId}/jury_votes`, docId), voteData);
+                            console.log('✅ Guardado en events/' + eventId + '/jury_votes:', docId);
                             saveSuccess = true;
-                        } catch (err3) {
-                            console.error('❌ Error en todas las colecciones:', err3.message);
-                            throw new Error('No se pudo guardar en ninguna colección: ' + err3.message);
+                        } catch (err2) {
+                            console.warn('⚠️ Error en jury_votes, intentando votes:', err2.message);
+                            try {
+                                await setDoc(doc(db, `events/${eventId}/votes`, docId), voteData);
+                                console.log('✅ Guardado en events/' + eventId + '/votes:', docId);
+                                saveSuccess = true;
+                            } catch (err3) {
+                                console.error('❌ Error en todas las colecciones Firebase:', err3.message);
+                                throw err3; // Lanzar para que sea capturado por el catch externo
+                            }
                         }
                     }
+                } catch (firebaseError) {
+                    // 🆕 SI FIREBASE FALLA, USAR COLA OFFLINE
+                    console.warn('⚠️ Firebase no disponible, guardando en cola local...');
+                    window.voteQueue.addVoteToQueue(voteData);
+                    saveSuccess = true;
+                    usedOfflineQueue = true;
                 }
                 
                 if (!saveSuccess) {
-                    throw new Error('Error desconocido al guardar');
+                    throw new Error('Error crítico: No se pudo guardar ni en Firebase ni en cola local');
                 }
                 
-                console.log('✅ Voto guardado exitosamente en Firebase');
+                if (usedOfflineQueue) {
+                    console.log('📥 Voto guardado en cola offline - Se sincronizará automáticamente');
+                } else {
+                    console.log('✅ Voto guardado exitosamente en Firebase');
+                }
                 
                 // Generar y mostrar feedback después de guardar (con manejo de errores)
                 try {
@@ -2128,7 +2373,12 @@ Formato de respuesta:
                         ? `📝 VOTACIÓN PARCIAL GUARDADA\n${completedCriteria}/${totalCriteria} criterios completados` 
                         : `✅ VOTACIÓN COMPLETA GUARDADA\nTodos los criterios completados`;
                     
-                    alert(`${voteTypeMessage}\n\nArtista: ${artist.name}\nPromedio: ${average.toFixed(1)} puntos\n\nRevisa el feedback generado en la sección azul del modal.`);
+                    // 🆕 Mensaje diferente si se usó cola offline
+                    const storageMessage = usedOfflineQueue
+                        ? '\n\n⚠️ SIN CONEXIÓN\nVoto guardado localmente.\nSe sincronizará automáticamente cuando vuelva internet.'
+                        : '\n\n✅ GUARDADO EN SERVIDOR\nTu voto está registrado en Firebase.';
+                    
+                    alert(`${voteTypeMessage}\n\nArtista: ${artist.name}\nPromedio: ${average.toFixed(1)} puntos${storageMessage}\n\nRevisa el feedback generado en la sección azul del modal.`);
                 }
                 
                 // Actualizar UI (con manejo de errores independiente)
@@ -4918,6 +5168,28 @@ Formato de respuesta:
             
             // Cargar las evaluaciones del jurado
             await loadJurorFeedback();
+        };
+
+        /**
+         * 🆕 Redirige a la página completa de "Mis Devoluciones"
+         */
+        window.goToMisDevoluciones = function() {
+            if (!currentJuror) {
+                alert('⚠️ Debes iniciar sesión primero');
+                return;
+            }
+
+            console.log('🔄 Redirigiendo a página de devoluciones para:', currentJuror.name);
+            
+            // Construir URL con todos los parámetros necesarios
+            const params = new URLSearchParams({
+                eventId: eventId,
+                eventName: eventName,
+                jurorId: currentJuror.id,
+                jurorName: currentJuror.name
+            });
+            
+            window.location.href = `mis_devoluciones.html?${params.toString()}`;
         };
 
         /**

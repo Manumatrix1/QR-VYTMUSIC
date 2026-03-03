@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>📝 Mis Devoluciones - VYTMUSIC</title>
+    
+    <!-- PWA Support -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#7c3aed">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            background: linear-gradient(135deg, #1e3a8a, #7c3aed); 
+            color: white; 
+            min-height: 100vh;
+        }
+        .card { 
+            background: rgba(255,255,255,0.1); 
+            backdrop-filter: blur(10px); 
+            border: 1px solid rgba(255,255,255,0.2); 
+            border-radius: 15px; 
+        }
+        .btn { 
+            padding: 12px 24px; 
+            border-radius: 8px; 
+            font-weight: bold; 
+            cursor: pointer; 
+            transition: all 0.3s; 
+            border: none; 
+        }
+        .btn-primary { background: #7c3aed; color: white; }
+        .btn-primary:hover { background: #6d28d9; transform: scale(1.05); }
+        
+        /* Optimización móvil */
+        @media (max-width: 768px) {
+            .artist-grid {
+                grid-template-columns: repeat(2, 1fr) !important;
+                gap: 12px !important;
+            }
+            .text-3xl { font-size: 1.5rem !important; }
+            .text-2xl { font-size: 1.25rem !important; }
+        }
+    </style>
+</head>
+<body class="p-4">
+    <!-- 🆕 Indicador de conexión offline -->
+    <div id="connection-status" style="display: none;"></div>
+    
+    <!-- 🆕 Indicador de datos cargados desde caché -->
+    <div id="cache-indicator" style="display: none; position: fixed; top: 60px; left: 0; right: 0; 
+         padding: 10px; text-align: center; z-index: 9998; background: #f59e0b; color: white; font-weight: bold;">
+        📥 Mostrando datos guardados localmente
+    </div>
+
+    <div class="max-w-6xl mx-auto">
+        <!-- Header -->
+        <div class="text-center mb-6">
+            <button onclick="goBack()" class="btn btn-primary text-sm mb-4">
+                ← Volver a Votación
+            </button>
+            <h1 class="text-4xl font-bold mb-2">📝 Mis Devoluciones</h1>
+            <p id="event-name-display" class="text-xl text-purple-200"></p>
+        </div>
+
+        <!-- Información del Jurado -->
+        <div class="card p-6 mb-6">
+            <h3 class="text-lg font-bold text-purple-200 mb-2">
+                👨‍⚖️ <span id="feedback-juror-name">Cargando...</span>
+            </h3>
+            <p class="text-sm text-purple-300">
+                <span id="feedback-total-votes">0</span> artistas evaluados
+            </p>
+        </div>
+
+        <!-- Buscador de Artistas -->
+        <div class="card p-4 mb-6">
+            <div class="flex flex-col md:flex-row items-center md:space-x-3 space-y-3 md:space-y-0">
+                <div class="text-2xl">🔍</div>
+                <div class="flex-1 w-full">
+                    <input 
+                        type="text" 
+                        id="feedback-artist-search" 
+                        placeholder="Buscar artista por nombre..." 
+                        class="w-full p-3 rounded bg-white text-black border-2 border-purple-300 focus:border-purple-500 text-lg"
+                        oninput="filterFeedbackArtists()"
+                    >
+                </div>
+                <button onclick="clearFeedbackSearch()" class="btn btn-primary w-full md:w-auto">
+                    Limpiar
+                </button>
+            </div>
+            <p class="text-sm mt-2 text-purple-200 text-center">
+                💡 Haz clic en un artista para ver su devolución completa
+            </p>
+        </div>
+
+        <!-- Grid de Artistas -->
+        <div id="feedback-artists-grid" class="artist-grid grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 mb-8">
+            <div class="col-span-full text-center text-gray-300 py-8">
+                <div class="text-4xl mb-2">⏳</div>
+                <p>Cargando devoluciones...</p>
+            </div>
+        </div>
+
+        <!-- Sección de Detalle (oculta por defecto) -->
+        <div id="feedback-detail-section" class="hidden">
+            <div class="card p-4 mb-4">
+                <h3 class="text-2xl font-bold text-yellow-300 text-center mb-2">
+                    📋 Devolución Detallada
+                </h3>
+                <p class="text-center text-yellow-200 text-sm">
+                    Esta información la puedes compartir con el artista
+                </p>
+            </div>
+            <div id="feedback-detail-content" class="space-y-6">
+                <!-- Aquí se cargará la tarjeta detallada -->
+            </div>
+            <div class="text-center mt-6">
+                <button onclick="closeFeedbackDetail()" class="btn btn-primary px-8 py-3 text-lg">
+                    ← Volver al listado
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        // === CONFIGURACIÓN FIREBASE ===
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getFirestore, collection, getDocs, query, where, enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyC_2Ukoxf_ry7QfKtou1Cz6nY-qTVw4qTU",
+            authDomain: "vyt-music.firebaseapp.com",
+            projectId: "vyt-music",
+            storageBucket: "vyt-music.firebasestorage.app",
+            messagingSenderId: "574981837817",
+            appId: "1:574981837817:web:a29933a22bbfd51a086328"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        // 🆕 Habilitar persistencia offline
+        enableIndexedDbPersistence(db).catch((err) => {
+            console.warn('⚠️ Persistencia offline:', err.code);
+        });
+
+        // Exportar db globalmente
+        window.db = db;
+        window.getDocs = getDocs;
+        window.collection = collection;
+        window.query = query;
+        window.where = where;
+
+        // === OBTENER PARÁMETROS DE URL ===
+        const urlParams = new URLSearchParams(window.location.search);
+        const eventId = urlParams.get('eventId');
+        const jurorId = urlParams.get('jurorId');
+        const jurorName = urlParams.get('jurorName') || 'Jurado';
+        const eventName = urlParams.get('eventName') || 'Evento';
+
+        console.log('📋 Parámetros:', { eventId, jurorId, jurorName, eventName });
+
+        // Validar parámetros
+        if (!eventId || !jurorId) {
+            document.getElementById('feedback-artists-grid').innerHTML = `
+                <div class="col-span-full text-center text-red-400 py-8">
+                    <div class="text-4xl mb-2">⚠️</div>
+                    <p class="text-lg">Faltan parámetros en la URL</p>
+                    <p class="text-sm mt-2">eventId: ${eventId || 'NO'}, jurorId: ${jurorId || 'NO'}</p>
+                    <button onclick="history.back()" class="btn btn-primary mt-4">Volver</button>
+                </div>
+            `;
+        }
+
+        // Mostrar info del jurado y evento
+        document.getElementById('feedback-juror-name').textContent = jurorName;
+        document.getElementById('event-name-display').textContent = eventName;
+
+        // === VARIABLES GLOBALES ===
+        let allFeedbackEvaluations = [];
+        let artistGeneralAverages = {};
+        let artists = [];
+        const CRITERIA = [
+            { id: 'tecnica_vocal', name: '🎵 Técnica Vocal' },
+            { id: 'melodia_interpretacion', name: '🎼 Afinación' },
+            { id: 'gestualidad_expresion', name: '🎭 Expresión e Interpretación' },
+            { id: 'diccion_articulacion', name: '🗣️ Dicción y Pronunciación' },
+            { id: 'dinamica_espacio', name: '🏃 Dinámica y Uso del Espacio' },
+            { id: 'repertorio_seleccion', name: '🎶 Repertorio y Estilo' },
+            { id: 'presencia_escenica', name: '✨ Presencia Escénica' },
+            { id: 'originalidad_creatividad', name: '💡 Originalidad y Creatividad' },
+            { id: 'vestuario_presentacion', name: '👔 Vestuario y Presentación' },
+            { id: 'puntualidad_profesionalismo', name: '⭐ Puntualidad y Profesionalismo' }
+        ];
+
+        // === SISTEMA OFFLINE ===
+        // Detección de conectividad
+        window.addEventListener('online', () => {
+            showConnectionStatus('online');
+            loadData(); // Recargar cuando vuelva internet
+        });
+
+        window.addEventListener('offline', () => {
+            showConnectionStatus('offline');
+        });
+
+        function showConnectionStatus(status) {
+            let statusBar = document.getElementById('connection-status');
+            if (!statusBar) {
+                statusBar = document.createElement('div');
+                statusBar.id = 'connection-status';
+                statusBar.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; padding: 12px; text-align: center; z-index: 9999; font-weight: bold;';
+                document.body.prepend(statusBar);
+            }
+
+            if (status === 'offline') {
+                statusBar.className = 'bg-red-600 text-white';
+                statusBar.innerHTML = '⚠️ SIN CONEXIÓN - Mostrando datos guardados';
+                statusBar.style.display = 'block';
+            } else {
+                statusBar.className = 'bg-green-600 text-white';
+                statusBar.innerHTML = '✅ CONEXIÓN RESTAURADA';
+                statusBar.style.display = 'block';
+                setTimeout(() => {
+                    statusBar.style.display = 'none';
+                }, 3000);
+            }
+        }
+
+        // Guardar en localStorage
+        function saveToCache(key, data) {
+            try {
+                localStorage.setItem(key, JSON.stringify(data));
+                console.log(`💾 Guardado en caché: ${key}`);
+            } catch (error) {
+                console.error('Error guardando en caché:', error);
+            }
+        }
+
+        // Leer desde localStorage
+        function readFromCache(key) {
+            try {
+                const data = localStorage.getItem(key);
+                return data ? JSON.parse(data) : null;
+            } catch (error) {
+                console.error('Error leyendo caché:', error);
+                return null;
+            }
+        }
+
+        // === CARGAR DATOS ===
+        async function loadData() {
+            const gridContainer = document.getElementById('feedback-artists-grid');
+            gridContainer.innerHTML = '<div class="col-span-full text-center text-gray-300 py-8"><div class="text-4xl mb-2">⏳</div><p>Cargando evaluaciones...</p></div>';
+
+            try {
+                // 🆕 Intentar cargar desde caché primero si no hay internet
+                if (!navigator.onLine) {
+                    console.log('📡 Sin internet - intentando caché...');
+                    const cachedEvaluations = readFromCache(`evaluations_${eventId}_${jurorId}`);
+                    const cachedArtists = readFromCache(`artists_${eventId}`);
+                    const cachedAverages = readFromCache(`averages_${eventId}`);
+
+                    if (cachedEvaluations && cachedArtists) {
+                        console.log('✅ Datos encontrados en caché');
+                        allFeedbackEvaluations = cachedEvaluations;
+                        artists = cachedArtists;
+                        artistGeneralAverages = cachedAverages || {};
+                        
+                        document.getElementById('cache-indicator').style.display = 'block';
+                        setTimeout(() => {
+                            document.getElementById('cache-indicator').style.display = 'none';
+                        }, 5000);
+
+                        document.getElementById('feedback-total-votes').textContent = allFeedbackEvaluations.length;
+                        renderFeedbackGrid(allFeedbackEvaluations);
+                        return;
+                    } else {
+                        throw new Error('No hay datos en caché y no hay conexión');
+                    }
+                }
+
+                // Cargar artistas
+                console.log('🎭 Cargando artistas...');
+                const artistsRef = collection(db, `events/${eventId}/artists`);
+                const artistsSnapshot = await getDocs(artistsRef);
+                artists = artistsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                console.log(`✅ ${artists.length} artistas cargados`);
+                saveToCache(`artists_${eventId}`, artists);
+
+                // Cargar evaluaciones del jurado
+                console.log('🔍 Cargando evaluaciones del jurado...');
+                const evaluationsRef = collection(db, `events/${eventId}/jury_evaluations`);
+                const q = query(evaluationsRef, where('jurorId', '==', jurorId));
+                const snapshot = await getDocs(q);
+
+                if (snapshot.empty) {
+                    gridContainer.innerHTML = `
+                        <div class="col-span-full text-center text-gray-400 py-8">
+                            <div class="text-4xl mb-2">📭</div>
+                            <p class="text-lg">Aún no has evaluado ningún artista</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                // Convertir y ordenar
+                allFeedbackEvaluations = snapshot.docs.map(doc => doc.data());
+                allFeedbackEvaluations.sort((a, b) => (a.artistName || '').localeCompare(b.artistName || ''));
+                console.log(`✅ ${allFeedbackEvaluations.length} evaluaciones cargadas`);
+                
+                // 🆕 Guardar en caché
+                saveToCache(`evaluations_${eventId}_${jurorId}`, allFeedbackEvaluations);
+
+                // Calcular promedios generales
+                await calculateGeneralAverages();
+
+                // Actualizar UI
+                document.getElementById('feedback-total-votes').textContent = allFeedbackEvaluations.length;
+                renderFeedbackGrid(allFeedbackEvaluations);
+
+            } catch (error) {
+                console.error('❌ Error:', error);
+                gridContainer.innerHTML = `
+                    <div class="col-span-full text-center text-red-400 py-8">
+                        <div class="text-4xl mb-2">⚠️</div>
+                        <p class="text-lg">Error al cargar las devoluciones</p>
+                        <p class="text-sm mt-2">${error.message}</p>
+                        <button onclick="loadData()" class="btn btn-primary mt-4">Reintentar</button>
+                    </div>
+                `;
+            }
+        }
+
+        // Calcular promedios generales
+        async function calculateGeneralAverages() {
+            console.log('📊 Calculando promedios generales...');
+            artistGeneralAverages = {};
+
+            try {
+                const evaluationsRef = collection(db, `events/${eventId}/jury_evaluations`);
+                const allEvaluationsSnapshot = await getDocs(evaluationsRef);
+
+                const artistVotes = {};
+                allEvaluationsSnapshot.forEach((doc) => {
+                    const data = doc.data();
+                    const artistId = data.artistId;
+                    const isSecret = data.isSecretVote || false;
+
+                    if (!artistVotes[artistId]) {
+                        artistVotes[artistId] = {
+                            publicVotes: [],
+                            secretVotes: [],
+                            artistName: data.artistName
+                        };
+                    }
+
+                    if (isSecret) {
+                        artistVotes[artistId].secretVotes.push({
+                            score: data.average || data.score || 0,
+                            jurorName: data.jurorName
+                        });
+                    } else {
+                        artistVotes[artistId].publicVotes.push({
+                            score: data.average || data.score || 0,
+                            jurorName: data.jurorName
+                        });
+                    }
+                });
+
+                for (const artistId in artistVotes) {
+                    const publicVotes = artistVotes[artistId].publicVotes;
+                    const secretVotes = artistVotes[artistId].secretVotes;
+                    
+                    let publicAverage = 0;
+                    if (publicVotes.length > 0) {
+                        const sum = publicVotes.reduce((acc, vote) => acc + vote.score, 0);
+                        publicAverage = sum / publicVotes.length;
+                    }
+
+                    artistGeneralAverages[artistId] = {
+                        publicAverage: publicAverage,
+                        publicCount: publicVotes.length,
+                        secretCount: secretVotes.length,
+                        totalJurors: publicVotes.length + secretVotes.length,
+                        artistName: artistVotes[artistId].artistName
+                    };
+                }
+
+                // 🆕 Guardar en caché
+                saveToCache(`averages_${eventId}`, artistGeneralAverages);
+
+                console.log(`✅ Promedios calculados para ${Object.keys(artistGeneralAverages).length} artistas`);
+
+            } catch (error) {
+                console.error('❌ Error calculando promedios:', error);
+            }
+        }
+
+        // Renderizar grid
+        function renderFeedbackGrid(evaluations) {
+            const gridContainer = document.getElementById('feedback-artists-grid');
+            gridContainer.innerHTML = '';
+
+            if (evaluations.length === 0) {
+                gridContainer.innerHTML = `
+                    <div class="col-span-full text-center text-gray-400 py-8">
+                        <div class="text-4xl mb-2">🔍</div>
+                        <p class="text-lg">No se encontraron artistas</p>
+                    </div>
+                `;
+                return;
+            }
+
+            evaluations.forEach((evaluation) => {
+                const artist = artists.find(a => a.id === evaluation.artistId);
+                const artistPhoto = artist?.photoURL || 'https://via.placeholder.com/200?text=Sin+Foto';
+
+                const artistCard = document.createElement('div');
+                artistCard.className = 'relative bg-gray-800 rounded-lg overflow-hidden border-2 border-purple-400 hover:border-purple-300 cursor-pointer transition-all transform hover:scale-105';
+                artistCard.onclick = () => showFeedbackDetail(evaluation);
+
+                artistCard.innerHTML = `
+                    <div class="relative" style="padding-top: 100%;">
+                        <img src="${artistPhoto}" 
+                             alt="${evaluation.artistName}"
+                             class="absolute inset-0 w-full h-full object-cover"
+                             onerror="this.src='https://via.placeholder.com/200?text=Sin+Foto'">
+                        
+                        <div class="absolute top-2 right-2 bg-black bg-opacity-80 px-3 py-1 rounded-full">
+                            <span class="text-lg font-bold ${getScoreColor(evaluation.average)}">${evaluation.average?.toFixed(1) || 'N/A'}</span>
+                        </div>
+                    </div>
+
+                    <div class="p-3 bg-purple-900 bg-opacity-50">
+                        <h3 class="font-bold text-white text-center truncate">${evaluation.artistName}</h3>
+                        <p class="text-xs text-purple-200 text-center mt-1">Clic para ver devolución</p>
+                    </div>
+                `;
+
+                gridContainer.appendChild(artistCard);
+            });
+        }
+
+        // Mostrar detalle
+        function showFeedbackDetail(evaluation) {
+            console.log('📋 Mostrando devolución de:', evaluation.artistName);
+            
+            document.getElementById('feedback-artists-grid').style.display = 'none';
+            const detailSection = document.getElementById('feedback-detail-section');
+            detailSection.classList.remove('hidden');
+            
+            const detailContent = document.getElementById('feedback-detail-content');
+            detailContent.innerHTML = '';
+            const fullCard = createFeedbackCard(evaluation);
+            detailContent.appendChild(fullCard);
+            
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        // Crear tarjeta completa
+        function createFeedbackCard(evaluation) {
+            const card = document.createElement('div');
+            card.className = 'card p-6';
+            
+            const artist = artists.find(a => a.id === evaluation.artistId);
+            const artistPhoto = artist?.photoURL || 'https://via.placeholder.com/150?text=Sin+Foto';
+            
+            const date = new Date(evaluation.timestamp);
+            const formattedDate = date.toLocaleDateString('es-ES', { 
+                day: '2-digit', 
+                month: 'short', 
+                hour: '2-digit', 
+                minute: '2-digit' 
+            });
+
+            const generalData = artistGeneralAverages[evaluation.artistId] || {
+                publicAverage: 0,
+                publicCount: 0,
+                secretCount: 0
+            };
+
+            card.innerHTML = `
+                <div class="mb-4">
+                    <div class="flex flex-col items-center text-center">
+                        <img src="${artistPhoto}" 
+                             alt="${evaluation.artistName}"
+                             class="w-32 h-32 object-cover rounded-lg border-2 border-purple-300 mb-3"
+                             onerror="this.src='https://via.placeholder.com/150?text=Sin+Foto'">
+                        <h3 class="text-2xl font-bold text-purple-200 mb-2">${evaluation.artistName}</h3>
+                        <div class="text-sm text-gray-300 mb-4">
+                            <span>📅 ${formattedDate}</span>
+                        </div>
+                        
+                        <div class="w-full space-y-3">
+                            <div class="bg-blue-900 bg-opacity-50 p-4 rounded-lg border-2 border-blue-400">
+                                <p class="text-sm text-blue-300 mb-2">👤 Tu Puntaje</p>
+                                <p class="text-3xl font-bold ${getScoreColor(evaluation.average)}">${evaluation.average?.toFixed(1) || 'N/A'}/100</p>
+                                ${evaluation.isSecretVote ? '<p class="text-xs text-orange-300 mt-2">🔒 Voto Secreto</p>' : ''}
+                            </div>
+                            
+                            <div class="bg-green-900 bg-opacity-50 p-4 rounded-lg border-2 border-green-400">
+                                <p class="text-sm text-green-300 mb-2">📊 Promedio General</p>
+                                ${generalData.publicCount > 0 ? `
+                                    <p class="text-3xl font-bold ${getScoreColor(generalData.publicAverage)}">${generalData.publicAverage.toFixed(1)}/100</p>
+                                    <p class="text-sm text-green-200 mt-2">
+                                        👥 ${generalData.publicCount} jurado${generalData.publicCount > 1 ? 's' : ''}
+                                        ${generalData.secretCount > 0 ? ` • 🔒 ${generalData.secretCount} secreto${generalData.secretCount > 1 ? 's' : ''}` : ''}
+                                    </p>
+                                ` : '<p class="text-base text-gray-400">Solo tú votaste</p>'}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                ${evaluation.songPerformed ? `
+                    <div class="bg-blue-800 bg-opacity-30 p-3 rounded mb-3">
+                        <span class="text-blue-300 font-semibold">🎵 Canción:</span>
+                        <span class="text-white ml-2">${evaluation.songPerformed}</span>
+                    </div>
+                ` : ''}
+
+                ${evaluation.judgeComments || evaluation.additionalNotes ? `
+                    <div class="bg-yellow-800 bg-opacity-20 p-4 rounded-lg mb-4 border border-yellow-600">
+                        <h4 class="text-yellow-300 font-bold mb-2">💭 Tus Comentarios:</h4>
+                        ${evaluation.judgeComments ? `<p class="text-yellow-100 mb-2">${evaluation.judgeComments}</p>` : ''}
+                        ${evaluation.additionalNotes ? `<p class="text-yellow-200 text-sm italic">${evaluation.additionalNotes}</p>` : ''}
+                    </div>
+                ` : '<div class="text-gray-500 text-sm italic mb-4">Sin comentarios adicionales</div>'}
+
+                ${evaluation.autoFeedback && evaluation.autoFeedback.length > 0 ? `
+                    <div class="bg-green-800 bg-opacity-20 p-4 rounded-lg border border-green-600">
+                        <h4 class="text-green-300 font-bold mb-3 flex items-center gap-2">
+                            <span>🤖</span>
+                            <span>Consejos de Mejora (IA)</span>
+                        </h4>
+                        <div class="space-y-3">
+                            ${evaluation.autoFeedback.map(feedback => `
+                                <div class="bg-gray-900 bg-opacity-50 p-3 rounded">
+                                    <div class="flex items-start gap-2">
+                                        <span class="text-lg">${getCategoryIcon(feedback.category)}</span>
+                                        <div class="flex-1">
+                                            <p class="text-green-200 font-semibold text-sm mb-1">${feedback.category}</p>
+                                            <p class="text-gray-300 text-sm">${feedback.suggestion}</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                ` : ''}
+
+                <details class="mt-4">
+                    <summary class="cursor-pointer text-purple-300 font-semibold hover:text-purple-200">
+                        📊 Ver puntajes detallados
+                    </summary>
+                    <div class="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+                        ${Object.entries(evaluation.scores || {}).map(([criteriaId, score]) => {
+                            const criteria = CRITERIA.find(c => c.id === criteriaId);
+                            return `
+                                <div class="bg-gray-900 bg-opacity-50 p-2 rounded">
+                                    <span class="text-gray-400">${criteria?.name || criteriaId}:</span>
+                                    <span class="text-white font-bold ml-2">${score}</span>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                </details>
+            `;
+
+            return card;
+        }
+
+        // Utilidades
+        function getScoreColor(score) {
+            if (score >= 90) return 'text-green-400';
+            if (score >= 80) return 'text-blue-400';
+            if (score >= 70) return 'text-yellow-400';
+            if (score >= 60) return 'text-orange-400';
+            return 'text-red-400';
+        }
+
+        function getCategoryIcon(category) {
+            const icons = {
+                'Técnica Vocal': '🎵',
+                'Afinación': '🎼',
+                'Expresión e Interpretación': '🎭',
+                'Dicción y Pronunciación': '🗣️',
+                'Dinámica y Uso del Espacio': '🏃',
+                'Repertorio y Estilo': '🎶',
+                'Presencia Escénica': '✨',
+                'Originalidad y Creatividad': '💡',
+                'Vestuario y Presentación': '👔',
+                'Puntualidad y Profesionalismo': '⭐'
+            };
+            return icons[category] || '📌';
+        }
+
+        // Funciones exportadas
+        window.filterFeedbackArtists = function() {
+            const searchText = document.getElementById('feedback-artist-search').value.toLowerCase().trim();
+            
+            if (searchText === '') {
+                renderFeedbackGrid(allFeedbackEvaluations);
+            } else {
+                const filtered = allFeedbackEvaluations.filter(evaluation => 
+                    (evaluation.artistName || '').toLowerCase().includes(searchText)
+                );
+                renderFeedbackGrid(filtered);
+            }
+        };
+
+        window.clearFeedbackSearch = function() {
+            document.getElementById('feedback-artist-search').value = '';
+            renderFeedbackGrid(allFeedbackEvaluations);
+        };
+
+        window.closeFeedbackDetail = function() {
+            document.getElementById('feedback-detail-section').classList.add('hidden');
+            document.getElementById('feedback-artists-grid').style.display = 'grid';
+        };
+
+        window.goBack = function() {
+            // Volver a la página de votación con los mismos parámetros
+            window.location.href = `votacion_jurados_FINAL.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`;
+        };
+
+        window.loadData = loadData;
+
+        // Cargar al iniciar
+        if (navigator.onLine) {
+            loadData();
+        } else {
+            showConnectionStatus('offline');
+            loadData(); // Intentará cargar desde caché
+        }
+    </script>
+</body>
+</html>
