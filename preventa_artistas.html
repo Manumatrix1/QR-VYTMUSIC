@@ -113,7 +113,17 @@
                         <p class="text-sm font-semibold">Segundos</p>
                     </div>
                 </div>
-                <p class="text-lg font-bold mt-4">Después cambia a precio puerta: $15,000</p>
+                <p class="text-lg font-bold mt-4" id="countdown-footer">Después cambia a precio puerta: $15,000</p>
+                <p class="text-sm text-yellow-200 mt-2" id="countdown-deadline">Fecha límite: <span id="deadline-date-display">—</span></p>
+            </div>
+        </div>
+
+        <!-- Banner Sin Fecha Límite (cuando admin no configuró) -->
+        <div id="no-deadline-banner" class="bg-yellow-900/30 border-2 border-yellow-500 rounded-2xl p-6 mb-6">
+            <div class="text-center">
+                <h2 class="text-xl font-bold mb-2 text-yellow-400">⚠️ PRECIO ANTICIPADO DISPONIBLE</h2>
+                <p class="text-lg">Consultá con el organizador la fecha límite para preventa anticipada</p>
+                <p class="text-sm text-gray-300 mt-2">Precio actual: <span class="text-2xl font-black text-green-400">$10,000</span></p>
             </div>
         </div>
 
@@ -456,6 +466,9 @@
                     const now = new Date();
                     
                     if (deadlineDate) {
+                        // Ocultar banner de "sin fecha límite"
+                        document.getElementById('no-deadline-banner').classList.add('hidden');
+                        
                         if (now > deadlineDate) {
                             // Fecha límite pasada - precio puerta
                             currentPrice = 15000;
@@ -472,18 +485,27 @@
                         } else {
                             // Todavía hay tiempo - mostrar countdown
                             document.getElementById('countdown-banner').classList.remove('hidden');
-                            document.getElementById('deadline-text').textContent = `Hasta: ${deadlineDate.toLocaleDateString('es-ES', { 
+                            
+                            // Mostrar fecha límite formateada
+                            const deadlineFormatted = deadlineDate.toLocaleDateString('es-ES', { 
                                 weekday: 'long', 
                                 year: 'numeric', 
                                 month: 'long', 
                                 day: 'numeric',
                                 hour: '2-digit',
                                 minute: '2-digit'
-                            })}`;
+                            });
+                            
+                            document.getElementById('deadline-text').textContent = `⏰ Hasta: ${deadlineFormatted}`;
+                            document.getElementById('deadline-date-display').textContent = deadlineFormatted;
                             
                             // Iniciar countdown
                             startCountdown(deadlineDate);
                         }
+                    } else {
+                        // No hay fecha límite configurada - mostrar aviso
+                        document.getElementById('no-deadline-banner').classList.remove('hidden');
+                        document.getElementById('deadline-text').textContent = 'Consultá fecha límite con el organizador';
                     }
                 }
             } catch (error) {
@@ -493,6 +515,8 @@
         
         // Countdown actualizado cada segundo
         function startCountdown(deadline) {
+            const countdownEl = document.getElementById('countdown-banner');
+            
             function updateCountdown() {
                 const now = new Date().getTime();
                 const distance = deadline.getTime() - now;
@@ -500,8 +524,9 @@
                 if (distance < 0) {
                     // Tiempo expirado
                     clearInterval(countdownInterval);
-                    document.getElementById('countdown-banner').classList.add('hidden');
+                    countdownEl.classList.add('hidden');
                     document.getElementById('door-price-banner').classList.remove('hidden');
+                    document.getElementById('no-deadline-banner').classList.add('hidden');
                     
                     // Actualizar precio a puerta
                     currentPrice = 15000;
@@ -518,9 +543,24 @@
                 
                 // Actualizar display
                 document.getElementById('days-left').textContent = days;
-                document.getElementById('hours-left').textContent = hours;
-                document.getElementById('minutes-left').textContent = minutes;
-                document.getElementById('seconds-left').textContent = seconds;
+                document.getElementById('hours-left').textContent = hours.toString().padStart(2, '0');
+                document.getElementById('minutes-left').textContent = minutes.toString().padStart(2, '0');
+                document.getElementById('seconds-left').textContent = seconds.toString().padStart(2, '0');
+                
+                // Cambiar apariencia según urgencia
+                const totalHoursLeft = (days * 24) + hours;
+                
+                if (totalHoursLeft <= 24) {
+                    // URGENTE: Menos de 24 horas
+                    countdownEl.classList.remove('from-orange-600', 'to-red-600', 'animate-pulse');
+                    countdownEl.classList.add('from-red-700', 'to-red-900', 'animate-bounce');
+                    document.getElementById('countdown-footer').innerHTML = '🚨 ¡ÚLTIMAS HORAS! 🚨 Después cambia a precio puerta: $15,000';
+                } else if (totalHoursLeft <= 48) {
+                    // ADVERTENCIA: Menos de 48 horas
+                    countdownEl.classList.remove('from-orange-600', 'to-red-600');
+                    countdownEl.classList.add('from-red-600', 'to-red-700');
+                    document.getElementById('countdown-footer').innerHTML = '⚠️ ¡QUEDAN POCAS HORAS! Después cambia a precio puerta: $15,000';
+                }
             }
             
             updateCountdown();
