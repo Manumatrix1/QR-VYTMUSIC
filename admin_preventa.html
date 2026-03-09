@@ -44,21 +44,28 @@
         </div>
 
         <!-- Filters -->
-        <div class="bg-gray-800/50 rounded-xl p-4 mb-6 flex flex-wrap gap-3">
-            <button class="filter-btn active px-6 py-2 rounded-lg font-semibold transition-all" data-status="all">
-                📋 Todas
-            </button>
-            <button class="filter-btn px-6 py-2 rounded-lg font-semibold transition-all" data-status="payment_uploaded">
-                ⏳ Pendientes Verificación
-            </button>
-            <button class="filter-btn px-6 py-2 rounded-lg font-semibold transition-all" data-status="approved">
-                ✅ Aprobadas
-            </button>
-            <button class="filter-btn px-6 py-2 rounded-lg font-semibold transition-all" data-status="tickets_generated">
-                🎟️ QRs Generados
-            </button>
-            <button class="filter-btn px-6 py-2 rounded-lg font-semibold transition-all" data-status="rejected">
-                ❌ Rechazadas
+        <div class="bg-gray-800/50 rounded-xl p-4 mb-6 flex flex-wrap gap-3 items-center justify-between">
+            <div class="flex flex-wrap gap-3">
+                <button class="filter-btn active px-6 py-2 rounded-lg font-semibold transition-all" data-status="all">
+                    📋 Todas
+                </button>
+                <button class="filter-btn px-6 py-2 rounded-lg font-semibold transition-all" data-status="payment_uploaded">
+                    ⏳ Pendientes Verificación
+                </button>
+                <button class="filter-btn px-6 py-2 rounded-lg font-semibold transition-all" data-status="approved">
+                    ✅ Aprobadas
+                </button>
+                <button class="filter-btn px-6 py-2 rounded-lg font-semibold transition-all" data-status="tickets_generated">
+                    🎟️ QRs Generados
+                </button>
+                <button class="filter-btn px-6 py-2 rounded-lg font-semibold transition-all" data-status="rejected">
+                    ❌ Rechazadas
+                </button>
+            </div>
+            
+            <!-- Botón de Limpieza -->
+            <button id="delete-all-btn" class="px-6 py-2 bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg transition-all border-2 border-red-400 shadow-lg hover:shadow-red-500/50">
+                🗑️ Borrar TODO (Pruebas)
             </button>
         </div>
 
@@ -86,7 +93,7 @@
 
     <script type="module">
         import { db, auth } from './firebase_config.js';
-        import { getFirestore, collection, getDocs, doc, updateDoc, query, where, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, collection, getDocs, doc, updateDoc, deleteDoc, writeBatch, query, where, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // Get event info
         const params = new URLSearchParams(window.location.search);
@@ -316,6 +323,81 @@
                 currentFilter = btn.dataset.status;
                 renderOrders();
             });
+        });
+
+        // ===================================
+        // 🗑️ BORRAR TODO - Sistema de Limpieza
+        // ===================================
+        document.getElementById('delete-all-btn').addEventListener('click', async () => {
+            const confirmed = confirm(
+                '⚠️ ADVERTENCIA: Esto borrará TODAS las órdenes y entradas de preventa.\n\n' +
+                '¿Estás seguro que quieres continuar?\n\n' +
+                'Esta acción NO se puede deshacer.'
+            );
+            
+            if (!confirmed) return;
+            
+            const doubleConfirm = confirm(
+                '🚨 ÚLTIMA CONFIRMACIÓN\n\n' +
+                'Se borrarán:\n' +
+                `• ${allOrders.length} órdenes\n` +
+                '• Todos los tickets asociados\n' +
+                '• Todos los comprobantes\n\n' +
+                'Escribe OK mentalmente y presiona Aceptar para continuar.'
+            );
+            
+            if (!doubleConfirm) return;
+            
+            try {
+                const btn = document.getElementById('delete-all-btn');
+                btn.disabled = true;
+                btn.textContent = '⏳ Borrando...';
+                
+                // 1. Obtener todas las órdenes
+                const ordersSnapshot = await getDocs(collection(db, `ticket_orders_${eventId}`));
+                
+                // 2. Obtener todos los tickets asociados
+                const ticketsSnapshot = await getDocs(collection(db, `events/${eventId}/tickets`));
+                const ticketsToDelete = ticketsSnapshot.docs.filter(doc => {
+                    const data = doc.data();
+                    return data.createdBy === 'preventa' || (data.prefix && data.prefix.startsWith('PREV_'));
+                });
+                
+                // 3. Borrar en lotes (Firebase permite max 500 ops por batch)
+                const allDocs = [...ordersSnapshot.docs, ...ticketsToDelete];
+                const batchSize = 500;
+                
+                for (let i = 0; i < allDocs.length; i += batchSize) {
+                    const batch = writeBatch(db);
+                    const batchDocs = allDocs.slice(i, i + batchSize);
+                    
+                    batchDocs.forEach(docSnap => {
+                        batch.delete(docSnap.ref);
+                    });
+                    
+                    await batch.commit();
+                }
+                
+                alert(
+                    '✅ Limpieza completada:\n\n' +
+                    `📋 ${ordersSnapshot.docs.length} órdenes eliminadas\n` +
+                    `🎟️ ${ticketsToDelete.length} tickets eliminados\n\n` +
+                    'Sistema listo para nuevas pruebas.'
+                );
+                
+                // Recargar
+                loadOrders();
+                btn.disabled = false;
+                btn.textContent = '🗑️ Borrar TODO (Pruebas)';
+                
+            } catch (error) {
+                console.error('Error al borrar:', error);
+                alert('❌ Error al borrar datos: ' + error.message);
+                
+                const btn = document.getElementById('delete-all-btn');
+                btn.disabled = false;
+                btn.textContent = '🗑️ Borrar TODO (Pruebas)';
+            }
         });
 
         // Inicializar
