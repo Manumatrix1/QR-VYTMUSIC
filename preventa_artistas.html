@@ -9,6 +9,22 @@
         .step-active { border-color: #8B5CF6; background-color: #8B5CF6; color: white; }
         .step-inactive { border-color: #6B7280; color: #6B7280; }
         .step-completed { border-color: #10B981; background-color: #10B981; color: white; }
+        
+        /* Scrollbar personalizado para la lista de nombres */
+        #names-list::-webkit-scrollbar {
+            width: 8px;
+        }
+        #names-list::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+        }
+        #names-list::-webkit-scrollbar-thumb {
+            background: #8B5CF6;
+            border-radius: 10px;
+        }
+        #names-list::-webkit-scrollbar-thumb:hover {
+            background: #7C3AED;
+        }
     </style>
 </head>
 <body class="bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 min-h-screen text-white">
@@ -195,17 +211,32 @@
                 <p class="text-sm mt-1">Ahora ingresa los nombres de tus invitados</p>
             </div>
 
+            <div class="bg-blue-900/30 border border-blue-500 rounded-xl p-4 mb-6">
+                <p class="text-sm text-blue-300">💡 <strong>Completa todos los campos</strong> - Un nombre completo por cada entrada. El botón se habilitará cuando todos estén llenos.</p>
+            </div>
+
             <div class="mb-6">
-                <label class="block text-lg font-semibold mb-3">
-                    Nombres Completos (<span id="names-count">0</span>/<span id="names-total">X</span>)
-                </label>
-                <textarea id="attendee-names" rows="10" class="w-full p-4 rounded-lg bg-gray-700 border-2 border-gray-600 focus:border-purple-500 focus:outline-none text-white font-mono" placeholder="Ingresa un nombre por línea:&#10;Juan Pérez Gómez&#10;María López Silva&#10;Carlos Rodríguez Torres&#10;..."></textarea>
-                <p class="text-sm text-gray-400 mt-2">💡 Un nombre por línea. Usa nombres completos para facilitar el ingreso.</p>
+                <div class="flex justify-between items-center mb-4">
+                    <label class="text-lg font-semibold">
+                        Nombres Completos (<span id="names-count" class="text-yellow-400">0</span>/<span id="names-total" class="text-green-400">X</span>)
+                    </label>
+                    <button id="fill-test-btn" class="text-xs bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded-lg transition">
+                        🧪 Rellenar con ejemplos (testing)
+                    </button>
+                </div>
+                
+                <!-- Lista estilo Excel -->
+                <div id="names-list" class="space-y-3 max-h-96 overflow-y-auto pr-2">
+                    <!-- Los inputs se generarán dinámicamente aquí -->
+                </div>
             </div>
 
             <button id="generate-qrs-btn" disabled class="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-bold py-5 px-8 rounded-xl text-xl transition-all transform hover:scale-105 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none">
-                🎟️ Generar QRs
+                🎟️ Generar QRs (<span id="btn-count">0</span>/<span id="btn-total">X</span>)
             </button>
+            <p id="validation-message" class="text-center mt-3 text-sm text-yellow-400 hidden">
+                ⚠️ Completa todos los nombres para continuar
+            </p>
         </div>
 
         <!-- PASO 5: QRs Generados -->
@@ -491,7 +522,11 @@
                                     document.getElementById('section-pending').classList.add('hidden');
                                     document.getElementById('section-names').classList.remove('hidden');
                                     document.getElementById('names-total').textContent = orderData.quantity;
+                                    document.getElementById('btn-total').textContent = orderData.quantity;
                                     updateSteps(4);
+                                    
+                                    // Generar campos para nombres
+                                    generateNameInputs(orderData.quantity);
                                     
                                     // Detener el listener
                                     if (orderListener) orderListener();
@@ -507,6 +542,160 @@
                 });
             });
         }
+        
+        // ===================================
+        // 📝 GESTIÓN DE NOMBRES - LISTA TIPO EXCEL
+        // ===================================
+        
+        let totalNamesRequired = 0;
+        let nameInputs = [];
+        
+        function generateNameInputs(quantity) {
+            totalNamesRequired = quantity;
+            nameInputs = [];
+            
+            const container = document.getElementById('names-list');
+            container.innerHTML = '';
+            
+            for (let i = 1; i <= quantity; i++) {
+                const inputGroup = document.createElement('div');
+                inputGroup.className = 'flex items-center gap-3 bg-gray-700/50 p-3 rounded-lg border-2 border-gray-600 hover:border-purple-500 transition';
+                
+                inputGroup.innerHTML = `
+                    <div class="flex-shrink-0 w-12 h-12 bg-purple-600 rounded-lg flex items-center justify-center font-bold text-xl">
+                        ${i}
+                    </div>
+                    <input 
+                        type="text" 
+                        id="name-${i}" 
+                        class="flex-1 bg-gray-700 border-2 border-gray-600 focus:border-purple-500 focus:outline-none text-white p-3 rounded-lg text-lg"
+                        placeholder="Nombre completo del invitado ${i}"
+                        data-index="${i}"
+                    >
+                    <div class="status-icon hidden text-2xl">✅</div>
+                `;
+                
+                container.appendChild(inputGroup);
+                
+                const input = inputGroup.querySelector('input');
+                nameInputs.push(input);
+                
+                // Event listener para validación en tiempo real
+                input.addEventListener('input', validateNames);
+            }
+            
+            // Botón de testing para rellenar con ejemplos
+            document.getElementById('fill-test-btn').addEventListener('click', fillTestNames);
+            
+            validateNames(); // Validación inicial
+        }
+        
+        function validateNames() {
+            let filledCount = 0;
+            
+            nameInputs.forEach((input, index) => {
+                const value = input.value.trim();
+                const statusIcon = input.parentElement.querySelector('.status-icon');
+                
+                if (value.length >= 3) { // Mínimo 3 caracteres
+                    filledCount++;
+                    input.parentElement.classList.remove('border-gray-600');
+                    input.parentElement.classList.add('border-green-500');
+                    if (statusIcon) {
+                        statusIcon.classList.remove('hidden');
+                    }
+                } else {
+                    input.parentElement.classList.remove('border-green-500');
+                    input.parentElement.classList.add('border-gray-600');
+                    if (statusIcon) {
+                        statusIcon.classList.add('hidden');
+                    }
+                }
+            });
+            
+            // Actualizar contadores
+            document.getElementById('names-count').textContent = filledCount;
+            document.getElementById('btn-count').textContent = filledCount;
+            
+            // Habilitar/deshabilitar botón
+            const generateBtn = document.getElementById('generate-qrs-btn');
+            const validationMsg = document.getElementById('validation-message');
+            
+            if (filledCount === totalNamesRequired) {
+                generateBtn.disabled = false;
+                validationMsg.classList.add('hidden');
+            } else {
+                generateBtn.disabled = true;
+                validationMsg.classList.remove('hidden');
+            }
+        }
+        
+        function fillTestNames() {
+            const testNames = [
+                'Juan Pérez González',
+                'María López Silva',
+                'Carlos Rodríguez Torres',
+                'Ana Martínez Díaz',
+                'Luis García Fernández',
+                'Carmen Sánchez Ruiz',
+                'José Hernández Castro',
+                'Laura Gómez Morales',
+                'Miguel Torres Ramírez',
+                'Isabel Flores Vega',
+                'Pedro Álvarez Muñoz',
+                'Rosa Jiménez Ortiz',
+                'Antonio Castro Navarro',
+                'Elena Romero Gil',
+                'Francisco Moreno Vargas'
+            ];
+            
+            nameInputs.forEach((input, index) => {
+                if (index < testNames.length) {
+                    input.value = testNames[index];
+                } else {
+                    input.value = `Invitado ${index + 1} Apellido Test`;
+                }
+            });
+            
+            validateNames();
+        }
+        
+        // Generar QRs con los nombres ingresados
+        document.getElementById('generate-qrs-btn').addEventListener('click', async () => {
+            const names = nameInputs.map(input => input.value.trim()).filter(name => name.length >= 3);
+            
+            if (names.length !== totalNamesRequired) {
+                displayMessage('❌ Por favor completa todos los nombres', 'error');
+                return;
+            }
+            
+            try {
+                displayMessage('⏳ Generando QRs...', 'info');
+                
+                // TODO: Aquí iría la lógica de generación de QRs
+                // Por ahora, simulamos el proceso
+                
+                console.log('📝 Nombres a procesar:', names);
+                console.log('🎫 Orden ID:', currentOrderId);
+                
+                // Simulación de creación de QRs (2 segundos)
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                
+                displayMessage('✅ QRs generados exitosamente!', 'success');
+                
+                // Mostrar sección completada
+                document.getElementById('section-names').classList.add('hidden');
+                document.getElementById('section-completed').classList.remove('hidden');
+                updateSteps(5);
+                
+                // TODO: Generar y mostrar los QRs reales
+                // TODO: Actualizar orden en Firebase con nombres y ticket IDs
+                
+            } catch (error) {
+                console.error('Error generando QRs:', error);
+                displayMessage('❌ Error al generar QRs: ' + error.message, 'error');
+            }
+        });
         
         // Cargar configuración al inicio
         loadEventConfig();
