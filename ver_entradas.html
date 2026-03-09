@@ -238,77 +238,168 @@
                     console.error("Error al generar código de barras:", e);
                 }
 
-                // Botón de descarga MEJORADO V2 - Método más robusto
+                // Botón de descarga V3 - DIBUJAR MANUAL en canvas (método más confiable)
                 cardWrapper.querySelector('.download-btn').addEventListener('click', async () => {
                     const downloadButton = cardWrapper.querySelector('.download-btn');
                     const originalText = downloadButton.textContent;
-                    downloadButton.textContent = '⏳ Convirtiendo imágenes...';
+                    downloadButton.textContent = '⏳ Preparando...';
                     downloadButton.disabled = true;
                     
                     try {
-                        // PASO 1: Convertir QR canvas a imagen
+                        // Crear canvas para dibujar el ticket manualmente
+                        const finalCanvas = document.createElement('canvas');
+                        finalCanvas.width = 800;
+                        finalCanvas.height = 1200;
+                        const ctx = finalCanvas.getContext('2d');
+                        
+                        // Fondo
+                        ctx.fillStyle = '#1f2937';
+                        ctx.fillRect(0, 0, 800, 1200);
+                        
+                        let yPos = 40;
+                        
+                        // Número de entrada
+                        if (ticket.ticketNumberFormatted) {
+                            downloadButton.textContent = '⏳ Dibujando ticket...';
+                            ctx.fillStyle = '#0ea5e9';
+                            ctx.fillRect(200, yPos, 400, 50);
+                            ctx.fillStyle = '#ffffff';
+                            ctx.font = 'bold 28px Arial';
+                            ctx.textAlign = 'center';
+                            ctx.fillText(`Nº ${ticket.ticketNumberFormatted}`, 400, yPos + 35);
+                            yPos += 70;
+                        }
+                        
+                        // Nombre del artista badge
+                        if (ticket.artistName) {
+                            ctx.fillStyle = '#9333ea';
+                            ctx.fillRect(150, yPos, 500, 50);
+                            ctx.fillStyle = '#ffffff';
+                            ctx.font = 'bold 22px Arial';
+                            ctx.fillText(`🎤 Artista: ${ticket.artistName}`, 400, yPos + 33);
+                            yPos += 70;
+                        }
+                        
+                        // Foto del artista
+                        if (ticket.artistPhotoURL) {
+                            downloadButton.textContent = '⏳ Cargando foto...';
+                            try {
+                                const artistImage = await new Promise((resolve, reject) => {
+                                    const img = new Image();
+                                    img.crossOrigin = 'anonymous';
+                                    img.onload = () => resolve(img);
+                                    img.onerror = () => reject();
+                                    img.src = ticket.artistPhotoURL;
+                                });
+                                
+                                // Dibujar foto circular
+                                ctx.save();
+                                ctx.beginPath();
+                                ctx.arc(400, yPos + 64, 64, 0, Math.PI * 2);
+                                ctx.closePath();
+                                ctx.clip();
+                                ctx.drawImage(artistImage, 336, yPos, 128, 128);
+                                ctx.restore();
+                                
+                                // Borde circular
+                                ctx.strokeStyle = '#0ea5e9';
+                                ctx.lineWidth = 8;
+                                ctx.beginPath();
+                                ctx.arc(400, yPos + 64, 64, 0, Math.PI * 2);
+                                ctx.stroke();
+                                
+                                yPos += 150;
+                            } catch (e) {
+                                console.warn('No se pudo cargar foto del artista');
+                                yPos += 20;
+                            }
+                        }
+                        
+                        // Nombre del asistente
+                        ctx.fillStyle = '#0ea5e9';
+                        ctx.font = 'bold 32px Arial';
+                        ctx.textAlign = 'center';
+                        ctx.fillText(ticket.name, 400, yPos);
+                        yPos += 40;
+                        
+                        ctx.fillStyle = '#9ca3af';
+                        ctx.font = '20px Arial';
+                        ctx.fillText(ticket.seatLocation || 'General', 400, yPos);
+                        yPos += 50;
+                        
+                        // QR Code
+                        downloadButton.textContent = '⏳ Generando QR...';
                         const qrcodeCanvas = cardWrapper.querySelector(`#qrcode-${ticket.id} canvas`);
                         if (qrcodeCanvas) {
-                            const qrBase64 = qrcodeCanvas.toDataURL('image/png');
-                            const qrImg = document.createElement('img');
-                            qrImg.src = qrBase64;
-                            qrImg.style.width = '256px';
-                            qrImg.style.height = '256px';
-                            qrcodeCanvas.parentNode.replaceChild(qrImg, qrcodeCanvas);
+                            ctx.drawImage(qrcodeCanvas, 272, yPos, 256, 256);
+                            yPos += 270;
                         }
                         
-                        // PASO 2: Convertir foto del artista a base64
-                        const artistImg = cardWrapper.querySelector('img[alt="Foto del Artista"]');
-                        if (artistImg && artistImg.src && !artistImg.src.startsWith('data:')) {
-                            downloadButton.textContent = '⏳ Cargando foto artista...';
+                        // Código de barras
+                        const barcodeCanvas = document.getElementById(`barcode-${ticket.id}`);
+                        if (barcodeCanvas) {
+                            // Crear canvas temporal para el barcode
+                            const tempBarcodeCanvas = document.createElement('canvas');
+                            tempBarcodeCanvas.width = 600;
+                            tempBarcodeCanvas.height = 80;
+                            const tempCtx = tempBarcodeCanvas.getContext('2d');
+                            tempCtx.fillStyle = '#ffffff';
+                            tempCtx.fillRect(0, 0, 600, 80);
                             
-                            const proxyCanvas = document.createElement('canvas');
-                            const proxyImg = new Image();
-                            proxyImg.crossOrigin = 'anonymous';
-                            
-                            await new Promise((resolve, reject) => {
-                                proxyImg.onload = () => {
-                                    proxyCanvas.width = proxyImg.naturalWidth;
-                                    proxyCanvas.height = proxyImg.naturalHeight;
-                                    const ctx = proxyCanvas.getContext('2d');
-                                    ctx.drawImage(proxyImg, 0, 0);
-                                    
-                                    // Reemplazar src con base64
-                                    const base64 = proxyCanvas.toDataURL('image/png');
-                                    artistImg.src = base64;
-                                    resolve();
-                                };
-                                proxyImg.onerror = () => {
-                                    console.warn('No se pudo cargar foto del artista');
-                                    resolve(); // Continuar aunque falle
-                                };
-                                proxyImg.src = artistImg.src + '?nocache=' + Date.now();
-                            });
+                            // Redibujar barcode
+                            try {
+                                JsBarcode(tempBarcodeCanvas, ticket.id, {
+                                    format: "CODE128",
+                                    width: 2,
+                                    height: 50,
+                                    displayValue: true,
+                                    fontSize: 14
+                                });
+                                ctx.drawImage(tempBarcodeCanvas, 100, yPos, 600, 80);
+                                yPos += 100;
+                            } catch (e) {
+                                console.warn('Error dibujando barcode');
+                            }
                         }
                         
-                        // PASO 3: Esperar a que se apliquen los cambios
-                        await new Promise(resolve => setTimeout(resolve, 300));
-                        downloadButton.textContent = '⏳ Capturando entrada...';
+                        // Info del evento
+                        ctx.fillStyle = '#ffffff';
+                        ctx.font = 'bold 24px Arial';
+                        ctx.fillText(ticket.showName, 400, yPos);
+                        yPos += 35;
                         
-                        // PASO 4: Ocultar botón y capturar
-                        downloadButton.style.display = 'none';
+                        ctx.fillStyle = '#9ca3af';
+                        ctx.font = '18px Arial';
+                        ctx.fillText(ticket.showLocation, 400, yPos);
+                        yPos += 30;
                         
-                        const canvas = await html2canvas(cardWrapper, {
-                            backgroundColor: '#1f2937',
-                            scale: 2,
-                            logging: false,
-                            useCORS: false, // Ya convertimos todo a base64
-                            allowTaint: false
-                        });
+                        if (ticket.showAddress) {
+                            ctx.font = '14px Arial';
+                            ctx.fillText(ticket.showAddress, 400, yPos);
+                            yPos += 40;
+                        }
                         
-                        // Descargar imagen
+                        // Contacto
+                        ctx.fillStyle = '#0ea5e9';
+                        ctx.font = 'bold 20px Arial';
+                        ctx.fillText('VYT-MUSIC', 400, yPos);
+                        yPos += 25;
+                        ctx.fillStyle = '#9ca3af';
+                        ctx.font = '14px Arial';
+                        ctx.fillText('certamen de canto', 400, yPos);
+                        yPos += 25;
+                        ctx.fillStyle = '#22c55e';
+                        ctx.font = '14px Arial';
+                        ctx.fillText('📱 WhatsApp: +5493417422062', 400, yPos);
+                        
+                        // Descargar
+                        downloadButton.textContent = '⏳ Descargando...';
                         const link = document.createElement('a');
-                        link.href = canvas.toDataURL('image/png', 1.0);
+                        link.href = finalCanvas.toDataURL('image/png', 1.0);
                         link.download = `Entrada_VYTMUSIC_${ticket.name.replace(/\s/g, '_')}.png`;
                         link.click();
                         
-                        // Restaurar botón
-                        downloadButton.style.display = 'block';
+                        // Éxito
                         downloadButton.textContent = '✅ ¡Descargado!';
                         setTimeout(() => {
                             downloadButton.textContent = originalText;
@@ -317,7 +408,6 @@
                         
                     } catch (error) {
                         console.error('Error al descargar:', error);
-                        downloadButton.style.display = 'block';
                         downloadButton.textContent = '❌ Error - Reintentar';
                         downloadButton.disabled = false;
                         setTimeout(() => {
