@@ -1255,16 +1255,26 @@
                             yPos += 70;
                         }
                         
-                        // Foto del artista
+                        // Foto del artista - Método mejorado con fetch
                         if (ticket.artistPhotoURL) {
                             downloadButton.textContent = '⏳ Cargando foto...';
                             try {
+                                // Cargar la imagen usando fetch para evitar problemas CORS
+                                const response = await fetch(ticket.artistPhotoURL);
+                                const blob = await response.blob();
+                                const objectURL = URL.createObjectURL(blob);
+                                
                                 const artistImage = await new Promise((resolve, reject) => {
                                     const img = new Image();
-                                    img.crossOrigin = 'anonymous';
-                                    img.onload = () => resolve(img);
-                                    img.onerror = () => reject();
-                                    img.src = ticket.artistPhotoURL;
+                                    img.onload = () => {
+                                        URL.revokeObjectURL(objectURL); // Liberar memoria
+                                        resolve(img);
+                                    };
+                                    img.onerror = () => {
+                                        URL.revokeObjectURL(objectURL);
+                                        reject();
+                                    };
+                                    img.src = objectURL;
                                 });
                                 
                                 // Dibujar foto circular
@@ -1285,8 +1295,16 @@
                                 
                                 yPos += 150;
                             } catch (e) {
-                                console.warn('No se pudo cargar foto del artista');
-                                yPos += 20;
+                                console.warn('No se pudo cargar foto del artista:', e);
+                                // Dibujar placeholder si falla
+                                ctx.fillStyle = '#374151';
+                                ctx.beginPath();
+                                ctx.arc(400, yPos + 64, 64, 0, Math.PI * 2);
+                                ctx.fill();
+                                ctx.fillStyle = '#9ca3af';
+                                ctx.font = '48px Arial';
+                                ctx.fillText('🎤', 400, yPos + 80);
+                                yPos += 150;
                             }
                         }
                         
