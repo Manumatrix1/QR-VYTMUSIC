@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🔧 Actualizar Estado de Entradas Preventa</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-gradient-to-br from-gray-900 to-gray-800 text-white p-8">
+    <div class="max-w-4xl mx-auto">
+        <div class="bg-white/10 backdrop-blur-md rounded-lg p-8 shadow-2xl border border-white/20">
+            <h1 class="text-3xl font-bold mb-4">🔧 Actualizar Estado de Entradas Preventa</h1>
+            <p class="text-gray-300 mb-6">
+                Esta herramienta actualizará todas las entradas de preventa para marcarlas como "PAGADAS"
+            </p>
+
+            <div class="bg-yellow-500/20 border border-yellow-500 rounded-lg p-4 mb-6">
+                <p class="text-yellow-300 font-bold">⚠️ IMPORTANTE:</p>
+                <p class="text-sm text-gray-300">
+                    Solo ejecuta esto UNA VEZ. Actualizará TODAS las entradas creadas por preventa.
+                </p>
+            </div>
+
+            <!-- Selector de evento -->
+            <div class="mb-6">
+                <label class="block text-sm font-bold mb-2">Selecciona el Evento:</label>
+                <select id="event-selector" class="w-full p-3 rounded-lg bg-gray-800 text-white border border-gray-600">
+                    <option value="">Cargando eventos...</option>
+                </select>
+            </div>
+
+            <!-- Información -->
+            <div id="info-section" class="mb-6 hidden">
+                <div class="bg-blue-500/20 border border-blue-500 rounded-lg p-4">
+                    <p class="font-bold mb-2">📊 Estadísticas:</p>
+                    <p>Total entradas preventa encontradas: <span id="count-preventa" class="font-bold text-blue-400">0</span></p>
+                    <p>Entradas que necesitan actualización: <span id="count-pendientes" class="font-bold text-yellow-400">0</span></p>
+                </div>
+            </div>
+
+            <!-- Botones -->
+            <div class="flex gap-4">
+                <button id="btn-analizar" class="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg font-bold transition">
+                    🔍 Analizar Entradas
+                </button>
+                <button id="btn-actualizar" class="flex-1 px-6 py-3 bg-green-600 hover:bg-green-700 rounded-lg font-bold transition disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                    ✅ Actualizar Entradas
+                </button>
+            </div>
+
+            <!-- Logs -->
+            <div class="mt-6">
+                <h3 class="font-bold mb-2">📝 Log de Operaciones:</h3>
+                <div id="log-container" class="bg-gray-900 rounded-lg p-4 h-64 overflow-y-auto font-mono text-sm">
+                    <p class="text-gray-500">Esperando acción...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { db } from './firebase_config.js';
+        import { collection, getDocs, doc, updateDoc, writeBatch, query, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        const eventSelector = document.getElementById('event-selector');
+        const btnAnalizar = document.getElementById('btn-analizar');
+        const btnActualizar = document.getElementById('btn-actualizar');
+        const logContainer = document.getElementById('log-container');
+        const infoSection = document.getElementById('info-section');
+        const countPreventa = document.getElementById('count-preventa');
+        const countPendientes = document.getElementById('count-pendientes');
+
+        let selectedEventId = null;
+        let entradasPendientes = [];
+
+        // Log helper
+        function log(message, type = 'info') {
+            const colors = {
+                info: 'text-gray-300',
+                success: 'text-green-400',
+                error: 'text-red-400',
+                warning: 'text-yellow-400'
+            };
+            const timestamp = new Date().toLocaleTimeString();
+            const p = document.createElement('p');
+            p.className = colors[type];
+            p.textContent = `[${timestamp}] ${message}`;
+            logContainer.appendChild(p);
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+
+        // Cargar eventos
+        async function loadEvents() {
+            try {
+                log('Cargando lista de eventos...');
+                const eventsSnapshot = await getDocs(collection(db, 'eventos'));
+                
+                if (eventsSnapshot.empty) {
+                    eventSelector.innerHTML = '<option value="">No hay eventos disponibles</option>';
+                    log('No se encontraron eventos', 'warning');
+                    return;
+                }
+
+                eventSelector.innerHTML = '<option value="">Selecciona un evento</option>';
+                eventsSnapshot.forEach(doc => {
+                    const event = doc.data();
+                    const option = document.createElement('option');
+                    option.value = doc.id;
+                    option.textContent = event.name || doc.id;
+                    eventSelector.appendChild(option);
+                });
+
+                log(`${eventsSnapshot.size} eventos cargados`, 'success');
+            } catch (error) {
+                log('Error cargando eventos: ' + error.message, 'error');
+            }
+        }
+
+        // Analizar entradas
+        async function analyzeTickets() {
+            if (!selectedEventId) {
+                alert('Selecciona un evento primero');
+                return;
+            }
+
+            btnAnalizar.disabled = true;
+            btnAnalizar.textContent = '⏳ Analizando...';
+            log('Iniciando análisis de entradas de preventa...');
+
+            try {
+                const ticketsRef = collection(db, `events/${selectedEventId}/tickets`);
+                const ticketsSnapshot = await getDocs(ticketsRef);
+
+                log(`Total de entradas en el evento: ${ticketsSnapshot.size}`);
+
+                entradasPendientes = [];
+                let totalPreventa = 0;
+
+                ticketsSnapshot.forEach(docSnap => {
+                    const ticket = docSnap.data();
+                    
+                    // Filtrar solo entradas de preventa
+                    if (ticket.createdBy === 'preventa') {
+                        totalPreventa++;
+                        
+                        // Verificar si necesita actualización
+                        if (!ticket.paymentStatus || ticket.paymentStatus !== 'Paga') {
+                            entradasPendientes.push({
+                                id: docSnap.id,
+                                name: ticket.name,
+                                currentStatus: ticket.paymentStatus || 'sin estado'
+                            });
+                        }
+                    }
+                });
+
+                countPreventa.textContent = totalPreventa;
+                countPendientes.textContent = entradasPendientes.length;
+                infoSection.classList.remove('hidden');
+
+                log(`✅ Análisis completado:`, 'success');
+                log(`   - Total entradas preventa: ${totalPreventa}`, 'info');
+                log(`   - Necesitan actualización: ${entradasPendientes.length}`, 'warning');
+
+                if (entradasPendientes.length > 0) {
+                    btnActualizar.disabled = false;
+                    log('Presiona "Actualizar Entradas" para aplicar cambios', 'warning');
+                } else {
+                    log('✅ Todas las entradas ya están marcadas como PAGADAS', 'success');
+                }
+
+            } catch (error) {
+                log('❌ Error analizando entradas: ' + error.message, 'error');
+            } finally {
+                btnAnalizar.disabled = false;
+                btnAnalizar.textContent = '🔍 Analizar Entradas';
+            }
+        }
+
+        // Actualizar entradas
+        async function updateTickets() {
+            if (entradasPendientes.length === 0) {
+                alert('No hay entradas para actualizar');
+                return;
+            }
+
+            if (!confirm(`¿Actualizar ${entradasPendientes.length} entradas a estado PAGADO?`)) {
+                return;
+            }
+
+            btnActualizar.disabled = true;
+            btnActualizar.textContent = '⏳ Actualizando...';
+            log('Iniciando actualización masiva...', 'warning');
+
+            try {
+                // Actualizar en lotes de 500 (límite de Firebase)
+                const batchSize = 500;
+                let updated = 0;
+
+                for (let i = 0; i < entradasPendientes.length; i += batchSize) {
+                    const batch = writeBatch(db);
+                    const chunk = entradasPendientes.slice(i, i + batchSize);
+
+                    chunk.forEach(entrada => {
+                        const ticketRef = doc(db, `events/${selectedEventId}/tickets`, entrada.id);
+                        batch.update(ticketRef, {
+                            paymentStatus: 'Paga',
+                            isDoorSale: false,
+                            updatedAt: new Date().toISOString(),
+                            updatedBy: 'migration_script'
+                        });
+                    });
+
+                    await batch.commit();
+                    updated += chunk.length;
+                    log(`Actualizadas ${updated}/${entradasPendientes.length} entradas...`, 'info');
+                }
+
+                log(`✅ ¡COMPLETADO! ${updated} entradas actualizadas correctamente`, 'success');
+                log('Ahora todas las entradas de preventa aparecerán como PAGADAS', 'success');
+
+                // Resetear
+                entradasPendientes = [];
+                btnActualizar.disabled = true;
+                btnActualizar.textContent = '✅ Actualización Completada';
+
+                setTimeout(() => {
+                    btnActualizar.textContent = '✅ Actualizar Entradas';
+                }, 3000);
+
+            } catch (error) {
+                log('❌ Error actualizando entradas: ' + error.message, 'error');
+                btnActualizar.disabled = false;
+                btnActualizar.textContent = '❌ Error - Reintentar';
+            }
+        }
+
+        // Event listeners
+        eventSelector.addEventListener('change', (e) => {
+            selectedEventId = e.target.value;
+            if (selectedEventId) {
+                log(`Evento seleccionado: ${e.target.options[e.target.selectedIndex].text}`, 'info');
+                btnAnalizar.disabled = false;
+            } else {
+                btnAnalizar.disabled = true;
+            }
+            infoSection.classList.add('hidden');
+            entradasPendientes = [];
+            btnActualizar.disabled = true;
+        });
+
+        btnAnalizar.addEventListener('click', analyzeTickets);
+        btnActualizar.addEventListener('click', updateTickets);
+
+        // Inicializar
+        loadEvents();
+    </script>
+</body>
+</html>
