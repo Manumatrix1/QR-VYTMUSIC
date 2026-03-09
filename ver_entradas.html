@@ -238,72 +238,67 @@
                     console.error("Error al generar código de barras:", e);
                 }
 
-                // Botón de descarga MEJORADO - Captura QR y foto del artista
+                // Botón de descarga MEJORADO V2 - Método más robusto
                 cardWrapper.querySelector('.download-btn').addEventListener('click', async () => {
                     const downloadButton = cardWrapper.querySelector('.download-btn');
                     const originalText = downloadButton.textContent;
-                    downloadButton.textContent = '⏳ Preparando descarga...';
+                    downloadButton.textContent = '⏳ Convirtiendo imágenes...';
                     downloadButton.disabled = true;
                     
                     try {
-                        // Esperar un momento para asegurar que todo esté renderizado
-                        await new Promise(resolve => setTimeout(resolve, 500));
-                        
-                        // Convertir foto del artista a base64 ANTES de capturar
-                        let artistImageBase64 = null;
-                        const artistImg = cardWrapper.querySelector('img[alt="Foto del Artista"]');
-                        if (artistImg && artistImg.src) {
-                            try {
-                                artistImageBase64 = await new Promise((resolve, reject) => {
-                                    const img = new Image();
-                                    img.crossOrigin = 'anonymous';
-                                    img.onload = () => {
-                                        const canvas = document.createElement('canvas');
-                                        canvas.width = img.width;
-                                        canvas.height = img.height;
-                                        const ctx = canvas.getContext('2d');
-                                        ctx.drawImage(img, 0, 0);
-                                        resolve(canvas.toDataURL('image/png'));
-                                    };
-                                    img.onerror = () => resolve(null);
-                                    img.src = artistImg.src;
-                                });
-                            } catch (e) {
-                                console.warn('No se pudo convertir foto del artista:', e);
-                            }
+                        // PASO 1: Convertir QR canvas a imagen
+                        const qrcodeCanvas = cardWrapper.querySelector(`#qrcode-${ticket.id} canvas`);
+                        if (qrcodeCanvas) {
+                            const qrBase64 = qrcodeCanvas.toDataURL('image/png');
+                            const qrImg = document.createElement('img');
+                            qrImg.src = qrBase64;
+                            qrImg.style.width = '256px';
+                            qrImg.style.height = '256px';
+                            qrcodeCanvas.parentNode.replaceChild(qrImg, qrcodeCanvas);
                         }
                         
-                        // Ocultar botón temporalmente
+                        // PASO 2: Convertir foto del artista a base64
+                        const artistImg = cardWrapper.querySelector('img[alt="Foto del Artista"]');
+                        if (artistImg && artistImg.src && !artistImg.src.startsWith('data:')) {
+                            downloadButton.textContent = '⏳ Cargando foto artista...';
+                            
+                            const proxyCanvas = document.createElement('canvas');
+                            const proxyImg = new Image();
+                            proxyImg.crossOrigin = 'anonymous';
+                            
+                            await new Promise((resolve, reject) => {
+                                proxyImg.onload = () => {
+                                    proxyCanvas.width = proxyImg.naturalWidth;
+                                    proxyCanvas.height = proxyImg.naturalHeight;
+                                    const ctx = proxyCanvas.getContext('2d');
+                                    ctx.drawImage(proxyImg, 0, 0);
+                                    
+                                    // Reemplazar src con base64
+                                    const base64 = proxyCanvas.toDataURL('image/png');
+                                    artistImg.src = base64;
+                                    resolve();
+                                };
+                                proxyImg.onerror = () => {
+                                    console.warn('No se pudo cargar foto del artista');
+                                    resolve(); // Continuar aunque falle
+                                };
+                                proxyImg.src = artistImg.src + '?nocache=' + Date.now();
+                            });
+                        }
+                        
+                        // PASO 3: Esperar a que se apliquen los cambios
+                        await new Promise(resolve => setTimeout(resolve, 300));
+                        downloadButton.textContent = '⏳ Capturando entrada...';
+                        
+                        // PASO 4: Ocultar botón y capturar
                         downloadButton.style.display = 'none';
                         
-                        // Configuración mejorada de html2canvas
                         const canvas = await html2canvas(cardWrapper, {
                             backgroundColor: '#1f2937',
-                            useCORS: true,
-                            allowTaint: true,
-                            scale: 2, // Mayor resolución
+                            scale: 2,
                             logging: false,
-                            imageTimeout: 0,
-                            onclone: (clonedDoc) => {
-                                // Convertir canvas QR a imagen para captura correcta
-                                const qrcodeCanvas = clonedDoc.querySelector(`#qrcode-${ticket.id} canvas`);
-                                if (qrcodeCanvas) {
-                                    const imgData = qrcodeCanvas.toDataURL('image/png');
-                                    const img = clonedDoc.createElement('img');
-                                    img.src = imgData;
-                                    img.style.width = qrcodeCanvas.style.width || '256px';
-                                    img.style.height = qrcodeCanvas.style.height || '256px';
-                                    qrcodeCanvas.parentNode.replaceChild(img, qrcodeCanvas);
-                                }
-                                
-                                // Reemplazar foto del artista con versión base64
-                                if (artistImageBase64) {
-                                    const clonedArtistImg = clonedDoc.querySelector('img[alt="Foto del Artista"]');
-                                    if (clonedArtistImg) {
-                                        clonedArtistImg.src = artistImageBase64;
-                                    }
-                                }
-                            }
+                            useCORS: false, // Ya convertimos todo a base64
+                            allowTaint: false
                         });
                         
                         // Descargar imagen
