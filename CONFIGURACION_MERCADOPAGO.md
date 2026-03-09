@@ -44,8 +44,8 @@ Valor: firebase-adminsdk-xxxxx@vytmusic-qr.iam.gserviceaccount.com
 
 ```
 FIREBASE_PRIVATE_KEY
-Valor: -----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BA...
-(completo, incluyendo -----BEGIN y -----END)
+Valor: (obtén del archivo JSON descargado - campo "private_key" completo)
+Nota: Debe incluir -----BEGIN PRIVATE KEY----- y -----END PRIVATE KEY-----
 ```
 
 ### Cómo obtener las credenciales de Firebase:
