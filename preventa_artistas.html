@@ -91,6 +91,41 @@
             <p class="text-xl text-gray-300" id="event-name">Cargando evento...</p>
         </header>
 
+        <!-- Countdown Banner -->
+        <div id="countdown-banner" class="hidden bg-gradient-to-r from-orange-600 to-red-600 rounded-2xl p-6 mb-6 shadow-2xl border-4 border-yellow-400 animate-pulse">
+            <div class="text-center">
+                <h2 class="text-2xl font-black mb-3">⏰ ¡APURATE! PREVENTA ANTICIPADA</h2>
+                <div class="grid grid-cols-4 gap-4 max-w-2xl mx-auto">
+                    <div class="bg-white/20 rounded-lg p-3">
+                        <p class="text-4xl font-black" id="days-left">0</p>
+                        <p class="text-sm font-semibold">Días</p>
+                    </div>
+                    <div class="bg-white/20 rounded-lg p-3">
+                        <p class="text-4xl font-black" id="hours-left">0</p>
+                        <p class="text-sm font-semibold">Horas</p>
+                    </div>
+                    <div class="bg-white/20 rounded-lg p-3">
+                        <p class="text-4xl font-black" id="minutes-left">0</p>
+                        <p class="text-sm font-semibold">Minutos</p>
+                    </div>
+                    <div class="bg-white/20 rounded-lg p-3">
+                        <p class="text-4xl font-black" id="seconds-left">0</p>
+                        <p class="text-sm font-semibold">Segundos</p>
+                    </div>
+                </div>
+                <p class="text-lg font-bold mt-4">Después cambia a precio puerta: $15,000</p>
+            </div>
+        </div>
+
+        <!-- Banner Precio Puerta (cuando expira) -->
+        <div id="door-price-banner" class="hidden bg-red-900/50 border-2 border-red-500 rounded-2xl p-6 mb-6">
+            <div class="text-center">
+                <h2 class="text-2xl font-black mb-2 text-red-400">⚠️ PREVENTA ANTICIPADA FINALIZADA</h2>
+                <p class="text-lg">Ahora aplica el precio de puerta: <span class="text-3xl font-black">$15,000</span></p>
+                <p class="text-sm text-gray-300 mt-2">Todavía puedes solicitar tus entradas usando esta página</p>
+            </div>
+        </div>
+
         <!-- Info de Precios -->
         <div class="bg-gradient-to-r from-purple-600 to-pink-600 rounded-2xl p-6 mb-8 shadow-lg">
             <div class="grid md:grid-cols-2 gap-6">
@@ -357,6 +392,22 @@
                 <p class="text-sm text-gray-200 mt-2">Descarga cada entrada haciendo click en el botón correspondiente. Cada QR es único y personal.</p>
             </div>
 
+            <!-- Compartir Link con Invitados -->
+            <div class="bg-blue-900/30 border-2 border-blue-500 rounded-xl p-6 mb-6">
+                <h3 class="text-xl font-bold text-blue-400 mb-3">🔗 Compartir con tus invitados</h3>
+                <p class="text-sm text-gray-300 mb-4">Copia este link y envíalo a tus invitados por WhatsApp. Ellos podrán ver y descargar sus entradas directamente.</p>
+                
+                <div class="flex gap-3">
+                    <input type="text" id="share-link" readonly class="flex-1 p-3 rounded-lg bg-gray-700 border-2 border-gray-600 text-white text-sm" value="Generando link...">
+                    <button id="copy-link-btn" class="px-6 py-3 bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg transition-all">
+                        📋 Copiar
+                    </button>
+                    <button id="whatsapp-share-btn" class="px-6 py-3 bg-green-500 hover:bg-green-600 text-white font-bold rounded-lg transition-all">
+                        💬 WhatsApp
+                    </button>
+                </div>
+            </div>
+
             <!-- Grid de Tickets -->
             <div id="generated-tickets-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
                 <!-- Los tickets se generarán aquí dinámicamente -->
@@ -391,6 +442,7 @@
         let currentOrderId = null;
         let currentPrice = 10000; // Precio anticipado por defecto
         let eventData = null;
+        let countdownInterval = null;
 
         // Cargar configuración del evento
         async function loadEventConfig() {
@@ -403,25 +455,76 @@
                     const deadlineDate = eventData.ticketDeadline ? new Date(eventData.ticketDeadline) : null;
                     const now = new Date();
                     
-                    if (deadlineDate && now > deadlineDate) {
-                        currentPrice = 15000; // Precio puerta
-                        document.getElementById('price-per-ticket').textContent = '$15,000';
-                        document.querySelector('.bg-gradient-to-r.from-purple-600').classList.remove('from-purple-600', 'to-pink-600');
-                        document.querySelector('.bg-gradient-to-r').classList.add('from-orange-600', 'to-red-600');
-                        
-                        const deadlineText = document.getElementById('deadline-text');
-                        deadlineText.textContent = '⚠️ Fecha límite superada - Precio puerta';
-                        deadlineText.classList.add('text-yellow-400', 'font-bold');
-                        
-                        // Actualizar precio de niños en el mensaje informativo
-                        updateTotal(); // Recalcular con precio puerta
-                    } else if (deadlineDate) {
-                        document.getElementById('deadline-text').textContent = `Hasta: ${deadlineDate.toLocaleDateString('es-ES')}`;
+                    if (deadlineDate) {
+                        if (now > deadlineDate) {
+                            // Fecha límite pasada - precio puerta
+                            currentPrice = 15000;
+                            document.getElementById('price-per-ticket').textContent = '$15,000';
+                            
+                            const deadlineText = document.getElementById('deadline-text');
+                            deadlineText.textContent = '⚠️ Fecha límite superada - Precio puerta';
+                            deadlineText.classList.add('text-yellow-400', 'font-bold');
+                            
+                            // Mostrar banner de precio puerta
+                            document.getElementById('door-price-banner').classList.remove('hidden');
+                            
+                            updateTotal();
+                        } else {
+                            // Todavía hay tiempo - mostrar countdown
+                            document.getElementById('countdown-banner').classList.remove('hidden');
+                            document.getElementById('deadline-text').textContent = `Hasta: ${deadlineDate.toLocaleDateString('es-ES', { 
+                                weekday: 'long', 
+                                year: 'numeric', 
+                                month: 'long', 
+                                day: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                            })}`;
+                            
+                            // Iniciar countdown
+                            startCountdown(deadlineDate);
+                        }
                     }
                 }
             } catch (error) {
                 console.error('Error cargando configuración:', error);
             }
+        }
+        
+        // Countdown actualizado cada segundo
+        function startCountdown(deadline) {
+            function updateCountdown() {
+                const now = new Date().getTime();
+                const distance = deadline.getTime() - now;
+                
+                if (distance < 0) {
+                    // Tiempo expirado
+                    clearInterval(countdownInterval);
+                    document.getElementById('countdown-banner').classList.add('hidden');
+                    document.getElementById('door-price-banner').classList.remove('hidden');
+                    
+                    // Actualizar precio a puerta
+                    currentPrice = 15000;
+                    document.getElementById('price-per-ticket').textContent = '$15,000';
+                    updateTotal();
+                    return;
+                }
+                
+                // Calcular tiempo restante
+                const days = Math.floor(distance / (1000 * 60 * 60 * 24));
+                const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+                const seconds = Math.floor((distance % (1000 * 60)) / 1000);
+                
+                // Actualizar display
+                document.getElementById('days-left').textContent = days;
+                document.getElementById('hours-left').textContent = hours;
+                document.getElementById('minutes-left').textContent = minutes;
+                document.getElementById('seconds-left').textContent = seconds;
+            }
+            
+            updateCountdown();
+            countdownInterval = setInterval(updateCountdown, 1000);
         }
 
         // Calcular total
@@ -882,6 +985,30 @@
                 
                 // Renderizar los QRs
                 renderGeneratedTickets(generatedTickets);
+                
+                // Generar link público para compartir
+                const shareLink = `${window.location.origin}/ver_entradas.html?orderId=${currentOrderId}`;
+                document.getElementById('share-link').value = shareLink;
+                
+                // Botón copiar link
+                document.getElementById('copy-link-btn').addEventListener('click', () => {
+                    navigator.clipboard.writeText(shareLink).then(() => {
+                        const btn = document.getElementById('copy-link-btn');
+                        btn.textContent = '✅ Copiado!';
+                        btn.classList.add('bg-green-700');
+                        setTimeout(() => {
+                            btn.textContent = '📋 Copiar';
+                            btn.classList.remove('bg-green-700');
+                        }, 2000);
+                    });
+                });
+                
+                // Botón compartir por WhatsApp
+                document.getElementById('whatsapp-share-btn').addEventListener('click', () => {
+                    const message = `🎟️ *VYT-MUSIC - ${eventName}*\n\n¡Aquí están tus entradas!\n\nDescargá tu entrada QR desde este link:\n${shareLink}\n\n¡Nos vemos en el evento! 🎤✨`;
+                    const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
+                    window.open(whatsappUrl, '_blank');
+                });
                 
                 displayMessage('✅ Entradas generadas exitosamente!', 'success');
                 

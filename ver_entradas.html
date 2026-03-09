@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tus Entradas | VYTMUSIC</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+</head>
+<body class="bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 min-h-screen text-white">
+    <div class="container mx-auto max-w-7xl p-6">
+        <!-- Header -->
+        <header class="text-center mb-8">
+            <h1 class="text-5xl font-black mb-3 bg-gradient-to-r from-purple-400 to-pink-600 bg-clip-text text-transparent">
+                🎟️ Tus Entradas VYT-MUSIC
+            </h1>
+            <p class="text-xl text-gray-300" id="event-name">Cargando...</p>
+        </header>
+
+        <!-- Loading -->
+        <div id="loading-section" class="text-center py-12">
+            <div class="animate-spin rounded-full h-16 w-16 border-4 border-purple-500 border-t-transparent mx-auto mb-4"></div>
+            <p class="text-gray-400">Cargando tus entradas...</p>
+        </div>
+
+        <!-- Error -->
+        <div id="error-section" class="hidden bg-red-900/30 border-2 border-red-500 rounded-xl p-8 text-center">
+            <div class="text-6xl mb-4">❌</div>
+            <h2 class="text-2xl font-bold mb-2">No se encontraron entradas</h2>
+            <p class="text-gray-300" id="error-message">El link puede estar incorrecto o expirado.</p>
+        </div>
+
+        <!-- Info de la Orden -->
+        <div id="order-info" class="hidden bg-gradient-to-r from-blue-900/50 to-purple-900/50 border-2 border-blue-500 rounded-xl p-6 mb-8">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
+                <div>
+                    <p class="text-sm text-gray-400">Solicitado por</p>
+                    <p class="text-xl font-bold text-blue-400" id="artist-name">—</p>
+                </div>
+                <div>
+                    <p class="text-sm text-gray-400">Cantidad de Entradas</p>
+                    <p class="text-xl font-bold text-green-400" id="ticket-count">—</p>
+                </div>
+                <div>
+                    <p class="text-sm text-gray-400">Estado</p>
+                    <p class="text-xl font-bold text-yellow-400" id="order-status">—</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Instrucciones -->
+        <div id="instructions" class="hidden bg-yellow-900/30 border border-yellow-500 rounded-xl p-6 mb-8">
+            <h3 class="text-lg font-bold text-yellow-400 mb-3">📱 Instrucciones:</h3>
+            <ul class="space-y-2 text-sm text-gray-300">
+                <li>✅ Descarga tu entrada haciendo click en el botón correspondiente</li>
+                <li>📱 Guarda la imagen en tu celular</li>
+                <li>🎫 Presenta tu QR en la puerta del evento</li>
+                <li>⚠️ Cada QR es único y personal - no lo compartas con nadie más</li>
+            </ul>
+        </div>
+
+        <!-- Grid de Tickets -->
+        <div id="tickets-grid" class="hidden grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <!-- Los tickets se generarán aquí dinámicamente -->
+        </div>
+    </div>
+
+    <script type="module">
+        import { db } from './firebase_config.js';
+        import { getFirestore, collection, doc, getDoc, getDocs, query, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        const params = new URLSearchParams(window.location.search);
+        const orderId = params.get('orderId');
+
+        if (!orderId) {
+            showError('No se especificó ID de orden');
+        } else {
+            loadTickets();
+        }
+
+        async function loadTickets() {
+            try {
+                // Obtener datos de la orden para saber el eventId
+                let orderData = null;
+                let eventId = null;
+
+                // Buscar la orden en todos los eventos (solo necesitamos el eventId)
+                // En producción real, deberías pasar el eventId en el URL también
+                const eventsSnapshot = await getDocs(collection(db, 'events'));
+                
+                for (const eventDoc of eventsSnapshot.docs) {
+                    const tryEventId = eventDoc.id;
+                    const orderRef = doc(db, `ticket_orders_${tryEventId}`, orderId);
+                    const orderSnap = await getDoc(orderRef);
+                    
+                    if (orderSnap.exists()) {
+                        orderData = orderSnap.data();
+                        eventId = tryEventId;
+                        break;
+                    }
+                }
+
+                if (!orderData || !eventId) {
+                    showError('No se encontró la orden. Verifica el link.');
+                    return;
+                }
+
+                // Verificar que la orden tenga tickets generados
+                if (orderData.status !== 'tickets_generated' || !orderData.ticketIds || orderData.ticketIds.length === 0) {
+                    showError('Las entradas aún no han sido generadas. Contacta al organizador.');
+                    return;
+                }
+
+                // Cargar datos del evento
+                const eventDoc = await getDoc(doc(db, 'events', eventId));
+                const eventData = eventDoc.exists() ? eventDoc.data() : {};
+
+                document.getElementById('event-name').textContent = orderData.eventName || eventData.name || 'VYT-MUSIC';
+                document.getElementById('artist-name').textContent = orderData.artistName;
+                document.getElementById('ticket-count').textContent = orderData.ticketIds.length;
+                document.getElementById('order-status').textContent = '✅ Confirmado';
+
+                // Cargar tickets desde Firebase
+                const tickets = [];
+                for (const ticketId of orderData.ticketIds) {
+                    const ticketDoc = await getDoc(doc(db, `events/${eventId}/tickets`, ticketId));
+                    if (ticketDoc.exists()) {
+                        tickets.push({ id: ticketDoc.id, ...ticketDoc.data() });
+                    }
+                }
+
+                if (tickets.length === 0) {
+                    showError('No se encontraron entradas asociadas a esta orden.');
+                    return;
+                }
+
+                // Mostrar secciones
+                document.getElementById('loading-section').classList.add('hidden');
+                document.getElementById('order-info').classList.remove('hidden');
+                document.getElementById('instructions').classList.remove('hidden');
+                document.getElementById('tickets-grid').classList.remove('hidden');
+
+                // Renderizar tickets
+                renderTickets(tickets);
+
+            } catch (error) {
+                console.error('Error cargando entradas:', error);
+                showError('Error al cargar las entradas: ' + error.message);
+            }
+        }
+
+        function renderTickets(tickets) {
+            const grid = document.getElementById('tickets-grid');
+            grid.innerHTML = '';
+
+            const config = {
+                logoUrl: 'https://i.imgur.com/rqkZi9P.png',
+                whatsappNumber: '5493417422062'
+            };
+
+            tickets.forEach(ticket => {
+                const cardWrapper = document.createElement('div');
+                cardWrapper.id = `card-${ticket.id}`;
+                cardWrapper.className = 'ticket-card bg-gradient-to-br from-gray-800 to-gray-900 rounded-2xl p-6 border-2 border-purple-500 shadow-2xl flex flex-col items-center gap-4';
+
+                const artistImageHTML = ticket.artistPhotoURL
+                    ? `<img src="${ticket.artistPhotoURL}" alt="Foto del Artista" class="w-32 h-32 rounded-full mx-auto object-cover border-4 border-sky-500">`
+                    : '';
+
+                const codesContainer = `
+                    <div class="w-full max-w-[300px] mx-auto">
+                        <div class="qrcode-wrapper relative">
+                            <div id="qrcode-${ticket.id}" class="qrcode-container bg-white p-4 rounded-lg"></div>
+                            <img src="${config.logoUrl}" alt="Logo" class="qrcode-logo absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-12 h-12 bg-white rounded-full p-1">
+                        </div>
+                        <div class="mt-2 p-2 bg-white rounded-md">
+                            <svg id="barcode-${ticket.id}" class="w-full"></svg>
+                        </div>
+                    </div>`;
+
+                const addressHtml = ticket.showAddress 
+                    ? `<p class="text-sm text-gray-400">${ticket.showAddress.startsWith('http') ? `<a href="${ticket.showAddress}" target="_blank" class="text-sky-400 hover:underline">Ver en Mapa</a>` : ticket.showAddress}</p>` 
+                    : '';
+
+                const numBadge = ticket.ticketNumberFormatted ? `<div class="bg-sky-600 text-white px-4 py-2 rounded-lg font-bold text-xl mb-2">Nº ${ticket.ticketNumberFormatted}</div>` : '';
+
+                cardWrapper.innerHTML = `
+                    ${numBadge}
+                    ${artistImageHTML}
+                    <div class="w-full text-center">
+                        <h3 class="text-2xl font-bold text-sky-400">${ticket.name}</h3>
+                        <p class="text-gray-300">${ticket.seatLocation || 'General'}</p>
+                    </div>
+                    ${codesContainer}
+                    <div class="w-full mt-4 text-center">
+                        <p class="text-lg font-semibold">${ticket.showName}</p>
+                        <p class="text-md text-gray-400">${ticket.showLocation}</p>
+                        ${addressHtml}
+                    </div>
+                    <button class="download-btn w-full mt-4 px-4 py-3 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white font-bold rounded-lg transition">
+                        📥 Descargar Mi Entrada
+                    </button>
+                `;
+
+                grid.appendChild(cardWrapper);
+
+                // Generar QR Code
+                new QRCode(document.getElementById(`qrcode-${ticket.id}`), {
+                    text: ticket.id,
+                    width: 256,
+                    height: 256,
+                    correctLevel: QRCode.CorrectLevel.H
+                });
+
+                // Generar código de barras
+                try {
+                    JsBarcode(document.getElementById(`barcode-${ticket.id}`), ticket.id, {
+                        format: "CODE128",
+                        lineColor: "#000",
+                        width: 2,
+                        height: 30,
+                        displayValue: true,
+                        fontSize: 14,
+                        textMargin: 2,
+                        background: "transparent",
+                        margin: 10
+                    });
+                } catch (e) {
+                    console.error("Error al generar código de barras:", e);
+                }
+
+                // Botón de descarga
+                cardWrapper.querySelector('.download-btn').addEventListener('click', () => {
+                    const downloadButton = cardWrapper.querySelector('.download-btn');
+                    downloadButton.style.display = 'none';
+
+                    html2canvas(cardWrapper, { backgroundColor: '#1f2937', useCORS: true }).then(canvas => {
+                        const link = document.createElement('a');
+                        link.href = canvas.toDataURL('image/png');
+                        link.download = `Entrada_VYTMUSIC_${ticket.name.replace(/\s/g, '_')}.png`;
+                        link.click();
+                        downloadButton.style.display = 'block';
+                    });
+                });
+            });
+        }
+
+        function showError(message) {
+            document.getElementById('loading-section').classList.add('hidden');
+            document.getElementById('error-section').classList.remove('hidden');
+            document.getElementById('error-message').textContent = message;
+        }
+    </script>
+
+    <style>
+        .ticket-card {
+            min-height: 600px;
+        }
+        .qrcode-wrapper {
+            position: relative;
+        }
+        .qrcode-container {
+            display: inline-block;
+        }
+        .qrcode-logo {
+            pointer-events: none;
+        }
+    </style>
+</body>
+</html>
