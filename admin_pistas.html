@@ -284,20 +284,32 @@
         async function loadArtists() {
             try {
                 const { collection, getDocs } = window.firestoreModules;
-                const artistsRef = collection(window.db, `artistas_${eventId}`);
-                const snapshot = await getDocs(artistsRef);
+                
+                // Intentar cargar de la estructura vieja primero (events/{eventId}/artists)
+                let artistsRef = collection(window.db, `events/${eventId}/artists`);
+                let snapshot = await getDocs(artistsRef);
+                
+                // Si no hay artistas en la estructura vieja, intentar la nueva (artistas_{eventId})
+                if (snapshot.empty) {
+                    console.log('⚠️ No hay artistas en events/${eventId}/artists, probando artistas_${eventId}...');
+                    artistsRef = collection(window.db, `artistas_${eventId}`);
+                    snapshot = await getDocs(artistsRef);
+                }
                 
                 allArtists = [];
                 snapshot.forEach(doc => {
+                    const data = doc.data();
                     allArtists.push({
                         id: doc.id,
-                        ...doc.data()
+                        nombre: data.name || data.nombre || 'Sin nombre',
+                        foto_url: data.photoURL || data.foto_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(data.name || data.nombre || 'A')}&background=4f46e5&color=fff&size=128`
                     });
                 });
                 
-                allArtists.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
+                allArtists.sort((a, b) => a.nombre.localeCompare(b.nombre));
+                console.log('✅ Artistas cargados:', allArtists.length);
             } catch (error) {
-                console.error('Error cargando artistas:', error);
+                console.error('❌ Error cargando artistas:', error);
             }
         }
 

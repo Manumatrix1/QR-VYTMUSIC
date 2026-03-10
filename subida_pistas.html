@@ -356,19 +356,34 @@
         async function loadArtistData() {
             try {
                 const { doc, getDoc } = window.firestoreModules;
-                const artistRef = doc(window.db, `artistas_${eventId}`, artistId);
-                const artistSnap = await getDoc(artistRef);
+                
+                // Intentar cargar de la estructura vieja primero (events/{eventId}/artists/{artistId})
+                let artistRef = doc(window.db, `events/${eventId}/artists`, artistId);
+                let artistSnap = await getDoc(artistRef);
+                
+                // Si no existe, intentar estructura nueva (artistas_{eventId}/{artistId})
+                if (!artistSnap.exists()) {
+                    console.log('⚠️ Artista no encontrado en events/${eventId}/artists, probando artistas_${eventId}...');
+                    artistRef = doc(window.db, `artistas_${eventId}`, artistId);
+                    artistSnap = await getDoc(artistRef);
+                }
                 
                 if (artistSnap.exists()) {
-                    currentArtist = { id: artistId, ...artistSnap.data() };
-                    document.getElementById('artistName').textContent = currentArtist.nombre || 'Artista';
-                    document.getElementById('artistPhoto').src = currentArtist.foto_url || 'https://via.placeholder.com/150?text=Artista';
+                    const data = artistSnap.data();
+                    currentArtist = { 
+                        id: artistId, 
+                        nombre: data.name || data.nombre || 'Artista',
+                        foto_url: data.photoURL || data.foto_url || 'https://via.placeholder.com/150?text=Artista'
+                    };
+                    document.getElementById('artistName').textContent = currentArtist.nombre;
+                    document.getElementById('artistPhoto').src = currentArtist.foto_url;
+                    console.log('✅ Artista cargado:', currentArtist.nombre);
                 } else {
                     alert('Artista no encontrado');
                     return;
                 }
             } catch (error) {
-                console.error('Error cargando artista:', error);
+                console.error('❌ Error cargando artista:', error);
                 displayMessage('Error al cargar datos del artista', 'error');
             }
         }
