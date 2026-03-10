@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portal Artistas - Subida de Pistas</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+        }
+        .artist-card {
+            background: linear-gradient(135deg, #1e3a8a 0%, #1e40af 100%);
+            border: 2px solid #3b82f6;
+            transition: all 0.3s ease;
+        }
+        .artist-card:hover {
+            transform: translateY(-8px) scale(1.02);
+            border-color: #60a5fa;
+            box-shadow: 0 20px 40px rgba(59, 130, 246, 0.4);
+        }
+        .artist-photo {
+            transition: transform 0.3s ease;
+        }
+        .artist-card:hover .artist-photo {
+            transform: scale(1.1);
+        }
+    </style>
+</head>
+<body class="min-h-screen">
+    
+    <!-- Header -->
+    <div class="bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 text-white py-6 shadow-2xl">
+        <div class="container mx-auto px-4 text-center">
+            <h1 class="text-4xl font-bold mb-2">🎵 Portal de Artistas - VYT MUSIC</h1>
+            <p class="text-lg" id="eventTitle">Seleccioná tu perfil para subir tu pista</p>
+        </div>
+    </div>
+
+    <!-- Loading -->
+    <div id="loading" class="flex items-center justify-center min-h-screen">
+        <div class="text-center">
+            <div class="animate-spin rounded-full h-20 w-20 border-t-4 border-blue-500 mx-auto mb-4"></div>
+            <p class="text-white text-2xl">Cargando artistas...</p>
+        </div>
+    </div>
+
+    <!-- Contenido Principal -->
+    <div id="mainContent" class="hidden container mx-auto px-4 py-12">
+        
+        <!-- Instrucciones -->
+        <div class="bg-gradient-to-r from-blue-900 to-purple-900 rounded-xl shadow-2xl p-8 mb-8 border-2 border-blue-400">
+            <div class="text-center">
+                <div class="text-5xl mb-4">🎤</div>
+                <h2 class="text-3xl font-bold text-white mb-3">¡Bienvenido Artista!</h2>
+                <p class="text-xl text-gray-200 mb-2">Hacé clic en tu foto/nombre para subir tu pista musical</p>
+                <p class="text-sm text-gray-400">Podés subir hasta 2 pistas (1 obligatoria + 1 opcional)</p>
+            </div>
+        </div>
+
+        <!-- Mensaje de búsqueda -->
+        <div class="mb-6">
+            <input type="text" id="searchInput" placeholder="🔍 Buscar tu nombre..." 
+                class="w-full px-6 py-4 rounded-xl bg-gray-800 text-white text-lg border-2 border-gray-600 focus:border-blue-500 focus:outline-none">
+        </div>
+
+        <!-- Grid de Artistas -->
+        <div id="artistsGrid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+            <!-- Se llenará dinámicamente -->
+        </div>
+
+        <!-- Mensaje si no hay artistas -->
+        <div id="noArtistsMessage" class="hidden text-center text-gray-400 bg-gray-800 p-12 rounded-xl border-2 border-gray-600">
+            <div class="text-6xl mb-4">🎭</div>
+            <p class="text-2xl font-semibold">No se encontraron resultados</p>
+        </div>
+    </div>
+
+    <!-- Firebase Config -->
+    <script type="module">
+        import { db } from './firebase_config.js';
+        import { collection, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        const params = new URLSearchParams(window.location.search);
+        const eventId = params.get('eventId');
+
+        if (!eventId) {
+            alert('Acceso inválido. Falta el ID del evento.');
+            window.location.href = 'index.html';
+        }
+
+        let allArtists = [];
+
+        // Cargar artistas
+        async function loadArtists() {
+            try {
+                // Intentar cargar de la estructura vieja primero (events/{eventId}/artists)
+                let artistsRef = collection(db, `events/${eventId}/artists`);
+                let snapshot = await getDocs(artistsRef);
+                
+                // Si no hay artistas en la estructura vieja, intentar la nueva (artistas_{eventId})
+                if (snapshot.empty) {
+                    console.log('⚠️ No hay artistas en events/${eventId}/artists, probando artistas_${eventId}...');
+                    artistsRef = collection(db, `artistas_${eventId}`);
+                    snapshot = await getDocs(artistsRef);
+                }
+                
+                allArtists = [];
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+                    allArtists.push({
+                        id: doc.id,
+                        nombre: data.name || data.nombre || 'Sin nombre',
+                        foto_url: data.photoURL || data.foto_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(data.name || data.nombre || 'A')}&background=4f46e5&color=fff&size=200`
+                    });
+                });
+                
+                // Ordenar alfabéticamente
+                allArtists.sort((a, b) => a.nombre.localeCompare(b.nombre));
+                
+                console.log('✅ Artistas cargados:', allArtists.length);
+                displayArtists(allArtists);
+                
+            } catch (error) {
+                console.error('❌ Error cargando artistas:', error);
+                alert('Error al cargar artistas. Por favor, intentá de nuevo.');
+            }
+        }
+
+        // Mostrar artistas en el grid
+        function displayArtists(artists) {
+            const grid = document.getElementById('artistsGrid');
+            const noArtistsMsg = document.getElementById('noArtistsMessage');
+            
+            if (artists.length === 0) {
+                grid.innerHTML = '';
+                noArtistsMsg.classList.remove('hidden');
+                return;
+            }
+            
+            noArtistsMsg.classList.add('hidden');
+            
+            grid.innerHTML = artists.map(artist => `
+                <a href="subida_pistas.html?eventId=${eventId}&artistId=${artist.id}" 
+                   class="artist-card rounded-xl shadow-2xl p-6 block text-center cursor-pointer">
+                    <div class="mb-4 overflow-hidden rounded-full mx-auto w-32 h-32 border-4 border-white">
+                        <img src="${artist.foto_url}" 
+                             alt="${artist.nombre}" 
+                             class="artist-photo w-full h-full object-cover"
+                             onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(artist.nombre)}&background=4f46e5&color=fff&size=200'">
+                    </div>
+                    <h3 class="text-white font-bold text-xl mb-2">${artist.nombre}</h3>
+                    <div class="bg-white/20 rounded-full px-4 py-2 inline-block">
+                        <span class="text-white text-sm font-semibold">
+                            <i class="fas fa-upload"></i> Subir Pista
+                        </span>
+                    </div>
+                </a>
+            `).join('');
+        }
+
+        // Búsqueda en tiempo real
+        document.getElementById('searchInput').addEventListener('input', (e) => {
+            const search = e.target.value.toLowerCase();
+            const filtered = allArtists.filter(artist => 
+                artist.nombre.toLowerCase().includes(search)
+            );
+            displayArtists(filtered);
+        });
+
+        // Cargar evento (opcional, para mostrar nombre)
+        async function loadEvent() {
+            try {
+                const { doc, getDoc } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js");
+                const eventRef = doc(db, 'eventos', eventId);
+                const eventSnap = await getDoc(eventRef);
+                
+                if (eventSnap.exists()) {
+                    const eventData = eventSnap.data();
+                    document.getElementById('eventTitle').textContent = `${eventData.nombre || 'Evento'} - Seleccioná tu perfil`;
+                }
+            } catch (error) {
+                console.log('No se pudo cargar el nombre del evento');
+            }
+        }
+
+        // Inicializar
+        async function init() {
+            await loadEvent();
+            await loadArtists();
+            
+            document.getElementById('loading').classList.add('hidden');
+            document.getElementById('mainContent').classList.remove('hidden');
+        }
+
+        init();
+    </script>
+</body>
+</html>
