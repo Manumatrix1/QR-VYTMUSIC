@@ -10,14 +10,14 @@
     <!-- Firebase SDK v11.6.1 -->
     <script type="module">
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
-        import { getFirestore, collection, doc, getDoc, setDoc, getDocs, query, Timestamp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+        import { getFirestore, collection, doc, getDoc, setDoc, getDocs, query, onSnapshot, Timestamp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
         import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js';
         
         import { app, db, storage } from './firebase_config.js';
         
         window.db = db;
         window.storage = storage;
-        window.firestoreModules = { collection, doc, getDoc, setDoc, getDocs, query, Timestamp };
+        window.firestoreModules = { collection, doc, getDoc, setDoc, getDocs, query, onSnapshot, Timestamp };
         window.storageModules = { ref, uploadBytes, getDownloadURL, deleteObject };
     </script>
     
@@ -108,6 +108,17 @@
 
         <!-- Mensajes -->
         <div id="messageContainer" class="mb-6"></div>
+        
+        <!-- Banner Reproduciendo Ahora -->
+        <div id="nowPlayingBanner" class="hidden mb-4 bg-gradient-to-r from-green-800 to-green-900 text-white px-4 py-2 rounded-lg flex items-center justify-between shadow-lg">
+            <span class="text-sm font-semibold flex items-center gap-2">
+                <i class="fas fa-music animate-pulse"></i>
+                <span id="nowPlayingText">Reproduciendo...</span>
+            </span>
+            <button onclick="stopTrack()" class="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded text-sm flex items-center gap-1 ml-4">
+                <i class="fas fa-stop"></i> Parar
+            </button>
+        </div>
 
         <!-- Slots de Pistas -->
         <div class="grid md:grid-cols-2 gap-6 mb-8">
@@ -437,39 +448,61 @@
             }
         }
 
-        // Cargar pistas del artista
-        async function loadArtistTracks() {
+        // Cargar pistas del artista CON LISTENER EN TIEMPO REAL
+        function loadArtistTracks() {
             try {
-                const { doc, getDoc } = window.firestoreModules;
+                const { doc, onSnapshot } = window.firestoreModules;
                 const trackRef = doc(window.db, `pistas_${eventId}`, artistId);
-                const trackSnap = await getDoc(trackRef);
                 
-                if (trackSnap.exists()) {
-                    const data = trackSnap.data();
-                    const tracks = data.pistas || [];
+                // Escuchar cambios en tiempo real
+                onSnapshot(trackRef, (trackSnap) => {
+                    console.log('🔄 Actualizando pistas en tiempo real...');
                     
-                    // Mostrar estado de cada slot
-                    tracks.forEach(track => {
-                        displayTrackStatus(track);
-                    });
-                }
+                    if (trackSnap.exists()) {
+                        const data = trackSnap.data();
+                        const tracks = data.pistas || [];
+                        
+                        // Limpiar estados anteriores
+                        document.getElementById('slot1Status').innerHTML = '';
+                        document.getElementById('slot2Status').innerHTML = '';
+                        
+                        // Mostrar estado de cada slot
+                        tracks.forEach(track => {
+                            displayTrackStatus(track);
+                        });
+                        
+                        console.log('✅ Pistas actualizadas:', tracks.length);
+                    } else {
+                        // No hay pistas todavía
+                        document.getElementById('slot1Status').innerHTML = '';
+                        document.getElementById('slot2Status').innerHTML = '';
+                    }
+                }, (error) => {
+                    console.error('❌ Error en listener de pistas:', error);
+                });
             } catch (error) {
-                console.error('Error cargando pistas del artista:', error);
+                console.error('Error configurando listener de pistas:', error);
             }
         }
 
         // Mostrar estado de una pista
         function displayTrackStatus(track) {
             const statusDiv = document.getElementById(`slot${track.slot}Status`);
+            const trimInfo = (track.trim_start !== null && track.trim_end !== null)
+                ? `<p class="text-xs text-yellow-300 mt-1">✂️ Recortada: ${formatTime(track.trim_start)} → ${formatTime(track.trim_end)} (${formatTime(track.trim_duration || (track.trim_end - track.trim_start))})</p>`
+                : '';
             statusDiv.innerHTML = `
-                <div class="bg-green-600 text-white p-3 rounded-lg mb-2">
+                <div class="bg-green-700 text-white p-3 rounded-lg mb-2">
                     <p class="font-semibold"><i class="fas fa-check-circle"></i> Pista Cargada</p>
                     <p class="text-sm">Canción: ${track.nombre_cancion}</p>
                     <p class="text-sm">Estilo: ${track.estilo_cancion}</p>
+                    ${trimInfo}
                     <p class="text-sm">Subida: ${track.fecha_subida.toDate().toLocaleString('es-ES')}</p>
-                    <div class="flex gap-2 mt-2">
-                        <button onclick="playTrack('${track.archivo_url}')" class="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded text-sm">
-                            <i class="fas fa-play"></i> Reproducir
+                    <div class="flex gap-1 mt-2 flex-wrap items-center">
+                        <button id="playToggleSlot${track.slot}"
+                            onclick="toggleTrack('playToggleSlot${track.slot}', '${track.archivo_url}', '${track.nombre_cancion}')"
+                            class="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded text-sm flex items-center gap-1 mr-2">
+                            <i class="fas fa-play"></i> Escuchar
                         </button>
                         ${!isAfterDeadline ? `
                         <button onclick="deleteTrack(${track.slot})" class="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded text-sm">
@@ -559,10 +592,13 @@
                                             <i class="fas fa-clock"></i> ${track.fecha_subida.toDate().toLocaleString('es-ES')}
                                         </p>
                                     </div>
-                                    <button onclick="playTrack('${track.archivo_url}')" 
-                                        class="bg-blue-500 hover:bg-blue-600 text-white px-3 py-2 rounded-lg ml-2">
-                                        <i class="fas fa-play"></i>
-                                    </button>
+                                    <div class="flex ml-2 flex-shrink-0">
+                                        <button id="playToggle_${artist.artistId}_${track.slot}"
+                                            onclick="toggleTrack('playToggle_${artist.artistId}_${track.slot}', '${track.archivo_url}', '${track.nombre_cancion}')"
+                                            class="bg-green-500 hover:bg-green-600 text-white px-3 py-2 rounded text-sm transition">
+                                            <i class="fas fa-play"></i>
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         `).join('')}
@@ -570,12 +606,6 @@
                 </div>
             `).join('');
         }
-
-        // Reproducir pista
-        window.playTrack = function(url) {
-            const audio = new Audio(url);
-            audio.play();
-        };
 
         // Eliminar pista para reemplazar
         window.deleteTrack = async function(slot) {
@@ -627,6 +657,128 @@
             const secs = Math.floor(seconds % 60);
             return `${mins}:${secs.toString().padStart(2, '0')}`;
         }
+
+        // ── Convertir AudioBuffer a Blob WAV ──────────────────────────────
+        function audioBufferToWav(buffer) {
+            const numChannels = buffer.numberOfChannels;
+            const sampleRate  = buffer.sampleRate;
+            const numSamples  = buffer.length;
+            const bytesPerSample = 2; // 16-bit PCM
+            const dataSize = numSamples * numChannels * bytesPerSample;
+            const ab   = new ArrayBuffer(44 + dataSize);
+            const view = new DataView(ab);
+            const writeStr = (offset, str) => {
+                for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+            };
+            writeStr(0,  'RIFF');
+            view.setUint32( 4, 36 + dataSize, true);
+            writeStr(8,  'WAVE');
+            writeStr(12, 'fmt ');
+            view.setUint32(16, 16, true);           // chunk size
+            view.setUint16(20,  1, true);           // PCM
+            view.setUint16(22, numChannels, true);
+            view.setUint32(24, sampleRate, true);
+            view.setUint32(28, sampleRate * numChannels * bytesPerSample, true);
+            view.setUint16(32, numChannels * bytesPerSample, true);
+            view.setUint16(34, 16, true);
+            writeStr(36, 'data');
+            view.setUint32(40, dataSize, true);
+            let offset = 44;
+            for (let i = 0; i < numSamples; i++) {
+                for (let ch = 0; ch < numChannels; ch++) {
+                    const s = Math.max(-1, Math.min(1, buffer.getChannelData(ch)[i]));
+                    view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+                    offset += 2;
+                }
+            }
+            return new Blob([ab], { type: 'audio/wav' });
+        }
+
+        // ── Recortar audio con Web Audio API (devuelve Blob WAV) ─────────
+        async function trimAudioFile(file, startTime, endTime) {
+            const arrayBuffer = await file.arrayBuffer();
+            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const decoded  = await audioCtx.decodeAudioData(arrayBuffer);
+            const sr          = decoded.sampleRate;
+            const startSample = Math.floor(startTime * sr);
+            const endSample   = Math.floor(endTime   * sr);
+            const frameCount  = endSample - startSample;
+            const trimmed = audioCtx.createBuffer(decoded.numberOfChannels, frameCount, sr);
+            for (let ch = 0; ch < decoded.numberOfChannels; ch++) {
+                trimmed.getChannelData(ch).set(
+                    decoded.getChannelData(ch).subarray(startSample, endSample)
+                );
+            }
+            await audioCtx.close();
+            return audioBufferToWav(trimmed);
+        }
+
+        // ── Reproductor global (una sola pista a la vez) ─────────────────
+        let globalAudio = null;
+        let currentPlayBtnId = null;
+
+        window.playTrack = function(url, name, btnId) {
+            // Detener cualquier audio en curso y resetear botón anterior
+            if (globalAudio) { globalAudio.pause(); globalAudio.currentTime = 0; }
+            if (currentPlayBtnId) {
+                const prevBtn = document.getElementById(currentPlayBtnId);
+                if (prevBtn && prevBtn.dataset.origHtml) {
+                    prevBtn.innerHTML = prevBtn.dataset.origHtml;
+                    prevBtn.className = prevBtn.dataset.origClass;
+                }
+            }
+            // Detener wavesurfers si están activos
+            if (wavesurfer1 && wavesurfer1.isPlaying()) wavesurfer1.stop();
+            if (wavesurfer2 && wavesurfer2.isPlaying()) wavesurfer2.stop();
+
+            globalAudio = new Audio(url);
+            globalAudio.play();
+            globalAudio.addEventListener('ended', () => stopTrack());
+
+            // Banner informativo
+            const banner     = document.getElementById('nowPlayingBanner');
+            const bannerText = document.getElementById('nowPlayingText');
+            if (banner && bannerText) {
+                bannerText.textContent = name || 'Reproduciendo...';
+                banner.classList.remove('hidden');
+            }
+
+            // Cambiar botón a STOP (rojo)
+            currentPlayBtnId = btnId || null;
+            if (btnId) {
+                const btn = document.getElementById(btnId);
+                if (btn) {
+                    if (!btn.dataset.origHtml)  btn.dataset.origHtml  = btn.innerHTML;
+                    if (!btn.dataset.origClass) btn.dataset.origClass = btn.className;
+                    btn.innerHTML = '<i class="fas fa-stop"></i> Parar';
+                    btn.className = btn.className
+                        .replace('bg-green-500 hover:bg-green-600', 'bg-red-500 hover:bg-red-600')
+                        .replace('bg-blue-500 hover:bg-blue-600',  'bg-red-500 hover:bg-red-600');
+                }
+            }
+        };
+
+        window.stopTrack = function() {
+            if (globalAudio) { globalAudio.pause(); globalAudio.currentTime = 0; }
+            const banner = document.getElementById('nowPlayingBanner');
+            if (banner) banner.classList.add('hidden');
+            if (currentPlayBtnId) {
+                const btn = document.getElementById(currentPlayBtnId);
+                if (btn && btn.dataset.origHtml) {
+                    btn.innerHTML = btn.dataset.origHtml;
+                    btn.className = btn.dataset.origClass;
+                }
+                currentPlayBtnId = null;
+            }
+        };
+
+        window.toggleTrack = function(btnId, url, name) {
+            if (currentPlayBtnId === btnId && globalAudio && !globalAudio.paused) {
+                stopTrack();
+            } else {
+                playTrack(url, name, btnId);
+            }
+        };
 
         // Configurar editores de audio
         function setupAudioEditor(slot) {
@@ -752,12 +904,15 @@
             
             // Reproducir región seleccionada
             playBtn.addEventListener('click', () => {
-                const ws = slot === 1 ? wavesurfer1 : wavesurfer2;
-                const region = slot === 1 ? region1 : region2;
-                if (ws && region) {
-                    // Reproducir solo la región seleccionada
-                    region.play();
-                }
+                const ws      = slot === 1 ? wavesurfer1 : wavesurfer2;
+                const region  = slot === 1 ? region1    : region2;
+                const otherWs = slot === 1 ? wavesurfer2 : wavesurfer1;
+                // Detener cualquier otro audio activo
+                if (globalAudio) { globalAudio.pause(); globalAudio.currentTime = 0; }
+                const banner = document.getElementById('nowPlayingBanner');
+                if (banner) banner.classList.add('hidden');
+                if (otherWs && otherWs.isPlaying()) otherWs.stop();
+                if (ws && region) { region.play(); }
             });
             
             stopBtn.addEventListener('click', () => {
@@ -822,25 +977,50 @@
                 submitBtn.disabled = true;
                 submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Subiendo...';
                 
-                // Subir a Storage
+                // Determinar si hay recorte aplicado
+                const tp      = slot === 1 ? trimPoints1 : trimPoints2;
+                const wsSlot  = slot === 1 ? wavesurfer1 : wavesurfer2;
+                const fullDuration = wsSlot ? wsSlot.getDuration() : 0;
+                const hasTrim = (tp.start > 0.1) ||
+                                (tp.end > 0 && fullDuration > 0 && Math.abs(tp.end - fullDuration) > 0.1);
+
+                let fileToUpload      = archivo;
+                let uploadExt         = archivo.name.split('.').pop().toLowerCase();
+                let actualTrimStart   = null;
+                let actualTrimEnd     = null;
+                let actualTrimDuration = null;
+
+                // Si hay recorte, aplicarlo ANTES de subir
+                if (hasTrim && tp.end > tp.start) {
+                    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Recortando audio...';
+                    try {
+                        fileToUpload       = await trimAudioFile(archivo, tp.start, tp.end);
+                        uploadExt          = 'wav';
+                        actualTrimStart    = tp.start;
+                        actualTrimEnd      = tp.end;
+                        actualTrimDuration = tp.end - tp.start;
+                    } catch (trimError) {
+                        console.error('Error al recortar audio:', trimError);
+                        displayMessage('⚠️ No se pudo recortar. Subiendo archivo original.', 'warning');
+                    }
+                    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Subiendo...';
+                }
+
+                // Subir a Storage (archivo recortado o completo)
                 const { ref, uploadBytes, getDownloadURL } = window.storageModules;
-                const timestamp = Date.now();
-                const fileName = `${normalizeSongName(nombre)}_${timestamp}.${archivo.name.split('.').pop()}`;
+                const timestamp   = Date.now();
+                const fileName    = `${normalizeSongName(nombre)}_${timestamp}.${uploadExt}`;
                 const storagePath = `pistas/${eventId}/${artistId}/slot${slot}_${fileName}`;
-                const storageRef = ref(window.storage, storagePath);
-                
-                await uploadBytes(storageRef, archivo);
+                const storageRef  = ref(window.storage, storagePath);
+
+                await uploadBytes(storageRef, fileToUpload);
                 const downloadURL = await getDownloadURL(storageRef);
-                
+
                 // Guardar en Firestore
                 const { doc, getDoc, setDoc, Timestamp } = window.firestoreModules;
-                const trackRef = doc(window.db, `pistas_${eventId}`, artistId);
+                const trackRef  = doc(window.db, `pistas_${eventId}`, artistId);
                 const trackSnap = await getDoc(trackRef);
-                
-                // Obtener trim points
-                const trimPoints = slot === 1 ? trimPoints1 : trimPoints2;
-                const hasTrim = trimPoints.start > 0 || (trimPoints.end > 0 && trimPoints.end < (wavesurfer1 || wavesurfer2)?.getDuration());
-                
+
                 const newTrack = {
                     slot: slot,
                     nombre_cancion: nombre,
@@ -849,13 +1029,12 @@
                     archivo_url: downloadURL,
                     archivo_nombre: archivo.name,
                     storage_path: storagePath,
-                    tamano_mb: (archivo.size / (1024 * 1024)).toFixed(2),
-                    formato: archivo.name.split('.').pop().toLowerCase(),
+                    tamano_mb: (fileToUpload.size / (1024 * 1024)).toFixed(2),
+                    formato: uploadExt,
                     fecha_subida: Timestamp.now(),
-                    // Guardar puntos de recorte si fueron editados
-                    trim_start: hasTrim ? trimPoints.start : null,
-                    trim_end: hasTrim ? trimPoints.end : null,
-                    trim_duration: hasTrim ? (trimPoints.end - trimPoints.start) : null
+                    trim_start:    actualTrimStart,
+                    trim_end:      actualTrimEnd,
+                    trim_duration: actualTrimDuration
                 };
                 
                 let existingData = { pistas: [] };
@@ -876,14 +1055,23 @@
                 });
                 
                 // Mensaje con información del recorte si aplica
-                const trimInfo = hasTrim ? 
-                    `\n✂️ Recorte aplicado: ${formatTime(trimPoints.start)} - ${formatTime(trimPoints.end)}` : 
-                    '';
-                displayMessage(`¡Pista subida exitosamente! 🎉${trimInfo}`, 'success');
+                const trimInfo = actualTrimStart !== null
+                    ? ` ✂️ Recortada: ${formatTime(actualTrimStart)} → ${formatTime(actualTrimEnd)}`
+                    : '';
+                displayMessage(`¡Pista subida exitosamente! 🎉${trimInfo}\n\n📡 La pista aparecerá automáticamente en unos segundos...`, 'success');
                 
-                setTimeout(() => {
-                    location.reload();
-                }, 2000);
+                // Resetear formulario
+                document.getElementById(`form${slot}`).reset();
+                
+                // Limpiar editor de audio
+                if (slot === 1 && wavesurfer1) {
+                    wavesurfer1.empty();
+                    document.getElementById('waveform1').innerHTML = '';
+                }
+                if (slot === 2 && wavesurfer2) {
+                    wavesurfer2.empty();
+                    document.getElementById('waveform2').innerHTML = '';
+                }
                 
             } catch (error) {
                 console.error('Error subiendo pista:', error);
@@ -922,7 +1110,7 @@
         async function init() {
             await loadEventData();
             await loadArtistData();
-            await loadArtistTracks();
+            loadArtistTracks(); // Ya no es async, es listener en tiempo real
             await loadAllTracks();
             checkDeadlineAndDisable();
             

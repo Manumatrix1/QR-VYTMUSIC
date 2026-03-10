@@ -10,14 +10,14 @@
     <!-- Firebase SDK v11.6.1 -->
     <script type="module">
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
-        import { getFirestore, collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, Timestamp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+        import { getFirestore, collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, onSnapshot, Timestamp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
         import { getStorage, ref, getDownloadURL, deleteObject } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js';
         
         import { app, db, storage } from './firebase_config.js';
         
         window.db = db;
         window.storage = storage;
-        window.firestoreModules = { collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, Timestamp };
+        window.firestoreModules = { collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, onSnapshot, Timestamp };
         window.storageModules = { ref, getDownloadURL, deleteObject };
     </script>
     
@@ -408,27 +408,42 @@
             }
         }
 
-        // Cargar pistas
-        async function loadTracks() {
+        // Cargar pistas CON LISTENER EN TIEMPO REAL
+        function loadTracks() {
             try {
-                const { collection, getDocs } = window.firestoreModules;
+                const { collection, onSnapshot } = window.firestoreModules;
                 const tracksRef = collection(window.db, `pistas_${eventId}`);
-                const snapshot = await getDocs(tracksRef);
                 
-                allTracksData = [];
-                snapshot.forEach(doc => {
-                    const data = doc.data();
-                    if (data.pistas && data.pistas.length > 0) {
-                        allTracksData.push({
-                            artistId: doc.id,
-                            pistas: data.pistas,
-                            artistName: data.artistName || '',
-                            artistPhoto: data.artistPhoto || ''
-                        });
-                    }
+                // Escuchar cambios en tiempo real
+                onSnapshot(tracksRef, (snapshot) => {
+                    console.log('🔄 Actualizando pistas en tiempo real...');
+                    
+                    allTracksData = [];
+                    snapshot.forEach(doc => {
+                        const data = doc.data();
+                        if (data.pistas && data.pistas.length > 0) {
+                            allTracksData.push({
+                                artistId: doc.id,
+                                pistas: data.pistas,
+                                artistName: data.artistName || '',
+                                artistPhoto: data.artistPhoto || ''
+                            });
+                        }
+                    });
+                    
+                    // Actualizar UI automáticamente
+                    updateStats();
+                    displayArtists();
+                    
+                    // Mostrar notificación visual
+                    const totalTracks = allTracksData.reduce((sum, artist) => sum + artist.pistas.length, 0);
+                    console.log(`✅ ${totalTracks} pistas cargadas`);
+                    
+                }, (error) => {
+                    console.error('❌ Error en listener de pistas:', error);
                 });
             } catch (error) {
-                console.error('Error cargando pistas:', error);
+                console.error('Error configurando listener de pistas:', error);
             }
         }
 
@@ -502,17 +517,18 @@
                                                     ${track.tamano_mb} MB • ${track.formato.toUpperCase()}
                                                 </p>
                                             </div>
-                                            <div class="flex gap-2">
-                                                <button onclick="playTrack('${track.archivo_url}', '${artist.nombre}', '${track.nombre_cancion}', document.getElementById('track_${artist.id}_${track.slot}'))" 
-                                                    class="bg-blue-500 hover:bg-blue-600 text-white px-3 py-2 rounded text-sm transition">
+                                            <div class="flex gap-1 flex-wrap items-center">
+                                                <button onclick="toggleTrack('track_${artist.id}_${track.slot}', '${track.archivo_url}', '${artist.nombre}', '${track.nombre_cancion}')" 
+                                                    id="playBtn_track_${artist.id}_${track.slot}"
+                                                    class="bg-green-500 hover:bg-green-600 text-white px-3 py-2 rounded text-sm transition mr-2">
                                                     <i class="fas fa-play"></i>
                                                 </button>
                                                 <button onclick="downloadTrack('${track.archivo_url}', '${artist.nombre}_${track.nombre_cancion}.${track.formato}')" 
-                                                    class="bg-green-500 hover:bg-green-600 text-white px-3 py-2 rounded text-sm transition">
+                                                    class="bg-blue-500 hover:bg-blue-600 text-white px-3 py-2 rounded text-sm transition">
                                                     <i class="fas fa-download"></i>
                                                 </button>
                                                 <button onclick="deleteTrackConfirm('${artist.id}', ${track.slot}, '${artist.nombre}', '${track.nombre_cancion}')" 
-                                                    class="bg-red-500 hover:bg-red-600 text-white px-3 py-2 rounded text-sm transition">
+                                                    class="bg-gray-600 hover:bg-gray-700 text-white px-3 py-2 rounded text-sm transition">
                                                     <i class="fas fa-trash"></i>
                                                 </button>
                                             </div>
@@ -534,6 +550,7 @@
         // Variables globales para el reproductor
         let globalAudio = null;
         let currentPlayingTrackElement = null;
+        let currentPlayingTrackId = null;
         
         // Inicializar reproductor global
         function initGlobalAudioPlayer() {
@@ -558,28 +575,52 @@
         }
         
         // Reproducir pista
-        window.playTrack = function(url, artistName, songName, trackElement) {
-            // Si ya hay algo reproduciéndose, detenerlo
+        window.playTrack = function(url, artistName, songName, trackId) {
+            // Resetear botón y estado del track anterior
             if (currentPlayingTrackElement) {
                 currentPlayingTrackElement.classList.remove('track-playing');
+            }
+            if (currentPlayingTrackId) {
+                const prevBtn = document.getElementById(`playBtn_${currentPlayingTrackId}`);
+                if (prevBtn) {
+                    prevBtn.innerHTML = '<i class="fas fa-play"></i>';
+                    prevBtn.className = prevBtn.dataset.origClass || 'bg-green-500 hover:bg-green-600 text-white px-3 py-2 rounded text-sm transition mr-2';
+                }
             }
             
             // Configurar nuevo audio
             globalAudio.src = url;
             globalAudio.play();
             
-            // Actualizar UI
+            // Actualizar UI del reproductor flotante
             document.getElementById('nowPlayingArtist').textContent = artistName;
             document.getElementById('nowPlayingSong').textContent = songName;
             document.getElementById('audioPlayerBar').classList.remove('hidden');
             
             // Marcar track actual
+            currentPlayingTrackId = trackId;
+            const trackElement = document.getElementById(trackId);
             if (trackElement) {
                 trackElement.classList.add('track-playing');
                 currentPlayingTrackElement = trackElement;
             }
             
-            displayMessage(`▶️ Reproduciendo: ${songName} - ${artistName}`, 'info');
+            // Cambiar botón a STOP (rojo)
+            const playBtn = document.getElementById(`playBtn_${trackId}`);
+            if (playBtn) {
+                if (!playBtn.dataset.origClass) playBtn.dataset.origClass = playBtn.className;
+                playBtn.innerHTML = '<i class="fas fa-stop"></i>';
+                playBtn.className = 'bg-red-500 hover:bg-red-600 text-white px-3 py-2 rounded text-sm transition mr-2';
+            }
+        };
+
+        // Toggle play/stop desde el mismo botón
+        window.toggleTrack = function(trackId, url, artistName, songName) {
+            if (currentPlayingTrackId === trackId && globalAudio && !globalAudio.paused) {
+                stopAudio();
+            } else {
+                playTrack(url, artistName, songName, trackId);
+            }
         };
         
         // Parar audio
@@ -594,6 +635,14 @@
             if (currentPlayingTrackElement) {
                 currentPlayingTrackElement.classList.remove('track-playing');
                 currentPlayingTrackElement = null;
+            }
+            if (currentPlayingTrackId) {
+                const playBtn = document.getElementById(`playBtn_${currentPlayingTrackId}`);
+                if (playBtn) {
+                    playBtn.innerHTML = '<i class="fas fa-play"></i>';
+                    playBtn.className = playBtn.dataset.origClass || 'bg-green-500 hover:bg-green-600 text-white px-3 py-2 rounded text-sm transition mr-2';
+                }
+                currentPlayingTrackId = null;
             }
         };
         
@@ -1024,7 +1073,7 @@
             initGlobalAudioPlayer(); // Inicializar reproductor
             await loadEvent();
             await loadArtists();
-            await loadTracks();
+            loadTracks(); // Ya no es async, es listener
             updateStats();
             displayArtists();
             
