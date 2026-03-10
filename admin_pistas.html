@@ -1,0 +1,675 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Administración de Pistas - VYT MUSIC</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Firebase SDK v11.6.1 -->
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
+        import { getFirestore, collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, Timestamp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+        import { getStorage, ref, getDownloadURL, deleteObject } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js';
+        
+        import { app, db, storage } from './firebase_config.js';
+        
+        window.db = db;
+        window.storage = storage;
+        window.firestoreModules = { collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, Timestamp };
+        window.storageModules = { ref, getDownloadURL, deleteObject };
+    </script>
+    
+    <!-- JSZip para descarga masiva -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    
+    <style>
+        .artist-card {
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            border: 2px solid #334155;
+            transition: all 0.3s;
+        }
+        .artist-card:hover {
+            border-color: #3b82f6;
+            transform: translateY(-4px);
+            box-shadow: 0 10px 30px rgba(59, 130, 246, 0.3);
+        }
+        .artist-card-with-tracks {
+            border-color: #22c55e;
+        }
+        .artist-card-with-tracks:hover {
+            border-color: #16a34a;
+            box-shadow: 0 10px 30px rgba(34, 197, 94, 0.3);
+        }
+        .track-item {
+            background: #0f172a;
+            border: 1px solid #334155;
+            transition: all 0.2s;
+        }
+        .track-item:hover {
+            border-color: #3b82f6;
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900 min-h-screen">
+    
+    <!-- Header -->
+    <div class="bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 text-white py-6 shadow-lg">
+        <div class="container mx-auto px-4">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h1 class="text-3xl font-bold">🎵 Administración de Pistas</h1>
+                    <p id="eventName" class="text-lg mt-1"></p>
+                </div>
+                <button onclick="goBack()" class="bg-white text-blue-600 hover:bg-gray-100 px-4 py-2 rounded-lg font-semibold transition">
+                    <i class="fas fa-arrow-left"></i> Volver al Panel
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading -->
+    <div id="loading" class="flex items-center justify-center min-h-screen">
+        <div class="text-center">
+            <div class="animate-spin rounded-full h-16 w-16 border-t-4 border-blue-500 mx-auto mb-4"></div>
+            <p class="text-white text-xl">Cargando pistas...</p>
+        </div>
+    </div>
+
+    <!-- Contenido Principal -->
+    <div id="mainContent" class="hidden container mx-auto px-4 py-8">
+        
+        <!-- Panel de Control -->
+        <div class="grid md:grid-cols-4 gap-6 mb-8">
+            <!-- Estadísticas -->
+            <div class="bg-gradient-to-br from-blue-600 to-blue-800 rounded-xl shadow-xl p-6 text-white">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm opacity-80">Total Artistas</p>
+                        <p id="totalArtists" class="text-3xl font-bold mt-1">0</p>
+                    </div>
+                    <i class="fas fa-users text-4xl opacity-50"></i>
+                </div>
+            </div>
+
+            <div class="bg-gradient-to-br from-green-600 to-green-800 rounded-xl shadow-xl p-6 text-white">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm opacity-80">Con Pistas</p>
+                        <p id="artistsWithTracks" class="text-3xl font-bold mt-1">0</p>
+                    </div>
+                    <i class="fas fa-check-circle text-4xl opacity-50"></i>
+                </div>
+            </div>
+
+            <div class="bg-gradient-to-br from-purple-600 to-purple-800 rounded-xl shadow-xl p-6 text-white">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm opacity-80">Total Pistas</p>
+                        <p id="totalTracks" class="text-3xl font-bold mt-1">0</p>
+                    </div>
+                    <i class="fas fa-music text-4xl opacity-50"></i>
+                </div>
+            </div>
+
+            <div class="bg-gradient-to-br from-yellow-600 to-yellow-800 rounded-xl shadow-xl p-6 text-white">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm opacity-80">Sin Pistas</p>
+                        <p id="artistsWithoutTracks" class="text-3xl font-bold mt-1">0</p>
+                    </div>
+                    <i class="fas fa-exclamation-triangle text-4xl opacity-50"></i>
+                </div>
+            </div>
+        </div>
+
+        <!-- Acciones Principales -->
+        <div class="bg-gradient-to-r from-gray-800 to-gray-900 rounded-xl shadow-2xl p-6 mb-8 border-2 border-blue-500">
+            <div class="grid md:grid-cols-3 gap-4">
+                <button onclick="downloadAllTracks()" 
+                    class="bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white font-bold py-4 px-6 rounded-lg transition-all transform hover:scale-105 shadow-lg">
+                    <i class="fas fa-download text-2xl mb-2"></i><br>
+                    📥 Descargar Todas las Pistas (ZIP)
+                </button>
+
+                <button onclick="openLinkGenerator()" 
+                    class="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-bold py-4 px-6 rounded-lg transition-all transform hover:scale-105 shadow-lg">
+                    <i class="fas fa-link text-2xl mb-2"></i><br>
+                    🔗 Generar Links para Artistas
+                </button>
+
+                <button onclick="openDeadlineConfig()" 
+                    class="bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white font-bold py-4 px-6 rounded-lg transition-all transform hover:scale-105 shadow-lg">
+                    <i class="fas fa-calendar text-2xl mb-2"></i><br>
+                    📅 Configurar Fecha Límite
+                </button>
+            </div>
+        </div>
+
+        <!-- Mensajes -->
+        <div id="messageContainer" class="mb-6"></div>
+
+        <!-- Filtros -->
+        <div class="bg-gradient-to-r from-gray-800 to-gray-900 rounded-xl shadow-xl p-4 mb-6 border border-gray-700">
+            <div class="flex gap-4 items-center">
+                <label class="text-white font-semibold">Filtrar:</label>
+                <button onclick="filterArtists('all')" id="filterAll"
+                    class="filter-btn bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition">
+                    Todos
+                </button>
+                <button onclick="filterArtists('with-tracks')" id="filterWithTracks"
+                    class="filter-btn bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg transition">
+                    Con Pistas
+                </button>
+                <button onclick="filterArtists('without-tracks')" id="filterWithoutTracks"
+                    class="filter-btn bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg transition">
+                    Sin Pistas
+                </button>
+            </div>
+        </div>
+
+        <!-- Lista de Artistas -->
+        <div id="artistsContainer" class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <!-- Se llenará dinámicamente -->
+        </div>
+    </div>
+
+    <!-- Modal: Generador de Links -->
+    <div id="linkModal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+        <div class="bg-gray-900 rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto border-2 border-blue-500">
+            <div class="bg-gradient-to-r from-blue-600 to-purple-600 p-6 flex items-center justify-between">
+                <h2 class="text-2xl font-bold text-white">🔗 Generador de Links para Artistas</h2>
+                <button onclick="closeLinkModal()" class="text-white hover:text-gray-300 text-3xl">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div id="linkModalContent" class="p-6">
+                <!-- Se llenará dinámicamente -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Configurar Fecha Límite -->
+    <div id="deadlineModal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+        <div class="bg-gray-900 rounded-xl shadow-2xl max-w-lg w-full border-2 border-purple-500">
+            <div class="bg-gradient-to-r from-purple-600 to-pink-600 p-6 flex items-center justify-between">
+                <h2 class="text-2xl font-bold text-white">📅 Configurar Fecha Límite</h2>
+                <button onclick="closeDeadlineModal()" class="text-white hover:text-gray-300 text-3xl">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="p-6">
+                <p class="text-gray-300 mb-4">Los artistas no podrán subir pistas después de esta fecha:</p>
+                <div class="mb-4">
+                    <label class="block text-white font-semibold mb-2">Fecha:</label>
+                    <input type="date" id="deadlineDate" 
+                        class="w-full px-4 py-3 rounded-lg bg-gray-800 text-white border-2 border-gray-600 focus:border-purple-500 focus:outline-none">
+                </div>
+                <div class="mb-6">
+                    <label class="block text-white font-semibold mb-2">Hora:</label>
+                    <input type="time" id="deadlineTime" 
+                        class="w-full px-4 py-3 rounded-lg bg-gray-800 text-white border-2 border-gray-600 focus:border-purple-500 focus:outline-none">
+                </div>
+                <button onclick="saveDeadline()" 
+                    class="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-bold py-3 px-6 rounded-lg transition">
+                    <i class="fas fa-save"></i> Guardar Fecha Límite
+                </button>
+                <p id="currentDeadline" class="text-gray-400 text-sm mt-4 text-center"></p>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        const params = new URLSearchParams(window.location.search);
+        const eventId = params.get('eventId');
+
+        if (!eventId) {
+            alert('Falta el parámetro eventId');
+            window.location.href = 'eventos.html';
+        }
+
+        let allArtists = [];
+        let allTracksData = [];
+        let eventData = null;
+        let currentFilter = 'all';
+
+        window.goBack = function() {
+            window.location.href = `panel_evento.html?eventId=${eventId}`;
+        };
+
+        // Función para mostrar mensajes
+        function displayMessage(message, type = 'success') {
+            const colors = {
+                success: 'bg-green-600',
+                error: 'bg-red-600',
+                warning: 'bg-yellow-600',
+                info: 'bg-blue-600'
+            };
+            const container = document.getElementById('messageContainer');
+            container.innerHTML = `
+                <div class="${colors[type]} text-white p-4 rounded-lg shadow-lg">
+                    <p class="font-semibold">${message}</p>
+                </div>
+            `;
+            setTimeout(() => {
+                container.innerHTML = '';
+            }, 5000);
+        }
+
+        // Cargar evento
+        async function loadEvent() {
+            try {
+                const { doc, getDoc } = window.firestoreModules;
+                const eventRef = doc(window.db, 'eventos', eventId);
+                const eventSnap = await getDoc(eventRef);
+                
+                if (eventSnap.exists()) {
+                    eventData = eventSnap.data();
+                    document.getElementById('eventName').textContent = `Evento: ${eventData.nombre || 'Sin nombre'}`;
+                    
+                    // Mostrar fecha límite actual si existe
+                    if (eventData.fecha_limite_pistas) {
+                        const deadline = eventData.fecha_limite_pistas.toDate();
+                        document.getElementById('currentDeadline').innerHTML = 
+                            `<i class="fas fa-info-circle"></i> Fecha límite actual: ${deadline.toLocaleString('es-ES')}`;
+                    }
+                }
+            } catch (error) {
+                console.error('Error cargando evento:', error);
+            }
+        }
+
+        // Cargar artistas
+        async function loadArtists() {
+            try {
+                const { collection, getDocs } = window.firestoreModules;
+                const artistsRef = collection(window.db, `artistas_${eventId}`);
+                const snapshot = await getDocs(artistsRef);
+                
+                allArtists = [];
+                snapshot.forEach(doc => {
+                    allArtists.push({
+                        id: doc.id,
+                        ...doc.data()
+                    });
+                });
+                
+                allArtists.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
+            } catch (error) {
+                console.error('Error cargando artistas:', error);
+            }
+        }
+
+        // Cargar pistas
+        async function loadTracks() {
+            try {
+                const { collection, getDocs } = window.firestoreModules;
+                const tracksRef = collection(window.db, `pistas_${eventId}`);
+                const snapshot = await getDocs(tracksRef);
+                
+                allTracksData = [];
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+                    if (data.pistas && data.pistas.length > 0) {
+                        allTracksData.push({
+                            artistId: doc.id,
+                            pistas: data.pistas,
+                            artistName: data.artistName || '',
+                            artistPhoto: data.artistPhoto || ''
+                        });
+                    }
+                });
+            } catch (error) {
+                console.error('Error cargando pistas:', error);
+            }
+        }
+
+        // Actualizar estadísticas
+        function updateStats() {
+            const totalArtists = allArtists.length;
+            const artistsWithTracks = allTracksData.length;
+            const totalTracks = allTracksData.reduce((sum, artist) => sum + artist.pistas.length, 0);
+            const artistsWithoutTracks = totalArtists - artistsWithTracks;
+            
+            document.getElementById('totalArtists').textContent = totalArtists;
+            document.getElementById('artistsWithTracks').textContent = artistsWithTracks;
+            document.getElementById('totalTracks').textContent = totalTracks;
+            document.getElementById('artistsWithoutTracks').textContent = artistsWithoutTracks;
+        }
+
+        // Mostrar artistas
+        function displayArtists() {
+            const container = document.getElementById('artistsContainer');
+            
+            let filteredArtists = allArtists;
+            if (currentFilter === 'with-tracks') {
+                filteredArtists = allArtists.filter(artist => 
+                    allTracksData.some(t => t.artistId === artist.id)
+                );
+            } else if (currentFilter === 'without-tracks') {
+                filteredArtists = allArtists.filter(artist => 
+                    !allTracksData.some(t => t.artistId === artist.id)
+                );
+            }
+            
+            if (filteredArtists.length === 0) {
+                container.innerHTML = '<p class="text-gray-400 text-center col-span-full">No hay artistas para mostrar</p>';
+                return;
+            }
+            
+            container.innerHTML = filteredArtists.map(artist => {
+                const artistTracks = allTracksData.find(t => t.artistId === artist.id);
+                const hasTracks = !!artistTracks;
+                const tracksCount = hasTracks ? artistTracks.pistas.length : 0;
+                
+                return `
+                    <div class="artist-card ${hasTracks ? 'artist-card-with-tracks' : ''} rounded-xl shadow-xl p-6">
+                        <div class="flex items-center gap-4 mb-4">
+                            <img src="${artist.foto_url || 'https://via.placeholder.com/80'}" 
+                                alt="${artist.nombre}" 
+                                class="w-20 h-20 rounded-full border-4 ${hasTracks ? 'border-green-500' : 'border-gray-500'} object-cover">
+                            <div class="flex-1">
+                                <h3 class="text-white font-bold text-xl">${artist.nombre || 'Sin nombre'}</h3>
+                                <p class="text-gray-400 text-sm mt-1">
+                                    ${hasTracks 
+                                        ? `<i class="fas fa-check-circle text-green-500"></i> ${tracksCount} pista${tracksCount > 1 ? 's' : ''}`
+                                        : `<i class="fas fa-exclamation-circle text-yellow-500"></i> Sin pistas`
+                                    }
+                                </p>
+                            </div>
+                        </div>
+                        
+                        ${hasTracks ? `
+                            <div class="space-y-2 mb-4">
+                                ${artistTracks.pistas.map(track => `
+                                    <div class="track-item rounded-lg p-3">
+                                        <div class="flex items-center justify-between">
+                                            <div class="flex-1">
+                                                <p class="text-white font-semibold text-sm">
+                                                    ${track.slot === 1 ? '<i class="fas fa-star text-yellow-400"></i>' : '<i class="fas fa-music text-blue-400"></i>'}
+                                                    ${track.nombre_cancion}
+                                                </p>
+                                                <p class="text-gray-400 text-xs">${track.estilo_cancion}</p>
+                                                <p class="text-gray-500 text-xs mt-1">
+                                                    ${track.tamano_mb} MB • ${track.formato.toUpperCase()}
+                                                </p>
+                                            </div>
+                                            <div class="flex gap-2">
+                                                <button onclick="playTrack('${track.archivo_url}')" 
+                                                    class="bg-blue-500 hover:bg-blue-600 text-white px-3 py-2 rounded text-sm">
+                                                    <i class="fas fa-play"></i>
+                                                </button>
+                                                <button onclick="downloadTrack('${track.archivo_url}', '${artist.nombre}_${track.nombre_cancion}.${track.formato}')" 
+                                                    class="bg-green-500 hover:bg-green-600 text-white px-3 py-2 rounded text-sm">
+                                                    <i class="fas fa-download"></i>
+                                                </button>
+                                                <button onclick="deleteTrackConfirm('${artist.id}', ${track.slot}, '${artist.nombre}', '${track.nombre_cancion}')" 
+                                                    class="bg-red-500 hover:bg-red-600 text-white px-3 py-2 rounded text-sm">
+                                                    <i class="fas fa-trash"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        ` : ''}
+                        
+                        <button onclick="copyLink('${artist.id}', '${artist.nombre}')" 
+                            class="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-semibold py-2 px-4 rounded-lg transition">
+                            <i class="fas fa-link"></i> Copiar Link del Artista
+                        </button>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Reproducir pista
+        window.playTrack = function(url) {
+            const audio = new Audio(url);
+            audio.play();
+        };
+
+        // Descargar pista individual
+        window.downloadTrack = async function(url, filename) {
+            try {
+                const response = await fetch(url);
+                const blob = await response.blob();
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = filename;
+                link.click();
+                displayMessage('Descargando pista...', 'success');
+            } catch (error) {
+                console.error('Error descargando:', error);
+                displayMessage('Error al descargar', 'error');
+            }
+        };
+
+        // Eliminar pista
+        window.deleteTrackConfirm = function(artistId, slot, artistName, songName) {
+            if (!confirm(`¿Eliminar la pista "${songName}" de ${artistName}?`)) return;
+            deleteTrack(artistId, slot);
+        };
+
+        async function deleteTrack(artistId, slot) {
+            try {
+                const { doc, getDoc, setDoc } = window.firestoreModules;
+                const { ref, deleteObject } = window.storageModules;
+                
+                const trackRef = doc(window.db, `pistas_${eventId}`, artistId);
+                const trackSnap = await getDoc(trackRef);
+                
+                if (trackSnap.exists()) {
+                    const data = trackSnap.data();
+                    const tracks = data.pistas || [];
+                    
+                    // Eliminar del storage
+                    const trackToDelete = tracks.find(t => t.slot === slot);
+                    if (trackToDelete && trackToDelete.storage_path) {
+                        try {
+                            const storageRef = ref(window.storage, trackToDelete.storage_path);
+                            await deleteObject(storageRef);
+                        } catch (error) {
+                            console.error('Error eliminando archivo:', error);
+                        }
+                    }
+                    
+                    // Eliminar del array
+                    const updatedTracks = tracks.filter(t => t.slot !== slot);
+                    
+                    if (updatedTracks.length === 0) {
+                        // Si no quedan pistas, eliminar documento
+                        await deleteDoc(trackRef);
+                    } else {
+                        await setDoc(trackRef, {
+                            ...data,
+                            pistas: updatedTracks
+                        });
+                    }
+                    
+                    displayMessage('Pista eliminada exitosamente', 'success');
+                    setTimeout(() => location.reload(), 1500);
+                }
+            } catch (error) {
+                console.error('Error eliminando pista:', error);
+                displayMessage('Error al eliminar la pista', 'error');
+            }
+        }
+
+        // Descargar todas las pistas en ZIP
+        window.downloadAllTracks = async function() {
+            if (allTracksData.length === 0) {
+                displayMessage('No hay pistas para descargar', 'warning');
+                return;
+            }
+            
+            try {
+                displayMessage('Preparando descarga... Esto puede tardar unos momentos', 'info');
+                
+                const zip = new JSZip();
+                const folder = zip.folder(`Pistas_${eventData.nombre || 'Evento'}`);
+                
+                for (const artistData of allTracksData) {
+                    for (const track of artistData.pistas) {
+                        try {
+                            const response = await fetch(track.archivo_url);
+                            const blob = await response.blob();
+                            const filename = `${artistData.artistName}_${track.nombre_cancion}.${track.formato}`;
+                            folder.file(filename, blob);
+                        } catch (error) {
+                            console.error(`Error descargando ${track.nombre_cancion}:`, error);
+                        }
+                    }
+                }
+                
+                displayMessage('Generando archivo ZIP...', 'info');
+                const content = await zip.generateAsync({ type: 'blob' });
+                
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(content);
+                link.download = `Pistas_${eventData.nombre || 'Evento'}_${new Date().toISOString().split('T')[0]}.zip`;
+                link.click();
+                
+                displayMessage('¡Descarga completa! 🎉', 'success');
+            } catch (error) {
+                console.error('Error descargando todas las pistas:', error);
+                displayMessage('Error al crear el archivo ZIP', 'error');
+            }
+        };
+
+        // Copiar link de artista
+        window.copyLink = function(artistId, artistName) {
+            const link = `${window.location.origin}/subida_pistas.html?eventId=${eventId}&artistId=${artistId}`;
+            navigator.clipboard.writeText(link).then(() => {
+                displayMessage(`Link copiado para ${artistName}`, 'success');
+            });
+        };
+
+        // Generador de links
+        window.openLinkGenerator = function() {
+            const modal = document.getElementById('linkModal');
+            const content = document.getElementById('linkModalContent');
+            
+            content.innerHTML = `
+                <div class="space-y-4">
+                    ${allArtists.map(artist => {
+                        const link = `${window.location.origin}/subida_pistas.html?eventId=${eventId}&artistId=${artist.id}`;
+                        const whatsappLink = `https://wa.me/?text=${encodeURIComponent(`Hola ${artist.nombre}! 🎵\n\nSube tu pista para el evento aquí:\n${link}`)}`;
+                        
+                        return `
+                            <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+                                <div class="flex items-center gap-3 mb-3">
+                                    <img src="${artist.foto_url || 'https://via.placeholder.com/50'}" 
+                                        alt="${artist.nombre}" 
+                                        class="w-12 h-12 rounded-full border-2 border-blue-500 object-cover">
+                                    <h3 class="text-white font-bold flex-1">${artist.nombre || 'Sin nombre'}</h3>
+                                </div>
+                                <div class="flex gap-2">
+                                    <button onclick="copyLink('${artist.id}', '${artist.nombre}')" 
+                                        class="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition">
+                                        <i class="fas fa-copy"></i> Copiar Link
+                                    </button>
+                                    <a href="${whatsappLink}" target="_blank" 
+                                        class="flex-1 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition text-center">
+                                        <i class="fab fa-whatsapp"></i> WhatsApp
+                                    </a>
+                                </div>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            `;
+            
+            modal.classList.remove('hidden');
+        };
+
+        window.closeLinkModal = function() {
+            document.getElementById('linkModal').classList.add('hidden');
+        };
+
+        // Configurar fecha límite
+        window.openDeadlineConfig = function() {
+            const modal = document.getElementById('deadlineModal');
+            
+            // Pre-llenar con fecha actual si existe
+            if (eventData && eventData.fecha_limite_pistas) {
+                const deadline = eventData.fecha_limite_pistas.toDate();
+                document.getElementById('deadlineDate').value = deadline.toISOString().split('T')[0];
+                document.getElementById('deadlineTime').value = deadline.toTimeString().slice(0, 5);
+            }
+            
+            modal.classList.remove('hidden');
+        };
+
+        window.closeDeadlineModal = function() {
+            document.getElementById('deadlineModal').classList.add('hidden');
+        };
+
+        window.saveDeadline = async function() {
+            const dateValue = document.getElementById('deadlineDate').value;
+            const timeValue = document.getElementById('deadlineTime').value;
+            
+            if (!dateValue || !timeValue) {
+                displayMessage('Por favor selecciona fecha y hora', 'warning');
+                return;
+            }
+            
+            try {
+                const { doc, updateDoc, Timestamp } = window.firestoreModules;
+                const deadlineDate = new Date(`${dateValue}T${timeValue}`);
+                
+                const eventRef = doc(window.db, 'eventos', eventId);
+                await updateDoc(eventRef, {
+                    fecha_limite_pistas: Timestamp.fromDate(deadlineDate)
+                });
+                
+                displayMessage('Fecha límite configurada exitosamente', 'success');
+                closeDeadlineModal();
+                setTimeout(() => location.reload(), 1500);
+            } catch (error) {
+                console.error('Error guardando fecha límite:', error);
+                displayMessage('Error al guardar la fecha límite', 'error');
+            }
+        };
+
+        // Filtrar artistas
+        window.filterArtists = function(filter) {
+            currentFilter = filter;
+            
+            // Actualizar botones
+            document.querySelectorAll('.filter-btn').forEach(btn => {
+                btn.classList.remove('bg-blue-600');
+                btn.classList.add('bg-gray-700');
+            });
+            
+            if (filter === 'all') {
+                document.getElementById('filterAll').classList.add('bg-blue-600');
+                document.getElementById('filterAll').classList.remove('bg-gray-700');
+            } else if (filter === 'with-tracks') {
+                document.getElementById('filterWithTracks').classList.add('bg-blue-600');
+                document.getElementById('filterWithTracks').classList.remove('bg-gray-700');
+            } else if (filter === 'without-tracks') {
+                document.getElementById('filterWithoutTracks').classList.add('bg-blue-600');
+                document.getElementById('filterWithoutTracks').classList.remove('bg-gray-700');
+            }
+            
+            displayArtists();
+        };
+
+        // Inicializar
+        async function init() {
+            await loadEvent();
+            await loadArtists();
+            await loadTracks();
+            updateStats();
+            displayArtists();
+            
+            document.getElementById('loading').classList.add('hidden');
+            document.getElementById('mainContent').classList.remove('hidden');
+        }
+
+        init();
+    </script>
+</body>
+</html>
