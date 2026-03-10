@@ -23,6 +23,7 @@
     
     <!-- Wavesurfer.js para editor de audio -->
     <script src="https://unpkg.com/wavesurfer.js@7"></script>
+    <script src="https://unpkg.com/wavesurfer.js@7/dist/plugins/regions.min.js"></script>
     
     <style>
         .slot-container {
@@ -43,6 +44,7 @@
             border-radius: 0.5rem;
             padding: 1rem;
             margin: 1rem 0;
+            position: relative;
         }
         .track-card {
             background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
@@ -52,6 +54,19 @@
         .track-card:hover {
             border-color: #3b82f6;
             transform: translateY(-2px);
+        }
+        /* Estilos para las regiones de Wavesurfer */
+        .wavesurfer-region {
+            border-left: 3px solid #22c55e !important;
+            border-right: 3px solid #ef4444 !important;
+        }
+        .wavesurfer-handle {
+            background: rgba(255, 255, 255, 0.9) !important;
+            width: 6px !important;
+        }
+        .wavesurfer-handle:hover {
+            background: rgba(59, 130, 246, 1) !important;
+            cursor: ew-resize !important;
         }
     </style>
 </head>
@@ -138,14 +153,29 @@
                     <!-- Editor de audio -->
                     <div id="editor1Container" class="hidden">
                         <div class="waveform-container">
-                            <h4 class="text-white font-semibold mb-2">🎛️ Editor de Audio</h4>
+                            <h4 class="text-white font-semibold mb-3">🎛️ Editor de Audio</h4>
+                            
+                            <!-- Información de recorte -->
+                            <div class="bg-blue-900/30 border border-blue-500/30 rounded-lg p-3 mb-3">
+                                <p class="text-blue-300 text-sm mb-1"><i class="fas fa-info-circle"></i> Arrastrá los marcadores ⬅️ ➡️ para recortar la pista</p>
+                                <div class="flex justify-between items-center text-xs text-gray-300">
+                                    <span>Inicio: <strong id="trimStart1" class="text-green-400">0:00</strong></span>
+                                    <span>Fin: <strong id="trimEnd1" class="text-red-400">0:00</strong></span>
+                                    <span>Duración: <strong id="trimDuration1" class="text-yellow-400">0:00</strong></span>
+                                </div>
+                            </div>
+                            
                             <div id="waveform1"></div>
+                            
                             <div class="flex gap-4 mt-4">
                                 <button type="button" id="play1" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg">
                                     <i class="fas fa-play"></i> Reproducir
                                 </button>
                                 <button type="button" id="stop1" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg">
                                     <i class="fas fa-stop"></i> Detener
+                                </button>
+                                <button type="button" id="resetTrim1" class="bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded-lg">
+                                    <i class="fas fa-undo"></i> Restaurar
                                 </button>
                             </div>
                             <div class="mt-4">
@@ -207,14 +237,29 @@
                     <!-- Editor de audio -->
                     <div id="editor2Container" class="hidden">
                         <div class="waveform-container">
-                            <h4 class="text-white font-semibold mb-2">🎛️ Editor de Audio</h4>
+                            <h4 class="text-white font-semibold mb-3">🎛️ Editor de Audio</h4>
+                            
+                            <!-- Información de recorte -->
+                            <div class="bg-purple-900/30 border border-purple-500/30 rounded-lg p-3 mb-3">
+                                <p class="text-purple-300 text-sm mb-1"><i class="fas fa-info-circle"></i> Arrastrá los marcadores ⬅️ ➡️ para recortar la pista</p>
+                                <div class="flex justify-between items-center text-xs text-gray-300">
+                                    <span>Inicio: <strong id="trimStart2" class="text-green-400">0:00</strong></span>
+                                    <span>Fin: <strong id="trimEnd2" class="text-red-400">0:00</strong></span>
+                                    <span>Duración: <strong id="trimDuration2" class="text-yellow-400">0:00</strong></span>
+                                </div>
+                            </div>
+                            
                             <div id="waveform2"></div>
+                            
                             <div class="flex gap-4 mt-4">
                                 <button type="button" id="play2" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg">
                                     <i class="fas fa-play"></i> Reproducir
                                 </button>
                                 <button type="button" id="stop2" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg">
                                     <i class="fas fa-stop"></i> Detener
+                                </button>
+                                <button type="button" id="resetTrim2" class="bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded-lg">
+                                    <i class="fas fa-undo"></i> Restaurar
                                 </button>
                             </div>
                             <div class="mt-4">
@@ -267,6 +312,10 @@
         let allTracks = [];
         let wavesurfer1 = null;
         let wavesurfer2 = null;
+        let region1 = null;
+        let region2 = null;
+        let trimPoints1 = { start: 0, end: 0 };
+        let trimPoints2 = { start: 0, end: 0 };
         let deadlineDate = null;
         let isAfterDeadline = false;
 
@@ -572,6 +621,13 @@
             }
         };
 
+        // Función para formatear tiempo (helper global)
+        function formatTime(seconds) {
+            const mins = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${mins}:${secs.toString().padStart(2, '0')}`;
+        }
+
         // Configurar editores de audio
         function setupAudioEditor(slot) {
             const fileInput = document.getElementById(`archivo${slot}`);
@@ -579,19 +635,31 @@
             const waveformDiv = document.getElementById(`waveform${slot}`);
             const playBtn = document.getElementById(`play${slot}`);
             const stopBtn = document.getElementById(`stop${slot}`);
+            const resetTrimBtn = document.getElementById(`resetTrim${slot}`);
             const volumeSlider = document.getElementById(`volume${slot}`);
             const volumeValue = document.getElementById(`volumeValue${slot}`);
             
-            fileInput.addEventListener('change', (e) => {
+            // Función para actualizar displays de trim
+            function updateTrimDisplay(start, end, duration) {
+                document.getElementById(`trimStart${slot}`).textContent = formatTime(start);
+                document.getElementById(`trimEnd${slot}`).textContent = formatTime(end);
+                document.getElementById(`trimDuration${slot}`).textContent = formatTime(duration);
+            }
+            
+            fileInput.addEventListener('change', async (e) => {
                 const file = e.target.files[0];
                 if (!file) return;
                 
                 // Mostrar editor
                 editorContainer.classList.remove('hidden');
                 
-                // Crear Wavesurfer
+                // Crear Wavesurfer con plugin de Regions
                 if (slot === 1) {
                     if (wavesurfer1) wavesurfer1.destroy();
+                    
+                    // Importar plugin de Regions
+                    const RegionsPlugin = WaveSurfer.Regions.create();
+                    
                     wavesurfer1 = WaveSurfer.create({
                         container: waveformDiv,
                         waveColor: '#60a5fa',
@@ -599,11 +667,46 @@
                         cursorColor: '#ffffff',
                         barWidth: 2,
                         barRadius: 3,
-                        height: 100
+                        height: 100,
+                        plugins: [RegionsPlugin]
                     });
+                    
+                    // Cargar archivo
                     wavesurfer1.loadBlob(file);
+                    
+                    // Cuando esté listo, crear región
+                    wavesurfer1.on('ready', () => {
+                        const duration = wavesurfer1.getDuration();
+                        
+                        // Limpiar regiones anteriores
+                        RegionsPlugin.clearRegions();
+                        
+                        // Crear región que cubre todo el audio
+                        region1 = RegionsPlugin.addRegion({
+                            start: 0,
+                            end: duration,
+                            color: 'rgba(34, 197, 94, 0.2)', // Verde semi-transparente
+                            drag: true,
+                            resize: true
+                        });
+                        
+                        // Guardar puntos iniciales
+                        trimPoints1 = { start: 0, end: duration };
+                        updateTrimDisplay(0, duration, duration);
+                        
+                        // Actualizar cuando se modifica la región
+                        region1.on('update-end', () => {
+                            trimPoints1 = { start: region1.start, end: region1.end };
+                            updateTrimDisplay(region1.start, region1.end, region1.end - region1.start);
+                        });
+                    });
+                    
                 } else {
                     if (wavesurfer2) wavesurfer2.destroy();
+                    
+                    // Importar plugin de Regions
+                    const RegionsPlugin = WaveSurfer.Regions.create();
+                    
                     wavesurfer2 = WaveSurfer.create({
                         container: waveformDiv,
                         waveColor: '#a78bfa',
@@ -611,20 +714,72 @@
                         cursorColor: '#ffffff',
                         barWidth: 2,
                         barRadius: 3,
-                        height: 100
+                        height: 100,
+                        plugins: [RegionsPlugin]
                     });
+                    
+                    // Cargar archivo
                     wavesurfer2.loadBlob(file);
+                    
+                    // Cuando esté listo, crear región
+                    wavesurfer2.on('ready', () => {
+                        const duration = wavesurfer2.getDuration();
+                        
+                        // Limpiar regiones anteriores
+                        RegionsPlugin.clearRegions();
+                        
+                        // Crear región que cubre todo el audio
+                        region2 = RegionsPlugin.addRegion({
+                            start: 0,
+                            end: duration,
+                            color: 'rgba(168, 85, 247, 0.2)', // Púrpura semi-transparente
+                            drag: true,
+                            resize: true
+                        });
+                        
+                        // Guardar puntos iniciales
+                        trimPoints2 = { start: 0, end: duration };
+                        updateTrimDisplay(0, duration, duration);
+                        
+                        // Actualizar cuando se modifica la región
+                        region2.on('update-end', () => {
+                            trimPoints2 = { start: region2.start, end: region2.end };
+                            updateTrimDisplay(region2.start, region2.end, region2.end - region2.start);
+                        });
+                    });
                 }
             });
             
+            // Reproducir región seleccionada
             playBtn.addEventListener('click', () => {
                 const ws = slot === 1 ? wavesurfer1 : wavesurfer2;
-                if (ws) ws.playPause();
+                const region = slot === 1 ? region1 : region2;
+                if (ws && region) {
+                    // Reproducir solo la región seleccionada
+                    region.play();
+                }
             });
             
             stopBtn.addEventListener('click', () => {
                 const ws = slot === 1 ? wavesurfer1 : wavesurfer2;
                 if (ws) ws.stop();
+            });
+            
+            // Resetear trim a audio completo
+            resetTrimBtn.addEventListener('click', () => {
+                const ws = slot === 1 ? wavesurfer1 : wavesurfer2;
+                const region = slot === 1 ? region1 : region2;
+                if (ws && region) {
+                    const duration = ws.getDuration();
+                    region.setOptions({ start: 0, end: duration });
+                    if (slot === 1) {
+                        trimPoints1 = { start: 0, end: duration };
+                    } else {
+                        trimPoints2 = { start: 0, end: duration };
+                    }
+                    updateTrimDisplay(0, duration, duration);
+                    displayMessage('Recorte restaurado al audio completo', 'info');
+                }
             });
             
             volumeSlider.addEventListener('input', (e) => {
@@ -682,6 +837,10 @@
                 const trackRef = doc(window.db, `pistas_${eventId}`, artistId);
                 const trackSnap = await getDoc(trackRef);
                 
+                // Obtener trim points
+                const trimPoints = slot === 1 ? trimPoints1 : trimPoints2;
+                const hasTrim = trimPoints.start > 0 || (trimPoints.end > 0 && trimPoints.end < (wavesurfer1 || wavesurfer2)?.getDuration());
+                
                 const newTrack = {
                     slot: slot,
                     nombre_cancion: nombre,
@@ -692,7 +851,11 @@
                     storage_path: storagePath,
                     tamano_mb: (archivo.size / (1024 * 1024)).toFixed(2),
                     formato: archivo.name.split('.').pop().toLowerCase(),
-                    fecha_subida: Timestamp.now()
+                    fecha_subida: Timestamp.now(),
+                    // Guardar puntos de recorte si fueron editados
+                    trim_start: hasTrim ? trimPoints.start : null,
+                    trim_end: hasTrim ? trimPoints.end : null,
+                    trim_duration: hasTrim ? (trimPoints.end - trimPoints.start) : null
                 };
                 
                 let existingData = { pistas: [] };
@@ -712,7 +875,11 @@
                     artistPhoto: currentArtist.foto_url
                 });
                 
-                displayMessage('¡Pista subida exitosamente! 🎉', 'success');
+                // Mensaje con información del recorte si aplica
+                const trimInfo = hasTrim ? 
+                    `\n✂️ Recorte aplicado: ${formatTime(trimPoints.start)} - ${formatTime(trimPoints.end)}` : 
+                    '';
+                displayMessage(`¡Pista subida exitosamente! 🎉${trimInfo}`, 'success');
                 
                 setTimeout(() => {
                     location.reload();
