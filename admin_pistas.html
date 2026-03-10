@@ -67,6 +67,20 @@
             background: #2563eb !important;
             box-shadow: 0 10px 30px rgba(37, 99, 235, 0.5);
         }
+        
+        .track-playing {
+            background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%) !important;
+            border-color: #3b82f6 !important;
+            box-shadow: 0 0 20px rgba(59, 130, 246, 0.5);
+        }
+        
+        #audioPlayerBar {
+            position: fixed;
+            top: 90px;
+            right: 20px;
+            z-index: 1000;
+            transition: all 0.3s;
+        }
     </style>
 </head>
 <body class="bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900 min-h-screen">
@@ -85,6 +99,29 @@
             </div>
         </div>
     </div>
+    
+    <!-- Reproductor Flotante (oculto por defecto) -->
+    <div id="audioPlayerBar" class="hidden bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl shadow-2xl p-4 border-2 border-white">
+        <div class="flex items-center gap-4">
+            <div class="flex-1 min-w-0">
+                <p id="nowPlayingArtist" class="text-white font-bold text-sm truncate">Reproduciendo...</p>
+                <p id="nowPlayingSong" class="text-gray-200 text-xs truncate"></p>
+            </div>
+            <button onclick="stopAudio()" class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg font-semibold transition">
+                <i class="fas fa-stop"></i> Parar
+            </button>
+        </div>
+        <div class="mt-2 flex items-center gap-2">
+            <span id="currentTime" class="text-white text-xs">0:00</span>
+            <div class="flex-1 bg-white/30 rounded-full h-1">
+                <div id="progressBar" class="bg-white h-1 rounded-full" style="width: 0%"></div>
+            </div>
+            <span id="totalTime" class="text-white text-xs">0:00</span>
+        </div>
+    </div>
+    
+    <!-- Audio Element (hidden) -->
+    <audio id="globalAudioPlayer" preload="auto"></audio>
 
     <!-- Loading -->
     <div id="loading" class="flex items-center justify-center min-h-screen">
@@ -143,7 +180,7 @@
 
         <!-- Acciones Principales -->
         <div class="bg-gradient-to-r from-gray-800 to-gray-900 rounded-xl shadow-2xl p-6 mb-8 border-2 border-blue-500">
-            <div class="grid md:grid-cols-5 gap-4">
+            <div class="grid md:grid-cols-4 gap-4">
                 <button onclick="downloadAllTracks()" 
                     class="bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white font-bold py-4 px-6 rounded-lg transition-all transform hover:scale-105 shadow-lg">
                     <i class="fas fa-download text-2xl mb-2"></i><br>
@@ -165,13 +202,7 @@
                 <button onclick="openPlaylistManager()" 
                     class="bg-gradient-to-r from-orange-600 to-orange-700 hover:from-orange-700 hover:to-orange-800 text-white font-bold py-4 px-6 rounded-lg transition-all transform hover:scale-105 shadow-lg">
                     <i class="fas fa-list-ol text-2xl mb-2"></i><br>
-                    🎵 Ordenar Playlist
-                </button>
-                
-                <button onclick="openReproductor()" 
-                    class="bg-gradient-to-r from-pink-600 to-pink-700 hover:from-pink-700 hover:to-pink-800 text-white font-bold py-4 px-6 rounded-lg transition-all transform hover:scale-105 shadow-lg">
-                    <i class="fas fa-play-circle text-2xl mb-2"></i><br>
-                    ▶️ Reproductor
+                    🎵 Ordenar Gala
                 </button>
             </div>
         </div>
@@ -272,16 +303,10 @@
                     <!-- Se llenará dinámicamente -->
                 </div>
                 
-                <div class="flex gap-4 mt-6">
-                    <button onclick="savePlaylistOrder()" 
-                        class="flex-1 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white font-bold py-3 px-6 rounded-lg transition">
-                        <i class="fas fa-save"></i> Guardar Orden
-                    </button>
-                    <button onclick="openReproductor()" 
-                        class="flex-1 bg-gradient-to-r from-pink-600 to-pink-700 hover:from-pink-700 hover:to-pink-800 text-white font-bold py-3 px-6 rounded-lg transition">
-                        <i class="fas fa-play-circle"></i> Abrir Reproductor
-                    </button>
-                </div>
+                <button onclick="savePlaylistOrder()" 
+                    class="w-full bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white font-bold py-4 px-6 rounded-lg transition">
+                    <i class="fas fa-save"></i> Guardar Orden de la Gala
+                </button>
                 
                 <p class="text-gray-400 text-sm mt-4 text-center">
                     Solo se incluyen artistas que tienen al menos una pista subida
@@ -464,8 +489,8 @@
                         
                         ${hasTracks ? `
                             <div class="space-y-2 mb-4">
-                                ${artistTracks.pistas.map(track => `
-                                    <div class="track-item rounded-lg p-3">
+                                ${artistTracks.pistas.map((track, trackIdx) => `
+                                    <div class="track-item rounded-lg p-3" id="track_${artist.id}_${track.slot}">
                                         <div class="flex items-center justify-between">
                                             <div class="flex-1">
                                                 <p class="text-white font-semibold text-sm">
@@ -478,16 +503,16 @@
                                                 </p>
                                             </div>
                                             <div class="flex gap-2">
-                                                <button onclick="playTrack('${track.archivo_url}')" 
-                                                    class="bg-blue-500 hover:bg-blue-600 text-white px-3 py-2 rounded text-sm">
+                                                <button onclick="playTrack('${track.archivo_url}', '${artist.nombre}', '${track.nombre_cancion}', document.getElementById('track_${artist.id}_${track.slot}'))" 
+                                                    class="bg-blue-500 hover:bg-blue-600 text-white px-3 py-2 rounded text-sm transition">
                                                     <i class="fas fa-play"></i>
                                                 </button>
                                                 <button onclick="downloadTrack('${track.archivo_url}', '${artist.nombre}_${track.nombre_cancion}.${track.formato}')" 
-                                                    class="bg-green-500 hover:bg-green-600 text-white px-3 py-2 rounded text-sm">
+                                                    class="bg-green-500 hover:bg-green-600 text-white px-3 py-2 rounded text-sm transition">
                                                     <i class="fas fa-download"></i>
                                                 </button>
                                                 <button onclick="deleteTrackConfirm('${artist.id}', ${track.slot}, '${artist.nombre}', '${track.nombre_cancion}')" 
-                                                    class="bg-red-500 hover:bg-red-600 text-white px-3 py-2 rounded text-sm">
+                                                    class="bg-red-500 hover:bg-red-600 text-white px-3 py-2 rounded text-sm transition">
                                                     <i class="fas fa-trash"></i>
                                                 </button>
                                             </div>
@@ -506,11 +531,79 @@
             }).join('');
         }
 
+        // Variables globales para el reproductor
+        let globalAudio = null;
+        let currentPlayingTrackElement = null;
+        
+        // Inicializar reproductor global
+        function initGlobalAudioPlayer() {
+            globalAudio = document.getElementById('globalAudioPlayer');
+            
+            // Actualizar progress bar
+            globalAudio.addEventListener('timeupdate', () => {
+                const progress = (globalAudio.currentTime / globalAudio.duration) * 100;
+                document.getElementById('progressBar').style.width = `${progress}%`;
+                document.getElementById('currentTime').textContent = formatTime(globalAudio.currentTime);
+            });
+            
+            // Actualizar duración
+            globalAudio.addEventListener('loadedmetadata', () => {
+                document.getElementById('totalTime').textContent = formatTime(globalAudio.duration);
+            });
+            
+            // Cuando termina
+            globalAudio.addEventListener('ended', () => {
+                stopAudio();
+            });
+        }
+        
         // Reproducir pista
-        window.playTrack = function(url) {
-            const audio = new Audio(url);
-            audio.play();
+        window.playTrack = function(url, artistName, songName, trackElement) {
+            // Si ya hay algo reproduciéndose, detenerlo
+            if (currentPlayingTrackElement) {
+                currentPlayingTrackElement.classList.remove('track-playing');
+            }
+            
+            // Configurar nuevo audio
+            globalAudio.src = url;
+            globalAudio.play();
+            
+            // Actualizar UI
+            document.getElementById('nowPlayingArtist').textContent = artistName;
+            document.getElementById('nowPlayingSong').textContent = songName;
+            document.getElementById('audioPlayerBar').classList.remove('hidden');
+            
+            // Marcar track actual
+            if (trackElement) {
+                trackElement.classList.add('track-playing');
+                currentPlayingTrackElement = trackElement;
+            }
+            
+            displayMessage(`▶️ Reproduciendo: ${songName} - ${artistName}`, 'info');
         };
+        
+        // Parar audio
+        window.stopAudio = function() {
+            if (globalAudio) {
+                globalAudio.pause();
+                globalAudio.currentTime = 0;
+            }
+            
+            document.getElementById('audioPlayerBar').classList.add('hidden');
+            
+            if (currentPlayingTrackElement) {
+                currentPlayingTrackElement.classList.remove('track-playing');
+                currentPlayingTrackElement = null;
+            }
+        };
+        
+        // Formatear tiempo
+        function formatTime(seconds) {
+            if (isNaN(seconds)) return '0:00';
+            const mins = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${mins}:${secs.toString().padStart(2, '0')}`;
+        }
 
         // Descargar pista individual
         window.downloadTrack = async function(url, filename) {
@@ -801,7 +894,7 @@
             });
 
             const container = document.getElementById('playlistContainer');
-            container.innerHTML = artistsWithTracks.map(artist => {
+            container.innerHTML = artistsWithTracks.map((artist, index) => {
                 const tracks = allTracksData.filter(t => t.artistId === artist.id);
                 const trackCount = tracks.length;
                 const artistName = artist.nombre || artist.name;
@@ -810,8 +903,12 @@
                 return `
                     <div class="playlist-item bg-blue-900 rounded-lg p-4 flex items-center gap-4 border-2 border-blue-600 hover:border-blue-400" 
                          data-artist-id="${artist.id}">
+                        <div class="flex-shrink-0 bg-blue-700 rounded-lg px-4 py-3 text-center min-w-[60px]">
+                            <div class="text-white font-bold text-2xl">${index + 1}</div>
+                            <div class="text-gray-300 text-xs">Orden</div>
+                        </div>
                         <div class="flex-shrink-0">
-                            <i class="fas fa-grip-vertical text-gray-400 text-xl cursor-move"></i>
+                            <i class="fas fa-grip-vertical text-gray-400 text-2xl cursor-move"></i>
                         </div>
                         <img src="${artistPhoto}" 
                              alt="${artistName}" 
@@ -840,7 +937,14 @@
                 dragClass: 'sortable-drag',
                 handle: '.playlist-item',
                 onEnd: function() {
-                    console.log('Orden actualizado');
+                    // Actualizar los números de orden después de reordenar
+                    const items = container.querySelectorAll('.playlist-item');
+                    items.forEach((item, index) => {
+                        const orderBadge = item.querySelector('.flex-shrink-0.bg-blue-700 .text-2xl');
+                        if (orderBadge) {
+                            orderBadge.textContent = index + 1;
+                        }
+                    });
                 }
             });
 
@@ -891,11 +995,6 @@
             }
         };
 
-        window.openReproductor = function() {
-            const url = `reproductor_gala.html?eventId=${eventId}`;
-            window.open(url, '_blank');
-        };
-
         // Filtrar artistas
         window.filterArtists = function(filter) {
             currentFilter = filter;
@@ -922,6 +1021,7 @@
 
         // Inicializar
         async function init() {
+            initGlobalAudioPlayer(); // Inicializar reproductor
             await loadEvent();
             await loadArtists();
             await loadTracks();
