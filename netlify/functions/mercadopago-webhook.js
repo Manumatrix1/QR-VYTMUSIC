@@ -1,4 +1,5 @@
 // Netlify Function: Webhook de Mercado Pago
+const fetch = require('node-fetch');
 const admin = require('firebase-admin');
 
 // Inicializar Firebase Admin (solo una vez)

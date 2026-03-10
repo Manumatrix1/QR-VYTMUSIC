@@ -34,14 +34,15 @@
         
         /* Estilos para los tickets/QRs */
         .ticket-card {
-            background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
-            border: 2px solid #374151;
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            border: 2px solid #38bdf8;
             border-radius: 1rem;
-            padding: 1.5rem;
+            padding: 1.25rem;
             display: flex;
             flex-direction: column;
             align-items: center;
             gap: 1rem;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
         }
         .qrcode-wrapper {
             position: relative;
@@ -1293,12 +1294,14 @@
                 cardWrapper.className = 'ticket-card';
                 
                 const artistImageHTML = ticket.artistPhotoURL
-                    ? `<img src="${ticket.artistPhotoURL}" alt="Foto del Artista" class="w-32 h-32 rounded-full mx-auto object-cover border-4 border-sky-500">`
-                    : '';
+                    ? `<div style="width: 100px; height: 100px; margin: 0.5rem auto; position: relative;">
+                        <img src="${ticket.artistPhotoURL}" alt="${ticket.artistName}" crossorigin="anonymous" style="width: 100%; height: 100%; border-radius: 50%; object-fit: cover; border: 3px solid #8b5cf6;" />
+                       </div>`
+                    : `<div style="width: 100px; height: 100px; margin: 0.5rem auto; border-radius: 50%; background: #374151; display: flex; align-items: center; justify-content: center; font-size: 2.5rem;">🎤</div>`;
                 
                 const artistNameBadge = ticket.artistName 
-                    ? `<div class="bg-purple-600 text-white px-4 py-2 rounded-lg font-bold text-lg mb-3 border-2 border-purple-400">
-                         🎤 Artista: ${ticket.artistName}
+                    ? `<div style="background: linear-gradient(135deg, #8b5cf6, #ec4899); color: white; padding: 0.5rem 1rem; border-radius: 0.75rem; font-weight: bold; font-size: 1rem; margin-bottom: 0.75rem; display: inline-block;">
+                         🎤 ${ticket.artistName}
                        </div>` 
                     : '';
                 
@@ -1326,18 +1329,22 @@
                         </a>
                     </div>`;
                 
-                const numBadge = ticket.ticketNumberFormatted ? `<div class="bg-sky-600 text-white px-4 py-2 rounded-lg font-bold text-xl mb-2">Nº ${ticket.ticketNumberFormatted}</div>` : '';
+                const numBadge = ticket.ticketNumberFormatted ? `<div style="background: linear-gradient(135deg, #0ea5e9, #3b82f6); color: white; padding: 0.5rem 1.5rem; border-radius: 1rem; font-weight: 900; font-size: 1.125rem; margin-bottom: 0.5rem; display: inline-block;">N° ${ticket.ticketNumberFormatted}</div>` : '';
                 
                 cardWrapper.innerHTML = `
+                    <div style="width: 100%; text-align: center; padding: 0.5rem 0; border-bottom: 2px dashed rgba(148, 163, 184, 0.3); margin-bottom: 0.75rem;">
+                        <p style="font-size: 1.125rem; font-weight: 800; color: #38bdf8;">VYT-MUSIC</p>
+                        <p style="font-size: 0.75rem; color: #94a3b8;">CERTAMEN DE CANTO</p>
+                    </div>
                     ${numBadge}
                     ${artistNameBadge}
                     ${artistImageHTML}
-                    <div class="w-full"><h3 class="text-2xl font-bold text-sky-400">${ticket.name}</h3><p class="text-gray-300">${ticket.seatLocation || 'General'}</p></div>
+                    <div class="w-full" style="text-align: center; padding: 0.75rem 0; border-top: 2px solid rgba(56, 189, 248, 0.2); border-bottom: 2px solid rgba(56, 189, 248, 0.2); margin: 0.75rem 0;"><h3 style="font-size: 1.375rem; font-weight: 900; color: #38bdf8;">${ticket.name}</h3><p style="color: #94a3b8; font-size: 0.875rem; margin-top: 0.25rem;">${ticket.seatLocation || 'ACCESO GENERAL'}</p></div>
                     ${codesContainer}
-                    <div class="w-full mt-4"><p class="text-lg font-semibold">${ticket.showName}</p><p class="text-md text-gray-400">${ticket.showLocation}</p>${addressHtml}<p class="text-xs text-gray-500 mt-2">ID: ${ticket.id.substring(0, 16)}...</p></div>
+                    <div class="w-full mt-3"><p class="text-base font-semibold">${ticket.showName}</p><p class="text-sm text-gray-400">${ticket.showLocation}</p>${addressHtml}</div>
                     ${contactHTML}
-                    <button class="download-btn w-full mt-4 px-4 py-3 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-bold rounded-lg transition">
-                        📥 Descargar Entrada (PNG)
+                    <button class="download-btn w-full mt-3 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-bold rounded-lg transition">
+                        📥 Descargar Entrada
                     </button>
                 `;
                 
@@ -1376,178 +1383,318 @@
                     downloadButton.disabled = true;
                     
                     try {
+                        // Función helper para rectángulos redondeados
+                        function roundRect(ctx, x, y, width, height, radius) {
+                            ctx.beginPath();
+                            ctx.moveTo(x + radius, y);
+                            ctx.lineTo(x + width - radius, y);
+                            ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+                            ctx.lineTo(x + width, y + height - radius);
+                            ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+                            ctx.lineTo(x + radius, y + height);
+                            ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+                            ctx.lineTo(x, y + radius);
+                            ctx.quadraticCurveTo(x, y, x + radius, y);
+                            ctx.closePath();
+                        }
+                        
                         // Crear canvas para dibujar el ticket manualmente
                         const finalCanvas = document.createElement('canvas');
-                        finalCanvas.width = 800;
-                        finalCanvas.height = 1200;
+                        finalCanvas.width = 600;
+                        finalCanvas.height = 1000;
                         const ctx = finalCanvas.getContext('2d');
                         
-                        // Fondo
-                        ctx.fillStyle = '#1f2937';
-                        ctx.fillRect(0, 0, 800, 1200);
+                        // Fondo degradado elegante
+                        const gradient = ctx.createLinearGradient(0, 0, 600, 1000);
+                        gradient.addColorStop(0, '#0f172a');
+                        gradient.addColorStop(0.3, '#1e293b');
+                        gradient.addColorStop(0.7, '#1e293b');
+                        gradient.addColorStop(1, '#0f172a');
+                        ctx.fillStyle = gradient;
+                        ctx.fillRect(0, 0, 600, 1000);
                         
-                        let yPos = 40;
+                        // Borde decorativo doble
+                        ctx.strokeStyle = '#38bdf8';
+                        ctx.lineWidth = 4;
+                        ctx.strokeRect(15, 15, 570, 970);
+                        ctx.strokeStyle = '#8b5cf6';
+                        ctx.lineWidth = 2;
+                        ctx.strokeRect(20, 20, 560, 960);
                         
-                        // Número de entrada
+                        // Header decorativo con gradiente
+                        const headerGradient = ctx.createLinearGradient(0, 20, 600, 80);
+                        headerGradient.addColorStop(0, '#3b82f6');
+                        headerGradient.addColorStop(0.5, '#8b5cf6');
+                        headerGradient.addColorStop(1, '#ec4899');
+                        ctx.fillStyle = headerGradient;
+                        ctx.fillRect(20, 20, 560, 60);
+                        
+                        let yPos = 60;
+                        
+                        // Logo VYT-MUSIC en header
+                        ctx.fillStyle = '#ffffff';
+                        ctx.font = 'bold 32px Arial';
+                        ctx.textAlign = 'center';
+                        ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+                        ctx.shadowBlur = 10;
+                        ctx.fillText('🎭 VYT-MUSIC', 300, yPos);
+                        ctx.shadowBlur = 0;
+                        yPos += 40;
+                        ctx.font = '14px Arial';
+                        ctx.fillText('CERTAMEN DE CANTO', 300, yPos);
+                        yPos += 40;
+                        
+                        // Línea divisoria elegante
+                        ctx.strokeStyle = 'rgba(56, 189, 248, 0.3)';
+                        ctx.lineWidth = 1;
+                        ctx.setLineDash([5, 5]);
+                        ctx.beginPath();
+                        ctx.moveTo(50, yPos);
+                        ctx.lineTo(550, yPos);
+                        ctx.stroke();
+                        ctx.setLineDash([]);
+                        yPos += 30;
+                        
+                        // Número de entrada con marco elegante
                         if (ticket.ticketNumberFormatted) {
-                            downloadButton.textContent = '⏳ Dibujando ticket...';
-                            ctx.fillStyle = '#0ea5e9';
-                            ctx.fillRect(200, yPos, 400, 50);
+                            downloadButton.textContent = '⏳ Creando diseño...';
+                            const numGradient = ctx.createLinearGradient(200, yPos, 400, yPos + 50);
+                            numGradient.addColorStop(0, '#0ea5e9');
+                            numGradient.addColorStop(1, '#3b82f6');
+                            ctx.fillStyle = numGradient;
+                            
+                            // Rectángulo con bordes redondeados
+                            roundRect(ctx, 200, yPos, 200, 50, 15);
+                            ctx.fill();
+                            
+                            // Texto del número
+                            ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
+                            ctx.shadowBlur = 5;
                             ctx.fillStyle = '#ffffff';
                             ctx.font = 'bold 28px Arial';
-                            ctx.textAlign = 'center';
-                            ctx.fillText(`Nº ${ticket.ticketNumberFormatted}`, 400, yPos + 35);
-                            yPos += 70;
+                            ctx.fillText(`Nº ${ticket.ticketNumberFormatted}`, 300, yPos + 35);
+                            ctx.shadowBlur = 0;
+                            yPos += 65;
                         }
                         
-                        // Nombre del artista badge
+                        // Badge del artista con gradiente rosa-morado
                         if (ticket.artistName) {
-                            ctx.fillStyle = '#9333ea';
-                            ctx.fillRect(150, yPos, 500, 50);
+                            const artistGradient = ctx.createLinearGradient(150, yPos, 450, yPos + 45);
+                            artistGradient.addColorStop(0, '#8b5cf6');
+                            artistGradient.addColorStop(1, '#ec4899');
+                            ctx.fillStyle = artistGradient;
+                            
+                            roundRect(ctx, 150, yPos, 300, 45, 12);
+                            ctx.fill();
+                            
+                            ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
+                            ctx.shadowBlur = 5;
                             ctx.fillStyle = '#ffffff';
                             ctx.font = 'bold 22px Arial';
-                            ctx.fillText(`🎤 Artista: ${ticket.artistName}`, 400, yPos + 33);
-                            yPos += 70;
+                            ctx.fillText(`🎤 ${ticket.artistName}`, 300, yPos + 30);
+                            ctx.shadowBlur = 0;
+                            yPos += 60;
                         }
                         
-                        // Foto del artista - Método mejorado con fetch
+                        // Foto del artista con marco decorativo
                         if (ticket.artistPhotoURL) {
                             downloadButton.textContent = '⏳ Cargando foto...';
                             try {
-                                // Cargar la imagen usando fetch para evitar problemas CORS
-                                const response = await fetch(ticket.artistPhotoURL);
-                                const blob = await response.blob();
-                                const objectURL = URL.createObjectURL(blob);
-                                
                                 const artistImage = await new Promise((resolve, reject) => {
                                     const img = new Image();
-                                    img.onload = () => {
-                                        URL.revokeObjectURL(objectURL); // Liberar memoria
-                                        resolve(img);
-                                    };
-                                    img.onerror = () => {
-                                        URL.revokeObjectURL(objectURL);
-                                        reject();
-                                    };
-                                    img.src = objectURL;
+                                    img.crossOrigin = 'anonymous';
+                                    img.onload = () => resolve(img);
+                                    img.onerror = () => reject();
+                                    img.src = ticket.artistPhotoURL;
                                 });
                                 
-                                // Dibujar foto circular
+                                const photoSize = 140;
+                                const centerX = 300;
+                                const centerY = yPos + photoSize/2;
+                                
+                                // Fondo decorativo con gradiente radial
+                                const photoGradient = ctx.createRadialGradient(centerX, centerY, photoSize/2 - 10, centerX, centerY, photoSize/2 + 5);
+                                photoGradient.addColorStop(0, '#8b5cf6');
+                                photoGradient.addColorStop(1, '#3b82f6');
+                                ctx.fillStyle = photoGradient;
+                                ctx.beginPath();
+                                ctx.arc(centerX, centerY, photoSize/2 + 5, 0, Math.PI * 2);
+                                ctx.fill();
+                                
+                                // Foto circular
                                 ctx.save();
                                 ctx.beginPath();
-                                ctx.arc(400, yPos + 64, 64, 0, Math.PI * 2);
+                                ctx.arc(centerX, centerY, photoSize/2, 0, Math.PI * 2);
                                 ctx.closePath();
                                 ctx.clip();
-                                ctx.drawImage(artistImage, 336, yPos, 128, 128);
+                                ctx.drawImage(artistImage, centerX - photoSize/2, centerY - photoSize/2, photoSize, photoSize);
                                 ctx.restore();
                                 
-                                // Borde circular
-                                ctx.strokeStyle = '#0ea5e9';
-                                ctx.lineWidth = 8;
+                                // Borde blanco brillante
+                                ctx.strokeStyle = '#ffffff';
+                                ctx.lineWidth = 3;
+                                ctx.shadowColor = 'rgba(255, 255, 255, 0.5)';
+                                ctx.shadowBlur = 10;
                                 ctx.beginPath();
-                                ctx.arc(400, yPos + 64, 64, 0, Math.PI * 2);
+                                ctx.arc(centerX, centerY, photoSize/2, 0, Math.PI * 2);
                                 ctx.stroke();
+                                ctx.shadowBlur = 0;
                                 
-                                yPos += 150;
+                                yPos += photoSize + 25;
                             } catch (e) {
-                                console.warn('No se pudo cargar foto del artista:', e);
-                                // Dibujar placeholder si falla
+                                console.warn('Foto no disponible');
+                                // Placeholder elegante
+                                const photoSize = 140;
                                 ctx.fillStyle = '#374151';
                                 ctx.beginPath();
-                                ctx.arc(400, yPos + 64, 64, 0, Math.PI * 2);
+                                ctx.arc(300, yPos + photoSize/2, photoSize/2, 0, Math.PI * 2);
                                 ctx.fill();
-                                ctx.fillStyle = '#9ca3af';
-                                ctx.font = '48px Arial';
-                                ctx.fillText('🎤', 400, yPos + 80);
-                                yPos += 150;
+                                ctx.fillStyle = '#94a3b8';
+                                ctx.font = '60px Arial';
+                                ctx.fillText('🎤', 300, yPos + photoSize/2 + 20);
+                                yPos += photoSize + 25;
                             }
                         }
                         
-                        // Nombre del asistente
-                        ctx.fillStyle = '#0ea5e9';
-                        ctx.font = 'bold 32px Arial';
-                        ctx.textAlign = 'center';
-                        ctx.fillText(ticket.name, 400, yPos);
+                        // Sección del invitado con fondo
+                        ctx.fillStyle = 'rgba(56, 189, 248, 0.1)';
+                        ctx.fillRect(40, yPos, 520, 80);
+                        
+                        // Nombre del invitado destacado
+                        yPos += 30;
+                        ctx.shadowColor = 'rgba(56, 189, 248, 0.8)';
+                        ctx.shadowBlur = 15;
+                        ctx.fillStyle = '#38bdf8';
+                        ctx.font = 'bold 30px Arial';
+                        ctx.fillText(ticket.name, 300, yPos);
+                        ctx.shadowBlur = 0;
+                        yPos += 35;
+                        
+                        ctx.fillStyle = '#94a3b8';
+                        ctx.font = 'bold 18px Arial';
+                        ctx.fillText(ticket.seatLocation || 'ACCESO GENERAL', 300, yPos);
                         yPos += 40;
                         
-                        ctx.fillStyle = '#9ca3af';
-                        ctx.font = '20px Arial';
-                        ctx.fillText(ticket.seatLocation || 'General', 400, yPos);
-                        yPos += 50;
+                        // Línea divisoria
+                        ctx.strokeStyle = 'rgba(148, 163, 184, 0.4)';
+                        ctx.lineWidth = 1;
+                        ctx.setLineDash([8, 4]);
+                        ctx.beginPath();
+                        ctx.moveTo(50, yPos);
+                        ctx.lineTo(550, yPos);
+                        ctx.stroke();
+                        ctx.setLineDash([]);
+                        yPos += 30;
                         
-                        // QR Code
-                        downloadButton.textContent = '⏳ Generando QR...';
+                        // QR Code con marco elegante
+                        downloadButton.textContent = '⏳ Generando códigos...';
                         const qrcodeCanvas = cardWrapper.querySelector(`#qrcode-${ticket.id} canvas`);
                         if (qrcodeCanvas) {
-                            ctx.drawImage(qrcodeCanvas, 272, yPos, 256, 256);
-                            yPos += 270;
+                            const qrSize = 200;
+                            const qrX = (600 - qrSize) / 2;
+                            
+                            // Fondo blanco con sombra
+                            ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
+                            ctx.shadowBlur = 15;
+                            ctx.fillStyle = '#ffffff';
+                            ctx.fillRect(qrX - 10, yPos - 10, qrSize + 20, qrSize + 20);
+                            ctx.shadowBlur = 0;
+                            
+                            // QR Code
+                            ctx.drawImage(qrcodeCanvas, qrX, yPos, qrSize, qrSize);
+                            
+                            // Borde decorativo
+                            ctx.strokeStyle = '#38bdf8';
+                            ctx.lineWidth = 3;
+                            ctx.strokeRect(qrX - 10, yPos - 10, qrSize + 20, qrSize + 20);
+                            
+                            yPos += qrSize + 30;
                         }
                         
-                        // Código de barras
+                        // Código de barras con fondo
                         const barcodeCanvas = document.getElementById(`barcode-${ticket.id}`);
                         if (barcodeCanvas) {
-                            // Crear canvas temporal para el barcode
                             const tempBarcodeCanvas = document.createElement('canvas');
-                            tempBarcodeCanvas.width = 600;
-                            tempBarcodeCanvas.height = 80;
+                            tempBarcodeCanvas.width = 500;
+                            tempBarcodeCanvas.height = 70;
                             const tempCtx = tempBarcodeCanvas.getContext('2d');
                             tempCtx.fillStyle = '#ffffff';
-                            tempCtx.fillRect(0, 0, 600, 80);
+                            tempCtx.fillRect(0, 0, 500, 70);
                             
-                            // Redibujar barcode
                             try {
                                 JsBarcode(tempBarcodeCanvas, ticket.id, {
                                     format: "CODE128",
                                     width: 2,
-                                    height: 50,
+                                    height: 45,
                                     displayValue: true,
                                     fontSize: 14
                                 });
-                                ctx.drawImage(tempBarcodeCanvas, 100, yPos, 600, 80);
-                                yPos += 100;
+                                
+                                // Fondo blanco para código de barras
+                                ctx.fillStyle = '#ffffff';
+                                ctx.fillRect(50, yPos, 500, 70);
+                                ctx.drawImage(tempBarcodeCanvas, 50, yPos, 500, 70);
+                                
+                                // Borde
+                                ctx.strokeStyle = '#94a3b8';
+                                ctx.lineWidth = 1;
+                                ctx.strokeRect(50, yPos, 500, 70);
+                                
+                                yPos += 85;
                             } catch (e) {
-                                console.warn('Error dibujando barcode');
+                                console.warn('Error barcode');
                             }
                         }
                         
-                        // Info del evento
-                        ctx.fillStyle = '#ffffff';
-                        ctx.font = 'bold 24px Arial';
-                        ctx.fillText(ticket.showName, 400, yPos);
-                        yPos += 35;
-                        
-                        ctx.fillStyle = '#9ca3af';
-                        ctx.font = '18px Arial';
-                        ctx.fillText(ticket.showLocation, 400, yPos);
+                        // Línea divisoria decorativa
+                        ctx.strokeStyle = 'rgba(148, 163, 184, 0.4)';
+                        ctx.lineWidth = 1;
+                        ctx.setLineDash([8, 4]);
+                        ctx.beginPath();
+                        ctx.moveTo(50, yPos);
+                        ctx.lineTo(550, yPos);
+                        ctx.stroke();
+                        ctx.setLineDash([]);
                         yPos += 30;
                         
-                        if (ticket.showAddress) {
-                            ctx.font = '14px Arial';
-                            ctx.fillText(ticket.showAddress, 400, yPos);
-                            yPos += 40;
-                        }
+                        // Info del evento
+                        ctx.fillStyle = '#ffffff';
+                        ctx.font = 'bold 22px Arial';
+                        ctx.fillText(ticket.showName, 300, yPos);
+                        yPos += 30;
                         
-                        // Contacto
-                        ctx.fillStyle = '#0ea5e9';
+                        ctx.fillStyle = '#94a3b8';
+                        ctx.font = '16px Arial';
+                        ctx.fillText('📍 ' + ticket.showLocation, 300, yPos);
+                        yPos += 40;
+                        
+                        // Footer con contacto
+                        const footerGradient = ctx.createLinearGradient(0, yPos, 600, yPos + 60);
+                        footerGradient.addColorStop(0, 'rgba(59, 130, 246, 0.2)');
+                        footerGradient.addColorStop(1, 'rgba(139, 92, 246, 0.2)');
+                        ctx.fillStyle = footerGradient;
+                        ctx.fillRect(20, yPos, 560, 80);
+                        
+                        yPos += 30;
+                        ctx.fillStyle = '#38bdf8';
                         ctx.font = 'bold 20px Arial';
-                        ctx.fillText('VYT-MUSIC', 400, yPos);
+                        ctx.fillText('VYT-MUSIC', 300, yPos);
                         yPos += 25;
-                        ctx.fillStyle = '#9ca3af';
+                        ctx.fillStyle = '#94a3b8';
                         ctx.font = '14px Arial';
-                        ctx.fillText('certamen de canto', 400, yPos);
+                        ctx.fillText('certamen de canto', 300, yPos);
                         yPos += 25;
                         ctx.fillStyle = '#22c55e';
-                        ctx.font = '14px Arial';
-                        ctx.fillText('📱 WhatsApp: +5493417422062', 400, yPos);
+                        ctx.font = 'bold 14px Arial';
+                        ctx.fillText('📱 +54 9 341 742-2062', 300, yPos);
                         
                         // Descargar
-                        downloadButton.textContent = '⏳ Descargando...';
+                        downloadButton.textContent = '⏳ Guardando entrada...';
                         const link = document.createElement('a');
                         link.href = finalCanvas.toDataURL('image/png', 1.0);
-                        link.download = `Entrada_VYTMUSIC_${ticket.name.replace(/\s/g, '_')}.png`;
+                        link.download = `Entrada_VYT_${ticket.name.replace(/\s/g, '_')}_${ticket.ticketNumberFormatted || 'PREV'}.png`;
                         link.click();
                         
-                        // Éxito
                         downloadButton.textContent = '✅ ¡Descargado!';
                         setTimeout(() => {
                             downloadButton.textContent = originalText;
