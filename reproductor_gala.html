@@ -292,6 +292,7 @@
         // Función para cargar datos
         async function loadPlaylist() {
             try {
+                console.log('🎵 Iniciando carga de playlist para eventId:', eventId);
                 const { collection, doc, getDoc, getDocs } = window.firestoreModules;
                 
                 // Cargar evento
@@ -299,13 +300,16 @@
                 const eventSnap = await getDoc(eventRef);
                 if (eventSnap.exists()) {
                     document.getElementById('eventName').textContent = eventSnap.data().nombre || '';
+                    console.log('✅ Evento cargado:', eventSnap.data().nombre);
                 }
                 
                 // Cargar artistas (intentar ambas estructuras)
+                console.log('📂 Buscando artistas en: events/' + eventId + '/artists');
                 let artistsRef = collection(window.db, `events/${eventId}/artists`);
                 let artistsSnap = await getDocs(artistsRef);
                 
                 if (artistsSnap.empty) {
+                    console.log('⚠️ No encontrado en subcollection, probando: artistas_' + eventId);
                     artistsRef = collection(window.db, `artistas_${eventId}`);
                     artistsSnap = await getDocs(artistsRef);
                 }
@@ -314,8 +318,10 @@
                 artistsSnap.forEach(doc => {
                     artists.push({ id: doc.id, ...doc.data() });
                 });
+                console.log('✅ Artistas encontrados:', artists.length, artists);
                 
                 // Cargar pistas
+                console.log('🎵 Buscando pistas en: pistas_' + eventId);
                 const pistasRef = collection(window.db, `pistas_${eventId}`);
                 const pistasSnap = await getDocs(pistasRef);
                 
@@ -323,12 +329,15 @@
                 pistasSnap.forEach(doc => {
                     tracks.push({ id: doc.id, ...doc.data() });
                 });
+                console.log('✅ Pistas encontradas:', tracks.length, tracks);
                 
                 // Combinar artistas con sus pistas
                 const playlistData = [];
                 
                 for (const artist of artists) {
                     const artistTracks = tracks.filter(t => t.artistId === artist.id);
+                    console.log(`🎤 ${artist.nombre || artist.name}: ${artistTracks.length} pistas`);
+                    
                     if (artistTracks.length > 0) {
                         for (const track of artistTracks) {
                             playlistData.push({
@@ -347,30 +356,38 @@
                     }
                 }
                 
+                console.log('✅ Playlist combinada:', playlistData.length, 'pistas totales');
+                
                 // Ordenar por playOrder
                 playlistData.sort((a, b) => a.playOrder - b.playOrder);
                 
                 playlist = playlistData;
                 
                 if (playlist.length === 0) {
+                    console.log('⚠️ Playlist vacía, mostrando mensaje');
                     showStatus('No hay pistas en la playlist todavía', 'warning');
                     document.getElementById('loading').classList.add('hidden');
+                    document.getElementById('mainContent').classList.remove('hidden');
                     return;
                 }
                 
                 renderPlaylist();
+                console.log('✅ Playlist renderizada exitosamente');
                 
                 document.getElementById('loading').classList.add('hidden');
                 document.getElementById('mainContent').classList.remove('hidden');
                 
             } catch (error) {
-                console.error('Error cargando playlist:', error);
-                showStatus('Error al cargar la playlist', 'error');
+                console.error('❌ Error cargando playlist:', error);
+                document.getElementById('loading').classList.add('hidden');
+                document.getElementById('mainContent').classList.remove('hidden');
+                showStatus(`Error al cargar la playlist: ${error.message}`, 'error');
             }
         }
 
         // Renderizar playlist
         function renderPlaylist() {
+            console.log('🎨 Renderizando playlist con', playlist.length, 'pistas');
             const container = document.getElementById('playlistContainer');
             document.getElementById('playlistCount').textContent = `${playlist.length} pistas`;
             
