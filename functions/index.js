@@ -451,9 +451,18 @@ exports.mercadopagoWebhookV2 = functions.https.onRequest(async (req, res) => {
         try {
           const orderData = orderDoc.data();
           const clientName = orderData.artistName || 'Cliente';
+          const clientPhone = orderData.artistPhone || 'N/A';
           const totalAmount = orderData.totalAmount || 0;
           const quantity = orderData.quantity || 0;
           const eventName = orderData.eventName || 'Evento';
+          
+          // Link directo al admin panel
+          const adminLink = `https://vyt-music.web.app/admin_preventa.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`;
+          
+          // Mensaje para WhatsApp
+          const whatsappMessage = `💳 *PAGO APROBADO - MERCADO PAGO*\n\n✅ Pago confirmado automáticamente\n\nDatos:\n👤 ${clientName}\n📱 ${clientPhone}\n🎫 ${quantity} entradas\n💰 $${totalAmount.toLocaleString()}\n📦 Orden: ${orderId.substring(0, 8).toUpperCase()}\n\n📋 Ver detalles:\n${adminLink}`;
+          
+          const whatsappLink = `https://wa.me/543413632329?text=${encodeURIComponent(whatsappMessage)}`;
           
           // Crear documento de notificación en Firestore
           await db.collection('admin_notifications').add({
@@ -462,12 +471,16 @@ exports.mercadopagoWebhookV2 = functions.https.onRequest(async (req, res) => {
             eventName: eventName,
             orderId: orderId,
             clientName: clientName,
+            clientPhone: clientPhone,
             quantity: quantity,
             amount: totalAmount,
             message: `💰 Nuevo pago aprobado: ${clientName} - ${quantity} entradas - $${totalAmount.toLocaleString()}`,
+            whatsappMessage: whatsappMessage,
+            whatsappLink: whatsappLink,
             read: false,
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
-            paymentMethod: 'mercadopago'
+            paymentMethod: 'mercadopago',
+            autoOpenWhatsApp: true
           });
           
           console.log('✅ Notificación para admin panel creada');
