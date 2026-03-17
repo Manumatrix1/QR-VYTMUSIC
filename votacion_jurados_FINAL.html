@@ -623,6 +623,154 @@
         window.deleteDoc = deleteDoc;
         
         console.log('🔥 Firebase inicializado correctamente');
+
+        // 🆕 INTERCEPTOR DEL BOTÓN "ATRÁS" DEL NAVEGADOR
+        // Prevenir salida accidental sin confirmación
+        let navigationBlocked = true;
+
+        // Mostrar modal de confirmación
+        function showExitConfirmation() {
+            return new Promise((resolve) => {
+                const modal = document.createElement('div');
+                modal.id = 'exit-confirmation-modal';
+                modal.style.cssText = `
+                    position: fixed;
+                    top: 0;
+                    left: 0;
+                    width: 100%;
+                    height: 100%;
+                    background: rgba(0, 0, 0, 0.8);
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    z-index: 10000;
+                    padding: 20px;
+                `;
+                
+                modal.innerHTML = `
+                    <div style="
+                        background: linear-gradient(135deg, #1e3a8a, #1e40af);
+                        border-radius: 20px;
+                        border: 2px solid rgba(255,255,255,0.3);
+                        padding: 40px;
+                        max-width: 500px;
+                        width: 100%;
+                        text-align: center;
+                        box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+                    ">
+                        <div style="font-size: 4rem; margin-bottom: 20px;">⚠️</div>
+                        <h2 style="font-size: 1.8rem; font-weight: bold; margin-bottom: 15px; color: white;">
+                            ¿Desea salir del sistema de votación?
+                        </h2>
+                        <p style="color: rgba(255,255,255,0.8); margin-bottom: 30px; font-size: 1.1rem;">
+                            Si tiene votos sin guardar, se perderán.
+                        </p>
+                        <div id="pending-votes-warning" style="display: none; background: rgba(234, 179, 8, 0.2); border: 2px solid #eab308; border-radius: 10px; padding: 15px; margin-bottom: 20px;">
+                            <p style="color: #fef08a; font-weight: bold; margin: 0;">
+                                ⚠️ Tienes <span id="exit-pending-count">0</span> votos pendientes de sincronizar
+                            </p>
+                        </div>
+                        <div style="display: flex; gap: 15px; justify-content: center; margin-top: 25px;">
+                            <button id="cancel-exit-btn" style="
+                                padding: 15px 30px;
+                                background: #16a34a;
+                                color: white;
+                                border: none;
+                                border-radius: 10px;
+                                font-size: 1.1rem;
+                                font-weight: bold;
+                                cursor: pointer;
+                                transition: all 0.3s;
+                                min-width: 120px;
+                            ">
+                                ✅ NO, Quedarme
+                            </button>
+                            <button id="confirm-exit-btn" style="
+                                padding: 15px 30px;
+                                background: #dc2626;
+                                color: white;
+                                border: none;
+                                border-radius: 10px;
+                                font-size: 1.1rem;
+                                font-weight: bold;
+                                cursor: pointer;
+                                transition: all 0.3s;
+                                min-width: 120px;
+                            ">
+                                ❌ SÍ, Salir
+                            </button>
+                        </div>
+                    </div>
+                `;
+                
+                document.body.appendChild(modal);
+                
+                // Mostrar advertencia de votos pendientes si hay
+                if (window.voteQueue && window.voteQueue.getPendingCount() > 0) {
+                    const warningDiv = document.getElementById('pending-votes-warning');
+                    const countSpan = document.getElementById('exit-pending-count');
+                    warningDiv.style.display = 'block';
+                    countSpan.textContent = window.voteQueue.getPendingCount();
+                }
+                
+                // Manejadores de botones
+                document.getElementById('cancel-exit-btn').onclick = () => {
+                    modal.remove();
+                    resolve(false); // NO salir
+                };
+                
+                document.getElementById('confirm-exit-btn').onclick = () => {
+                    modal.remove();
+                    resolve(true); // SÍ salir
+                };
+                
+                // Efectos hover
+                document.getElementById('cancel-exit-btn').onmouseover = (e) => {
+                    e.target.style.background = '#15803d';
+                    e.target.style.transform = 'scale(1.05)';
+                };
+                document.getElementById('cancel-exit-btn').onmouseout = (e) => {
+                    e.target.style.background = '#16a34a';
+                    e.target.style.transform = 'scale(1)';
+                };
+                document.getElementById('confirm-exit-btn').onmouseover = (e) => {
+                    e.target.style.background = '#b91c1c';
+                    e.target.style.transform = 'scale(1.05)';
+                };
+                document.getElementById('confirm-exit-btn').onmouseout = (e) => {
+                    e.target.style.background = '#dc2626';
+                    e.target.style.transform = 'scale(1)';
+                };
+            });
+        }
+
+        // Interceptar navegación del navegador (botón atrás)
+        window.addEventListener('popstate', async (event) => {
+            if (navigationBlocked) {
+                event.preventDefault();
+                const shouldExit = await showExitConfirmation();
+                
+                if (shouldExit) {
+                    navigationBlocked = false;
+                    window.history.back();
+                } else {
+                    // Volver a pushear el estado para mantener la página actual
+                    window.history.pushState(null, '', window.location.href);
+                }
+            }
+        });
+
+        // Pushear estado inicial para interceptar
+        window.history.pushState(null, '', window.location.href);
+
+        // También interceptar beforeunload (cerrar pestaña/ventana)
+        window.addEventListener('beforeunload', (event) => {
+            if (navigationBlocked && window.voteQueue && window.voteQueue.getPendingCount() > 0) {
+                event.preventDefault();
+                event.returnValue = ''; // Chrome requiere esto
+                return '¿Seguro que quieres salir? Tienes votos pendientes de sincronizar.';
+            }
+        });
         
         // INICIALIZAR GESTOR DE ARTISTAS GLOBALES (temporalmente comentado)
         // const globalArtistsManager = new GlobalArtistsManager();
@@ -638,14 +786,25 @@
 
         // OBTENER EVENT ID DESDE URL (como en gestión de votaciones)
         const urlParams = new URLSearchParams(window.location.search);
-        const eventId = urlParams.get('eventId') || 'gmxINHvzSJ18Zt3SNeW7'; // Fallback al ID correcto
+        const eventId = urlParams.get('eventId');
         const eventName = urlParams.get('eventName') || 'Evento';
+        
+        // ✅ VALIDACIÓN OBLIGATORIA de eventId
+        if (!eventId) {
+            alert('❌ Error: Acceso denegado. Falta parámetro de evento.');
+            window.location.href = 'eventos.html';
+            throw new Error('No eventId provided');
+        }
         
         console.log('🌐 URL completa:', window.location.href);
         console.log('🔍 Parámetros URL:', window.location.search);
         console.log('📋 EventId obtenido:', eventId);
-        console.log('📋 EventId desde URL:', urlParams.get('eventId'));
-        console.log('📋 Usando fallback?', !urlParams.get('eventId'));
+
+        // Configurar enlaces de navegación con parámetros URL
+        const backToPanelBtn = document.getElementById('back-to-panel-btn');
+        if (backToPanelBtn && eventId) {
+            backToPanelBtn.href = `panel_evento_SIMPLE.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`;
+        }
 
         // Configurar enlaces de navegación
         document.getElementById('back-to-panel-btn').href = `panel_evento_SIMPLE.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`;
@@ -792,6 +951,28 @@
                 }
             }
 
+            // 🆕 SINCRONIZACIÓN AUTOMÁTICA AL DETECTAR CONEXIÓN
+            startAutoSync() {
+                // Sincronizar inmediatamente si hay conexión
+                if (navigator.onLine) {
+                    this.syncPendingVotes();
+                }
+
+                // Escuchar evento de reconexión
+                window.addEventListener('online', () => {
+                    console.log('🌐 CONEXIÓN RESTAURADA - Sincronizando votos...');
+                    this.syncPendingVotes();
+                });
+
+                // Intentar sincronizar cada 2 minutos
+                setInterval(() => {
+                    if (navigator.onLine && this.getPendingCount() > 0) {
+                        console.log('⏰ Sincronización automática programada...');
+                        this.syncPendingVotes();
+                    }
+                }, 2 * 60 * 1000); // Cada 2 minutos
+            }
+
             // Mostrar mensaje de éxito
             showSyncSuccess(count) {
                 const statusBar = document.getElementById('connection-status');
@@ -804,10 +985,28 @@
                     }, 3000);
                 }
             }
+
+            // 🆕 SINCRONIZACIÓN AUTOMÁTICA AL DETECTAR CONEXIÓN
+            startPeriodicSync() {
+                // Sincronizar inmediatamente si hay conexión
+                if (navigator.onLine && this.getPendingCount() > 0) {
+                    setTimeout(() => this.syncPendingVotes(), 2000);
+                }
+
+                // Intentar sincronizar cada 2 minutos
+                setInterval(() => {
+                    if (navigator.onLine && this.getPendingCount() > 0 && !this.syncInProgress) {
+                        console.log('⏰ Sincronización automática programada...');
+                        this.syncPendingVotes();
+                    }
+                }, 2 * 60 * 1000); // Cada 2 minutos
+            }
         }
 
         // Instanciar el gestor de cola
         window.voteQueue = new VoteQueueManager();
+        window.voteQueue.startPeriodicSync(); // 🆕 Activar sincronización automática
+        console.log('✅ Sistema de cola offline inicializado con auto-sync');
 
         // Detectar cambios de conectividad
         window.addEventListener('online', () => {
@@ -1523,9 +1722,84 @@ Formato de respuesta:
             }
         };
 
-        async function loadArtists() {
+        // 🆕 CACHÉ DE ARTISTAS EN LOCALSTORAGE
+        function saveArtistsToCache(artistsList) {
+            try {
+                const cacheData = {
+                    eventId: eventId,
+                    artists: artistsList,
+                    cachedAt: new Date().toISOString(),
+                    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() // 24 horas
+                };
+                localStorage.setItem(`artists_cache_${eventId}`, JSON.stringify(cacheData));
+                console.log(`💾 Cache guardado: ${artistsList.length} artistas`);
+            } catch (error) {
+                console.warn('⚠️ Error guardando caché:', error);
+            }
+        }
+
+        function loadArtistsFromCache() {
+            try {
+                const cached = localStorage.getItem(`artists_cache_${eventId}`);
+                if (!cached) return null;
+                
+                const cacheData = JSON.parse(cached);
+                const expiresAt = new Date(cacheData.expiresAt);
+                
+                if (new Date() > expiresAt) {
+                    console.log('⏰ Caché expirado');
+                    localStorage.removeItem(`artists_cache_${eventId}`);
+                    return null;
+                }
+                
+                console.log(`📦 Cache encontrado: ${cacheData.artists.length} artistas`);
+                return cacheData.artists;
+            } catch (error) {
+                console.warn('⚠️ Error leyendo caché:', error);
+                return null;
+            }
+        }
+
+        async function loadArtists(forceOnline = false) {
+            // 🆕 INTENTAR CARGAR DESDE CACHÉ PRIMERO (si no se fuerza online)
+            if (!forceOnline && !navigator.onLine) {
+                console.log('📡 SIN INTERNET - Cargando desde caché...');
+                document.getElementById('status').textContent = '📡 Modo Offline - Cargando desde caché...';
+                
+                const cachedArtists = loadArtistsFromCache();
+                if (cachedArtists && cachedArtists.length > 0) {
+                    artists = cachedArtists;
+                    console.log(`✅ ${artists.length} artistas cargados desde CACHÉ`);
+                    document.getElementById('status').textContent = `📦 ${artists.length} artistas (Modo Offline)`;
+                    
+                    renderArtists();
+                    updateStats();
+                    
+                    setTimeout(() => {
+                        restoreScoreLocks();
+                        console.log('🔒 Bloqueos de puntuación restaurados');
+                    }, 500);
+                    
+                    // Mostrar alerta informativa
+                    showOfflineNotification();
+                    return;
+                } else {
+                    document.getElementById('status').textContent = '❌ Sin datos guardados (requiere internet una vez)';
+                    document.getElementById('artists-list').innerHTML = `
+                        <div class="card p-8 text-center">
+                            <div class="text-4xl mb-4">📡</div>
+                            <h3 class="text-xl font-bold mb-2">Sin Conexión</h3>
+                            <p class="mb-4">No hay datos guardados localmente.</p>
+                            <p class="mb-4">Necesitas conectarte a internet al menos una vez para descargar la lista de artistas.</p>
+                            <button onclick="loadArtists(true)" class="btn btn-primary mt-4">🔄 Reintentar con Internet</button>
+                        </div>
+                    `;
+                    return;
+                }
+            }
+
             document.getElementById('status').textContent = 'Cargando artistas desde Firebase...';
-            console.log('🎤 Cargando artistas...');
+            console.log('🎤 Cargando artistas desde FIREBASE...');
             console.log('🔍 Event ID usado:', eventId);
             console.log('🔍 Ruta Firebase:', `events/${eventId}/artists`);
 
@@ -1555,11 +1829,26 @@ Formato de respuesta:
                     ...doc.data()
                 }));
 
+                // 🆕 GUARDAR EN CACHÉ
+                if (artists.length > 0) {
+                    saveArtistsToCache(artists);
+                }
+
                 console.log(`✅ ${artists.length} artistas cargados:`, artists.map(a => a.name));
                 document.getElementById('status').textContent = `${artists.length} artistas cargados`;
 
                 if (artists.length === 0) {
                     console.log('❌ Lista de artistas vacía');
+                    // Intentar cargar desde caché como fallback
+                    const cachedArtists = loadArtistsFromCache();
+                    if (cachedArtists && cachedArtists.length > 0) {
+                        artists = cachedArtists;
+                        console.log('📦 Usando caché como fallback');
+                        renderArtists();
+                        updateStats();
+                        return;
+                    }
+                    
                     document.getElementById('artists-list').innerHTML = `
                         <div class="card p-8 text-center">
                             <div class="text-4xl mb-4">❌</div>
@@ -1567,7 +1856,7 @@ Formato de respuesta:
                             <p>Event ID: <code>${eventId}</code></p>
                             <p>Ruta: <code>events/${eventId}/artists</code></p>
                             <p class="mt-4">Ve a "Gestión de Votaciones" para agregar artistas.</p>
-                            <button onclick="loadArtists()" class="btn btn-primary mt-4">🔄 Reintentar</button>
+                            <button onclick="loadArtists(true)" class="btn btn-primary mt-4">🔄 Reintentar</button>
                         </div>
                     `;
                     return;
@@ -1583,18 +1872,74 @@ Formato de respuesta:
                 }, 500);
 
             } catch (error) {
-                console.error('❌ Error cargando artistas:', error);
-                document.getElementById('status').textContent = 'Error al cargar artistas';
-                document.getElementById('artists-list').innerHTML = `
-                    <div class="card p-8 text-center">
-                        <div class="text-4xl mb-4">⚠️</div>
-                        <h3 class="text-xl font-bold mb-2">Error de Firebase</h3>
-                        <p class="mb-2">Event ID: <code>${eventId}</code></p>
-                        <p class="text-sm opacity-75">${error.message}</p>
-                        <button onclick="loadArtists()" class="btn btn-primary mt-4">🔄 Reintentar</button>
-                    </div>
-                `;
+                console.error('❌ Error cargando artistas desde Firebase:', error);
+                
+                // 🆕 INTENTAR CARGAR DESDE CACHÉ COMO FALLBACK
+                console.log('⚠️ Error de Firebase, intentando caché local...');
+                const cachedArtists = loadArtistsFromCache();
+                
+                if (cachedArtists && cachedArtists.length > 0) {
+                    artists = cachedArtists;
+                    console.log(`✅ ${artists.length} artistas cargados desde CACHÉ (fallback)`);
+                    document.getElementById('status').textContent = `📦 ${artists.length} artistas (Modo Offline)`;
+                    
+                    renderArtists();
+                    updateStats();
+                    
+                    setTimeout(() => {
+                        restoreScoreLocks();
+                        console.log('🔒 Bloqueos de puntuación restaurados');
+                    }, 500);
+                    
+                    showOfflineNotification();
+                } else {
+                    document.getElementById('status').textContent = 'Error al cargar artistas';
+                    document.getElementById('artists-list').innerHTML = `
+                        <div class="card p-8 text-center">
+                            <div class="text-4xl mb-4">⚠️</div>
+                            <h3 class="text-xl font-bold mb-2">Error de Conexión</h3>
+                            <p class="mb-2">Event ID: <code>${eventId}</code></p>
+                            <p class="text-sm opacity-75 mb-4">${error.message}</p>
+                            <p class="mb-4">No hay datos guardados localmente.</p>
+                            <button onclick="loadArtists(true)" class="btn btn-primary mt-4">🔄 Reintentar</button>
+                        </div>
+                    `;
+                }
             }
+        }
+
+        // 🆕 NOTIFICACIÓN DE MODO OFFLINE
+        function showOfflineNotification() {
+            const notification = document.createElement('div');
+            notification.id = 'offline-notification';
+            notification.style.cssText = `
+                position: fixed;
+                top: 80px;
+                left: 50%;
+                transform: translateX(-50%);
+                background: rgba(234, 179, 8, 0.95);
+                color: white;
+                padding: 15px 30px;
+                border-radius: 10px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+                z-index: 9999;
+                font-weight: bold;
+                text-align: center;
+                max-width: 90%;
+            `;
+            notification.innerHTML = `
+                📡 MODO OFFLINE<br>
+                <small style="font-weight: normal;">Tus votos se guardarán localmente y se sincronizarán al reconectar</small>
+            `;
+            
+            document.body.appendChild(notification);
+            
+            // Ocultar después de 5 segundos
+            setTimeout(() => {
+                notification.style.transition = 'opacity 0.5s';
+                notification.style.opacity = '0';
+                setTimeout(() => notification.remove(), 500);
+            }, 5000);
         }
 
         // Redirect renderArtists() to use grid view always
@@ -2306,36 +2651,18 @@ Formato de respuesta:
                 const docId = `${currentJuror.id}_${artistId}`;
                 
                 // ========================================
-                // 🆕 SISTEMA DE GUARDADO CON FALLBACK OFFLINE
-                // Primero intenta Firebase, si falla guarda en cola local
+                // 🆕 SISTEMA DE GUARDADO SIMPLIFICADO
+                // UNA SOLA COLECCIÓN: events/${eventId}/jury_evaluations
+                // Si falla Firebase, guarda en cola local para sincronizar después
                 // ========================================
                 let saveSuccess = false;
                 let usedOfflineQueue = false;
                 
                 try {
-                    // Intentar múltiples formas de guardado con las rutas correctas del evento
-                    try {
-                        await setDoc(doc(db, `events/${eventId}/jury_evaluations`, docId), voteData);
-                        console.log('✅ Guardado en events/' + eventId + '/jury_evaluations:', docId);
-                        saveSuccess = true;
-                    } catch (err1) {
-                        console.warn('⚠️ Error en jury_evaluations, intentando jury_votes:', err1.message);
-                        try {
-                            await setDoc(doc(db, `events/${eventId}/jury_votes`, docId), voteData);
-                            console.log('✅ Guardado en events/' + eventId + '/jury_votes:', docId);
-                            saveSuccess = true;
-                        } catch (err2) {
-                            console.warn('⚠️ Error en jury_votes, intentando votes:', err2.message);
-                            try {
-                                await setDoc(doc(db, `events/${eventId}/votes`, docId), voteData);
-                                console.log('✅ Guardado en events/' + eventId + '/votes:', docId);
-                                saveSuccess = true;
-                            } catch (err3) {
-                                console.error('❌ Error en todas las colecciones Firebase:', err3.message);
-                                throw err3; // Lanzar para que sea capturado por el catch externo
-                            }
-                        }
-                    }
+                    // ✅ GUARDAR EN UNA SOLA COLECCIÓN (sin fallbacks)
+                    await setDoc(doc(db, `events/${eventId}/jury_evaluations`, docId), voteData);
+                    console.log('✅ Voto guardado exitosamente en jury_evaluations:', docId);
+                    saveSuccess = true;
                 } catch (firebaseError) {
                     // 🆕 SI FIREBASE FALLA, USAR COLA OFFLINE
                     console.warn('⚠️ Firebase no disponible, guardando en cola local...');

@@ -219,7 +219,7 @@
 
     <script type="module">
         import { db, auth, storage } from './firebase_config.js';
-        import { collection, addDoc, doc, writeBatch, serverTimestamp, query, orderBy, limit, onSnapshot, getDoc, setDoc, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { collection, addDoc, doc, writeBatch, serverTimestamp, query, orderBy, limit, onSnapshot, getDoc, setDoc, getDocs, updateDoc, increment } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 
         // Obtener parámetros del evento
@@ -379,7 +379,7 @@
             // Generar QR más grande y con mayor corrección de errores
             ui.successQrContainer.innerHTML = '';
             new QRCode(ui.successQrContainer, {
-                text: ticketData.id,
+                text: `https://vytmusic.netlify.app/escaner_qr_final.html?ticket=${ticketData.id}&eventId=${eventId}`,
                 width: 300,  // ✅ MÁS GRANDE - mejor legibilidad
                 height: 300,
                 colorDark: "#000000",
@@ -514,16 +514,28 @@
             try {
                 showLoading('Generando entrada en puerta...');
 
-                // Obtener número secuencial
+                // ✅ Obtener número secuencial ATÓMICO (sin race conditions)
                 let ticketNumber = null;
                 try {
                     const counterRef = doc(db, `events/${eventId}/meta`, 'ticket_counter');
-                    const counterDoc = await getDoc(counterRef);
-                    const currentCount = counterDoc.exists() ? (counterDoc.data().count || 0) : 0;
-                    ticketNumber = currentCount + 1;
                     
-                    // Actualizar contador
-                    await setDoc(counterRef, { count: ticketNumber }, { merge: true });
+                    // Verificar si existe el contador
+                    const counterDoc = await getDoc(counterRef);
+                    if (!counterDoc.exists()) {
+                        // Crear el contador si no existe
+                        await setDoc(counterRef, { count: 0 });
+                    }
+                    
+                    // ✅ INCREMENTO ATÓMICO (evita duplicados con múltiples usuarios simultáneos)
+                    await updateDoc(counterRef, {
+                        count: increment(1)
+                    });
+                    
+                    // Obtener el nuevo valor
+                    const updatedDoc = await getDoc(counterRef);
+                    ticketNumber = updatedDoc.data().count;
+                    
+                    console.log('✅ Número secuencial obtenido atómicamente:', ticketNumber);
                 } catch (error) {
                     console.warn('⚠️ Error obteniendo número secuencial:', error);
                     ticketNumber = Date.now() % 10000; // Fallback

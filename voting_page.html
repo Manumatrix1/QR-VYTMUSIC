@@ -955,6 +955,14 @@
             
             const voteRef = doc(db, `events/${activeEventId}/ticket_votes/${ticketId}/votes`, artistId);
             
+            // ✅ VALIDAR que no exista ya el voto (prevenir duplicados)
+            // Nota: handleVote ya verifica para calcular diffs, pero esto es una doble validación de seguridad
+            const existingVote = await getDoc(voteRef);
+            if (existingVote.exists() && isNewVote) {
+                console.warn('⚠️ Voto duplicado detectado, actualizando en lugar de crear nuevo');
+                // Continuar con la actualización pero marcar como no nuevo
+            }
+            
             await updateDoc(doc(db, `events/${activeEventId}/artists`, artistId), {
                 totalSingingScore: increment(diffs.singing),
                 totalTransmissionScore: increment(diffs.transmission),
@@ -963,7 +971,7 @@
                 totalCostumeScore: increment(diffs.costume),
                 totalStagingScore: increment(diffs.staging),
                 totalScore: increment(totalDiff),
-                totalRatingsCount: increment(isNewVote ? 1 : 0)
+                totalRatingsCount: increment(isNewVote && !existingVote.exists() ? 1 : 0)
             });
 
             await setDoc(voteRef, {
@@ -975,7 +983,8 @@
                 originalityScore: scores.originality,
                 costumeScore: scores.costume,
                 stagingScore: scores.staging,
-                votedAt: new Date().toISOString()
+                votedAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString()
             });
         }
 

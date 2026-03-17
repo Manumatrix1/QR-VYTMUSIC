@@ -73,6 +73,7 @@
 
         const params = new URLSearchParams(window.location.search);
         const orderId = params.get('orderId');
+        const eventIdParam = params.get('eventId'); // si viene en el URL nos salteamos buscar en todos los eventos
 
         if (!orderId) {
             showError('No se especificó ID de orden');
@@ -82,23 +83,27 @@
 
         async function loadTickets() {
             try {
-                // Obtener datos de la orden para saber el eventId
                 let orderData = null;
                 let eventId = null;
 
-                // Buscar la orden en todos los eventos (solo necesitamos el eventId)
-                // En producción real, deberías pasar el eventId en el URL también
-                const eventsSnapshot = await getDocs(collection(db, 'events'));
-                
-                for (const eventDoc of eventsSnapshot.docs) {
-                    const tryEventId = eventDoc.id;
-                    const orderRef = doc(db, `ticket_orders_${tryEventId}`, orderId);
-                    const orderSnap = await getDoc(orderRef);
-                    
+                if (eventIdParam) {
+                    // Rápido: el eventId viene en el URL
+                    const orderSnap = await getDoc(doc(db, `ticket_orders_${eventIdParam}`, orderId));
                     if (orderSnap.exists()) {
                         orderData = orderSnap.data();
-                        eventId = tryEventId;
-                        break;
+                        eventId = eventIdParam;
+                    }
+                } else {
+                    // Fallback lento: buscar en todos los eventos
+                    const eventsSnapshot = await getDocs(collection(db, 'events'));
+                    for (const eventDoc of eventsSnapshot.docs) {
+                        const tryEventId = eventDoc.id;
+                        const orderSnap = await getDoc(doc(db, `ticket_orders_${tryEventId}`, orderId));
+                        if (orderSnap.exists()) {
+                            orderData = orderSnap.data();
+                            eventId = tryEventId;
+                            break;
+                        }
                     }
                 }
 
@@ -142,8 +147,8 @@
                 document.getElementById('instructions').classList.remove('hidden');
                 document.getElementById('tickets-grid').classList.remove('hidden');
 
-                // Renderizar tickets
-                renderTickets(tickets);
+                // Renderizar tickets pasando el eventId real
+                renderTickets(tickets, eventId);
 
             } catch (error) {
                 console.error('Error cargando entradas:', error);
@@ -151,9 +156,16 @@
             }
         }
 
-        function renderTickets(tickets) {
+        function renderTickets(tickets, eventId) {
             const grid = document.getElementById('tickets-grid');
             grid.innerHTML = '';
+
+            // ✅ VALIDAR que eventId existe
+            if (!eventId) {
+                console.error('❌ ERROR: eventId no está definido');
+                showError('Error: No se pudo determinar el evento. Contacta al organizador.');
+                return;
+            }
 
             const config = {
                 logoUrl: 'https://i.imgur.com/rqkZi9P.png',
@@ -213,13 +225,24 @@
 
                 grid.appendChild(cardWrapper);
 
-                // Generar QR Code
-                new QRCode(document.getElementById(`qrcode-${ticket.id}`), {
-                    text: ticket.id,
-                    width: 256,
-                    height: 256,
-                    correctLevel: QRCode.CorrectLevel.H
-                });
+                // ✅ Generar QR Code con URL CORRECTA y eventId VALIDADO
+                const qrData = `https://vytmusic.netlify.app/escaner_qr_final.html?ticket=${ticket.id}&eventId=${eventId}`;
+                console.log(`📦 Generando QR para ticket ${ticket.id}:`, qrData);
+                
+                try {
+                    new QRCode(document.getElementById(`qrcode-${ticket.id}`), {
+                        text: qrData,
+                        width: 256,
+                        height: 256,
+                        correctLevel: QRCode.CorrectLevel.H
+                    });
+                    console.log(`✅ QR generado exitosamente para ${ticket.id}`);
+                } catch (qrError) {
+                    console.error(`❌ Error generando QR para ${ticket.id}:`, qrError);
+                    // Mostrar error visual
+                    const qrContainer = document.getElementById(`qrcode-${ticket.id}`);
+                    qrContainer.innerHTML = '<div style="color: red; text-align: center; padding: 20px;">ERROR AL GENERAR QR</div>';
+                }
 
                 // Generar código de barras
                 try {
@@ -345,12 +368,64 @@
                         ctx.fillText(ticket.seatLocation || 'General', 400, yPos);
                         yPos += 50;
                         
-                        // QR Code
-                        downloadButton.textContent = '⏳ Generando QR...';
-                        const qrcodeCanvas = cardWrapper.querySelector(`#qrcode-${ticket.id} canvas`);
-                        if (qrcodeCanvas) {
-                            ctx.drawImage(qrcodeCanvas, 272, yPos, 256, 256);
-                            yPos += 270;
+                        // QR Code - MEJORADO con validación y regeneración
+                        downloadButton.textContent = '⌛ Generando QR...';
+                        let qrcodeCanvas = cardWrapper.querySelector(`#qrcode-${ticket.id} canvas`);
+                        
+                        // ✅ Si el QR canvas no existe o está vacío, regenerarlo
+                        if (!qrcodeCanvas || qrcodeCanvas.width === 0) {
+                            console.warn('⚠️ QR canvas no encontrado, regenerando...');
+                            
+                            // Crear contenedor temporal para regenerar QR
+                            const tempQRDiv = document.createElement('div');
+                            tempQRDiv.style.display = 'none';
+                            document.body.appendChild(tempQRDiv);
+                            
+                            try {
+                                const qrData = `https://vytmusic.netlify.app/escaner_qr_final.html?ticket=${ticket.id}&eventId=${eventId}`;
+                                new QRCode(tempQRDiv, {
+                                    text: qrData,
+                                    width: 300,
+                                    height: 300,
+                                    correctLevel: QRCode.CorrectLevel.H
+                                });
+                                
+                                // Esperar a que se genere
+                                await new Promise(resolve => setTimeout(resolve, 200));
+                                qrcodeCanvas = tempQRDiv.querySelector('canvas');
+                                
+                                if (!qrcodeCanvas) {
+                                    throw new Error('No se pudo regenerar el QR');
+                                }
+                            } catch (qrGenError) {
+                                console.error('❌ Error regenerando QR:', qrGenError);
+                                // Dibujar mensaje de error en el ticket
+                                ctx.fillStyle = '#ef4444';
+                                ctx.fillRect(200, yPos, 400, 100);
+                                ctx.fillStyle = '#ffffff';
+                                ctx.font = 'bold 18px Arial';
+                                ctx.fillText('❌ ERROR: QR no generado', 400, yPos + 50);
+                                yPos += 120;
+                                
+                                document.body.removeChild(tempQRDiv);
+                                throw new Error('No se pudo generar el código QR');
+                            }
+                        }
+                        
+                        // Dibujar el QR en el canvas
+                        if (qrcodeCanvas && qrcodeCanvas.width > 0) {
+                            // Fondo blanco para el QR
+                            ctx.fillStyle = '#ffffff';
+                            ctx.fillRect(250, yPos, 300, 300);
+                            ctx.drawImage(qrcodeCanvas, 250, yPos, 300, 300);
+                            console.log('✅ QR dibujado en el canvas de descarga');
+                            yPos += 320;
+                        } else {
+                            console.error('❌ QR canvas inválido, omitiendo');
+                            ctx.fillStyle = '#ef4444';
+                            ctx.font = 'bold 16px Arial';
+                            ctx.fillText('❌ QR NO DISPONIBLE', 400, yPos + 50);
+                            yPos += 100;
                         }
                         
                         // Código de barras
