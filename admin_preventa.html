@@ -10,6 +10,28 @@
     <div class="container mx-auto max-w-7xl p-6">
         <!-- Header -->
         <header class="text-center mb-8">
+            <!-- 🔔 NOTIFICACIONES EN TIEMPO REAL -->
+            <div id="notification-banner" class="hidden mb-4 bg-gradient-to-r from-green-600 to-emerald-600 border-2 border-green-400 rounded-xl p-4 shadow-2xl animate-pulse">
+                <div class="flex items-center justify-between gap-4">
+                    <div class="flex items-center gap-3">
+                        <div class="text-4xl">🎉</div>
+                        <div class="text-left">
+                            <h3 class="text-xl font-black text-white">¡NUEVO PAGO APROBADO!</h3>
+                            <p id="notification-message" class="text-sm text-green-100"></p>
+                            <p id="notification-time" class="text-xs text-green-200 mt-1"></p>
+                        </div>
+                    </div>
+                    <div class="flex gap-2">
+                        <button onclick="viewNotification()" class="px-4 py-2 bg-white text-green-700 font-bold rounded-lg hover:bg-green-50 transition">
+                            Ver Orden
+                        </button>
+                        <button onclick="dismissNotification()" class="px-4 py-2 bg-green-700/50 text-white font-bold rounded-lg hover:bg-green-700 transition">
+                            Cerrar
+                        </button>
+                    </div>
+                </div>
+            </div>
+
             <a href="#" id="back-btn" class="text-sky-400 hover:text-sky-300 mb-4 inline-block text-lg font-semibold">
                 ← Volver al Panel
             </a>
@@ -359,7 +381,7 @@
                 const dateStr = order.createdAt?.toDate().toLocaleString('es-ES') || 'Sin fecha';
 
                 return `
-                    <div class="bg-gray-800/50 rounded-xl border-2 border-${status.color}-500/30 p-6">
+                    <div class="bg-gray-800/50 rounded-xl border-2 border-${status.color}-500/30 p-6" data-order-id="${order.id}">
                         <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-4">
                             <div>
                                 <h3 class="text-2xl font-bold">${order.artistName}</h3>
@@ -925,6 +947,159 @@
         loadOrders();
         loadDeadline();
         loadArtistsSummary();
+
+        // ═══════════════════════════════════════════════════════════
+        // 🔔 SISTEMA DE NOTIFICACIONES EN TIEMPO REAL
+        // ═══════════════════════════════════════════════════════════
+        
+        import { onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        let currentNotification = null;
+        let notificationSound = null;
+        
+        // Crear sonido de notificación (beep)
+        function createNotificationSound() {
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            oscillator.frequency.value = 800; // Frecuencia del beep
+            oscillator.type = 'sine';
+            
+            gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
+            
+            oscillator.start(audioContext.currentTime);
+            oscillator.stop(audioContext.currentTime + 0.5);
+            
+            // Segundo beep
+            setTimeout(() => {
+                const osc2 = audioContext.createOscillator();
+                const gain2 = audioContext.createGain();
+                osc2.connect(gain2);
+                gain2.connect(audioContext.destination);
+                osc2.frequency.value = 1000;
+                osc2.type = 'sine';
+                gain2.gain.setValueAtTime(0.3, audioContext.currentTime);
+                gain2.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
+                osc2.start(audioContext.currentTime);
+                osc2.stop(audioContext.currentTime + 0.5);
+            }, 200);
+        }
+        
+        // Mostrar notificación
+        function showNotification(notification) {
+            currentNotification = notification;
+            const banner = document.getElementById('notification-banner');
+            const message = document.getElementById('notification-message');
+            const time = document.getElementById('notification-time');
+            
+            message.textContent = notification.message || 'Nueva notificación';
+            
+            // Calcular "hace X minutos"
+            const createdAt = notification.createdAt?.toDate() || new Date();
+            const now = new Date();
+            const diffMs = now - createdAt;
+            const diffMins = Math.floor(diffMs / 60000);
+            
+            if (diffMins < 1) {
+                time.textContent = 'Justo ahora';
+            } else if (diffMins === 1) {
+                time.textContent = 'Hace 1 minuto';
+            } else if (diffMins < 60) {
+                time.textContent = `Hace ${diffMins} minutos`;
+            } else {
+                const diffHours = Math.floor(diffMins / 60);
+                time.textContent = `Hace ${diffHours} ${diffHours === 1 ? 'hora' : 'horas'}`;
+            }
+            
+            banner.classList.remove('hidden');
+            
+            // Reproducir sonido
+            try {
+                createNotificationSound();
+            } catch (e) {
+                console.warn('No se pudo reproducir sonido:', e);
+            }
+            
+            // Scroll al inicio
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+        
+        // Ver notificación (ir a la orden)
+        window.viewNotification = function() {
+            if (currentNotification && currentNotification.orderId) {
+                // Scroll a la orden en la tabla
+                const orderCard = document.querySelector(`[data-order-id="${currentNotification.orderId}"]`);
+                if (orderCard) {
+                    orderCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    orderCard.classList.add('ring-4', 'ring-yellow-400');
+                    setTimeout(() => {
+                        orderCard.classList.remove('ring-4', 'ring-yellow-400');
+                    }, 3000);
+                }
+                
+                // Marcar como leída
+                dismissNotification();
+            }
+        };
+        
+        // Cerrar notificación
+        window.dismissNotification = function() {
+            const banner = document.getElementById('notification-banner');
+            banner.classList.add('hidden');
+            
+            // Marcar como leída en Firestore
+            if (currentNotification && currentNotification.id) {
+                updateDoc(doc(db, 'admin_notifications', currentNotification.id), {
+                    read: true,
+                    readAt: serverTimestamp()
+                }).catch(e => console.warn('Error marcando notificación:', e));
+            }
+            
+            currentNotification = null;
+        };
+        
+        // Escuchar notificaciones en tiempo real
+        function startNotificationListener() {
+            const notifQuery = query(
+                collection(db, 'admin_notifications'),
+                where('read', '==', false),
+                where('eventId', '==', eventId),
+                orderBy('createdAt', 'desc')
+            );
+            
+            onSnapshot(notifQuery, (snapshot) => {
+                snapshot.docChanges().forEach((change) => {
+                    if (change.type === 'added') {
+                        const notification = {
+                            id: change.doc.id,
+                            ...change.doc.data()
+                        };
+                        
+                        // Solo mostrar si es reciente (menos de 5 minutos)
+                        const createdAt = notification.createdAt?.toDate();
+                        if (createdAt) {
+                            const diffMs = new Date() - createdAt;
+                            if (diffMs < 5 * 60 * 1000) { // 5 minutos
+                                showNotification(notification);
+                                
+                                // Recargar órdenes para mostrar la nueva
+                                setTimeout(() => loadOrders(), 1000);
+                            }
+                        }
+                    }
+                });
+            }, (error) => {
+                console.error('Error escuchando notificaciones:', error);
+            });
+        }
+        
+        // Iniciar listener
+        startNotificationListener();
 
         // Auto-refresh cada 30 segundos
         setInterval(loadOrders, 30000);
