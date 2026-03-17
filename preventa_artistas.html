@@ -564,87 +564,18 @@
         const params = new URLSearchParams(window.location.search);
         const eventId = params.get('eventId');
         const eventName = params.get('eventName') || 'Evento';
-        const paymentStatus = params.get('payment'); // success, failure, pending
-        const returnedOrderId = params.get('orderId'); // cuando vuelve de MP
 
         if (!eventId) {
             alert('❌ Error: No se especificó el evento');
             window.location.href = 'eventos.html';
-            throw new Error('No eventId provided'); // Detener ejecución
-        }
-
-        // Detectar retorno desde Mercado Pago
-        if (paymentStatus && returnedOrderId) {
-            console.log(`🔙 Retorno desde Mercado Pago: ${paymentStatus}`);
-            
-            // mostrar mensaje según resultado
-            if (paymentStatus === 'success') {
-                displayMessage('✅ ¡Pago exitoso! Verificando estado de tu orden...', 'success');
-                currentOrderId = returnedOrderId;
-                
-                // Verificar el estado real de la orden en Firebase
-                setTimeout(async () => {
-                    try {
-                        const orderRef = doc(db, `ticket_orders_${eventId}`, returnedOrderId);
-                        const orderSnap = await getDoc(orderRef);
-                        
-                        if (orderSnap.exists()) {
-                            const orderData = orderSnap.data();
-                            const status = orderData.status;
-                            
-                            console.log('📦 Estado de la orden:', status);
-                            
-                            if (status === 'approved') {
-                                displayMessage('✅ ¡Pago confirmado! Continuando con el proceso...', 'success');
-                                
-                                // Ocultar secciones de solicitud y pago
-                                document.getElementById('section-request').classList.add('hidden');
-                                document.getElementById('section-payment').classList.add('hidden');
-                                
-                                // Verificar si ya tiene nombres cargados
-                                if (orderData.attendeeNames && orderData.attendeeNames.length === orderData.quantity) {
-                                    // Ya tiene nombres, ir directo a selección de artista
-                                    window.attendeeNames = orderData.attendeeNames;
-                                    updateSteps(5);
-                                    document.getElementById('section-select-artist').classList.remove('hidden');
-                                    loadGalaDataAndArtists();
-                                } else {
-                                    // Mostrar sección de nombres
-                                    document.getElementById('section-names').classList.remove('hidden');
-                                    document.getElementById('names-total').textContent = orderData.quantity;
-                                    document.getElementById('btn-total').textContent = orderData.quantity;
-                                    updateSteps(4);
-                                    generateNameInputs(orderData.quantity);
-                                }
-                            } else {
-                                // Si aún está pendiente, mostrar la sección de espera
-                                displayMessage('⏳ Tu pago está siendo verificado...', 'info');
-                                document.getElementById('section-request').classList.add('hidden');
-                                document.getElementById('section-payment').classList.add('hidden');
-                                document.getElementById('section-pending').classList.remove('hidden');
-                                updateSteps(3);
-                                startOrderListener(); // Escuchar cambios en tiempo real
-                            }
-                        } else {
-                            displayMessage('❌ No se encontró la orden. Por favor contacta al soporte.', 'error');
-                        }
-                    } catch (error) {
-                        console.error('Error verificando orden:', error);
-                        displayMessage('❌ Error verificando el estado. Recarga la página.', 'error');
-                    }
-                }, 2000);
-            } else if (paymentStatus === 'failure') {
-                displayMessage('❌ El pago no se pudo completar. Intenta nuevamente.', 'error');
-            } else if (paymentStatus === 'pending') {
-                displayMessage('⏳ Pago pendiente de confirmación. Te notificaremos cuando se apruebe.', 'info');
-            }
+            return;
         }
 
         document.getElementById('event-name').textContent = `Para: ${eventName}`;
         document.getElementById('back-btn').href = `panel_evento_SIMPLE.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`;
 
         // Variables globales
-        let currentOrderId = returnedOrderId || null; // Usar orderId si viene de MP
+        let currentOrderId = null;
         let currentPrice = 10000; // Precio anticipado por defecto
         let eventData = null;
         let countdownInterval = null;
@@ -1153,70 +1084,7 @@
             }
         });
 
-        // PASO 2A: Pagar con Mercado Pago
-        document.getElementById('pay-with-mp-btn').addEventListener('click', async () => {
-            const button = document.getElementById('pay-with-mp-btn');
-            const originalText = button.textContent;
-            
-            try {
-                button.disabled = true;
-                button.innerHTML = '<svg class="w-6 h-6 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Conectando con Mercado Pago...';
-
-                // Obtener datos de la orden actual
-                const orderRef = doc(db, `ticket_orders_${eventId}`, currentOrderId);
-                const orderSnap = await getDoc(orderRef);
-                
-                if (!orderSnap.exists()) {
-                    throw new Error('Orden no encontrada');
-                }
-
-                const orderData = orderSnap.data();
-
-                // Llamar a la función para crear preferencia de pago
-                const response = await fetch('/createPayment', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        orderId: currentOrderId,
-                        eventId: eventId,
-                        eventName: eventName || 'VYT-MUSIC',
-                        ticketCount: orderData.quantity,
-                        totalAmount: orderData.totalAmount,
-                        payerEmail: orderData.artistEmail
-                    })
-                });
-
-                const data = await response.json();
-
-                if (!response.ok) {
-                    throw new Error(data.error || 'Error creando preferencia de pago');
-                }
-
-                console.log('✅ Preferencia creada:', data.preferenceId);
-
-                // Actualizar orden con método de pago Mercado Pago
-                await updateDoc(orderRef, {
-                    paymentMethod: 'mercadopago',
-                    mercadoPagoPreferenceId: data.preferenceId,
-                    updatedAt: serverTimestamp()
-                });
-
-                // Redirigir a Mercado Pago
-                displayMessage('✅ Redirigiendo a Mercado Pago...', 'success');
-                
-                setTimeout(() => {
-                    window.location.href = data.initPoint;
-                }, 1000);
-
-            } catch (error) {
-                console.error('Error con Mercado Pago:', error);
-                displayMessage('❌ Error: ' + error.message, 'error');
-                button.disabled = false;
-                button.textContent = originalText;
-            }
-        });
-
-        // PASO 2C: Subir comprobante (método manual)
+        // PASO 2: Subir comprobante (método manual)
         document.getElementById('upload-proof-btn').addEventListener('click', async () => {
             const fileInput = document.getElementById('payment-proof');
             const file = fileInput.files[0];
@@ -1235,9 +1103,20 @@
             const _artistName = document.getElementById('artist-name').value.trim();
             const _qAdults = parseInt(document.getElementById('ticket-quantity').value) || 0;
             const _qKids   = parseInt(document.getElementById('ticket-quantity-kids').value) || 0;
+            const _total = ((_qAdults + _qKids) * currentPrice).toLocaleString();
             const _adminLink = `https://vyt-music.web.app/admin_preventa.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`;
-            const _waMsg = `🎟️ *Nuevo pago realizado*\n\nArtista: ${_artistName}\nInvitados: ${_qAdults + _qKids}\n\nRevisar y aprobar:\n${_adminLink}`;
-            window.open(`https://wa.me/543413632329?text=${encodeURIComponent(_waMsg)}`, '_blank');
+            const _waMsg = `🎟️ *NUEVO COMPROBANTE DE PAGO*\n\n✅ Cliente subió comprobante\n\nDatos:\n👤 ${_artistName}\n🎫 ${_qAdults + _qKids} entradas\n💰 $${_total}\n\n📸 Revisar comprobante y aprobar:\n${_adminLink}`;
+            
+            // Abrir WhatsApp (se abre en nueva pestaña para que veas el mensaje)
+            const whatsappWindow = window.open(`https://wa.me/543413632329?text=${encodeURIComponent(_waMsg)}`, '_blank');
+            
+            // Mostrar mensaje claro al usuario
+            if (whatsappWindow) {
+                displayMessage('📱 Se abrió WhatsApp para notificar a la organización. Por favor enviá el mensaje.', 'success');
+            } else {
+                displayMessage('⚠️ Bloqueador de ventanas detectado. Habilitá las ventanas emergentes y volvé a intentar.', 'error');
+                return;
+            }
 
             try {
                 displayMessage('⏳ Subiendo comprobante...', 'info');
