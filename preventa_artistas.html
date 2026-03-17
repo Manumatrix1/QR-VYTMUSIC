@@ -579,13 +579,60 @@
             
             // mostrar mensaje según resultado
             if (paymentStatus === 'success') {
-                displayMessage('✅ ¡Pago exitoso! Verificando con Mercado Pago...', 'success');
+                displayMessage('✅ ¡Pago exitoso! Verificando estado de tu orden...', 'success');
                 currentOrderId = returnedOrderId;
                 
-                // Esperar a que el webhook actualice la orden
-                setTimeout(() => {
-                    location.reload(); // Recargar para ver estado actualizado
-                }, 3000);
+                // Verificar el estado real de la orden en Firebase
+                setTimeout(async () => {
+                    try {
+                        const orderRef = doc(db, `ticket_orders_${eventId}`, returnedOrderId);
+                        const orderSnap = await getDoc(orderRef);
+                        
+                        if (orderSnap.exists()) {
+                            const orderData = orderSnap.data();
+                            const status = orderData.status;
+                            
+                            console.log('📦 Estado de la orden:', status);
+                            
+                            if (status === 'approved') {
+                                displayMessage('✅ ¡Pago confirmado! Continuando con el proceso...', 'success');
+                                
+                                // Ocultar secciones de solicitud y pago
+                                document.getElementById('section-request').classList.add('hidden');
+                                document.getElementById('section-payment').classList.add('hidden');
+                                
+                                // Verificar si ya tiene nombres cargados
+                                if (orderData.attendeeNames && orderData.attendeeNames.length === orderData.quantity) {
+                                    // Ya tiene nombres, ir directo a selección de artista
+                                    window.attendeeNames = orderData.attendeeNames;
+                                    updateSteps(5);
+                                    document.getElementById('section-select-artist').classList.remove('hidden');
+                                    loadGalaDataAndArtists();
+                                } else {
+                                    // Mostrar sección de nombres
+                                    document.getElementById('section-names').classList.remove('hidden');
+                                    document.getElementById('names-total').textContent = orderData.quantity;
+                                    document.getElementById('btn-total').textContent = orderData.quantity;
+                                    updateSteps(4);
+                                    generateNameInputs(orderData.quantity);
+                                }
+                            } else {
+                                // Si aún está pendiente, mostrar la sección de espera
+                                displayMessage('⏳ Tu pago está siendo verificado...', 'info');
+                                document.getElementById('section-request').classList.add('hidden');
+                                document.getElementById('section-payment').classList.add('hidden');
+                                document.getElementById('section-pending').classList.remove('hidden');
+                                updateSteps(3);
+                                startOrderListener(); // Escuchar cambios en tiempo real
+                            }
+                        } else {
+                            displayMessage('❌ No se encontró la orden. Por favor contacta al soporte.', 'error');
+                        }
+                    } catch (error) {
+                        console.error('Error verificando orden:', error);
+                        displayMessage('❌ Error verificando el estado. Recarga la página.', 'error');
+                    }
+                }, 2000);
             } else if (paymentStatus === 'failure') {
                 displayMessage('❌ El pago no se pudo completar. Intenta nuevamente.', 'error');
             } else if (paymentStatus === 'pending') {

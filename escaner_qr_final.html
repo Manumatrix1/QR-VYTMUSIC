@@ -365,6 +365,17 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
+            transition: all 0.3s ease;
+        }
+
+        .entry-item:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+
+        .entry-item.entered {
+            opacity: 0.6;
+            background: rgba(220, 252, 231, 0.9);
         }
 
         .entry-info {
@@ -411,14 +422,30 @@
         }
 
         .btn-small {
-            padding: 8px 12px;
-            font-size: 0.8rem;
-            border-radius: 6px;
+            padding: 12px 24px;
+            font-size: 1rem;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border: none;
+            min-width: 130px;
         }
 
         .btn-success {
-            background: #10b981;
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
             color: white;
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
+        }
+
+        .btn-success:hover {
+            background: linear-gradient(135deg, #059669 0%, #047857 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(16, 185, 129, 0.5);
+        }
+
+        .btn-success:active {
+            transform: translateY(0);
         }
 
         /* RESULTADO DEL ESCANEO */
@@ -612,6 +639,17 @@
             </div>
         </div>
 
+        <!-- PANEL DE DEBUGGING VISIBLE (para móvil sin F12) -->
+        <div class="debug-panel" id="debug-panel" style="display: none;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <h4 style="margin: 0;">🔍 Info de Debugging</h4>
+                <button onclick="document.getElementById('debug-panel').style.display='none'" style="background: #ef4444; color: white; border: none; padding: 5px 10px; border-radius: 5px; font-size: 0.8rem; cursor: pointer;">
+                    ✖ Cerrar
+                </button>
+            </div>
+            <div id="debug-logs" style="font-size: 0.75rem;"></div>
+        </div>
+
         <!-- ESTADÍSTICAS PEQUEÑAS -->
         <div class="stats-mini">
             <div class="stat-mini">
@@ -647,7 +685,10 @@
         <!-- FILTRO POR ARTISTA -->
         <div class="artist-filter">
             <input type="text" id="artist-filter" class="filter-input" 
-                   placeholder="🔍 Buscar por artista o invitado (ej: Emilia mostrará todos sus invitados)">
+                   placeholder="🎤 Buscar por ARTISTA para ver todos sus invitados (ej: escribir 'Emilia' muestra todos los invitados de Emilia)">
+            <div id="filter-results-info" style="margin-top: 8px; font-size: 0.9rem; color: rgba(255,255,255,0.8); text-align: center;">
+                💡 Tip: Busca por nombre del artista para ingresar a todos sus invitados rápidamente
+            </div>
         </div>
 
         <!-- LISTA DE ENTRADAS DE LA GALA -->
@@ -687,7 +728,48 @@
                     pending: 0
                 };
                 
+                // Debug logs visibles
+                this.debugLogs = [];
+                
                 this.init();
+            }
+
+            // FUNCIONES DE DEBUGGING VISIBLE
+            showDebugPanel() {
+                const panel = document.getElementById('debug-panel');
+                if (panel) {
+                    panel.style.display = 'block';
+                }
+            }
+
+            addDebugLog(message, type = 'info') {
+                console.log(`[${type}] ${message}`);
+                
+                // Mostrar panel automáticamente
+                this.showDebugPanel();
+                
+                const logsContainer = document.getElementById('debug-logs');
+                if (!logsContainer) return;
+                
+                const timestamp = new Date().toLocaleTimeString('es-AR', { 
+                    hour: '2-digit', 
+                    minute: '2-digit', 
+                    second: '2-digit' 
+                });
+                
+                const logEntry = document.createElement('div');
+                logEntry.className = `debug-log ${type}`;
+                logEntry.innerHTML = `<strong>${timestamp}</strong> - ${message}`;
+                
+                logsContainer.insertBefore(logEntry, logsContainer.firstChild);
+                
+                // Mantener solo últimos 20 logs
+                while (logsContainer.childElementCount > 20) {
+                    logsContainer.removeChild(logsContainer.lastChild);
+                }
+                
+                // Auto-scroll
+                logsContainer.scrollTop = 0;
             }
 
             async init() {
@@ -859,6 +941,9 @@
                 console.log('🔗 Estado conexión:', this.isOnline);
                 console.log('🔥 Firebase DB:', !!this.db);
                 
+                this.addDebugLog(`🎯 EventId: ${this.eventId}`, 'info');
+                this.addDebugLog(`🔗 Conexión: ${this.isOnline ? 'Online ✅' : 'Offline ❌'}`, this.isOnline ? 'success' : 'error');
+                
                 try {
                     this.galaEntries = [];
                     this.artists = []; // Limpiar artistas
@@ -948,6 +1033,8 @@
 
                         console.log(`✅ Cargadas ${this.galaEntries.length} entradas REALES`);
                         console.log('📊 Primeras 3 entradas:', this.galaEntries.slice(0, 3));
+                        
+                        this.addDebugLog(`✅ Cargadas ${this.galaEntries.length} entradas desde Firebase`, 'success');
                     } else {
                         console.log('❌ Sin conexión - usando datos de ejemplo');
                         this.galaEntries = this.createSampleEntries();
@@ -962,6 +1049,7 @@
                 } catch (error) {
                     console.error('❌ Error cargando entradas reales:', error);
                     console.log('🔄 Intentando con datos de ejemplo...');
+                    this.addDebugLog(`❌ Error cargando entradas: ${error.message}`, 'error');
                     this.galaEntries = this.createSampleEntries();
                     this.filteredEntries = [...this.galaEntries];
                     this.updateStats();
@@ -1008,6 +1096,17 @@
 
                 try {
                     console.log('📷 Iniciando escáner...', { fullscreen });
+                    console.log('📊 Entradas disponibles para escanear:', this.galaEntries.length);
+                    console.log('🎯 EventId actual:', this.eventId);
+                    
+                    if (this.galaEntries.length === 0) {
+                        this.addDebugLog('⚠️ NO HAY ENTRADAS CARGADAS', 'error');
+                        this.showScanResult('⚠️ No hay entradas cargadas. Recarga la página.', 'error');
+                        return;
+                    }
+                    
+                    this.addDebugLog(`📷 Iniciando escáner (${this.galaEntries.length} entradas listas)`, 'info');
+                    
                     this.isScanning = true;
                     this.isFullscreen = fullscreen;
                     
@@ -1023,6 +1122,7 @@
                         // CONFIGURACIÓN SIMPLE Y ESTABLE
                         rememberLastUsedCamera: true,
                         showTorchButtonIfSupported: true
+                        // ✅ Por defecto soporta QR y códigos de barras
                     };
 
                     // CONFIGURACIÓN SIMPLE DE CÁMARA
@@ -1120,22 +1220,55 @@
             }
 
             async onScanSuccess(decodedText) {
-                console.log('📱 QR escaneado:', decodedText);
+                console.log('📱 QR/Barcode escaneado:', decodedText);
                 console.log('🔍 Buscando en', this.galaEntries.length, 'entradas reales...');
+                
+                // DEBUG VISIBLE: Mostrar código escaneado
+                this.addDebugLog(`📱 Código escaneado: ${decodedText.substring(0, 50)}...`, 'info');
                 
                 // REPRODUCIR SONIDO DE LECTURA
                 this.playBeepSound();
                 
                 try {
+                    // ✅ EXTRAER TICKET ID de URLs o usar el código directo
+                    let ticketId = decodedText;
+                    
+                    // Si es una URL, extraer el parámetro ticket
+                    if (decodedText.includes('escaner_qr_final.html') || decodedText.includes('?ticket=')) {
+                        const urlParams = new URLSearchParams(decodedText.split('?')[1]);
+                        const extractedId = urlParams.get('ticket');
+                        if (extractedId) {
+                            ticketId = extractedId;
+                            console.log('🔑 ID extraído de URL:', ticketId);
+                            this.addDebugLog(`🔑 ID extraído: ${ticketId}`, 'success');
+                        }
+                    } else if (decodedText.includes('http')) {
+                        // Intentar extraer de cualquier URL con parámetro ticket
+                        try {
+                            const url = new URL(decodedText);
+                            const extractedId = url.searchParams.get('ticket');
+                            if (extractedId) {
+                                ticketId = extractedId;
+                                console.log('🔑 ID extraído de URL completa:', ticketId);
+                            }
+                        } catch (e) {
+                            console.log('⚠️ URL inválida, usando código directo');
+                        }
+                    }
+                    
+                    console.log('🎯 Buscando ticketId:', ticketId);
+                    
                     // Buscar con múltiples criterios para mayor compatibilidad
                     const entry = this.galaEntries.find(e => {
                         const matches = [
+                            e.id === ticketId,
+                            e.ticketId === ticketId,
+                            e.qrCode === ticketId,
                             e.qrCode === decodedText,
                             e.id === decodedText,
-                            e.ticketId === decodedText,
                             // Búsqueda parcial para códigos que contengan el texto
-                            decodedText.includes(e.id),
-                            e.qrCode && decodedText.includes(e.qrCode)
+                            ticketId.includes(e.id),
+                            e.id && ticketId.includes(e.id)
                         ];
                         return matches.some(match => match);
                     });
@@ -1149,27 +1282,31 @@
 
                     if (!entry) {
                         this.playErrorSound();
-                        this.showScanResult(`❌ Código QR no encontrado en las ${this.galaEntries.length} entradas`, 'error');
-                        console.log('🔍 Código buscado:', decodedText);
-                        console.log('📋 Primeras 3 entradas disponibles:', this.galaEntries.slice(0, 3).map(e => ({
-                            id: e.id,
-                            qrCode: e.qrCode,
-                            name: e.guestName
-                        })));
+                        this.addDebugLog(`❌ Entrada NO ENCONTRADA para: ${ticketId}`, 'error');
+                        this.addDebugLog(`📊 Sistema tiene ${this.galaEntries.length} entradas`, 'warning');
+                        this.showScanResult(`❌ Entrada no encontrada (${this.galaEntries.length} entradas en el sistema)`, 'error');
+                        console.log('🔍 TicketId buscado:', ticketId);
+                        console.log('🔍 Código original:', decodedText);
+                        console.log('📋 Ejemplo de IDs en sistema:', this.galaEntries.slice(0, 3).map(e => e.id));
                         return;
                     }
 
                     if (entry.status === 'entered') {
                         this.playErrorSound();
-                        this.showScanResult(`❌ ${entry.guestName} ya ingresó anteriormente`, 'error');
+                        this.addDebugLog(`⚠️ ${entry.guestName} ya ingresó antes`, 'warning');
+                        this.showScanResult(`⚠️ ${entry.guestName} ya ingresó anteriormente`, 'error');
                         return;
                     }
 
+                    // ENCONTRADA Y VÁLIDA
+                    this.addDebugLog(`✅ ENCONTRADO: ${entry.guestName} (${entry.artistName})`, 'success');
+                    
                     // PARAR EL ESCÁNER Y MOSTRAR BOTÓN DE VALIDACIÓN
                     await this.pauseScannerForValidation(entry);
 
                 } catch (error) {
                     console.error('❌ Error procesando QR:', error);
+                    this.addDebugLog(`❌ Error al procesar: ${error.message}`, 'error');
                     this.playErrorSound();
                     this.showScanResult('❌ Error al procesar el código', 'error');
                 }
@@ -1436,7 +1573,26 @@
                                selectedArtist.includes(searchTerm);
                     });
                     
+                    // ✅ ORDENAR: Primero pendientes, luego por artista, luego ingresados
+                    this.filteredEntries.sort((a, b) => {
+                        // Primero por estado (pendientes primero)
+                        if (a.status !== b.status) {
+                            return a.status === 'pending' ? -1 : 1;
+                        }
+                        // Luego por artista
+                        const artistA = (a.artistName || a.artist || '').toLowerCase();
+                        const artistB = (b.artistName || b.artist || '').toLowerCase();
+                        return artistA.localeCompare(artistB);
+                    });
+                    
                     console.log(`🔍 Búsqueda "${query}": ${this.filteredEntries.length} resultados encontrados`);
+                    
+                    // Actualizar info de resultados
+                    const resultInfo = document.getElementById('filter-results-info');
+                    if (resultInfo) {
+                        const pendingCount = this.filteredEntries.filter(e => e.status === 'pending').length;
+                        resultInfo.textContent = `🎯 ${this.filteredEntries.length} invitados encontrados (${pendingCount} pendientes de ingresar)`;
+                    }
                 }
                 this.displayEntries();
             }
@@ -1459,37 +1615,77 @@
                                      entry.selectedArtist ||
                                      'Sin artista';
                     
+                    const isEntered = entry.status === 'entered';
+                    
                     return `
-                        <div class="entry-item" style="background: rgba(255,255,255,0.9); border: 1px solid #e5e7eb; border-radius: 8px; margin-bottom: 8px; padding: 12px;">
-                            <div class="entry-info">
-                                <div class="entry-name" style="color: #1f2937; font-weight: bold; font-size: 18px;">${entry.guestName || entry.name || 'Sin nombre'}</div>
-                                <div class="entry-details" style="margin-top: 4px;">
-                                    <div style="color: #3b82f6; font-size: 14px; font-weight: 500;">🎤 ${artistName}</div>
-                                    ${entry.phone ? `<div style="color: #6b7280; font-size: 12px;">📱 ${entry.phone}</div>` : ''}
-                                    ${entry.accessTime ? `<div style="color: #10b981; font-size: 12px;">✅ ${new Date(entry.accessTime).toLocaleTimeString('es-ES')}</div>` : ''}
+                        <div class="entry-item ${isEntered ? 'entered' : ''}" style="background: ${isEntered ? 'rgba(220, 252, 231, 0.9)' : 'rgba(255,255,255,0.9)'}; border: ${isEntered ? '2px solid #10b981' : '2px solid #e5e7eb'}; border-radius: 12px; margin-bottom: 12px; padding: 16px; display: flex; align-items: center; justify-content: space-between; gap: 15px;">
+                            <div class="entry-info" style="flex: 1;">
+                                <div class="entry-name" style="color: #1f2937; font-weight: bold; font-size: 1.1rem; margin-bottom: 6px;">
+                                    ${isEntered ? '✅ ' : '👤 '}${entry.guestName || entry.name || 'Sin nombre'}
+                                </div>
+                                <div class="entry-details">
+                                    <div style="color: #3b82f6; font-size: 0.95rem; font-weight: 600; margin-bottom: 2px;">🎤 ${artistName}</div>
+                                    ${entry.phone ? `<div style="color: #6b7280; font-size: 0.85rem;">📱 ${entry.phone}</div>` : ''}
+                                    ${entry.accessTime ? `<div style="color: #10b981; font-size: 0.85rem;">✅ Ingresó: ${new Date(entry.accessTime).toLocaleTimeString('es-ES', {hour: '2-digit', minute: '2-digit'})}</div>` : ''}
                                 </div>
                             </div>
-                            <div class="entry-actions">
-                                <span class="status-badge status-${entry.status}" style="background: ${entry.status === 'entered' ? '#dc2626' : '#16a34a'}; color: white; font-size: 12px; padding: 4px 8px; border-radius: 4px;">
-                                    ${entry.status === 'entered' ? 'Ya Ingresó' : 'Pendiente'}
-                                </span>
-                                ${entry.status === 'pending' ? `
-                                    <button class="btn btn-small btn-success" onclick="scanner.allowManualAccess('${entry.id}')" style="background: #3b82f6; color: white; font-size: 12px; margin-top: 4px; padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer;">
-                                        ✅ Permitir
+                            <div class="entry-actions" style="display: flex; align-items: center; gap: 10px;">
+                                ${!isEntered ? `
+                                    <button class="btn btn-small btn-success" onclick="scanner.allowManualAccessQuick('${entry.id}')" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; font-size: 1rem; padding: 14px 28px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4); transition: all 0.2s ease; min-width: 140px;" onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 16px rgba(16, 185, 129, 0.5)'" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 12px rgba(16, 185, 129, 0.4)'">
+                                        ✅ INGRESAR
                                     </button>
-                                ` : ''}
+                                ` : `
+                                    <div style="background: #10b981; color: white; padding: 10px 20px; border-radius: 8px; font-weight: bold; font-size: 0.95rem;">
+                                        ✓ YA INGRESÓ
+                                    </div>
+                                `}
                             </div>
                         </div>
                     `;
                 }).join('');
             }
 
-            async allowManualAccess(entryId) {
+            async allowManualAccessQuick(entryId) {
                 const entry = this.galaEntries.find(e => e.id === entryId);
                 if (!entry || entry.status === 'entered') return;
 
+                // Registrar el acceso
                 await this.recordAccess(entry);
-                this.showScanResult(`✅ Acceso manual autorizado: ${entry.guestName}`, 'success');
+                
+                // Mostrar mensaje breve
+                this.showScanResult(`✅ ${entry.guestName} ingresado correctamente`, 'success');
+                
+                // 🔄 SONIDO de confirmación (opcional)
+                try {
+                    // Beep rápido
+                    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    const oscillator = audioContext.createOscillator();
+                    const gainNode = audioContext.createGain();
+                    
+                    oscillator.connect(gainNode);
+                    gainNode.connect(audioContext.destination);
+                    
+                    oscillator.frequency.value = 800;
+                    oscillator.type = 'sine';
+                    
+                    gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+                    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+                    
+                    oscillator.start(audioContext.currentTime);
+                    oscillator.stop(audioContext.currentTime + 0.1);
+                } catch (e) {
+                    // Navegador no soporta audio, ignorar
+                }
+                
+                // ✅ Mantener el scroll en la misma posición
+                const container = document.getElementById('entries-list');
+                const scrollPos = container.scrollTop;
+                
+                // Actualizar la vista después de un pequeño delay para que se vea la animación
+                setTimeout(() => {
+                    this.displayEntries();
+                    container.scrollTop = scrollPos;
+                }, 100);
             }
 
             updateStats() {

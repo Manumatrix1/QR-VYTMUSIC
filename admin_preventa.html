@@ -43,6 +43,46 @@
             </div>
         </div>
 
+        <!-- Panel Fecha Límite Preventa -->
+        <div class="bg-gray-800/60 border-2 border-orange-500/50 rounded-xl p-5 mb-6">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                    <h2 class="text-lg font-bold text-orange-400 flex items-center gap-2">
+                        🗓️ Fecha y Hora Límite de Anticipadas
+                    </h2>
+                    <p class="text-sm text-gray-400 mt-1" id="deadline-status-line">
+                        Actual: <span id="current-deadline-display" class="text-white font-semibold">Cargando...</span>
+                    </p>
+                    <p id="deadline-expired-warning" class="hidden text-xs text-red-400 font-bold mt-1">⚠️ Esta fecha ya expiró — cambiala a una fecha futura y guardá</p>
+                </div>
+                <div class="flex flex-wrap items-end gap-3">
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">Nueva fecha límite</label>
+                        <input type="datetime-local" id="deadline-datetime-input"
+                            class="p-2 rounded-lg bg-gray-700 border border-gray-600 text-white focus:border-orange-500 focus:outline-none text-sm">
+                    </div>
+                    <button id="save-deadline-btn"
+                        class="px-5 py-2 bg-orange-600 hover:bg-orange-700 text-white font-bold rounded-lg transition-all text-sm">
+                        💾 Guardar
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Panel: Artistas y Estado de Entradas Anticipadas (acordeón) -->
+        <div class="bg-gray-800/60 border-2 border-sky-500/40 rounded-xl mb-6 overflow-hidden">
+            <button id="artists-panel-toggle" onclick="toggleArtistsPanel()"
+                    class="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-gray-700/40 transition-colors">
+                <span class="text-lg font-bold text-sky-400">🎤 Artistas — Estado de Entradas Anticipadas</span>
+                <span id="artists-panel-arrow" class="text-sky-400 text-xl transition-transform duration-200">▼</span>
+            </button>
+            <div id="artists-summary-panel" class="hidden px-5 pb-5 pt-1">
+                <div id="artists-summary-list" class="space-y-2">
+                    <p class="text-gray-500 text-sm">Cargando artistas...</p>
+                </div>
+            </div>
+        </div>
+
         <!-- Filters -->
         <div class="bg-gray-800/50 rounded-xl p-4 mb-6 flex flex-wrap gap-3 items-center justify-between">
             <div class="flex flex-wrap gap-3">
@@ -78,6 +118,26 @@
         </div>
     </div>
 
+    <!-- Modal deadline artista (preventa) -->
+    <div id="dl-artist-modal" class="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50 hidden p-4" onclick="if(event.target===this)closeArtistDeadlineModal()">
+        <div class="bg-gray-800 rounded-2xl max-w-md w-full p-6 relative">
+            <h2 class="text-xl font-bold mb-1 text-sky-400">⏰ Deadline de Entradas Anticipadas</h2>
+            <p id="dl-artist-name" class="text-white font-semibold text-base mb-4"></p>
+            <div class="bg-gray-700/60 rounded-lg p-3 mb-4 text-sm flex items-center gap-2">
+                <span class="text-gray-400">Deadline global del evento:</span>
+                <span id="dl-global-display" class="text-white font-bold"></span>
+            </div>
+            <label class="block text-gray-300 text-sm mb-1 font-semibold">Deadline propio para este artista <span class="text-gray-500 font-normal">(opcional)</span></label>
+            <input type="datetime-local" id="dl-override-input" class="w-full p-2 rounded-lg border border-gray-600 bg-gray-900 text-white mb-2">
+            <p class="text-gray-500 text-xs mb-5">Si definís una fecha propia para este artista, tendrá su propio plazo independiente del global. Útil para artistas invitados que pagan entradas más adelante.</p>
+            <div class="flex flex-col gap-2">
+                <button onclick="saveArtistDeadline()" class="px-4 py-3 bg-sky-600 hover:bg-sky-700 text-white font-bold rounded-lg">💾 Guardar deadline propio</button>
+                <button id="dl-clear-btn" onclick="clearArtistDeadline()" class="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-white text-sm rounded-lg">↩️ Volver al deadline global (quitar el propio)</button>
+                <button onclick="closeArtistDeadlineModal()" class="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-400 text-sm rounded-lg">Cancelar</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Modal Ver Comprobante -->
     <div id="proof-modal" class="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50 hidden p-4">
         <div class="bg-gray-800 rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto p-6 relative">
@@ -91,9 +151,36 @@
         </div>
     </div>
 
+    <!-- Modal Seleccionar Artista para Aprobación -->
+    <div id="approve-modal" class="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50 hidden p-4">
+        <div class="bg-gray-800 rounded-2xl max-w-lg w-full p-8 relative">
+            <button onclick="closeApproveModal()" class="absolute top-4 right-4 text-white text-3xl hover:text-gray-300">×</button>
+            <h2 class="text-2xl font-bold mb-2">✅ Aprobar Pago</h2>
+            <p class="text-gray-400 mb-6 text-sm">Seleccioná el perfil artístico para vincular a las entradas.</p>
+            <div id="approve-order-info" class="bg-gray-700/50 rounded-xl p-4 mb-5 text-sm space-y-1"></div>
+            <label class="block font-semibold mb-2">Perfil artístico del artista:</label>
+            <select id="approve-artist-select" class="w-full p-4 rounded-lg bg-gray-700 border-2 border-gray-600 focus:border-purple-500 focus:outline-none text-white text-lg mb-6">
+                <option value="">-- Cargando artistas... --</option>
+            </select>
+            <button id="approve-confirm-btn" class="w-full bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white font-bold py-4 rounded-xl text-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+                ✅ Aprobar y Generar QRs
+            </button>
+        </div>
+    </div>
+
     <script type="module">
         import { db, auth } from './firebase_config.js';
-        import { getFirestore, collection, getDocs, doc, updateDoc, deleteDoc, writeBatch, query, where, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, collection, getDocs, doc, getDoc, getDocFromServer, setDoc, addDoc, updateDoc, deleteDoc, writeBatch, query, where, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+
+        // ── PROTECCIÓN: solo admin puede entrar ──
+        onAuthStateChanged(auth, (user) => {
+            if (!user) {
+                // Guardar URL actual para volver después del login
+                sessionStorage.setItem('adminReturnUrl', window.location.href);
+                window.location.href = 'index.html';
+            }
+        });
 
         // Get event info
         const params = new URLSearchParams(window.location.search);
@@ -103,14 +190,73 @@
         if (!eventId) {
             alert('❌ Error: No se especificó el evento');
             window.location.href = 'eventos.html';
-            throw new Error('No eventId provided'); // Detener ejecución
+            throw new Error('No eventId provided');
         }
 
         document.getElementById('event-name').textContent = eventName;
         document.getElementById('back-btn').href = `panel_evento_SIMPLE.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`;
 
+        // ── DEADLINE PREVENTA ──
+        async function loadDeadline() {
+            try {
+                const evSnap = await getDocFromServer(doc(db, 'events', eventId));
+                const deadline = evSnap.exists() ? evSnap.data().ticketDeadline : null;
+                globalDeadline = deadline;
+                const display = document.getElementById('current-deadline-display');
+                if (deadline) {
+                    const d = new Date(deadline);
+                    const isExpired = d < new Date();
+                    display.textContent = d.toLocaleString('es-AR', { dateStyle: 'full', timeStyle: 'short' });
+                    // Pre-llenar el input datetime-local en hora local
+                    const localISO = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().substring(0, 16);
+                    document.getElementById('deadline-datetime-input').value = localISO;
+                    // Advertencia si ya expiró
+                    const warn = document.getElementById('deadline-expired-warning');
+                    if (isExpired) warn.classList.remove('hidden');
+                    else warn.classList.add('hidden');
+                } else {
+                    display.textContent = 'Sin configurar';
+                }
+            } catch(e) { console.warn('Error cargando deadline:', e); }
+        }
+
+        document.getElementById('save-deadline-btn').addEventListener('click', async () => {
+            const datetimeVal = document.getElementById('deadline-datetime-input').value;
+            if (!datetimeVal) {
+                alert('⚠️ Seleccioná una fecha y hora antes de guardar.');
+                return;
+            }
+            const newDeadline = new Date(datetimeVal).toISOString();
+            if (new Date(newDeadline) <= new Date()) {
+                if (!confirm('⚠️ La fecha elegida ya pasó. ¿Querés guardarla igual?')) return;
+            }
+            const btn = document.getElementById('save-deadline-btn');
+            btn.disabled = true;
+            btn.textContent = '⏳ Guardando...';
+            try {
+                await setDoc(doc(db, 'events', eventId), { ticketDeadline: newDeadline }, { merge: true });
+                // Verificar que se guardó leyendo de vuelta del servidor
+                const check = await getDocFromServer(doc(db, 'events', eventId));
+                const saved = check.data()?.ticketDeadline;
+                if (saved === newDeadline) {
+                    await loadDeadline();
+                    alert('✅ Guardado correctamente! Nueva fecha: ' + new Date(saved).toLocaleString('es-AR'));
+                } else {
+                    alert('⚠️ No se confirmó el guardado. Intentá de nuevo.');
+                }
+            } catch(e) {
+                console.error('Error guardando deadline:', e);
+                alert('❌ Error al guardar: ' + e.message);
+            }
+            btn.disabled = false;
+            btn.textContent = '💾 Guardar';
+        });
+
         let allOrders = [];
         let currentFilter = 'all';
+        let allArtists = [];
+        let deadlineArtistIdAP = null;
+        let globalDeadline = null;
 
         // Cargar órdenes
         async function loadOrders() {
@@ -130,6 +276,7 @@
 
                 updateStats();
                 renderOrders();
+                renderArtistsSummary();
             } catch (error) {
                 console.error('Error cargando órdenes:', error);
                 document.getElementById('orders-container').innerHTML = `
@@ -141,15 +288,39 @@
         }
 
         // Actualizar estadísticas
-        function updateStats() {
+        async function updateStats() {
             const pending = allOrders.filter(o => o.status === 'payment_uploaded').length;
             const approved = allOrders.filter(o => o.status === 'approved' || o.status === 'tickets_generated').length;
-            const totalTickets = allOrders
+            
+            // Sumar tickets de órdenes aprobadas
+            const ticketsFromOrders = allOrders
                 .filter(o => o.status !== 'rejected')
                 .reduce((sum, o) => sum + (o.quantity || 0), 0);
-            const totalMoney = allOrders
+            
+            // Sumar dinero de órdenes aprobadas
+            const moneyFromOrders = allOrders
                 .filter(o => o.status === 'approved' || o.status === 'tickets_generated')
                 .reduce((sum, o) => sum + (o.totalAmount || 0), 0);
+
+            // Cargar entradas generadas manualmente (sin orden vinculada)
+            let manualTicketsCount = 0;
+            let manualTicketsMoney = 0;
+            try {
+                const ticketsSnap = await getDocs(collection(db, `events/${eventId}/tickets`));
+                ticketsSnap.forEach(doc => {
+                    const ticket = doc.data();
+                    // Contar tickets que NO tienen orderId (generados manualmente)
+                    if (!ticket.orderId) {
+                        manualTicketsCount++;
+                        manualTicketsMoney += (ticket.price || 0);
+                    }
+                });
+            } catch(e) {
+                console.warn('Error cargando tickets manuales:', e);
+            }
+
+            const totalTickets = ticketsFromOrders + manualTicketsCount;
+            const totalMoney = moneyFromOrders + manualTicketsMoney;
 
             document.getElementById('stat-pending').textContent = pending;
             document.getElementById('stat-approved').textContent = approved;
@@ -202,14 +373,16 @@
                             </div>
                         </div>
 
-                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-4">
                             <div>
                                 <p class="text-sm text-gray-400">Email</p>
-                                <p class="font-semibold">${order.artistEmail}</p>
+                                <p class="font-semibold break-all">${order.artistEmail}</p>
                             </div>
                             <div>
-                                <p class="text-sm text-gray-400">Teléfono</p>
-                                <p class="font-semibold">${order.artistPhone || 'N/A'}</p>
+                                <p class="text-sm text-gray-400">Teléfono (WhatsApp)</p>
+                                <p class="font-semibold">${order.artistPhone || 'N/A'}
+                                    ${order.artistPhone ? `<a href="https://wa.me/${(() => { let p = (order.artistPhone||'').replace(/\\D/g,''); return (!p.startsWith('54') && p.length >= 10 && p.length <= 11) ? '54' + p : p; })()}" target="_blank" class="ml-2 text-green-400 hover:text-green-300 text-sm">💬 Abrir WA</a>` : ''}
+                                </p>
                             </div>
                             <div>
                                 <p class="text-sm text-gray-400">Cantidad</p>
@@ -221,11 +394,17 @@
                             </div>
                         </div>
 
-                        ${order.status === 'payment_uploaded' ? `
-                            <div class="flex flex-wrap gap-3 mt-4">
-                                <button onclick="viewProof('${order.paymentProof}')" class="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition-all">
-                                    👁️ Ver Comprobante
+                        ${order.paymentProof ? `
+                            <div class="mt-3">
+                                <button onclick="viewProof('${order.paymentProof}')" class="w-full sm:w-auto px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition-all">
+                                    👁️ Ver Comprobante de Pago
                                 </button>
+                            </div>
+                        ` : ''}
+
+                        ${(order.status === 'payment_uploaded' || order.status === 'pending') ? `
+                            <div class="flex flex-wrap gap-3 mt-4">
+                                ${!order.paymentProof ? `<span class="px-4 py-3 bg-gray-700 text-gray-400 text-sm rounded-lg">Sin comprobante adjunto</span>` : ''}
                                 <button onclick="approveOrder('${order.id}')" class="px-6 py-3 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg transition-all">
                                     ✅ Aprobar Pago
                                 </button>
@@ -246,9 +425,18 @@
 
                         ${order.status === 'tickets_generated' ? `
                             <div class="bg-green-900/30 border border-green-500 rounded-lg p-4 mt-4">
-                                <p class="text-green-400 font-semibold">✅ QRs generados: ${order.ticketIds?.length || 0} entradas</p>
+                                <p class="text-green-400 font-semibold mb-3">✅ QRs generados: ${order.ticketIds?.length || 0} entradas</p>
+                                <button onclick="reenviarEntradas('${order.id}', '${order.artistPhone}', '${order.artistName}')" class="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition-all">
+                                    📲 Reenviar link de entradas por WhatsApp
+                                </button>
                             </div>
                         ` : ''}
+
+                        <div class="mt-4 flex justify-end">
+                            <button onclick="deleteOrder('${order.id}')" class="px-4 py-2 bg-gray-700 hover:bg-red-800 text-gray-300 hover:text-white text-sm font-semibold rounded-lg border border-gray-600 hover:border-red-600 transition-all">
+                                🗑️ Borrar orden
+                            </button>
+                        </div>
                     </div>
                 `;
             }).join('');
@@ -257,9 +445,32 @@
         // Ver comprobante
         window.viewProof = function(proofUrl) {
             const modal = document.getElementById('proof-modal');
-            const image = document.getElementById('proof-image');
+            const content = document.getElementById('proof-content');
             
-            image.src = proofUrl;
+            // Detectar si es PDF o imagen
+            const isPDF = proofUrl.toLowerCase().includes('.pdf') || proofUrl.includes('%2F.pdf') || proofUrl.includes('application%2Fpdf');
+            
+            if (isPDF) {
+                content.innerHTML = `
+                    <div class="space-y-4">
+                        <p class="text-gray-300 mb-4">📄 Archivo PDF detectado</p>
+                        <a href="${proofUrl}" target="_blank" rel="noopener noreferrer" 
+                           class="inline-block px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition">
+                            🔗 Abrir PDF en nueva pestaña
+                        </a>
+                        <iframe src="${proofUrl}" class="w-full h-[600px] rounded-lg border-2 border-gray-600 mt-4"></iframe>
+                    </div>
+                `;
+            } else {
+                content.innerHTML = `
+                    <img src="${proofUrl}" alt="Comprobante" class="max-w-full rounded-lg shadow-lg mx-auto">
+                    <a href="${proofUrl}" target="_blank" rel="noopener noreferrer" 
+                       class="inline-block mt-4 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition">
+                        🔗 Abrir en nueva pestaña
+                    </a>
+                `;
+            }
+            
             modal.classList.remove('hidden');
         };
 
@@ -268,26 +479,198 @@
         };
 
         // Aprobar orden
+        // Cerrar modal aprobar
+        window.closeApproveModal = function() {
+            document.getElementById('approve-modal').classList.add('hidden');
+        };
+
+        // Variable para guardar la orden que se está aprobando
+        let pendingApproveOrderId = null;
+
         window.approveOrder = async function(orderId) {
-            if (!confirm('¿Confirmar que el pago fue recibido?')) return;
+            const order = allOrders.find(o => o.id === orderId);
+            if (!order) return;
+            pendingApproveOrderId = orderId;
+
+            // Mostrar datos de la orden en el modal
+            document.getElementById('approve-order-info').innerHTML = `
+                <p>👤 <strong>Artista:</strong> ${order.artistName}</p>
+                <p>👥 <strong>Invitados:</strong> ${order.quantity} entradas</p>
+                <p>💰 <strong>Monto:</strong> $${parseInt(order.totalAmount).toLocaleString()}</p>
+                <p>📱 <strong>Tel:</strong> ${order.artistPhone || 'sin teléfono'}</p>
+            `;
+
+            // Cargar artistas del evento para el selector
+            const select = document.getElementById('approve-artist-select');
+            select.innerHTML = '<option value="">-- Seleccioná el perfil artístico --</option>';
+            try {
+                const artistsSnap = await getDocs(collection(db, `events/${eventId}/artists`));
+                artistsSnap.forEach(d => {
+                    const a = d.data();
+                    const opt = document.createElement('option');
+                    opt.value = d.id;
+                    opt.textContent = a.name || a.artistName || 'Sin nombre';
+                    opt.dataset.photo = a.photoURL || '';
+                    opt.dataset.name = a.name || a.artistName || '';
+                    select.appendChild(opt);
+                });
+            } catch(e) {
+                console.warn('Error cargando artistas:', e);
+            }
+
+            document.getElementById('approve-modal').classList.remove('hidden');
+        };
+
+        document.getElementById('approve-confirm-btn').addEventListener('click', async () => {
+            const select = document.getElementById('approve-artist-select');
+            const btn = document.getElementById('approve-confirm-btn');
+            const orderId = pendingApproveOrderId;
+            if (!orderId) return;
+
+            const order = allOrders.find(o => o.id === orderId);
+            if (!order) return;
+
+            // Artista seleccionado (puede ser vacío si no hay perfil)
+            const selectedOption = select.options[select.selectedIndex];
+            const artistId = selectedOption.value || '';
+            const artistName = selectedOption.dataset?.name || order.artistName || '';
+            const artistPhoto = selectedOption.dataset?.photo || '';
+
+            // ── WA al artista ANTES de los await (síncrono) ──
+            if (order.artistPhone) {
+                let _phone = order.artistPhone.replace(/\D/g, '');
+                
+                // ✅ NORMALIZAR: Agregar código 54 si falta (números argentinos de 10-11 dígitos)
+                if (!_phone.startsWith('54') && _phone.length >= 10 && _phone.length <= 11) {
+                    _phone = '54' + _phone;
+                }
+                
+                const _qrLink = `https://vyt-music.web.app/ver_entradas.html?orderId=${orderId}&eventId=${eventId}`;
+                
+                // 📋 Crear lista de invitados si existen nombres
+                const names = order.attendeeNames || [];
+                const namesList = names.length > 0 ? `\n\n👥 *Invitados (${names.length}):*\n${names.map(n => `• ${n}`).join('\n')}` : '';
+                
+                const _msg = `✅ *Tu pago fue aprobado*\n\n¡Tus entradas QR ya están listas!${namesList}\n\nEntrá desde este link para verlas y descargarlas:\n${_qrLink}\n\n🎤 VYT-MUSIC`;
+                window.open(`https://wa.me/${_phone}?text=${encodeURIComponent(_msg)}`, '_blank');
+            }
+
+            btn.disabled = true;
+            btn.textContent = '⏳ Generando QRs...';
 
             try {
                 const adminEmail = auth.currentUser?.email || 'admin';
-                
+
+                // Marcar como aprobada
                 await updateDoc(doc(db, `ticket_orders_${eventId}`, orderId), {
                     status: 'approved',
                     approvedAt: serverTimestamp(),
                     approvedBy: adminEmail
                 });
 
-                alert('✅ Orden aprobada exitosamente');
-                loadOrders();
+                // Generar tickets automáticamente con los nombres ya cargados
+                const names = order.attendeeNames || [];
+                let ticketIds = [];
 
-                // TODO: Enviar email al artista notificando aprobación
-                console.log('📧 Enviar email al artista:', orderId);
-            } catch (error) {
-                console.error('Error aprobando orden:', error);
+                if (names.length > 0) {
+                    // Obtener último número de ticket
+                    const ticketsSnap = await getDocs(collection(db, `events/${eventId}/tickets`));
+                    let maxNumber = 0;
+                    ticketsSnap.forEach(d => {
+                        const n = d.data().ticketNumber || 0;
+                        if (n > maxNumber) maxNumber = n;
+                    });
+
+                    // Cargar datos del evento (lugar, dirección)
+                    let eventData = {};
+                    try {
+                        const evSnap = await getDoc(doc(db, 'events', eventId));
+                        if (evSnap.exists()) eventData = evSnap.data();
+                    } catch(e) {}
+
+                    const batch = writeBatch(db);
+                    const prefix = `PREV_${orderId.substring(0, 8)}`.toUpperCase();
+
+                    for (let i = 0; i < names.length; i++) {
+                        const ticketId = `${eventId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                        const ticketNumber = maxNumber + i + 1;
+                        const ticketRef = doc(db, `events/${eventId}/tickets`, ticketId);
+                        batch.set(ticketRef, {
+                            id: ticketId,
+                            name: names[i],
+                            showName: eventName || eventData.name || 'VYT-MUSIC',
+                            showLocation: eventData.location || 'Por confirmar',
+                            showAddress: eventData.address || '',
+                            artistPhotoURL: artistPhoto,
+                            artistName: artistName,
+                            artistId: artistId,
+                            seatLocation: 'General',
+                            prefix: prefix,
+                            ticketNumber: ticketNumber,
+                            ticketNumberFormatted: ticketNumber.toString().padStart(4, '0'),
+                            used: false,
+                            paymentStatus: 'Paga',
+                            isDoorSale: false,
+                            createdAt: serverTimestamp(),
+                            createdBy: 'preventa',
+                            orderId: orderId,
+                            eventId: eventId
+                        });
+                        ticketIds.push(ticketId);
+                    }
+                    await batch.commit();
+
+                    // Actualizar orden a tickets_generated
+                    await updateDoc(doc(db, `ticket_orders_${eventId}`, orderId), {
+                        status: 'tickets_generated',
+                        ticketIds: ticketIds,
+                        generatedAt: serverTimestamp()
+                    });
+                }
+
+                closeApproveModal();
+                loadOrders();
+                if (!order.artistPhone) alert('✅ Orden aprobada y QRs generados.');
+
+            } catch(error) {
+                console.error('Error aprobando:', error);
                 alert('❌ Error al aprobar: ' + error.message);
+                btn.disabled = false;
+                btn.textContent = '✅ Aprobar y Generar QRs';
+            }
+        });
+
+        // Reenviar link de entradas
+        window.reenviarEntradas = async function(orderId, artistPhone, artistName) {
+            let phone = (artistPhone || '').replace(/\D/g, '');
+            
+            // ✅ NORMALIZAR: Agregar código 54 si falta (números argentinos)
+            if (!phone.startsWith('54') && phone.length >= 10 && phone.length <= 11) {
+                phone = '54' + phone;
+            }
+            
+            const qrLink = `https://vyt-music.web.app/ver_entradas.html?orderId=${orderId}&eventId=${eventId}`;
+            
+            // 📋 Obtener nombres de invitados de la orden
+            let namesList = '';
+            try {
+                const orderDoc = await getDoc(doc(db, `ticket_orders_${eventId}`, orderId));
+                if (orderDoc.exists()) {
+                    const names = orderDoc.data().attendeeNames || [];
+                    if (names.length > 0) {
+                        namesList = `\n\n👥 *Invitados (${names.length}):*\n${names.map(n => `• ${n}`).join('\n')}`;
+                    }
+                }
+            } catch(e) {
+                console.log('No se pudieron cargar los nombres');
+            }
+            
+            const msg = `✅ *Tus entradas QR - VYT MUSIC*\n\nHola ${artistName || ''}! Aquí está el link para ver y descargar tus entradas:${namesList}\n\n${qrLink}\n\n🎤 VYT-MUSIC`;
+            if (phone) {
+                window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank');
+            } else {
+                // Sin teléfono, mostrar el link para copiar
+                prompt('📋 Copiá este link y enviáselo al artista:', qrLink);
             }
         };
 
@@ -305,13 +688,151 @@
 
                 alert('❌ Orden rechazada');
                 loadOrders();
-
-                // TODO: Enviar email al artista notificando rechazo
-                console.log('📧 Enviar email de rechazo:', orderId);
             } catch (error) {
                 console.error('Error rechazando orden:', error);
                 alert('❌ Error al rechazar: ' + error.message);
             }
+        };
+
+        // Borrar orden
+        window.deleteOrder = async function(orderId) {
+            if (!confirm('⚠️ ¿Seguro que querés BORRAR esta orden? Esta acción no se puede deshacer.')) return;
+            try {
+                await deleteDoc(doc(db, `ticket_orders_${eventId}`, orderId));
+                loadOrders();
+            } catch (error) {
+                console.error('Error borrando orden:', error);
+                alert('❌ Error al borrar: ' + error.message);
+            }
+        };
+
+        // ── TOGGLE PANEL ARTISTAS ──
+        window.toggleArtistsPanel = function() {
+            const panel = document.getElementById('artists-summary-panel');
+            const arrow = document.getElementById('artists-panel-arrow');
+            const open  = panel.classList.toggle('hidden');
+            arrow.style.transform = open ? '' : 'rotate(180deg)';
+        };
+
+        // ── ARTISTAS + DEADLINE POR ARTISTA ──
+        let allTickets = [];
+
+        async function loadArtistsSummary() {
+            try {
+                const [artistsSnap, ticketsSnap] = await Promise.all([
+                    getDocs(collection(db, `events/${eventId}/artists`)),
+                    getDocs(collection(db, `events/${eventId}/tickets`))
+                ]);
+                allArtists = artistsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+                allTickets = ticketsSnap.docs.map(d => d.data());
+                renderArtistsSummary();
+            } catch(e) { console.warn('Error cargando artistas para resumen:', e); }
+        }
+
+        function getArtistDeadlineInfo(artist) {
+            const raw = artist.deadline_override || globalDeadline;
+            const custom = !!artist.deadline_override;
+            if (!raw) return { cls: 'none', label: '🕐 Sin fecha', custom };
+            const diff = new Date(raw).getTime() - Date.now();
+            const star = custom ? ' ★' : '';
+            if (diff <= 0) return { cls: 'exp', label: '🔴 Vencido' + star, custom };
+            const totalHours = diff / 3600000;
+            const days = Math.floor(totalHours / 24);
+            const hrs = Math.floor(totalHours % 24);
+            const timeStr = days > 0 ? `${days}d ${hrs}h` : `${Math.floor(totalHours)}h`;
+            if (totalHours <= 48) return { cls: 'warn', label: '⏰ ' + timeStr + star, custom };
+            return { cls: 'ok', label: '🟢 ' + timeStr + star, custom };
+        }
+
+        function renderArtistsSummary() {
+            const container = document.getElementById('artists-summary-list');
+            if (!container) return;
+            if (allArtists.length === 0) {
+                container.innerHTML = '<p class="text-gray-500 text-sm">No hay artistas cargados en este evento.</p>';
+                return;
+            }
+            container.innerHTML = allArtists.map(artist => {
+                // Tickets ya generados para este artista
+                const myTickets = allTickets.filter(t => t.artistId === artist.id);
+                const ticketCount = myTickets.length;
+
+                // Órdenes pendientes (aún no generaron tickets): normalizar nombre
+                const norm = s => (s || '').toLowerCase().trim();
+                const pendingOrders = allOrders.filter(o =>
+                    o.status === 'payment_uploaded' &&
+                    (norm(o.artistName) === norm(artist.name))
+                );
+                const pendingCount = pendingOrders.reduce((s, o) => s + (o.quantity || 0), 0);
+
+                const dlInfo = getArtistDeadlineInfo(artist);
+                const photoUrl = artist.photoURL || `https://placehold.co/40x40/1f2937/f9fafb?text=${encodeURIComponent((artist.name || 'A').charAt(0))}`;
+                let ticketHtml = '';
+                if (ticketCount) ticketHtml += `<span class="text-green-400">✅ ${ticketCount} entrada${ticketCount > 1 ? 's' : ''} generada${ticketCount > 1 ? 's' : ''}</span>`;
+                if (pendingCount) ticketHtml += `${ticketCount ? ' · ' : ''}<span class="text-yellow-400">⏳ ${pendingCount} pago pendiente${pendingCount > 1 ? 's' : ''}</span>`;
+                if (!ticketCount && !pendingCount) ticketHtml = '<span class="text-gray-500">Sin entradas anticipadas</span>';
+                return `
+                    <div class="flex items-center gap-3 p-3 bg-gray-700/40 rounded-lg">
+                        <img src="${photoUrl}" alt="${artist.name}" class="w-10 h-10 rounded-full object-cover border-2 border-sky-600 flex-shrink-0">
+                        <div class="flex-1 min-w-0">
+                            <p class="font-semibold text-sm truncate">${artist.name}</p>
+                            <p class="text-xs mt-0.5">${ticketHtml}</p>
+                        </div>
+                        <button onclick="openArtistDeadlineModal('${artist.id}')"
+                                class="dl-chip dl-chip-${dlInfo.cls}${dlInfo.custom ? ' dl-chip-custom' : ''} flex-shrink-0"
+                                title="${dlInfo.custom ? 'Deadline propio ★ (clic para editar)' : 'Deadline global del evento (clic para asignar uno propio)'}">
+                            ${dlInfo.label}
+                        </button>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        window.openArtistDeadlineModal = function(artistId) {
+            deadlineArtistIdAP = artistId;
+            const artist = allArtists.find(a => a.id === artistId);
+            document.getElementById('dl-artist-name').textContent = '🎤 ' + artist.name;
+            const glEl = document.getElementById('dl-global-display');
+            glEl.textContent = globalDeadline
+                ? new Date(globalDeadline).toLocaleString('es-AR', { dateStyle: 'medium', timeStyle: 'short' })
+                : 'No configurado — configúralo arriba primero';
+            const inputEl = document.getElementById('dl-override-input');
+            if (artist.deadline_override) {
+                const d = new Date(artist.deadline_override);
+                const pad = n => String(n).padStart(2, '0');
+                inputEl.value = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+            } else {
+                inputEl.value = '';
+            }
+            document.getElementById('dl-clear-btn').classList.toggle('hidden', !artist.deadline_override);
+            document.getElementById('dl-artist-modal').classList.remove('hidden');
+        };
+
+        window.closeArtistDeadlineModal = function() {
+            document.getElementById('dl-artist-modal').classList.add('hidden');
+            deadlineArtistIdAP = null;
+        };
+
+        window.saveArtistDeadline = async function() {
+            const inputEl = document.getElementById('dl-override-input');
+            if (!inputEl.value) { alert('⚠️ Seleccioná una fecha y hora para este artista'); return; }
+            const isoStr = new Date(inputEl.value).toISOString();
+            try {
+                await updateDoc(doc(db, `events/${eventId}/artists`, deadlineArtistIdAP), { deadline_override: isoStr });
+                const idx = allArtists.findIndex(a => a.id === deadlineArtistIdAP);
+                if (idx !== -1) allArtists[idx].deadline_override = isoStr;
+                closeArtistDeadlineModal();
+                renderArtistsSummary();
+            } catch(e) { alert('❌ Error al guardar: ' + e.message); }
+        };
+
+        window.clearArtistDeadline = async function() {
+            try {
+                await updateDoc(doc(db, `events/${eventId}/artists`, deadlineArtistIdAP), { deadline_override: null });
+                const idx = allArtists.findIndex(a => a.id === deadlineArtistIdAP);
+                if (idx !== -1) delete allArtists[idx].deadline_override;
+                closeArtistDeadlineModal();
+                renderArtistsSummary();
+            } catch(e) { alert('❌ Error: ' + e.message); }
         };
 
         // Filtros
@@ -402,12 +923,21 @@
 
         // Inicializar
         loadOrders();
+        loadDeadline();
+        loadArtistsSummary();
 
         // Auto-refresh cada 30 segundos
         setInterval(loadOrders, 30000);
     </script>
 
     <style>
+        .dl-chip { font-size: 0.72rem; padding: 0.2rem 0.6rem; border-radius: 9999px; cursor: pointer; white-space: nowrap; border: none; font-weight: 700; transition: opacity 0.15s; display: inline-flex; align-items: center; }
+        .dl-chip:hover { opacity: 0.75; }
+        .dl-chip-none { background: #374151; color: #9ca3af; }
+        .dl-chip-ok   { background: #064e3b; color: #6ee7b7; }
+        .dl-chip-warn { background: #78350f; color: #fde68a; }
+        .dl-chip-exp  { background: #7f1d1d; color: #fca5a5; }
+        .dl-chip-custom { outline: 1.5px solid rgba(255,255,255,0.3); }
         .filter-btn {
             background-color: rgba(75, 85, 99, 0.5);
         }

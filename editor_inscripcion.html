@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Editor de Página de Inscripción – VYT MUSIC</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background: #0f172a; color: #f1f5f9; }
+        .hidden { display: none !important; }
+        .card { background: #1e293b; border: 1px solid #334155; border-radius: 0.75rem; }
+        .section-card { background: #1e293b; border: 1px solid #334155; border-radius: 1rem; overflow: hidden; }
+        .section-header { background: #0f172a; border-bottom: 1px solid #334155; cursor: pointer; user-select: none; }
+        .section-header:hover { background: #1e293b; }
+        .form-label { display: block; font-size: 0.813rem; font-weight: 600; color: #94a3b8; margin-bottom: 0.375rem; }
+        .form-input { width: 100%; background: #0f172a; border: 1px solid #334155; color: #f1f5f9; border-radius: 0.5rem; padding: 0.625rem 0.875rem; font-size: 0.9rem; transition: border-color 0.2s; }
+        .form-input:focus { outline: none; border-color: #38bdf8; box-shadow: 0 0 0 2px rgba(56,189,248,0.15); }
+        .form-input::placeholder { color: #475569; }
+        .form-textarea { resize: vertical; min-height: 80px; }
+        .btn-save { background: linear-gradient(135deg, #0ea5e9, #6366f1); color: #fff; font-weight: 700; border-radius: 0.625rem; padding: 0.75rem 2rem; transition: box-shadow 0.2s, transform 0.2s; cursor: pointer; border: none; }
+        .btn-save:hover { box-shadow: 0 8px 25px rgba(14,165,233,0.4); transform: translateY(-1px); }
+        .btn-save:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+        .chevron { transition: transform 0.25s; }
+        .collapsed .chevron { transform: rotate(-90deg); }
+        .section-body { transition: all 0.25s; }
+        .pill-input-row { display: flex; gap: 0.5rem; align-items: center; }
+        .pill-delete { background: #7f1d1d; color: #fca5a5; border: none; border-radius: 0.375rem; padding: 0.375rem 0.625rem; cursor: pointer; font-size: 0.8rem; }
+        .pill-delete:hover { background: #991b1b; }
+        .btn-add-pill { background: #1e3a5f; color: #93c5fd; border: 1px solid #1e40af; border-radius: 0.5rem; padding: 0.4rem 0.875rem; font-size: 0.8rem; font-weight: 600; cursor: pointer; }
+        .btn-add-pill:hover { background: #1e40af; }
+        .hint { font-size: 0.75rem; color: #64748b; margin-top: 0.25rem; }
+        .yt-preview { position: relative; padding-bottom: 56.25%; height: 0; border-radius: 0.5rem; overflow: hidden; background: #0f172a; border: 1px solid #334155; }
+        .yt-preview iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+        .save-status { font-size: 0.8rem; font-weight: 600; }
+        .badge-section { font-size: 0.7rem; background: #0f172a; color: #38bdf8; border: 1px solid #1e40af; border-radius: 9999px; padding: 0.2rem 0.625rem; font-weight: 600; }
+        .nav-tab { padding: 0.5rem 1rem; border-radius: 0.5rem; font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: all 0.2s; color: #94a3b8; }
+        .nav-tab.active { background: #1e293b; color: #38bdf8; }
+        .nav-tab:hover { color: #e2e8f0; }
+    </style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav class="bg-[#0a0f1e] border-b border-slate-700/50 px-4 py-3 sticky top-0 z-50">
+    <div class="max-w-5xl mx-auto flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <a href="eventos.html" class="text-slate-400 hover:text-white transition-colors text-sm">
+                <i class="fas fa-arrow-left mr-1"></i> Volver
+            </a>
+            <span class="text-slate-600">|</span>
+            <img src="imagenes/logo-movimiento.png" alt="VYT" class="h-7 w-7 rounded-full object-cover">
+            <h1 class="font-bold text-sky-400 text-base">Editor de Página de Inscripción</h1>
+        </div>
+        <div class="flex items-center gap-3">
+            <span id="save-status" class="save-status text-slate-500"></span>
+            <a href="inscripcion.html" target="_blank"
+               class="text-xs px-3 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-semibold transition-colors">
+                <i class="fas fa-external-link-alt mr-1"></i> Ver página
+            </a>
+            <button onclick="saveAll()" id="save-btn" class="btn-save text-sm px-4 py-2">
+                <i class="fas fa-save mr-1.5"></i> Guardar todo
+            </button>
+        </div>
+    </div>
+</nav>
+
+<div class="max-w-5xl mx-auto px-4 py-8 space-y-5" id="editor-container">
+
+    <!-- Loading -->
+    <div id="loading-state" class="text-center py-16 text-slate-400">
+        <i class="fas fa-spinner fa-spin text-2xl mb-3 block"></i>
+        Cargando contenido actual...
+    </div>
+
+    <!-- ═══ SECCIONES (ocultas hasta cargar) ═══ -->
+    <div id="sections-container" class="hidden space-y-5">
+
+    <!-- ── 1. GENERAL ── -->
+    <div class="section-card">
+        <div class="section-header px-5 py-4 flex items-center justify-between" onclick="toggleSection(this)">
+            <div class="flex items-center gap-3">
+                <span class="text-xl">⚙️</span>
+                <div>
+                    <h2 class="font-bold text-white text-sm">Configuración General</h2>
+                    <p class="text-xs text-slate-400">WhatsApp, redes sociales, datos de contacto</p>
+                </div>
+            </div>
+            <i class="fas fa-chevron-down chevron text-slate-400"></i>
+        </div>
+        <div class="section-body p-5 space-y-4">
+            <div class="grid sm:grid-cols-2 gap-4">
+                <div>
+                    <label class="form-label"><i class="fab fa-whatsapp mr-1 text-green-400"></i> Número WhatsApp (solo números con código país)</label>
+                    <input type="text" id="cfg-whatsapp" class="form-input" placeholder="5491123456789">
+                    <p class="hint">Ej: +54 9 11 1234-5678 → escribí 5491112345678</p>
+                </div>
+                <div>
+                    <label class="form-label"><i class="fas fa-copyright mr-1 text-slate-400"></i> Texto del footer (año / descripción)</label>
+                    <input type="text" id="cfg-footer" class="form-input" placeholder="Certamen de canto · 12 años de historia">
+                </div>
+                <div>
+                    <label class="form-label"><i class="fab fa-instagram mr-1 text-pink-400"></i> Link Instagram</label>
+                    <input type="url" id="cfg-instagram" class="form-input" placeholder="https://www.instagram.com/vytmusic">
+                </div>
+                <div>
+                    <label class="form-label"><i class="fab fa-youtube mr-1 text-red-400"></i> Link Canal YouTube</label>
+                    <input type="url" id="cfg-youtube" class="form-input" placeholder="https://www.youtube.com/@vytmusic">
+                </div>
+                <div>
+                    <label class="form-label"><i class="fab fa-tiktok mr-1 text-white"></i> Link TikTok</label>
+                    <input type="url" id="cfg-tiktok" class="form-input" placeholder="https://www.tiktok.com/@vytmusic">
+                </div>
+            </div>
+
+            <!-- Grupos WhatsApp -->
+            <div class="mt-2 p-4 rounded-xl bg-slate-800/40 border border-slate-700 space-y-3">
+                <h3 class="text-sm font-bold text-green-300 flex items-center gap-2"><i class="fab fa-whatsapp"></i> Grupos de WhatsApp Comunidad</h3>
+                <p class="text-xs text-slate-400">Links de invitación para que los artistas se unan a tus grupos. Aparecen en el footer y en la pantalla de confirmación del formulario.</p>
+                <div class="grid sm:grid-cols-2 gap-4">
+                    <div>
+                        <label class="form-label">Nombre Grupo 1 (artistas)</label>
+                        <input type="text" id="cfg-wa-grupo1-nombre" class="form-input" placeholder="Ej: Grupo Artistas VYT">
+                    </div>
+                    <div>
+                        <label class="form-label">Link invitación Grupo 1</label>
+                        <input type="url" id="cfg-wa-grupo1-link" class="form-input" placeholder="https://chat.whatsapp.com/...">
+                    </div>
+                    <div>
+                        <label class="form-label">Nombre Grupo 2 (comunidad)</label>
+                        <input type="text" id="cfg-wa-grupo2-nombre" class="form-input" placeholder="Ej: Comunidad VYT MUSIC">
+                    </div>
+                    <div>
+                        <label class="form-label">Link invitación Grupo 2</label>
+                        <input type="url" id="cfg-wa-grupo2-link" class="form-input" placeholder="https://chat.whatsapp.com/...">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Pago e inscripción -->
+            <div class="mt-2 p-4 rounded-xl bg-slate-800/40 border border-slate-700 space-y-4">
+                <h3 class="text-sm font-bold text-emerald-300 flex items-center gap-2">💳 Pago de inscripción</h3>
+                <p class="text-xs text-slate-400">Cuando aprobas una audición, se envía el link de pago al artista por WhatsApp automáticamente.</p>
+                <div class="grid sm:grid-cols-2 gap-4">
+                    <div>
+                        <label class="form-label">Link de pago (MercadoPago, Cafecito, etc.)</label>
+                        <input type="url" id="cfg-pago-link" class="form-input" placeholder="https://mpago.la/...">
+                    </div>
+                    <div>
+                        <label class="form-label">Descripción del pago</label>
+                        <input type="text" id="cfg-pago-descripcion" class="form-input" placeholder="Cuota de inscripción $XXXX">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Mensajes WA aprobación / rechazo -->
+            <div class="mt-2 p-4 rounded-xl bg-slate-800/40 border border-slate-700 space-y-4">
+                <h3 class="text-sm font-bold text-sky-300 flex items-center gap-2">💬 Mensajes de WhatsApp al artista</h3>
+                <p class="text-xs text-slate-400">Podés usar <code class="bg-slate-700 px-1 rounded">{nombre}</code> y <code class="bg-slate-700 px-1 rounded">{pago_link}</code> como variables.</p>
+                <div>
+                    <label class="form-label">✅ Mensaje cuando SE APRUEBA la audición (va con el link de pago)</label>
+                    <textarea id="cfg-aprobacion-msg" class="form-input form-textarea" rows="3"
+                        placeholder="¡Hola {nombre}! 🎉 Tu audición fue APROBADA. Para confirmar tu lugar, realizá el pago: {pago_link}"></textarea>
+                </div>
+                <div>
+                    <label class="form-label">❌ Mensaje cuando SE RECHAZA la audición</label>
+                    <textarea id="cfg-rechazo-msg" class="form-input form-textarea" rows="3"
+                        placeholder="Hola {nombre}. Gracias por postularte. Lamentablemente no podemos incorporarte en esta edición. ¡Te esperamos próximamente! 🎤"></textarea>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── 2. HERO ── -->
+    <div class="section-card">
+        <div class="section-header px-5 py-4 flex items-center justify-between" onclick="toggleSection(this)">
+            <div class="flex items-center gap-3">
+                <span class="text-xl">🌟</span>
+                <div>
+                    <h2 class="font-bold text-white text-sm">Sección Hero (pantalla de inicio)</h2>
+                    <p class="text-xs text-slate-400">Lo primero que se ve al entrar</p>
+                </div>
+            </div>
+            <i class="fas fa-chevron-down chevron text-slate-400"></i>
+        </div>
+        <div class="section-body p-5 space-y-4">
+            <div>
+                <label class="form-label">Badge superior (texto pequeño arriba del título)</label>
+                <input type="text" id="hero-badge" class="form-input" placeholder="12 años creando espectáculos musicales">
+            </div>
+            <div class="grid sm:grid-cols-2 gap-4">
+                <div>
+                    <label class="form-label">Título línea 1</label>
+                    <input type="text" id="hero-titulo1" class="form-input" placeholder="¿Te gusta">
+                </div>
+                <div>
+                    <label class="form-label">Título línea 2 (resaltada en degradado)</label>
+                    <input type="text" id="hero-titulo2" class="form-input" placeholder="cantar?">
+                </div>
+            </div>
+            <div>
+                <label class="form-label">Subtítulo / descripción</label>
+                <textarea id="hero-subtitulo" class="form-input form-textarea" placeholder="Viví la experiencia de un verdadero show musical..."></textarea>
+            </div>
+
+            <!-- Stats -->
+            <div>
+                <label class="form-label">Estadísticas (hasta 4 — número y descripción)</label>
+                <div class="space-y-2" id="hero-stats-list"></div>
+                <button class="btn-add-pill mt-2" onclick="addStat()"><i class="fas fa-plus mr-1"></i> Agregar estadística</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── 3. SOBRE VYT ── -->
+    <div class="section-card">
+        <div class="section-header px-5 py-4 flex items-center justify-between" onclick="toggleSection(this)">
+            <div class="flex items-center gap-3">
+                <span class="text-xl">🎵</span>
+                <div>
+                    <h2 class="font-bold text-white text-sm">Sección "¿Qué es VYT MUSIC?"</h2>
+                    <p class="text-xs text-slate-400">Descripción del certamen + video de presentación</p>
+                </div>
+            </div>
+            <i class="fas fa-chevron-down chevron text-slate-400"></i>
+        </div>
+        <div class="section-body p-5 space-y-4">
+            <div>
+                <label class="form-label">Párrafo principal (texto grande)</label>
+                <textarea id="acerca-p1" class="form-input form-textarea" rows="3" placeholder="VYT MUSIC es un certamen de canto con más de 12 años..."></textarea>
+            </div>
+            <div>
+                <label class="form-label">Párrafo secundario (texto más chico, gris)</label>
+                <textarea id="acerca-p2" class="form-input form-textarea" rows="3" placeholder="Más que una competencia, es una experiencia completa..."></textarea>
+            </div>
+            <div>
+                <label class="form-label"><i class="fab fa-youtube mr-1 text-red-400"></i> Video de presentación (link de YouTube)</label>
+                <input type="url" id="acerca-video" class="form-input" placeholder="https://www.youtube.com/watch?v=...">
+                <p class="hint">Pegá el link completo del video. Ej: https://youtube.com/watch?v=AbC123</p>
+            </div>
+            <div id="acerca-video-preview" class="hidden mt-2">
+                <p class="form-label mb-2">Vista previa:</p>
+                <div class="max-w-xs">
+                    <div class="yt-preview"><iframe id="acerca-video-iframe" src="" frameborder="0" allowfullscreen></iframe></div>
+                </div>
+            </div>
+            <!-- Tags / pills -->
+            <div>
+                <label class="form-label">Tags / etiquetas (ej: Show profesional, Todas las edades)</label>
+                <div class="space-y-2" id="acerca-tags-list"></div>
+                <button class="btn-add-pill mt-2" onclick="addAcercaTag()"><i class="fas fa-plus mr-1"></i> Agregar etiqueta</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── 4. POR QUÉ PARTICIPAR ── -->
+    <div class="section-card">
+        <div class="section-header px-5 py-4 flex items-center justify-between" onclick="toggleSection(this)">
+            <div class="flex items-center gap-3">
+                <span class="text-xl">💡</span>
+                <div>
+                    <h2 class="font-bold text-white text-sm">Sección "¿Por qué participar?"</h2>
+                    <p class="text-xs text-slate-400">Las 4 tarjetas de razones</p>
+                </div>
+            </div>
+            <i class="fas fa-chevron-down chevron text-slate-400"></i>
+        </div>
+        <div class="section-body p-5 space-y-4">
+            <div class="grid sm:grid-cols-2 gap-5" id="razones-list"></div>
+            <button class="btn-add-pill" onclick="addRazon()"><i class="fas fa-plus mr-1"></i> Agregar tarjeta</button>
+        </div>
+    </div>
+
+    <!-- ── 5. VIDEOS / SHOWS ── -->
+    <div class="section-card">
+        <div class="section-header px-5 py-4 flex items-center justify-between" onclick="toggleSection(this)">
+            <div class="flex items-center gap-3">
+                <span class="text-xl">🎬</span>
+                <div>
+                    <h2 class="font-bold text-white text-sm">Galería de Videos</h2>
+                    <p class="text-xs text-slate-400">Hasta 3 videos de shows anteriores</p>
+                </div>
+            </div>
+            <i class="fas fa-chevron-down chevron text-slate-400"></i>
+        </div>
+        <div class="section-body p-5 space-y-4">
+            <div class="space-y-4" id="videos-list"></div>
+            <button class="btn-add-pill" onclick="addVideo()"><i class="fas fa-plus mr-1"></i> Agregar video (máx. 3)</button>
+        </div>
+    </div>
+
+    <!-- ── 6. MENSAJE DE ÉXITO ── -->
+    <div class="section-card">
+        <div class="section-header px-5 py-4 flex items-center justify-between" onclick="toggleSection(this)">
+            <div class="flex items-center gap-3">
+                <span class="text-xl">✅</span>
+                <div>
+                    <h2 class="font-bold text-white text-sm">Pantalla de confirmación post-envío</h2>
+                    <p class="text-xs text-slate-400">Lo que ve el artista después de enviar su audición</p>
+                </div>
+            </div>
+            <i class="fas fa-chevron-down chevron text-slate-400"></i>
+        </div>
+        <div class="section-body p-5 space-y-4">
+            <div>
+                <label class="form-label">Texto de agradecimiento</label>
+                <textarea id="exito-texto" class="form-input form-textarea" placeholder="Gracias por animarte a participar. En las próximas horas te contactamos..."></textarea>
+            </div>
+            <div>
+                <label class="form-label">Pasos "¿Cómo sigue?" (un paso por línea)</label>
+                <textarea id="exito-pasos" class="form-input form-textarea" rows="5"
+                    placeholder="Revisamos tu audición y evaluamos tu inscripción.&#10;Te contactamos por WhatsApp con todos los detalles.&#10;Confirmás tu participación y te preparás para las galas.&#10;¡Te subís al escenario y vivís la experiencia de tu vida! 🌟"></textarea>
+                <p class="hint">Cada línea = un paso numerado</p>
+            </div>
+            <div>
+                <label class="form-label">Texto del mensaje de WhatsApp pre-escrito (lo que el artista ve al hacer click en "Continuar por WhatsApp")</label>
+                <textarea id="exito-wa-msg" class="form-input form-textarea" rows="2"
+                    placeholder="¡Hola! Acabo de enviar mi audición desde la web de VYT MUSIC. Me gustaría saber más del certamen 🎤"></textarea>
+                <p class="hint">Podés usar {nombre} para incluir el nombre del artista automáticamente</p>
+            </div>
+        </div>
+    </div>
+
+    </div><!-- /sections-container -->
+
+    <!-- ── 7. ASISTENTE IA ── -->
+    <div class="section-card" id="ia-section-card">
+        <div class="section-header px-5 py-4 flex items-center justify-between" onclick="toggleSection(this)">
+            <div class="flex items-center gap-3">
+                <span class="text-xl">🤖</span>
+                <div>
+                    <h2 class="font-bold text-white text-sm">Asistente IA &mdash; Contexto y conocimiento</h2>
+                    <p class="text-xs text-slate-400">Qué sabe la IA sobre el certamen: precios, fechas, requisitos...</p>
+                </div>
+            </div>
+            <i class="fas fa-chevron-down chevron text-slate-400"></i>
+        </div>
+        <div class="section-body p-5 space-y-4">
+            <div class="bg-indigo-950/40 border border-indigo-700/50 rounded-xl p-4 text-xs text-indigo-300 leading-relaxed">
+                💡 <strong>Cómo funciona:</strong> Escribí acá toda la información del certamen que querés que la IA conozca.
+                Incluyá precios, fechas, lu gares, requisitos, edades, cuántas galas hay, etc.
+                Cuanto más detallado, mejor responde. La IA usará este texto como base para responder las preguntas del público.
+            </div>
+            <div>
+                <label class="form-label">Información del certamen para la IA</label>
+                <textarea id="ia-contexto" class="form-input form-textarea" rows="12"
+                    placeholder="Ej:\nCosto de inscripción: $XXXX pesos\nGalas: 3 galas clasificatorias + gran final\nFechas: abril, mayo y junio 2026\nEdades: desde 5 años, sin límite superior\nLugar: Teatro Municipal de Córdoba\nCategorías: infantil (5-12), juvenil (13-17), adulto (18+)\nPremios: trofeos, becas y vidriera artística\nCon tacto: escribir al chat o al WhatsApp del equipo\n..."></textarea>
+                <p class="hint">Si no completás este campo, la IA usa un texto genérico sobre VYT MUSIC</p>
+            </div>
+            <div class="flex justify-end">
+                <button onclick="saveIAContext()" id="btn-save-ia" class="btn-save px-6 py-2 text-sm">
+                    <i class="fas fa-save mr-2"></i> Guardar información de IA
+                </button>
+            </div>
+            <div id="ia-save-msg" class="hidden text-xs text-green-400 text-right font-bold">✅ Información guardada correctamente</div>
+            <div class="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
+                <p class="text-xs font-bold text-slate-300 mb-2">🤖 Probar la IA</p>
+                <div class="flex gap-2">
+                    <input id="ia-test-input" type="text" placeholder="Escribí una pregunta de prueba..."
+                           class="form-input flex-1 text-sm py-2" onkeydown="if(event.key==='Enter') testIA()">
+                    <button onclick="testIA()" class="btn-save text-xs px-4 py-2">🤖 Probar</button>
+                </div>
+                <p id="ia-test-result" class="text-xs text-slate-400 mt-2 leading-relaxed"></p>
+            </div>
+
+            <!-- Preguntas sin respuesta -->
+            <div class="bg-amber-950/30 border border-amber-700/50 rounded-xl p-4">
+                <div class="flex items-center justify-between mb-3">
+                    <p class="text-xs font-bold text-amber-300">❓ Preguntas del público sin respuesta</p>
+                    <button onclick="cargarPreguntasSinRespuesta()" class="text-xs text-amber-400 hover:text-amber-200 underline">↺ Actualizar</button>
+                </div>
+                <p class="text-xs text-amber-400/70 mb-3">Estas preguntas las hizo el público y la IA no supo responderlas. Agregá las respuestas al campo de arriba.</p>
+                <div id="preguntas-sin-respuesta" class="space-y-2 max-h-64 overflow-y-auto">
+                    <p class="text-xs text-slate-500">Cargando...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ══ CARRUSEL DE FOTOS ══ -->
+    <div class="section-card">
+        <div class="section-header px-6 py-4 border-b border-slate-700">
+            <h2 class="font-bold text-slate-100 text-base">📸 Carrusel de fotos</h2>
+            <p class="text-xs text-slate-400 mt-1">Las fotos que subas acá van a aparecer en el carrusel de la página pública.</p>
+        </div>
+        <div class="p-6 space-y-4">
+            <!-- Subir nueva foto -->
+            <div class="bg-slate-800/50 border-2 border-dashed border-slate-600 rounded-xl p-5 text-center">
+                <input type="file" id="carousel-file-input" accept="image/*" multiple class="hidden" onchange="subirFotosCarrusel(this)">
+                <button onclick="document.getElementById('carousel-file-input').click()" class="btn-save px-6 py-2 text-sm">
+                    <i class="fas fa-upload mr-2"></i> Subir fotos
+                </button>
+                <p class="text-xs text-slate-500 mt-2">Podés subir varias a la vez &middot; Ideal 1080&times;1350 px &middot; M&aacute;x 10 MB cada una</p>
+                <div id="carousel-upload-status" class="mt-3 text-xs text-sky-400"></div>
+            </div>
+            <!-- Grid de fotos cargadas -->
+            <div id="carousel-grid" class="grid grid-cols-3 sm:grid-cols-4 gap-3">
+                <p class="col-span-4 text-xs text-slate-500 text-center py-4">Cargando fotos...</p>
+            </div>
+        </div>
+    </div>
+
+    </div><!-- /outer-wrapper -->
+
+    <!-- Botón grande de guardar -->
+    <div id="save-area" class="hidden flex justify-end pt-2">
+        <button onclick="saveAll()" class="btn-save px-8 py-3">
+            <i class="fas fa-save mr-2"></i> Guardar todo y publicar
+        </button>
+    </div>
+
+</div><!-- /editor-container -->
+
+
+<script type="module">
+import { db, auth, storage } from './firebase_config.js';
+import { doc, getDoc, setDoc, serverTimestamp, collection, getDocs, query, orderBy, limit, addDoc, deleteDoc } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js';
+import { onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
+
+// ── Auth guard ──
+onAuthStateChanged(auth, user => {
+    if (!user) window.location.href = 'index.html';
+    else loadContent();
+});
+
+// ── Helpers: extraer ID de YouTube desde cualquier formato de URL ──
+function ytId(url) {
+    if (!url) return '';
+    const m = url.match(/(?:v=|youtu\.be\/|embed\/)([A-Za-z0-9_-]{11})/);
+    return m ? m[1] : '';
+}
+window.ytId = ytId;
+
+// ── Toggle secciones ──
+window.toggleSection = function(header) {
+    const card = header.parentElement;
+    const body = card.querySelector('.section-body');
+    card.classList.toggle('collapsed');
+    body.style.display = card.classList.contains('collapsed') ? 'none' : '';
+};
+
+// ── Render dinámico: STATS del hero ──
+window.addStat = function(val = '', label = '') {
+    const list = document.getElementById('hero-stats-list');
+    const idx  = list.children.length;
+    if (idx >= 4) return alert('Máximo 4 estadísticas');
+    const div = document.createElement('div');
+    div.className = 'pill-input-row';
+    div.innerHTML = `
+        <input type="text" class="form-input stat-val" placeholder="Ej: +12" value="${esc(val)}" style="max-width:90px">
+        <input type="text" class="form-input stat-lbl" placeholder="Ej: años de historia" value="${esc(label)}">
+        <button class="pill-delete" onclick="this.parentElement.remove()"><i class="fas fa-trash"></i></button>`;
+    list.appendChild(div);
+};
+
+// ── Render dinámico: tags ──
+window.addAcercaTag = function(val = '') {
+    const list = document.getElementById('acerca-tags-list');
+    const div  = document.createElement('div');
+    div.className = 'pill-input-row';
+    div.innerHTML = `
+        <input type="text" class="form-input acerca-tag" placeholder="Ej: 🎭 Show profesional" value="${esc(val)}">
+        <button class="pill-delete" onclick="this.parentElement.remove()"><i class="fas fa-trash"></i></button>`;
+    list.appendChild(div);
+};
+
+// ── Render dinámico: razones ──
+window.addRazon = function(emoji = '', titulo = '', desc = '') {
+    const list = document.getElementById('razones-list');
+    if (list.children.length >= 6) return alert('Máximo 6 tarjetas');
+    const div  = document.createElement('div');
+    div.className = 'bg-slate-900 rounded-xl p-4 space-y-2 border border-slate-700 razon-item relative';
+    div.innerHTML = `
+        <button class="pill-delete absolute top-3 right-3" onclick="this.parentElement.remove()"><i class="fas fa-trash"></i></button>
+        <div class="grid grid-cols-[60px_1fr] gap-2">
+            <div>
+                <label class="form-label">Icono</label>
+                <input type="text" class="form-input razon-emoji text-center text-xl" placeholder="🌟" value="${esc(emoji)}" maxlength="4">
+            </div>
+            <div>
+                <label class="form-label">Título</label>
+                <input type="text" class="form-input razon-titulo" placeholder="Vivir la experiencia" value="${esc(titulo)}">
+            </div>
+        </div>
+        <div>
+            <label class="form-label">Descripción</label>
+            <textarea class="form-input form-textarea razon-desc" rows="2" placeholder="Subirte a un escenario real...">${esc(desc)}</textarea>
+        </div>`;
+    list.appendChild(div);
+};
+
+// ── Render dinámico: videos ──
+window.addVideo = function(url = '', label = '') {
+    const list = document.getElementById('videos-list');
+    if (list.children.length >= 3) return alert('Máximo 3 videos');
+    const div  = document.createElement('div');
+    div.className = 'bg-slate-900 rounded-xl p-4 space-y-3 border border-slate-700 video-item';
+    div.innerHTML = `
+        <div class="flex justify-between items-center">
+            <span class="text-xs font-semibold text-slate-400">Video ${list.children.length + 1}</span>
+            <button class="pill-delete" onclick="this.closest('.video-item').remove()"><i class="fas fa-trash"></i></button>
+        </div>
+        <div>
+            <label class="form-label"><i class="fab fa-youtube mr-1 text-red-400"></i> Link de YouTube</label>
+            <input type="url" class="form-input video-url" placeholder="https://www.youtube.com/watch?v=..." value="${esc(url)}" oninput="previewVideo(this)">
+            <p class="hint">Pegá el link completo de YouTube</p>
+        </div>
+        <div>
+            <label class="form-label">Etiqueta debajo del video (ej: 🏆 Gala Final 2025)</label>
+            <input type="text" class="form-input video-label" placeholder="🏆 Gala Final 2025" value="${esc(label)}">
+        </div>
+        <div class="video-preview hidden">
+            <div class="yt-preview max-w-xs">
+                <iframe class="video-iframe" src="" frameborder="0" allowfullscreen></iframe>
+            </div>
+        </div>`;
+    list.appendChild(div);
+    if (url) previewVideo(div.querySelector('.video-url'));
+};
+
+// ── Vista previa inline de YouTube ──
+window.previewVideo = function(input) {
+    const id   = ytId(input.value);
+    const wrap = input.closest('.video-item') || input.closest('.section-body');
+    const prev = wrap ? wrap.querySelector('.video-preview, #acerca-video-preview') : null;
+    const iframe = wrap ? wrap.querySelector('.video-iframe, #acerca-video-iframe') : null;
+    if (!prev || !iframe) return;
+    if (id) {
+        iframe.src = `https://www.youtube.com/embed/${id}?rel=0&modestbranding=1`;
+        prev.classList.remove('hidden');
+    } else {
+        iframe.src = '';
+        prev.classList.add('hidden');
+    }
+};
+
+// ── Preview para el video de presentación ──
+document.getElementById('acerca-video').addEventListener('input', function() {
+    previewVideo(this);
+});
+
+// ── Cargar datos desde Firestore ──
+async function loadContent() {
+    try {
+        const snap = await getDoc(doc(db, 'config_sitio', 'inscripcion'));
+        const d    = snap.exists() ? snap.data() : {};
+
+        // General
+        document.getElementById('cfg-whatsapp').value  = d.whatsapp  || '';
+        document.getElementById('cfg-footer').value    = d.footer    || '';
+        document.getElementById('cfg-instagram').value = d.instagram || '';
+        document.getElementById('cfg-youtube').value   = d.youtube_canal || '';
+        document.getElementById('cfg-tiktok').value    = d.tiktok   || '';
+        document.getElementById('cfg-wa-grupo1-nombre').value = d.wa_grupo1_nombre || '';
+        document.getElementById('cfg-wa-grupo1-link').value   = d.wa_grupo1_link   || '';
+        document.getElementById('cfg-wa-grupo2-nombre').value = d.wa_grupo2_nombre || '';
+        document.getElementById('cfg-wa-grupo2-link').value   = d.wa_grupo2_link   || '';
+        document.getElementById('cfg-pago-link').value        = d.pago_link        || '';
+        document.getElementById('cfg-pago-descripcion').value = d.pago_descripcion || '';
+        document.getElementById('cfg-aprobacion-msg').value   = d.aprobacion_msg   || '';
+        document.getElementById('cfg-rechazo-msg').value      = d.rechazo_msg      || '';
+
+        // Hero
+        document.getElementById('hero-badge').value     = d.hero_badge    || '';
+        document.getElementById('hero-titulo1').value   = d.hero_titulo1  || '';
+        document.getElementById('hero-titulo2').value   = d.hero_titulo2  || '';
+        document.getElementById('hero-subtitulo').value = d.hero_subtitulo || '';
+        (d.hero_stats || []).forEach(s => addStat(s.val, s.lbl));
+        if (!(d.hero_stats || []).length) { addStat('+12','años de historia'); addStat('100+','artistas en escena'); }
+
+        // Acerca
+        document.getElementById('acerca-p1').value    = d.acerca_p1    || '';
+        document.getElementById('acerca-p2').value    = d.acerca_p2    || '';
+        document.getElementById('acerca-video').value = d.acerca_video || '';
+        if (d.acerca_video) previewVideo(document.getElementById('acerca-video'));
+        (d.acerca_tags || []).forEach(t => addAcercaTag(t));
+        if (!(d.acerca_tags || []).length) {
+            ['🎭 Show profesional','🏆 Certamen competitivo','🎤 Todas las edades','⭐ Comunidad artística'].forEach(t => addAcercaTag(t));
+        }
+
+        // Razones
+        (d.razones || []).forEach(r => addRazon(r.emoji, r.titulo, r.desc));
+        if (!(d.razones || []).length) {
+            addRazon('🌟','Vivir la experiencia','Subirte a un escenario real con producción profesional, luces y sonido de primer nivel.');
+            addRazon('🎤','Mostrar tu talento','Cantá ante un público real y un jurado especializado que valora y reconoce tu arte.');
+            addRazon('🤝','Comunidad artística','Conectá con otros artistas, coaches y personas apasionadas por la música.');
+            addRazon('🏆','Galas y eventos','Participá en múltiples galas durante el certamen y hacé crecer tu carrera artística.');
+        }
+
+        // Videos
+        (d.videos || []).forEach(v => addVideo(v.url, v.label));
+
+        // Éxito
+        document.getElementById('exito-texto').value   = d.exito_texto  || '';
+        document.getElementById('exito-pasos').value   = (d.exito_pasos || []).join('\n');
+        document.getElementById('ia-contexto').value = d.ia_contexto || '';
+
+    } catch(err) {
+        console.error('Error cargando config:', err);
+    }
+
+    document.getElementById('loading-state').classList.add('hidden');
+    document.getElementById('sections-container').classList.remove('hidden');
+    document.getElementById('save-area').classList.remove('hidden');
+}
+
+// ── Guardar todo ──
+window.saveAll = async function() {
+    const btn = document.getElementById('save-btn');
+    const status = document.getElementById('save-status');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1.5"></i> Guardando...';
+    status.textContent = '';
+
+    // Recolectar stats
+    const stats = [];
+    document.querySelectorAll('#hero-stats-list > div').forEach(row => {
+        const v = row.querySelector('.stat-val')?.value.trim();
+        const l = row.querySelector('.stat-lbl')?.value.trim();
+        if (v || l) stats.push({ val: v || '', lbl: l || '' });
+    });
+
+    // Recolectar tags
+    const tags = [];
+    document.querySelectorAll('.acerca-tag').forEach(inp => {
+        const v = inp.value.trim();
+        if (v) tags.push(v);
+    });
+
+    // Recolectar razones
+    const razones = [];
+    document.querySelectorAll('.razon-item').forEach(item => {
+        razones.push({
+            emoji : item.querySelector('.razon-emoji')?.value.trim()  || '',
+            titulo: item.querySelector('.razon-titulo')?.value.trim() || '',
+            desc  : item.querySelector('.razon-desc')?.value.trim()   || ''
+        });
+    });
+
+    // Recolectar videos
+    const videos = [];
+    document.querySelectorAll('.video-item').forEach(item => {
+        const url   = item.querySelector('.video-url')?.value.trim()   || '';
+        const label = item.querySelector('.video-label')?.value.trim() || '';
+        if (url) videos.push({ url, label, ytId: ytId(url) });
+    });
+
+    // Recolectar pasos éxito
+    const pasos = document.getElementById('exito-pasos').value
+        .split('\n').map(l => l.trim()).filter(Boolean);
+
+    const data = {
+        // General
+        whatsapp     : document.getElementById('cfg-whatsapp').value.trim(),
+        footer       : document.getElementById('cfg-footer').value.trim(),
+        instagram      : document.getElementById('cfg-instagram').value.trim(),
+        youtube_canal  : document.getElementById('cfg-youtube').value.trim(),
+        tiktok         : document.getElementById('cfg-tiktok').value.trim(),
+        wa_grupo1_nombre: document.getElementById('cfg-wa-grupo1-nombre').value.trim(),
+        wa_grupo1_link : document.getElementById('cfg-wa-grupo1-link').value.trim(),
+        wa_grupo2_nombre: document.getElementById('cfg-wa-grupo2-nombre').value.trim(),
+        wa_grupo2_link : document.getElementById('cfg-wa-grupo2-link').value.trim(),
+        pago_link        : document.getElementById('cfg-pago-link').value.trim(),
+        pago_descripcion : document.getElementById('cfg-pago-descripcion').value.trim(),
+        aprobacion_msg   : document.getElementById('cfg-aprobacion-msg').value.trim(),
+        rechazo_msg      : document.getElementById('cfg-rechazo-msg').value.trim(),
+        // Hero
+        hero_badge   : document.getElementById('hero-badge').value.trim(),
+        hero_titulo1 : document.getElementById('hero-titulo1').value.trim(),
+        hero_titulo2 : document.getElementById('hero-titulo2').value.trim(),
+        hero_subtitulo: document.getElementById('hero-subtitulo').value.trim(),
+        hero_stats   : stats,
+        // Acerca
+        acerca_p1    : document.getElementById('acerca-p1').value.trim(),
+        acerca_p2    : document.getElementById('acerca-p2').value.trim(),
+        acerca_video : document.getElementById('acerca-video').value.trim(),
+        acerca_tags  : tags,
+        // Razones
+        razones,
+        // Videos
+        videos,
+        // Éxito
+        exito_texto  : document.getElementById('exito-texto').value.trim(),
+        exito_pasos  : pasos,
+        exito_wa_msg : document.getElementById('exito-wa-msg').value.trim(),
+        ia_contexto  : document.getElementById('ia-contexto').value.trim(),
+        // Meta
+        updated_at   : serverTimestamp()
+    };
+
+    try {
+        await setDoc(doc(db, 'config_sitio', 'inscripcion'), data, { merge: true });
+        status.textContent = '✅ ¡Guardado!';
+        status.className   = 'save-status text-green-400';
+        setTimeout(() => { status.textContent = ''; status.className = 'save-status text-slate-500'; }, 3000);
+    } catch(err) {
+        status.textContent = '❌ Error: ' + err.message;
+        status.className   = 'save-status text-red-400';
+    }
+
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fas fa-save mr-1.5"></i> Guardar todo';
+};
+
+// ── Utilidad ──
+function esc(s) { return String(s || '').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+window.esc = esc;
+
+// ── Guardar solo IA ──
+window.saveIAContext = async function() {
+    const btn = document.getElementById('btn-save-ia');
+    const msg = document.getElementById('ia-save-msg');
+    const iaContexto = document.getElementById('ia-contexto').value.trim();
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Guardando...';
+    try {
+        const ref = doc(db, 'config_sitio', 'inscripcion');
+        await setDoc(ref, { ia_contexto: iaContexto }, { merge: true });
+        msg.classList.remove('hidden');
+        setTimeout(() => msg.classList.add('hidden'), 4000);
+    } catch(e) {
+        alert('Error al guardar: ' + e.message);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-save mr-2"></i> Guardar información de IA';
+    }
+};
+
+// ── Preguntas sin respuesta ──
+window.cargarPreguntasSinRespuesta = async function() {
+    const container = document.getElementById('preguntas-sin-respuesta');
+    try {
+        const snap = await getDocs(
+            query(collection(db, 'ia_preguntas_sin_respuesta'), orderBy('fecha', 'desc'), limit(30))
+        );
+        if (snap.empty) {
+            container.innerHTML = '<p class="text-xs text-slate-500">✅ Sin preguntas pendientes</p>';
+            return;
+        }
+        container.innerHTML = snap.docs.map(d => {
+            const dato = d.data();
+            const fecha = dato.fecha ? new Date(dato.fecha).toLocaleDateString('es-AR', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : '';
+            return `<div class="bg-slate-800/60 rounded-lg p-3 flex items-start gap-2">
+                <div class="flex-1">
+                    <p class="text-xs text-amber-200 font-medium">${esc(dato.pregunta)}</p>
+                    <p class="text-xs text-slate-500 mt-1">${fecha}</p>
+                </div>
+                <button onclick="marcarPreguntaResuelta('${d.id}', this)" title="Marcar como resuelta" class="text-slate-500 hover:text-red-400 text-lg leading-none flex-shrink-0">×</button>
+            </div>`;
+        }).join('');
+    } catch(e) {
+        container.innerHTML = '<p class="text-xs text-red-400">Error al cargar: ' + e.message + '</p>';
+    }
+};
+
+window.marcarPreguntaResuelta = async function(id, btn) {
+    try {
+        const { deleteDoc, doc: docRef } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
+        await deleteDoc(docRef(db, 'ia_preguntas_sin_respuesta', id));
+        btn.closest('div.bg-slate-800\/60').remove();
+        const container = document.getElementById('preguntas-sin-respuesta');
+        if (!container.children.length) container.innerHTML = '<p class="text-xs text-slate-500">✅ Sin preguntas pendientes</p>';
+    } catch(e) { alert('Error: ' + e.message); }
+};
+
+// Cargar al iniciar
+document.addEventListener('DOMContentLoaded', () => setTimeout(cargarPreguntasSinRespuesta, 1500));
+document.addEventListener('DOMContentLoaded', () => cargarFotosCarrusel());
+
+// ── Carrusel de fotos ──
+async function cargarFotosCarrusel() {
+    const grid = document.getElementById('carousel-grid');
+    try {
+        const snap = await getDocs(query(collection(db, 'carrusel_fotos'), orderBy('orden', 'asc')));
+        if (snap.empty) { grid.innerHTML = '<p class="col-span-4 text-xs text-slate-500 text-center py-4">No hay fotos todavía. Subí la primera.</p>'; return; }
+        grid.innerHTML = snap.docs.map(d => {
+            const f = d.data();
+            return `<div class="relative group rounded-lg overflow-hidden aspect-[3/4] bg-slate-800">
+                <img src="${f.url}" class="w-full h-full object-cover" loading="lazy">
+                <button onclick="eliminarFotoCarrusel('${d.id}', '${f.storage_path || ''}', this)" title="Eliminar"
+                    class="absolute top-1 right-1 bg-black/70 hover:bg-red-700 text-white rounded-full w-7 h-7 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>`;
+        }).join('');
+    } catch(e) { grid.innerHTML = `<p class="col-span-4 text-xs text-red-400 text-center py-4">Error: ${e.message}</p>`; }
+}
+
+window.subirFotosCarrusel = async function(input) {
+    const status = document.getElementById('carousel-upload-status');
+    const files = Array.from(input.files);
+    if (!files.length) return;
+    status.textContent = `Subiendo 0 / ${files.length}...`;
+    let ok = 0;
+    for (const file of files) {
+        if (file.size > 10 * 1024 * 1024) { status.textContent = `⚠️ ${file.name} supera 10 MB, omitida.`; continue; }
+        try {
+            const ext  = file.name.split('.').pop().toLowerCase().replace(/[^a-z0-9]/g,'') || 'jpg';
+            const path = `carrusel/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+            const sRef = storageRef(storage, path);
+            await uploadBytes(sRef, file);
+            const url = await getDownloadURL(sRef);
+            await addDoc(collection(db, 'carrusel_fotos'), { url, storage_path: path, orden: Date.now(), fecha: new Date().toISOString() });
+            ok++;
+            status.textContent = `Subiendo ${ok} / ${files.length}...`;
+        } catch(e) { status.textContent = `❌ Error: ${e.message}`; }
+    }
+    status.textContent = `✅ ${ok} foto(s) subida(s) correctamente`;
+    setTimeout(() => { status.textContent = ''; }, 4000);
+    input.value = '';
+    cargarFotosCarrusel();
+};
+
+window.eliminarFotoCarrusel = async function(docId, storagePath, btn) {
+    if (!confirm('¿Eliminar esta foto del carrusel?')) return;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+    try {
+        await deleteDoc(doc(db, 'carrusel_fotos', docId));
+        if (storagePath) { try { await deleteObject(storageRef(storage, storagePath)); } catch(e) {} }
+        btn.closest('div.relative').remove();
+        const grid = document.getElementById('carousel-grid');
+        if (!grid.children.length) grid.innerHTML = '<p class="col-span-4 text-xs text-slate-500 text-center py-4">No hay fotos todavía. Subí la primera.</p>';
+    } catch(e) { alert('Error: ' + e.message); btn.innerHTML = '<i class="fas fa-times"></i>'; }
+};
+
+// ── Test IA ──
+window.testIA = async function() {
+    const input  = document.getElementById('ia-test-input');
+    const result = document.getElementById('ia-test-result');
+    const pregunta = input.value.trim();
+    if (!pregunta) return;
+    result.textContent = '⏳ Consultando...';
+    try {
+        const r = await fetch('/chatPublico', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pregunta })
+        });
+        const json = await r.json();
+        result.textContent = json.respuesta || json.error || 'Sin respuesta';
+    } catch(e) {
+        result.textContent = '❌ Error de conexión: ' + e.message;
+    }
+};
+</script>
+
+</body>
+</html>

@@ -951,12 +951,15 @@
                 <!-- Botón WA siempre visible con notificación automática -->
                 <div id="wa-notificar-wrap" class="mb-6 p-4 bg-green-950/60 border-2 border-green-500 rounded-2xl">
                     <p class="text-green-300 font-bold mb-2 text-base">✅ ¡Tu inscripción fue enviada!</p>
-                    <p class="text-green-200 text-sm mb-3">Se abrió WhatsApp automáticamente para notificarle al equipo. Si no se abrió, tocá el botón aquí abajo:</p>
+                    <p id="wa-auto-message" class="text-green-200 text-sm mb-3">
+                        <span class="inline-block">⏳</span> <strong>Abriendo WhatsApp en 2 segundos...</strong><br>
+                        <span class="text-xs text-green-300">Si no se abre automáticamente, tocá el botón de abajo</span>
+                    </p>
                     <a id="wa-notificar-btn" href="#" target="_blank" rel="noopener noreferrer"
                        class="block w-full py-4 bg-green-600 hover:bg-green-500 text-white font-black text-lg rounded-xl text-center transition-all active:scale-95">
-                        📲 Avisar al equipo VYT por WhatsApp
+                        📲 Abrir WhatsApp manualmente
                     </a>
-                    <p class="text-xs text-gray-400 mt-2">💡 Este paso es importante para que nos enteremos de tu inscripción.</p>
+                    <p class="text-xs text-gray-400 mt-2">💡 Necesitamos que nos avises por WhatsApp para confirmar tu inscripción.</p>
                 </div>
 
                 <!-- Grupos WhatsApp (dinámicos desde Firestore) -->
@@ -1028,9 +1031,9 @@
                 <!-- Estado: comprobante enviado (esperando confirmación) -->
                 <div id="pago-enviado-section" class="hidden">
                     <div class="bg-sky-950/40 border border-sky-700/50 rounded-xl p-6 mb-6 text-center">
-                        <div class="text-4xl mb-3">⏳</div>
-                        <h3 class="font-bold text-sky-300 mb-2">Comprobante enviado</h3>
-                        <p class="text-gray-400 text-sm">Recibimos tu comprobante. En breve el equipo confirmará tu inscripción y te avisaremos por WhatsApp.</p>
+                        <div class="text-4xl mb-3">📎✅</div>
+                        <h3 class="font-bold text-sky-300 mb-2">Comprobante recibido</h3>
+                        <p class="text-gray-400 text-sm">El equipo revisará tu comprobante y confirmará tu inscripción. Te avisaremos por WhatsApp.</p>
                     </div>
                 </div>
 
@@ -1470,10 +1473,10 @@
         // ✅ ABRIR WHATSAPP AUTOMÁTICAMENTE después de guardar exitosamente
         const waAdminUrl = `https://wa.me/${normalizeWhatsAppNumber(WHATSAPP_NUMBER)}?text=${encodeURIComponent(adminMsg)}`;
         
-        // Intentar abrir WhatsApp automáticamente
-        const waPopup = window.open(waAdminUrl, '_blank');
+        // 📱 Detectar si es móvil para abrir WhatsApp correctamente
+        const isMobile = /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
         
-        // Configurar botón de WhatsApp en la pantalla de éxito (siempre visible ahora)
+        // Configurar botón de WhatsApp como fallback
         const waBtn = document.getElementById('wa-notificar-btn');
         if (waBtn) {
             waBtn.href = waAdminUrl;
@@ -1482,6 +1485,28 @@
         // ✅ Mostrar pantalla de éxito
         formScreen.style.display    = 'none';
         successScreen.classList.remove('hidden');
+        
+        if (isMobile) {
+            // 📱 EN MÓVIL: Usar location.href para que abra la APP nativa (no WhatsApp Web)
+            // Delay para que vean el mensaje primero
+            setTimeout(() => {
+                const waMessage = document.getElementById('wa-auto-message');
+                if (waMessage) {
+                    waMessage.innerHTML = '<strong>📱 Abriendo WhatsApp...</strong><br><span class="text-xs">Enviá el mensaje que se cargó automáticamente</span>';
+                }
+                window.location.href = waAdminUrl;
+            }, 1500);
+        } else {
+            // 💻 EN DESKTOP: Abrir en nueva pestaña
+            setTimeout(() => {
+                window.open(waAdminUrl, '_blank');
+                const waMessage = document.getElementById('wa-auto-message');
+                if (waMessage) {
+                    waMessage.innerHTML = '<strong>✅ WhatsApp se abrió en una nueva pestaña</strong><br><span class="text-xs">Enviá el mensaje que se cargó automáticamente</span>';
+                }
+            }, 1000);
+        }
+        
         // Cargar el video recién acá para que no suene al abrir la página
         const exitoIframe = document.getElementById('exito-video-iframe');
         if (exitoIframe && !exitoIframe.src) exitoIframe.src = exitoIframe.dataset.src;
@@ -1593,22 +1618,50 @@
                             comprobante_fecha: serverTimestamp()
                         });
 
-                        // WA automático al admin
-                        const adminMsg = `💰 *Comprobante de inscripción recibido*\n\n👤 Artista: ${a.nombre || '—'}${a.ciudad ? `\n📍 Ciudad: ${a.ciudad}` : ''}${a.telefono ? `\n📱 Teléfono: ${a.telefono}` : ''}\n\n✅ Revisar y aprobar en:\n${location.origin}/admin_audiciones.html?nuevo=1`;
+                        // ✅ WhatsApp automático al admin con link del comprobante
+                        const adminMsg = `💰 *Comprobante de inscripción recibido*\n\n👤 Artista: ${a.nombre || '—'}${a.ciudad ? `\n📍 Ciudad: ${a.ciudad}` : ''}${a.telefono ? `\n📱 Teléfono: ${a.telefono}` : ''}\n\n📎 Ver comprobante:\n${downloadURL}\n\n✅ Revisar y aprobar en:\n${location.origin}/admin_audiciones.html?nuevo=1`;
                         const waUrl = `https://wa.me/${normalizeWhatsAppNumber(WHATSAPP_NUMBER)}?text=${encodeURIComponent(adminMsg)}`;
-                        const popup = window.open(waUrl, '_blank');
-                        if (!popup || popup.closed) {
-                            // Si el popup fue bloqueado, mostrar botón
-                            const fallbackDiv = document.createElement('div');
-                            fallbackDiv.className = 'mt-4 p-3 bg-yellow-900/40 border border-yellow-600/50 rounded-xl text-center';
-                            fallbackDiv.innerHTML = `<p class="text-yellow-300 text-xs mb-2">⚠️ No se pudo abrir WhatsApp automáticamente.</p><a href="${waUrl}" target="_blank" rel="noopener noreferrer" class="inline-block px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-bold text-sm rounded-xl">📲 Notificar al admin</a>`;
-                            document.getElementById('pago-enviado-section').prepend(fallbackDiv);
-                        }
-
-                        // Actualizar UI
+                        
+                        // 📱 Detectar si es móvil para abrir WhatsApp correctamente
+                        const isMobile = /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+                        
+                        // Actualizar UI primero
                         progressWrap.classList.add('hidden');
                         document.getElementById('pago-pendiente-section').classList.add('hidden');
-                        document.getElementById('pago-enviado-section').classList.remove('hidden');
+                        const pagoEnviadoSection = document.getElementById('pago-enviado-section');
+                        pagoEnviadoSection.classList.remove('hidden');
+                        
+                        // Crear mensaje de confirmación de WhatsApp
+                        const waConfirmDiv = document.createElement('div');
+                        waConfirmDiv.className = 'mb-4 p-4 bg-green-950/60 border-2 border-green-500 rounded-2xl text-center';
+                        waConfirmDiv.innerHTML = `
+                            <p class="text-green-300 font-bold mb-2">✅ ¡Comprobante subido exitosamente!</p>
+                            <p id="wa-comprobante-status" class="text-green-200 text-sm mb-3">⏳ Abriendo WhatsApp en 2 segundos...</p>
+                            <a href="${waUrl}" target="_blank" rel="noopener noreferrer" class="inline-block px-4 py-3 bg-green-600 hover:bg-green-700 text-white font-bold text-sm rounded-xl transition-all active:scale-95">
+                                📲 Abrir WhatsApp manualmente
+                            </a>
+                        `;
+                        pagoEnviadoSection.prepend(waConfirmDiv);
+                        
+                        if (isMobile) {
+                            // 📱 EN MÓVIL: Abrir app nativa de WhatsApp
+                            setTimeout(() => {
+                                const statusMsg = document.getElementById('wa-comprobante-status');
+                                if (statusMsg) {
+                                    statusMsg.innerHTML = '<strong>📱 Abriendo WhatsApp...</strong><br><span class="text-xs">Enviá el mensaje con el link del comprobante</span>';
+                                }
+                                window.location.href = waUrl;
+                            }, 2000);
+                        } else {
+                            // 💻 EN DESKTOP: Abrir en nueva pestaña
+                            setTimeout(() => {
+                                window.open(waUrl, '_blank');
+                                const statusMsg = document.getElementById('wa-comprobante-status');
+                                if (statusMsg) {
+                                    statusMsg.innerHTML = '<strong>✅ WhatsApp se abrió en una nueva pestaña</strong><br><span class="text-xs">Enviá el mensaje con el link del comprobante</span>';
+                                }
+                            }, 1500);
+                        }
                     } catch(err) {
                         progressWrap.classList.add('hidden');
                         btn.disabled = false;

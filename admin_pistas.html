@@ -11,18 +11,22 @@
     <script type="module">
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
         import { getFirestore, collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, onSnapshot, Timestamp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
-        import { getStorage, ref, getDownloadURL, deleteObject } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js';
+        import { getStorage, ref, getDownloadURL, deleteObject, getBlob } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js';
         
         import { app, db, storage } from './firebase_config.js';
         
         window.db = db;
         window.storage = storage;
+        window.storageRef = ref;
+        window.getBlobFn = getBlob;
         window.firestoreModules = { collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, onSnapshot, Timestamp };
         window.storageModules = { ref, getDownloadURL, deleteObject };
     </script>
     
     <!-- JSZip para descarga masiva -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <!-- Tone.js para pitch shifting -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
     
     <!-- SortableJS para drag and drop -->
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
@@ -161,29 +165,86 @@
         <!-- Acciones Principales -->
         <div class="bg-gradient-to-r from-gray-800 to-gray-900 rounded-xl shadow-2xl p-6 mb-8 border-2 border-blue-500">
             <div class="grid md:grid-cols-4 gap-4">
-                <button onclick="downloadAllTracks()" 
+                <button id="btn-dj-hide-zip" onclick="downloadAllTracks()" 
                     class="bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white font-bold py-4 px-6 rounded-lg transition-all transform hover:scale-105 shadow-lg">
                     <i class="fas fa-download text-2xl mb-2"></i><br>
                     📥 Descargar ZIP
                 </button>
 
-                <button onclick="openLinkGenerator()" 
+                <button id="btn-dj-hide-links" onclick="openLinkGenerator()" 
                     class="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-bold py-4 px-6 rounded-lg transition-all transform hover:scale-105 shadow-lg">
                     <i class="fas fa-link text-2xl mb-2"></i><br>
                     🔗 Links Artistas
                 </button>
 
-                <button onclick="openDeadlineConfig()" 
+                <button id="btn-dj-hide-deadline" onclick="openDeadlineConfig()" 
                     class="bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white font-bold py-4 px-6 rounded-lg transition-all transform hover:scale-105 shadow-lg">
                     <i class="fas fa-calendar text-2xl mb-2"></i><br>
                     📅 Fecha Límite
                 </button>
                 
-                <button onclick="openPlaylistManager()" 
+                <button id="btn-dj-hide-order" onclick="openPlaylistManager()" 
                     class="bg-gradient-to-r from-orange-600 to-orange-700 hover:from-orange-700 hover:to-orange-800 text-white font-bold py-4 px-6 rounded-lg transition-all transform hover:scale-105 shadow-lg">
                     <i class="fas fa-list-ol text-2xl mb-2"></i><br>
                     🎵 Ordenar Gala
                 </button>
+
+                <button onclick="prepareOffline()" id="offlineBtn"
+                    class="bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-700 hover:to-teal-800 text-white font-bold py-4 px-6 rounded-lg transition-all transform hover:scale-105 shadow-lg">
+                    <i class="fas fa-cloud-download-alt text-2xl mb-2"></i><br>
+                    � Guardar para Gala
+                </button>
+            </div>
+
+            <!-- Explicación offline -->
+            <div class="mt-3 bg-teal-900/20 border border-teal-500/30 rounded-lg px-4 py-2 flex items-start gap-2">
+                <i class="fas fa-info-circle text-teal-400 mt-0.5 flex-shrink-0"></i>
+                <p class="text-teal-200 text-xs leading-relaxed">
+                    <strong>💾 Guardar para Gala:</strong> Descarga todas las pistas en el dispositivo <em>sin necesidad de reproducirlas</em>. 
+                    Hacelo antes de la gala (con WiFi) y podrás reproducir todo aunque se corte internet.
+                    <span id="offlineSummary" class="ml-1 text-green-400 font-semibold"></span>
+                </p>
+            </div>
+
+            <!-- Modal DJ -->
+            <div id="djModal" class="hidden fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+                <div class="bg-gray-900 border-2 border-pink-500 rounded-2xl shadow-2xl max-w-md w-full p-6">
+                    <div class="flex items-center gap-3 mb-4">
+                        <span class="text-4xl">🎧</span>
+                        <div>
+                            <h3 class="text-white font-bold text-xl">Link para el DJ</h3>
+                            <p class="text-gray-400 text-sm">Solo puede escuchar y guardar pistas offline</p>
+                        </div>
+                        <button onclick="document.getElementById('djModal').classList.add('hidden')" class="ml-auto text-gray-400 hover:text-white text-2xl">&times;</button>
+                    </div>
+                    <div class="bg-gray-800 rounded-lg p-3 mb-4 flex items-center gap-2">
+                        <input id="djLinkInput" type="text" readonly
+                            class="bg-transparent text-green-300 text-xs font-mono flex-1 outline-none break-all"
+                            onclick="this.select()">
+                    </div>
+                    <div class="flex gap-3">
+                        <button onclick="copyDJLink()" id="djCopyBtn"
+                            class="flex-1 bg-pink-600 hover:bg-pink-700 text-white font-bold py-3 rounded-lg transition">
+                            <i class="fas fa-copy"></i> Copiar Link
+                        </button>
+                        <a id="djWhatsappLink" href="#" target="_blank"
+                            class="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg transition text-center">
+                            <i class="fab fa-whatsapp"></i> WhatsApp
+                        </a>
+                    </div>
+                    <p class="text-gray-500 text-xs mt-3 text-center">El DJ entra directo, sin contraseña. Solo puede reproducir y guardar pistas offline.</p>
+                </div>
+            </div>
+
+            <!-- Barra de progreso offline -->
+            <div id="offlineProgress" class="hidden mt-3 bg-gray-800 rounded-xl p-4 border border-teal-500/40">
+                <div class="flex items-center justify-between mb-2">
+                    <span class="text-teal-300 text-sm font-semibold" id="offlineProgressText">🔄 Guardando pistas en el dispositivo...</span>
+                    <span class="text-white text-sm font-mono" id="offlineProgressCount">0/0</span>
+                </div>
+                <div class="w-full bg-gray-700 rounded-full h-3">
+                    <div id="offlineProgressBar" class="bg-teal-500 h-3 rounded-full transition-all duration-300" style="width:0%"></div>
+                </div>
             </div>
         </div>
 
@@ -283,10 +344,21 @@
                     <!-- Se llenará dinámicamente -->
                 </div>
                 
-                <button onclick="savePlaylistOrder()" 
+                <button id="savePlaylistBtn" onclick="savePlaylistOrder()" 
                     class="w-full bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white font-bold py-4 px-6 rounded-lg transition">
                     <i class="fas fa-save"></i> Guardar Orden de la Gala
                 </button>
+
+                <div class="flex gap-3 mt-3">
+                    <button onclick="printPlaylist()" 
+                        class="flex-1 bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white font-bold py-3 px-4 rounded-lg transition">
+                        <i class="fas fa-print"></i> Imprimir / PDF
+                    </button>
+                    <button onclick="copyPresenterLink()" 
+                        class="flex-1 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-bold py-3 px-4 rounded-lg transition">
+                        <i class="fas fa-share-alt"></i> Link Presentador
+                    </button>
+                </div>
                 
                 <p class="text-gray-400 text-sm mt-4 text-center">
                     Solo se incluyen artistas que tienen al menos una pista subida
@@ -298,10 +370,25 @@
     <script type="module">
         const params = new URLSearchParams(window.location.search);
         const eventId = params.get('eventId');
+        const eventName = params.get('eventName') || '';
+        const isDJ = params.get('dj') === 'true';
 
         if (!eventId) {
             alert('Falta el parámetro eventId');
             window.location.href = 'eventos.html';
+        }
+
+        // Modo DJ: ocultar controles de admin
+        if (isDJ) {
+            document.addEventListener('DOMContentLoaded', () => {
+                // Cambiar título
+                document.querySelector('h1').textContent = '🎧 Panel DJ - Pistas';
+                // Ocultar botones admin
+                ['btn-dj-hide-zip','btn-dj-hide-links','btn-dj-hide-deadline','btn-dj-hide-order'].forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) el.style.display = 'none';
+                });
+            });
         }
 
         let allArtists = [];
@@ -310,7 +397,28 @@
         let currentFilter = 'all';
 
         window.goBack = function() {
-            window.location.href = `panel_evento_SIMPLE.html?eventId=${eventId}`;
+            window.location.href = `panel_evento_SIMPLE.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`;
+        };
+
+        window.openDJModal = function() {
+            const djLink = `https://vyt-music.web.app/admin_pistas.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}&dj=true`;
+            document.getElementById('djLinkInput').value = djLink;
+            const waText = `🎧 *Panel DJ - VYT MUSIC*\n\nHola! Este es tu link para acceder a las pistas de la gala.\n\n👉 ${djLink}\n\n📌 Antes de la gala conectate a WiFi y presioná *"Guardar para Gala"* para tener todo guardado y poder reproducir sin internet.`;
+            document.getElementById('djWhatsappLink').href = `https://wa.me/?text=${encodeURIComponent(waText)}`;
+            document.getElementById('djModal').classList.remove('hidden');
+        };
+
+        window.copyDJLink = function() {
+            const input = document.getElementById('djLinkInput');
+            navigator.clipboard.writeText(input.value).then(() => {
+                const btn = document.getElementById('djCopyBtn');
+                btn.innerHTML = '<i class="fas fa-check"></i> ¡Copiado!';
+                btn.classList.replace('bg-pink-600', 'bg-green-600');
+                setTimeout(() => {
+                    btn.innerHTML = '<i class="fas fa-copy"></i> Copiar Link';
+                    btn.classList.replace('bg-green-600', 'bg-pink-600');
+                }, 2000);
+            });
         };
 
         // Función para mostrar mensajes
@@ -336,12 +444,12 @@
         async function loadEvent() {
             try {
                 const { doc, getDoc } = window.firestoreModules;
-                const eventRef = doc(window.db, 'eventos', eventId);
+                const eventRef = doc(window.db, 'events', eventId);
                 const eventSnap = await getDoc(eventRef);
                 
                 if (eventSnap.exists()) {
                     eventData = eventSnap.data();
-                    document.getElementById('eventName').textContent = `Evento: ${eventData.nombre || 'Sin nombre'}`;
+                    document.getElementById('eventName').textContent = `Evento: ${eventData.name || eventData.nombre || 'Sin nombre'}`;
                     
                     // Mostrar fecha límite actual si existe
                     if (eventData.fecha_limite_pistas) {
@@ -363,12 +471,14 @@
                 // Intentar cargar de la estructura vieja primero (events/{eventId}/artists)
                 let artistsRef = collection(window.db, `events/${eventId}/artists`);
                 let snapshot = await getDocs(artistsRef);
+                let usedCollection = `events/${eventId}/artists`;
                 
                 // Si no hay artistas en la estructura vieja, intentar la nueva (artistas_{eventId})
                 if (snapshot.empty) {
                     console.log('⚠️ No hay artistas en events/${eventId}/artists, probando artistas_${eventId}...');
                     artistsRef = collection(window.db, `artistas_${eventId}`);
                     snapshot = await getDocs(artistsRef);
+                    usedCollection = `artistas_${eventId}`;
                 }
                 
                 allArtists = [];
@@ -377,7 +487,9 @@
                     allArtists.push({
                         id: doc.id,
                         nombre: data.name || data.nombre || 'Sin nombre',
-                        foto_url: data.photoURL || data.foto_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(data.name || data.nombre || 'A')}&background=4f46e5&color=fff&size=128`
+                        foto_url: data.photoURL || data.foto_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(data.name || data.nombre || 'A')}&background=4f46e5&color=fff&size=128`,
+                        playOrder: data.playOrder,
+                        _collectionPath: usedCollection
                     });
                 });
                 
@@ -414,7 +526,8 @@
                     // Actualizar UI automáticamente
                     updateStats();
                     displayArtists();
-                    
+                    showOfflineSummary(); // Mostrar cuántas pistas están guardadas
+
                     // Mostrar notificación visual
                     const totalTracks = allTracksData.reduce((sum, artist) => sum + artist.pistas.length, 0);
                     console.log(`✅ ${totalTracks} pistas cargadas`);
@@ -494,23 +607,24 @@
                                                 </p>
                                                 <p class="text-gray-400 text-xs">${track.estilo_cancion}</p>
                                                 <p class="text-gray-500 text-xs mt-1">
-                                                    ${track.tamano_mb} MB • ${track.formato.toUpperCase()}
+                                                    ${track.tamano_mb} MB • ${track.formato.toUpperCase()}${track.trim_duration ? ' • <span class="text-yellow-400">✂️ ' + formatTime(track.trim_duration) + '</span>' : ''}${track.pitch_offset && track.pitch_offset !== 0 ? ' • <span class="text-purple-400">♫ ' + (track.pitch_offset > 0 ? '+' : '') + track.pitch_offset + ' st</span>' : ''}
                                                 </p>
                                             </div>
                                             <div class="flex gap-1 flex-wrap items-center">
-                                                <button onclick="toggleTrack('track_${artist.id}_${track.slot}', '${track.archivo_url}', '${artist.nombre}', '${track.nombre_cancion}')" 
+                                                <button onclick="toggleTrack('track_${artist.id}_${track.slot}', '${track.archivo_url}', '${artist.nombre.replace(/'/g, "\\'")}', '${track.nombre_cancion.replace(/'/g, "\\'")}', ${track.pitch_offset || 0})" 
                                                     id="playBtn_track_${artist.id}_${track.slot}"
-                                                    class="bg-green-500 hover:bg-green-600 text-white px-3 py-2 rounded text-sm transition mr-2">
+                                                    class="bg-green-500 hover:bg-green-600 text-white px-3 py-2 rounded text-sm transition mr-1">
                                                     <i class="fas fa-play"></i>
                                                 </button>
+                                                <span id="timeDisp_track_${artist.id}_${track.slot}" class="text-xs text-green-300 font-mono hidden mr-1 whitespace-nowrap">0:00/0:00</span>
                                                 <button onclick="downloadTrack('${track.archivo_url}', '${artist.nombre}_${track.nombre_cancion}.${track.formato}')" 
                                                     class="bg-blue-500 hover:bg-blue-600 text-white px-3 py-2 rounded text-sm transition">
                                                     <i class="fas fa-download"></i>
                                                 </button>
-                                                <button onclick="deleteTrackConfirm('${artist.id}', ${track.slot}, '${artist.nombre}', '${track.nombre_cancion}')" 
+                                                ${!isDJ ? `<button onclick="deleteTrackConfirm('${artist.id}', ${track.slot}, '${artist.nombre}', '${track.nombre_cancion}')" 
                                                     class="bg-gray-600 hover:bg-gray-700 text-white px-3 py-2 rounded text-sm transition">
                                                     <i class="fas fa-trash"></i>
-                                                </button>
+                                                </button>` : ''}
                                             </div>
                                         </div>
                                     </div>
@@ -518,10 +632,10 @@
                             </div>
                         ` : ''}
                         
-                        <button onclick="copyLink('${artist.id}', '${artist.nombre}')" 
+                        ${!isDJ ? `<button onclick="copyLink('${artist.id}', '${artist.nombre}')" 
                             class="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-semibold py-2 px-4 rounded-lg transition">
                             <i class="fas fa-link"></i> Copiar Link del Artista
-                        </button>
+                        </button>` : ''}
                     </div>
                 `;
             }).join('');
@@ -529,23 +643,131 @@
 
         // Variables globales para el reproductor
         let globalAudio = null;
+        let activeTonePlayerAdmin = null;
+        let activeTonePitchShiftAdmin = null;
+
+        function stopActiveTonePlayerAdmin() {
+            if (activeTonePlayerAdmin) {
+                try { activeTonePlayerAdmin.stop(); activeTonePlayerAdmin.dispose(); } catch(e) {}
+                activeTonePlayerAdmin = null;
+            }
+            if (activeTonePitchShiftAdmin) {
+                try { activeTonePitchShiftAdmin.dispose(); } catch(e) {}
+                activeTonePitchShiftAdmin = null;
+            }
+        }
         let currentPlayingTrackElement = null;
         let currentPlayingTrackId = null;
+        // Mapa de blobURL en memoria por si se genera más de una vez
+        const blobUrlMap = new Map();
+
+        // ===== CACHE LOCAL DE AUDIO (IndexedDB) =====
+        const AUDIO_DB_NAME = 'vytmusic-audio-v1';
+        const AUDIO_STORE   = 'blobs';
+        let _audioDb = null;
+
+        async function openAudioDb() {
+            if (_audioDb) return _audioDb;
+            return new Promise((resolve, reject) => {
+                const req = indexedDB.open(AUDIO_DB_NAME, 1);
+                req.onupgradeneeded = e => e.target.result.createObjectStore(AUDIO_STORE);
+                req.onsuccess = e => { _audioDb = e.target.result; resolve(_audioDb); };
+                req.onerror = () => reject(req.error);
+            });
+        }
+
+        async function getAudioBlob(url) {
+            try {
+                const db = await openAudioDb();
+                return new Promise(resolve => {
+                    const tx = db.transaction(AUDIO_STORE, 'readonly');
+                    tx.objectStore(AUDIO_STORE).get(url).onsuccess = e => resolve(e.target.result || null);
+                });
+            } catch { return null; }
+        }
+
+        async function putAudioBlob(url, blob) {
+            try {
+                const db = await openAudioDb();
+                await new Promise((resolve, reject) => {
+                    const tx = db.transaction(AUDIO_STORE, 'readwrite');
+                    tx.objectStore(AUDIO_STORE).put(blob, url).onsuccess = resolve;
+                    tx.onerror = () => reject(tx.error);
+                });
+            } catch { /* ignorar errores de escritura */ }
+        }
+
+        async function getCachedPlayUrl(url) {
+            // Devuelve un blob:// URL si existe en caché, si no devuelve la URL original
+            if (blobUrlMap.has(url)) return blobUrlMap.get(url);
+            const blob = await getAudioBlob(url);
+            if (!blob) return url;
+            const blobUrl = URL.createObjectURL(blob);
+            blobUrlMap.set(url, blobUrl);
+            return blobUrl;
+        }
+
+        // Cachear en segundo plano sin bloquear
+        function cacheInBackground(url) {
+            getAudioBlob(url).then(existing => {
+                if (existing) return; // ya está cacheado
+                // Buscar storage_path para evitar bloqueo CORS con fetch()
+                let storagePath = null;
+                for (const artist of allTracksData) {
+                    const track = (artist.pistas || []).find(t => t.archivo_url === url);
+                    if (track && track.storage_path) { storagePath = track.storage_path; break; }
+                }
+                if (storagePath) {
+                    window.getBlobFn(window.storageRef(window.storage, storagePath))
+                        .then(blob => putAudioBlob(url, blob))
+                        .catch(() => {});
+                } else {
+                    // Intentar extraer path desde URL
+                    const m = url.match(/\/o\/(.+?)[\?&]/);
+                    const pathFromUrl = m ? decodeURIComponent(m[1]) : null;
+                    if (pathFromUrl) {
+                        window.getBlobFn(window.storageRef(window.storage, pathFromUrl))
+                            .then(blob => putAudioBlob(url, blob))
+                            .catch(() => {});
+                    }
+                }
+            });
+        }
+
+        // Verificar si una pista ya está en caché
+        async function isCached(url) {
+            if (blobUrlMap.has(url)) return true;
+            const blob = await getAudioBlob(url);
+            return !!blob;
+        }
         
         // Inicializar reproductor global
         function initGlobalAudioPlayer() {
             globalAudio = document.getElementById('globalAudioPlayer');
             
-            // Actualizar progress bar
+            // Actualizar progress bar e indicador inline
             globalAudio.addEventListener('timeupdate', () => {
                 const progress = (globalAudio.currentTime / globalAudio.duration) * 100;
-                document.getElementById('progressBar').style.width = `${progress}%`;
-                document.getElementById('currentTime').textContent = formatTime(globalAudio.currentTime);
+                const pb = document.getElementById('progressBar');
+                if (pb) pb.style.width = `${progress}%`;
+                const ct = document.getElementById('currentTime');
+                if (ct) ct.textContent = formatTime(globalAudio.currentTime);
+                // Tiempo inline en la tarjeta
+                if (currentPlayingTrackId) {
+                    const timeDisp = document.getElementById(`timeDisp_${currentPlayingTrackId}`);
+                    if (timeDisp) {
+                        const ctStr = formatTime(globalAudio.currentTime);
+                        const durStr = isNaN(globalAudio.duration) ? '--:--' : formatTime(globalAudio.duration);
+                        timeDisp.textContent = `${ctStr}/${durStr}`;
+                        timeDisp.classList.remove('hidden');
+                    }
+                }
             });
             
             // Actualizar duración
             globalAudio.addEventListener('loadedmetadata', () => {
-                document.getElementById('totalTime').textContent = formatTime(globalAudio.duration);
+                const tt = document.getElementById('totalTime');
+                if (tt) tt.textContent = formatTime(globalAudio.duration);
             });
             
             // Cuando termina
@@ -555,7 +777,7 @@
         }
         
         // Reproducir pista
-        window.playTrack = function(url, artistName, songName, trackId) {
+        window.playTrack = function(url, artistName, songName, trackId, pitchOffset = 0) {
             // Resetear botón y estado del track anterior
             if (currentPlayingTrackElement) {
                 currentPlayingTrackElement.classList.remove('track-playing');
@@ -564,16 +786,21 @@
                 const prevBtn = document.getElementById(`playBtn_${currentPlayingTrackId}`);
                 if (prevBtn) {
                     prevBtn.innerHTML = '<i class="fas fa-play"></i>';
-                    prevBtn.className = prevBtn.dataset.origClass || 'bg-green-500 hover:bg-green-600 text-white px-3 py-2 rounded text-sm transition mr-2';
+                    prevBtn.className = prevBtn.dataset.origClass || 'bg-green-500 hover:bg-green-600 text-white px-3 py-2 rounded text-sm transition mr-1';
                 }
+                const prevTimeDisp = document.getElementById(`timeDisp_${currentPlayingTrackId}`);
+                if (prevTimeDisp) prevTimeDisp.classList.add('hidden');
             }
             
             // Configurar nuevo audio
-            globalAudio.src = url;
-            globalAudio.play();
-            
-            // Actualizar UI del reproductor flotante
-            // (ya no se muestra el panel flotante - control en la tarjeta)
+            getCachedPlayUrl(url).then(playUrl => {
+                const isFromCache = playUrl !== url;
+                console.log(isFromCache ? '🔌 Reproduciendo OFFLINE desde caché' : '🌐 Reproduciendo desde red');
+                if (!isFromCache) cacheInBackground(url);
+                stopActiveTonePlayerAdmin();
+                globalAudio.src = playUrl;
+                globalAudio.play().catch(() => {});
+            });
             
             // Marcar track actual
             currentPlayingTrackId = trackId;
@@ -593,16 +820,17 @@
         };
 
         // Toggle play/stop desde el mismo botón
-        window.toggleTrack = function(trackId, url, artistName, songName) {
-            if (currentPlayingTrackId === trackId && globalAudio && !globalAudio.paused) {
+        window.toggleTrack = function(trackId, url, artistName, songName, pitchOffset = 0) {
+            if (currentPlayingTrackId === trackId && (activeTonePlayerAdmin || (globalAudio && !globalAudio.paused))) {
                 stopAudio();
             } else {
-                playTrack(url, artistName, songName, trackId);
+                playTrack(url, artistName, songName, trackId, pitchOffset);
             }
         };
         
         // Parar audio
         window.stopAudio = function() {
+            stopActiveTonePlayerAdmin();
             if (globalAudio) {
                 globalAudio.pause();
                 globalAudio.currentTime = 0;
@@ -618,8 +846,10 @@
                 const playBtn = document.getElementById(`playBtn_${currentPlayingTrackId}`);
                 if (playBtn) {
                     playBtn.innerHTML = '<i class="fas fa-play"></i>';
-                    playBtn.className = playBtn.dataset.origClass || 'bg-green-500 hover:bg-green-600 text-white px-3 py-2 rounded text-sm transition mr-2';
+                    playBtn.className = playBtn.dataset.origClass || 'bg-green-500 hover:bg-green-600 text-white px-3 py-2 rounded text-sm transition mr-1';
                 }
+                const timeDisp = document.getElementById(`timeDisp_${currentPlayingTrackId}`);
+                if (timeDisp) timeDisp.classList.add('hidden');
                 currentPlayingTrackId = null;
             }
         };
@@ -715,8 +945,16 @@
                 for (const artistData of allTracksData) {
                     for (const track of artistData.pistas) {
                         try {
-                            const response = await fetch(track.archivo_url);
-                            const blob = await response.blob();
+                            // Extraer el path de Storage desde la URL de descarga (evita error CORS de fetch)
+                            const match = track.archivo_url.match(/\/o\/(.+?)[\?&]/);
+                            const storagePath = match ? decodeURIComponent(match[1]) : null;
+                            let blob;
+                            if (storagePath) {
+                                blob = await window.getBlobFn(window.storageRef(window.storage, storagePath));
+                            } else {
+                                const response = await fetch(track.archivo_url);
+                                blob = await response.blob();
+                            }
                             const filename = `${artistData.artistName}_${track.nombre_cancion}.${track.formato}`;
                             folder.file(filename, blob);
                         } catch (error) {
@@ -882,7 +1120,7 @@
                 const { doc, updateDoc, Timestamp } = window.firestoreModules;
                 const deadlineDate = new Date(`${dateValue}T${timeValue}`);
                 
-                const eventRef = doc(window.db, 'eventos', eventId);
+                const eventRef = doc(window.db, 'events', eventId);
                 await updateDoc(eventRef, {
                     fecha_limite_pistas: Timestamp.fromDate(deadlineDate)
                 });
@@ -985,41 +1223,104 @@
         window.savePlaylistOrder = async function() {
             const items = document.querySelectorAll('.playlist-item');
             const updates = [];
+
+            const btn = document.getElementById('savePlaylistBtn');
+            const origHtml = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Guardando...';
+            btn.className = 'w-full bg-gray-600 text-white font-bold py-4 px-6 rounded-lg cursor-not-allowed';
             
             try {
-                displayMessage('Guardando orden de playlist...', 'info');
-                
                 const { doc, updateDoc } = window.firestoreModules;
                 
                 items.forEach((item, index) => {
                     const artistId = item.getAttribute('data-artist-id');
-                    
-                    // Determinar la collection correcta
                     const artistRef = allArtists.find(a => a.id === artistId);
-                    let collectionPath = `artistas_${eventId}`;
-                    
-                    // Si el artista viene de la subcollection, usar esa
-                    if (artistRef && artistRef._fromSubcollection) {
-                        collectionPath = `events/${eventId}/artists`;
-                    }
-                    
+                    const collectionPath = (artistRef && artistRef._collectionPath) || `artistas_${eventId}`;
                     const artistDocRef = doc(window.db, collectionPath, artistId);
                     updates.push(updateDoc(artistDocRef, { playOrder: index }));
                 });
                 
                 await Promise.all(updates);
-                
-                displayMessage(`✅ Orden guardado: ${updates.length} artistas ordenados`, 'success');
-                
-                // Recargar datos
+
+                // Confirmación dentro del modal
+                btn.innerHTML = `<i class="fas fa-check-circle"></i> ¡Orden guardado! (${updates.length} artistas)`;
+                btn.className = 'w-full bg-gradient-to-r from-emerald-500 to-green-600 text-white font-bold py-4 px-6 rounded-lg';
+                btn.disabled = false;
+
                 setTimeout(() => {
+                    btn.innerHTML = origHtml;
+                    btn.disabled = false;
+                    btn.className = 'w-full bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white font-bold py-4 px-6 rounded-lg transition';
                     loadArtists();
-                }, 1000);
+                }, 3000);
                 
             } catch (error) {
                 console.error('Error guardando orden:', error);
-                displayMessage('Error al guardar el orden', 'error');
+                btn.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Error al guardar';
+                btn.className = 'w-full bg-red-600 text-white font-bold py-4 px-6 rounded-lg';
+                btn.disabled = false;
+                setTimeout(() => {
+                    btn.innerHTML = origHtml;
+                    btn.className = 'w-full bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white font-bold py-4 px-6 rounded-lg transition';
+                }, 3000);
             }
+        };
+
+        // Generar e imprimir PDF de orden de gala
+        window.printPlaylist = function() {
+            const items = document.querySelectorAll('#playlistContainer .playlist-item');
+            if (items.length === 0) {
+                displayMessage('Abrí el panel de ordenar gala primero', 'warning');
+                return;
+            }
+            const evName = document.getElementById('eventName').textContent.replace('Evento: ', '');
+            let rows = '';
+            items.forEach((item, i) => {
+                const artistId = item.getAttribute('data-artist-id');
+                const artistName = item.querySelector('h3')?.textContent?.trim() || 'Artista';
+                const artistTracks = allTracksData.find(t => t.artistId === artistId);
+                let tracksHtml = 'Sin pistas';
+                if (artistTracks && artistTracks.pistas) {
+                    tracksHtml = artistTracks.pistas.map(t =>
+                        `${t.slot === 1 ? '★' : '♪'} <strong>${t.nombre_cancion}</strong> — ${t.estilo_cancion}${t.trim_duration ? ' (✂️ ' + formatTime(t.trim_duration) + ')' : ''}`
+                    ).join('<br>');
+                }
+                rows += `<tr>
+                    <td style="width:55px;text-align:center;font-size:26px;font-weight:bold;color:#1d4ed8;padding:10px 4px;">${i + 1}</td>
+                    <td style="padding:10px 8px;font-size:16px;font-weight:700;">${artistName}</td>
+                    <td style="padding:10px 8px;font-size:13px;color:#374151;">${tracksHtml}</td>
+                </tr>`;
+            });
+            const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+                <title>Orden Gala — ${evName}</title>
+                <style>
+                    body{font-family:Arial,sans-serif;padding:24px;max-width:780px;margin:0 auto}
+                    h1{text-align:center;color:#1e3a8a;border-bottom:3px solid #3b82f6;padding-bottom:8px;font-size:26px;margin-bottom:4px}
+                    .sub{text-align:center;color:#6b7280;font-size:13px;margin-bottom:20px}
+                    table{width:100%;border-collapse:collapse}
+                    tr{page-break-inside:avoid}
+                    tr:nth-child(even){background:#eff6ff}
+                    td{border-bottom:1px solid #e5e7eb;vertical-align:top}
+                    @media print{body{padding:8px}}
+                </style></head><body>
+                <h1>🎵 Orden de Gala</h1>
+                <p class="sub">${evName} — ${new Date().toLocaleDateString('es-ES', {day:'numeric',month:'long',year:'numeric'})}</p>
+                <table>${rows}</table>
+                </body></html>`;
+            const win = window.open('', '_blank', 'width=820,height=640');
+            win.document.write(html);
+            win.document.close();
+            win.onload = () => win.print();
+        };
+
+        window.copyPresenterLink = function() {
+            const link = `${location.origin}/orden_gala.html?eventId=${eventId}`;
+            navigator.clipboard.writeText(link).then(() => {
+                displayMessage('✅ Link copiado. Enviáselo al presentador.', 'success');
+            }).catch(() => {
+                prompt('Copiá este link para el presentador:', link);
+            });
         };
 
         // Filtrar artistas
@@ -1058,6 +1359,100 @@
             document.getElementById('loading').classList.add('hidden');
             document.getElementById('mainContent').classList.remove('hidden');
         }
+
+        // ===== OFFLINE: PREPARAR PISTAS PARA GALA =====
+        // Mostrar resumen de pistas ya guardadas
+        async function showOfflineSummary() {
+            let count = 0;
+            let total = 0;
+            for (const artist of allTracksData) {
+                for (const track of (artist.pistas || [])) {
+                    if (!track.archivo_url) continue;
+                    total++;
+                    if (await isCached(track.archivo_url)) count++;
+                }
+            }
+            const el = document.getElementById('offlineSummary');
+            if (!el) return;
+            if (total === 0) { el.textContent = ''; return; }
+            if (count === 0) { el.textContent = '(ninguna guardada aún)'; el.className = 'ml-1 text-gray-400 font-semibold'; }
+            else if (count < total) { el.textContent = `(⬇️ ${count}/${total} guardadas)`; el.className = 'ml-1 text-yellow-400 font-semibold'; }
+            else { el.textContent = `(✅ todas guardadas — lista para gala sin internet)`; el.className = 'ml-1 text-green-400 font-semibold'; }
+        }
+
+        window.prepareOffline = async function() {
+            const tracks = [];
+            for (const artist of allTracksData) {
+                for (const track of (artist.pistas || [])) {
+                    if (track.archivo_url) tracks.push({ url: track.archivo_url, storagePath: track.storage_path || null });
+                }
+            }
+
+            if (tracks.length === 0) {
+                displayMessage('No hay pistas para preparar', 'warning');
+                return;
+            }
+
+            const btn = document.getElementById('offlineBtn');
+            const progress = document.getElementById('offlineProgress');
+            const progressBar = document.getElementById('offlineProgressBar');
+            const progressText = document.getElementById('offlineProgressText');
+            const progressCount = document.getElementById('offlineProgressCount');
+
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin text-2xl mb-2"></i><br>🔄 Descargando...';
+            progress.classList.remove('hidden');
+            progressBar.style.width = '0%';
+            progressBar.className = progressBar.className.replace('bg-green-500', 'bg-teal-500');
+            progressText.textContent = '🔄 Descargando pistas para uso offline...';
+            progressCount.textContent = `0/${tracks.length}`;
+
+            let done = 0;
+            let errors = 0;
+            for (const { url, storagePath } of tracks) {
+                try {
+                    const existing = await getAudioBlob(url);
+                    if (!existing) {
+                        let blob = null;
+                        // Extraer storage path de la URL si no lo tenemos
+                        const effectivePath = storagePath || (() => {
+                            const m = url.match(/\/o\/(.+?)[\?&]/);
+                            return m ? decodeURIComponent(m[1]) : null;
+                        })();
+                        if (effectivePath) {
+                            console.log('📥 Descargando con SDK:', effectivePath);
+                            blob = await window.getBlobFn(window.storageRef(window.storage, effectivePath));
+                        } else {
+                            const resp = await fetch(url, { cache: 'no-store' });
+                            if (resp.ok) blob = await resp.blob();
+                        }
+                        if (blob) {
+                            await putAudioBlob(url, blob);
+                            console.log('✅ Guardada:', effectivePath || url);
+                        } else { errors++; console.warn('⚠️ blob null para:', url); }
+                    } else {
+                        console.log('✅ Ya estaba cacheada:', url);
+                    }
+                } catch(e) { errors++; console.error('❌ Error guardando pista:', e, 'URL:', url); }
+                done++;
+                const pct = Math.round((done / tracks.length) * 100);
+                progressBar.style.width = pct + '%';
+                progressCount.textContent = `${done}/${tracks.length}`;
+            }
+
+            const cached = tracks.length - errors;
+            progressBar.classList.remove('bg-teal-500');
+            progressBar.classList.add('bg-green-500');
+            progressText.innerHTML = errors === 0
+                ? `✅ ¡${cached} pistas guardadas! La gala funciona sin internet.`
+                : `⚠️ ${cached} guardadas, ${errors} con error. Reintentá con internet.`;
+            btn.disabled = false;
+            btn.innerHTML = `<i class="fas fa-check-circle text-2xl mb-2"></i><br>✅ ${cached}/${tracks.length} guardadas`;
+            setTimeout(() => {
+                btn.innerHTML = '<i class="fas fa-cloud-download-alt text-2xl mb-2"></i><br>💾 Guardar para Gala';
+                showOfflineSummary();
+            }, 8000);
+        };
 
         init();
     </script>

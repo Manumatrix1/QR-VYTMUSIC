@@ -97,26 +97,36 @@
                 ui.shareSummaryBtn.disabled = true;
                 return;
             }
-            const prefixCounts = tickets.reduce((acc, ticket) => {
-                if (ticket.prefix) acc[ticket.prefix] = (acc[ticket.prefix] || 0) + 1;
+            const prefixData = tickets.reduce((acc, ticket) => {
+                if (ticket.prefix) {
+                    if (!acc[ticket.prefix]) {
+                        acc[ticket.prefix] = { count: 0, artistName: ticket.artistName || '' };
+                    }
+                    acc[ticket.prefix].count++;
+                    if (!acc[ticket.prefix].artistName && ticket.artistName) {
+                        acc[ticket.prefix].artistName = ticket.artistName;
+                    }
+                }
                 return acc;
             }, {});
-            const artistPrefixes = Object.keys(prefixCounts).sort();
+            const artistPrefixes = Object.keys(prefixData).sort();
             ui.artistsListDiv.innerHTML = '';
             artistPrefixes.forEach(prefix => {
-                const count = prefixCounts[prefix];
+                const { count, artistName } = prefixData[prefix];
+                const displayName = artistName || prefix;
                 const card = document.createElement('div');
                 card.className = 'artist-card';
                 card.innerHTML = `
                     <a href="visor_qr_compartido.html?eventId=${eventId}&artist=${encodeURIComponent(prefix)}" class="flex-grow">
-                        <h3 class="text-xl font-bold text-sky-400">${prefix}</h3>
+                        <h3 class="text-xl font-bold text-sky-400">${displayName}</h3>
+                        ${artistName ? `<p class="text-xs text-gray-500">Código: ${prefix}</p>` : ''}
                         <p class="text-sm text-gray-400">${count} entrada(s)</p>
                     </a>
                     <div class="flex space-x-1">
-                        <button data-prefix="${prefix}" class="view-detailed-btn px-2 py-1.5 bg-green-600 text-white font-medium rounded text-xs hover:bg-green-700">👥 Ver Invitados</button>
-                        <button data-prefix="${prefix}" class="add-more-btn px-2 py-1.5 bg-blue-600 text-white font-medium rounded text-xs hover:bg-blue-700">+ Más</button>
-                        <button data-prefix="${prefix}" class="share-artist-btn px-2 py-1.5 bg-purple-600 text-white font-medium rounded text-xs hover:bg-purple-700">Compartir</button>
-                        <button data-prefix="${prefix}" class="delete-artist-tickets-btn px-2 py-1.5 bg-red-600 text-white font-medium rounded text-xs hover:bg-red-700">Borrar</button>
+                        <button data-prefix="${prefix}" data-artist-name="${displayName}" class="view-detailed-btn px-2 py-1.5 bg-green-600 text-white font-medium rounded text-xs hover:bg-green-700">👥 Ver Invitados</button>
+                        <button data-prefix="${prefix}" data-artist-name="${displayName}" class="add-more-btn px-2 py-1.5 bg-blue-600 text-white font-medium rounded text-xs hover:bg-blue-700">+ Más</button>
+                        <button data-prefix="${prefix}" data-artist-name="${displayName}" class="share-artist-btn px-2 py-1.5 bg-purple-600 text-white font-medium rounded text-xs hover:bg-purple-700">Compartir</button>
+                        <button data-prefix="${prefix}" data-artist-name="${displayName}" class="delete-artist-tickets-btn px-2 py-1.5 bg-red-600 text-white font-medium rounded text-xs hover:bg-red-700">Borrar</button>
                     </div>`;
                 ui.artistsListDiv.appendChild(card);
             });
@@ -140,14 +150,16 @@
             
             if (target.classList.contains('share-artist-btn')) {
                 const prefix = target.dataset.prefix;
+                const artistName = target.dataset.artistName || prefix;
                 const baseUrl = 'https://vyt-music.web.app';
                 const shareableLink = `${baseUrl}/visor_qr_compartido.html?eventId=${eventId}&artist=${encodeURIComponent(prefix)}`;
-                showShareModal(shareableLink, `Enlace de QR para "${prefix}"`);
+                showShareModal(shareableLink, `Enlace de QR para "${artistName}"`);
             }
             
             if (target.classList.contains('delete-artist-tickets-btn')) {
                 const prefix = target.dataset.prefix;
-                if (confirm(`¿Estás seguro de que quieres borrar TODAS las entradas del artista "${prefix}"? Esta acción no se puede deshacer.`)) {
+                const artistName = target.dataset.artistName || prefix;
+                if (confirm(`¿Estás seguro de que quieres borrar TODAS las entradas del artista "${artistName}"? Esta acción no se puede deshacer.`)) {
                     // Lógica para borrar las entradas
                     try {
                         const ticketsToDeleteQuery = query(collection(db, `events/${eventId}/tickets`), where("prefix", "==", prefix));
@@ -164,7 +176,7 @@
                         });
                         await batch.commit();
                         
-                        alert(`Se han borrado ${ticketsSnapshot.size} entradas del artista "${prefix}".`);
+                        alert(`Se han borrado ${ticketsSnapshot.size} entradas del artista "${artistName}".`);
                         loadArtistsWithTickets(); // Recargar la lista
                         
                     } catch (error) {

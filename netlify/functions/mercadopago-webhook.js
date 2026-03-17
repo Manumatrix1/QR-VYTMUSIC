@@ -98,12 +98,86 @@ exports.handler = async (event, context) => {
 
         console.log(`✅ Orden ${orderId} actualizada a APPROVED automáticamente`);
 
+        // 📱 NOTIFICACIÓN WHATSAPP AL ADMIN
+        try {
+          const orderData = orderDoc.data();
+          const clientName = orderData.artistName || 'Cliente';
+          const clientPhone = orderData.artistPhone || 'N/A';
+          const totalAmount = orderData.totalAmount || 0;
+          const quantity = orderData.quantity || 0;
+          const eventName = orderData.eventName || 'Evento';
+          
+          // URL del admin panel
+          const adminLink = `https://vytmusic.netlify.app/admin_preventa.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`;
+          
+          // Mensaje para WhatsApp
+          const whatsappMessage = `🎉 *PAGO APROBADO - MERCADO PAGO*\n\n` +
+            `💰 Cliente: ${clientName}\n` +
+            `📱 Teléfono: ${clientPhone}\n` +
+            `🎟️ Entradas: ${quantity}\n` +
+            `💵 Monto: $${totalAmount.toLocaleString()}\n` +
+            `📦 Orden: ${orderId.substring(0, 8).toUpperCase()}\n` +
+            `🎪 Evento: ${eventName}\n\n` +
+            `✅ El pago fue confirmado automáticamente por Mercado Pago.\n\n` +
+            `Ver detalles:\n${adminLink}`;
+          
+          // OPCIÓN 1: CallMeBot (GRATIS)
+          // Para activar: agregar CALLMEBOT_API_KEY y ADMIN_PHONE en variables de entorno
+          const callMeBotKey = process.env.CALLMEBOT_API_KEY;
+          const adminPhone = process.env.ADMIN_PHONE;
+          
+          if (callMeBotKey && adminPhone) {
+            try {
+              // CallMeBot tiene límite de caracteres, hacer mensaje más corto
+              const shortMessage = `🎉 PAGO APROBADO MP\n${clientName}\n${quantity} entradas - $${totalAmount.toLocaleString()}\nVer: ${adminLink}`;
+              
+              const callMeBotURL = `https://api.callmebot.com/whatsapp.php?phone=${adminPhone}&text=${encodeURIComponent(shortMessage)}&apikey=${callMeBotKey}`;
+              
+              console.log('📲 Enviando notificación WhatsApp con CallMeBot...');
+              
+              const response = await fetch(callMeBotURL);
+              
+              if (response.ok) {
+                console.log('✅ Notificación WhatsApp enviada exitosamente');
+                await orderRef.update({
+                  whatsappNotificationSent: true,
+                  whatsappNotificationMethod: 'callmebot',
+                  whatsappNotificationTimestamp: admin.firestore.FieldValue.serverTimestamp()
+                });
+              } else {
+                const errorText = await response.text();
+                console.error('❌ Error respuesta CallMeBot:', errorText);
+              }
+            } catch (callMeBotError) {
+              console.error('❌ Error enviando con CallMeBot:', callMeBotError);
+            }
+          } else {
+            console.log('⚠️ CallMeBot no configurado (falta CALLMEBOT_API_KEY o ADMIN_PHONE)');
+          }
+          
+          // Guardar mensaje en Firebase como backup (siempre)
+          const whatsappURL = `https://wa.me/${adminPhone || '543413632329'}?text=${encodeURIComponent(whatsappMessage)}`;
+          
+          await orderRef.update({
+            whatsappNotificationURL: whatsappURL,
+            whatsappNotificationMessage: whatsappMessage,
+            whatsappNotificationPrepared: admin.firestore.FieldValue.serverTimestamp()
+          });
+          
+          console.log('✅ Datos de notificación WhatsApp guardados en Firebase');
+          
+        } catch (whatsappError) {
+          console.error('⚠️ Error preparando notificación WhatsApp:', whatsappError);
+          // No bloqueamos el flujo si falla la notificación
+        }
+
         return {
           statusCode: 200,
           body: JSON.stringify({ 
             success: true, 
             orderId: orderId,
-            status: 'approved'
+            status: 'approved',
+            notification: 'whatsapp_prepared'
           })
         };
       } else {

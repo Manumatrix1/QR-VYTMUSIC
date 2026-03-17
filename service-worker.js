@@ -1,18 +1,10 @@
 // Service Worker para VYT MUSIC PWA - VERSIÓN PANEL SIMPLIFICADO
-const CACHE_NAME = 'vyt-music-simple-v8'; // 🔥 Actualizado con escaner_rapido.html
+const CACHE_NAME = 'vyt-music-simple-v11'; // 🔥 Actualizado 2026-03-14
 const urlsToCache = [
   '/',
   '/index.html',
   '/eventos.html',
-  '/panel_evento_SIMPLE.html', // ✅ NUEVO PANEL
-  '/panel_evento.html',
-  '/escaner_rapido.html', // ✅ NUEVO ESCÁNER CON MODO OFFLINE
-  '/test_camara_directo.html',
-  '/solucion_camara.html',
-  '/votacion_jurados_FINAL.html',
-  '/manifest.json',
-  '/imagenes/logo-192x192.png',
-  '/imagenes/logo-512x512.png'
+  '/manifest.json'
 ];
 
 // URLs que NO deben ser cacheadas (para funcionalidad en tiempo real)

@@ -315,6 +315,18 @@
                 allFeedbackEvaluations.sort((a, b) => (a.artistName || '').localeCompare(b.artistName || ''));
                 console.log(`✅ ${allFeedbackEvaluations.length} evaluaciones cargadas`);
                 
+                // 🐛 DEBUG: Mostrar QUÉ se cargó de Firebase
+                console.log('🔍 DEBUG - Evaluaciones cargadas:');
+                allFeedbackEvaluations.forEach(eval => {
+                    console.log(`  - ${eval.artistName}:`, {
+                        judgeComments: eval.judgeComments,
+                        judgeCommentsLength: eval.judgeComments?.length || 0,
+                        additionalNotes: eval.additionalNotes,
+                        autoFeedback: eval.autoFeedback?.length || 0,
+                        allFields: Object.keys(eval)
+                    });
+                });
+                
                 // 🆕 Guardar en caché
                 saveToCache(`evaluations_${eventId}_${jurorId}`, allFeedbackEvaluations);
 
@@ -519,20 +531,54 @@
                     </div>
                 </div>
 
-                ${evaluation.songPerformed ? `
+                ${ evaluation.songPerformed ? `
                     <div class="bg-blue-800 bg-opacity-30 p-3 rounded mb-3">
                         <span class="text-blue-300 font-semibold">🎵 Canción:</span>
                         <span class="text-white ml-2">${evaluation.songPerformed}</span>
                     </div>
                 ` : ''}
 
-                ${evaluation.judgeComments || evaluation.additionalNotes ? `
-                    <div class="bg-yellow-800 bg-opacity-20 p-4 rounded-lg mb-4 border border-yellow-600">
-                        <h4 class="text-yellow-300 font-bold mb-2">💭 Tus Comentarios:</h4>
-                        ${evaluation.judgeComments ? `<p class="text-yellow-100 mb-2">${evaluation.judgeComments}</p>` : ''}
-                        ${evaluation.additionalNotes ? `<p class="text-yellow-200 text-sm italic">${evaluation.additionalNotes}</p>` : ''}
-                    </div>
-                ` : '<div class="text-gray-500 text-sm italic mb-4">Sin comentarios adicionales</div>'}
+                <!-- ⭐ DEVOLUCIÓN DEL JURADO - PRIMERO Y MÁS IMPORTANTE -->
+                ${(() => {
+                    const comment = evaluation.judgeComments || '';
+                    const hasComment = comment && comment.trim() !== '';
+                    const additionalNote = evaluation.additionalNotes || '';
+                    
+                    console.log('🔍 Verificando comentario para', evaluation.artistName, ':', {
+                        judgeComments: evaluation.judgeComments,
+                        length: comment.length,
+                        hasComment: hasComment
+                    });
+                    
+                    if (hasComment || additionalNote) {
+                        return `
+                            <div class="bg-blue-900 bg-opacity-50 p-6 rounded-lg mb-5 border-3 border-blue-300 shadow-2xl">
+                                <div class="bg-blue-700 bg-opacity-50 p-3 rounded-lg mb-4 text-center">
+                                    <h4 class="text-white font-bold text-xl mb-1 flex items-center justify-center gap-3">
+                                        <span class="text-3xl">📝</span>
+                                        <span>DEVOLUCIÓN DEL JURADO</span>
+                                    </h4>
+                                    <p class="text-blue-200 text-sm">Tu comentario para el artista</p>
+                                </div>
+                                ${ hasComment ? `
+                                    <div class="bg-white text-gray-900 p-4 rounded-lg text-base leading-relaxed font-medium shadow-lg">
+                                        ${comment}
+                                    </div>
+                                ` : '<div class="bg-yellow-800 bg-opacity-30 p-3 rounded text-yellow-200 text-sm italic">📝 No dejaste comentario escrito para este artista</div>'}
+                                ${ additionalNote ? `<p class="text-blue-100 text-sm italic mt-3 px-2">${additionalNote}</p>` : ''}
+                            </div>
+                        `;
+                    } else {
+                        return `
+                            <div class="bg-yellow-800 bg-opacity-30 p-4 rounded-lg mb-4 border border-yellow-600 text-center">
+                                <p class="text-yellow-200 text-sm">📝 No se registró ningún comentario para este artista</p>
+                                <p class="text-yellow-100 text-xs mt-2">Tip: Escribe comentarios en el campo "Comentarios y observaciones del jurado" al evaluar</p>
+                            </div>
+                        `;
+                    }
+                })()}
+
+                <!-- Sugerencias Automáticas (IA) - Secundario -->
 
                 ${evaluation.autoFeedback && evaluation.autoFeedback.length > 0 ? `
                     <div class="bg-green-800 bg-opacity-20 p-4 rounded-lg border border-green-600">

@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VYT MUSIC – Pago de Inscripción</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;900&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        * { box-sizing: border-box; }
+        body { font-family: 'Inter', sans-serif; background: #000; color: #fff; min-height: 100vh; margin: 0; }
+        .glass { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); backdrop-filter: blur(12px); }
+        .btn-primary { background: linear-gradient(135deg, #0ea5e9, #6366f1); transition: opacity .2s; }
+        .btn-primary:hover { opacity: .85; }
+        .btn-primary:disabled { opacity: .5; cursor: not-allowed; }
+    </style>
+</head>
+<body class="flex flex-col items-center justify-start py-10 px-4"
+      style="background: radial-gradient(ellipse 80% 50% at 50% 0%, rgba(14,165,233,0.15) 0%, transparent 60%), #000;">
+
+    <!-- Logo -->
+    <div class="flex items-center gap-3 mb-10">
+        <img src="imagenes/logo-movimiento.png" alt="VYT MUSIC" class="h-10 w-10 rounded-full object-cover">
+        <span class="font-black text-sky-400 text-2xl">VYT MUSIC</span>
+    </div>
+
+    <!-- Cargando -->
+    <div id="loading-state" class="text-center text-gray-400 py-20">
+        <i class="fas fa-spinner fa-spin text-3xl mb-4 text-sky-400"></i>
+        <p>Cargando...</p>
+    </div>
+
+    <!-- Error: no hay ID o doc no existe -->
+    <div id="error-state" class="hidden glass rounded-2xl p-8 max-w-md w-full text-center">
+        <div class="text-5xl mb-4">❌</div>
+        <h2 class="text-xl font-bold mb-2">Link inválido</h2>
+        <p class="text-gray-400 text-sm">Este link de pago no es válido o ya expiró. Contactá al equipo de VYT MUSIC.</p>
+    </div>
+
+    <!-- Pantalla principal de pago -->
+    <div id="pago-screen" class="hidden w-full max-w-md space-y-5">
+
+        <!-- Header aprobación -->
+        <div class="glass rounded-2xl p-7 text-center">
+            <div class="text-6xl mb-4">✅</div>
+            <h1 class="text-2xl font-black mb-2">¡Fuiste <span class="text-sky-400">aprobado/a</span>!</h1>
+            <p id="artista-nombre" class="text-gray-300 text-sm"></p>
+            <p class="text-gray-500 text-xs mt-2">Para confirmar tu lugar en el certamen realizá el pago de inscripción.</p>
+        </div>
+
+        <!-- Datos de pago -->
+        <div class="glass rounded-2xl p-6">
+            <h2 class="font-bold text-amber-300 mb-4 flex items-center gap-2"><i class="fas fa-university"></i> Datos para transferir</h2>
+            <div class="space-y-3 text-sm">
+                <div class="flex justify-between items-center py-2.5 border-b border-white/10">
+                    <span class="text-gray-400">Monto</span>
+                    <span class="text-amber-300 font-black text-xl">$21.000</span>
+                </div>
+                <div class="flex justify-between items-center py-2.5 border-b border-white/10">
+                    <span class="text-gray-400">Alias</span>
+                    <span class="text-white font-semibold font-mono text-base">concurso.canto</span>
+                </div>
+                <div class="flex justify-between items-center py-2.5">
+                    <span class="text-gray-400">Concepto</span>
+                    <span class="text-white">Inscripción VYT MUSIC</span>
+                </div>
+            </div>
+            <button onclick="copiarAlias()" id="copy-btn"
+                    class="mt-4 w-full py-2.5 text-sm bg-amber-900/40 hover:bg-amber-800/50 border border-amber-700 rounded-xl text-amber-300 font-semibold transition-colors">
+                <i class="fas fa-copy mr-1"></i> Copiar alias
+            </button>
+        </div>
+
+        <!-- Subir comprobante -->
+        <div id="seccion-subir" class="glass rounded-2xl p-6">
+            <!-- Opción: Pagar con MercadoPago -->
+            <div id="mercadopago-section" class="hidden mb-6 pb-6 border-b border-white/10">
+                <h2 class="font-bold text-green-400 mb-2 flex items-center gap-2">
+                    <i class="fas fa-credit-card"></i> Opción 1: Pagar con MercadoPago
+                </h2>
+                <p class="text-xs text-gray-500 mb-4">
+                    💳 Tarjeta (hasta 12 cuotas) • 📱 QR • 💵 Efectivo (Rapipago/Pago Fácil)
+                </p>
+                <button id="pagar-mp-btn" onclick="pagarConMercadoPago()"
+                        class="w-full py-4 rounded-xl text-white font-bold text-base transition-all"
+                        style="background: linear-gradient(135deg, #009ee3, #00b0ff);">
+                    <i class="fas fa-wallet mr-2"></i> 💳 Pagar con Mercado Pago
+                </button>
+            </div>
+
+            <!-- Opción: Transferencia manual -->
+            <div class="mb-3">
+                <h2 class="font-bold text-gray-200 mb-1 flex items-center gap-2">
+                    <i class="fas fa-file-upload text-sky-400"></i> 
+                    <span id="titulo-subir">Opción 2: Transferencia bancaria</span>
+                </h2>
+                <p class="text-xs text-gray-500 mb-4">Si preferís transferir al alias, subí el comprobante aquí.</p>
+            </div>
+
+            <label class="block w-full cursor-pointer">
+                <div id="drop-zone" class="border-2 border-dashed border-white/20 hover:border-sky-500/60 rounded-xl p-6 text-center transition-colors">
+                    <i class="fas fa-cloud-upload-alt text-3xl text-sky-400 mb-2"></i>
+                    <p class="text-sm text-gray-400">Tocá para seleccionar el comprobante</p>
+                    <p class="text-xs text-gray-600 mt-1">JPG, PNG o PDF – máx 10 MB</p>
+                </div>
+                <input type="file" id="comprobante-input" accept="image/*,application/pdf" class="hidden" onchange="onArchivoSeleccionado(this)">
+            </label>
+
+            <!-- Preview del archivo -->
+            <div id="archivo-info" class="hidden mt-3 flex items-center gap-3 bg-sky-950/40 border border-sky-800/50 rounded-xl px-4 py-3">
+                <i class="fas fa-check-circle text-green-400"></i>
+                <span id="archivo-nombre" class="text-sm text-sky-300 truncate"></span>
+            </div>
+
+            <!-- Barra de progreso -->
+            <div id="upload-progress" class="hidden mt-3">
+                <div class="flex justify-between text-xs text-gray-400 mb-1">
+                    <span>📤 Subiendo...</span>
+                    <span id="upload-pct">0%</span>
+                </div>
+                <div class="w-full bg-white/10 rounded-full h-2">
+                    <div id="upload-bar" class="h-2 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 transition-all" style="width:0%"></div>
+                </div>
+            </div>
+
+            <!-- Error -->
+            <div id="upload-error" class="hidden mt-3 p-3 rounded-xl bg-red-950/40 border border-red-800 text-red-300 text-sm"></div>
+
+            <!-- Botón enviar -->
+            <button id="enviar-btn" onclick="enviarComprobante()"
+                    class="btn-primary mt-4 w-full py-4 rounded-xl text-white font-bold text-base">
+                <i class="fas fa-paper-plane mr-2"></i> Enviar comprobante
+            </button>
+        </div>
+    </div>
+
+    <!-- Estado: comprobante enviado, esperando confirmación -->
+    <div id="enviado-screen" class="hidden w-full max-w-md">
+        <div class="glass rounded-2xl p-8 text-center">
+            <div class="text-6xl mb-5">⏳</div>
+            <h2 class="text-2xl font-black mb-3 text-sky-300">Comprobante enviado</h2>
+            <p class="text-gray-400 text-sm leading-relaxed">Recibimos tu comprobante. El equipo lo revisará y te confirmará la inscripción por WhatsApp en breve.</p>
+        </div>
+    </div>
+
+    <!-- Estado: pago confirmado -->
+    <div id="confirmado-screen" class="hidden w-full max-w-md">
+        <div class="glass rounded-2xl p-8 text-center">
+            <div class="text-6xl mb-5">🎉</div>
+            <h2 class="text-2xl font-black mb-3 text-green-400">¡Inscripción confirmada!</h2>
+            <p class="text-gray-300 text-sm leading-relaxed">Tu lugar en VYT MUSIC está reservado. El equipo te agregará al grupo de WhatsApp de participantes con toda la info.</p>
+        </div>
+    </div>
+
+    <p class="mt-10 text-gray-700 text-xs">© 2026 VYT MUSIC</p>
+
+<script type="module">
+    import { db, storage } from './firebase_config.js';
+    import { doc, getDoc, updateDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+    import { ref as storageRef, getDownloadURL } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js';
+
+    const params   = new URLSearchParams(location.search);
+    const docId    = params.get('id');
+    const paymentStatus = params.get('payment'); // success, failure, pending
+    let audicionData = null;
+
+    // ── Mostrar mensaje de MercadoPago si vuelve del checkout ──
+    if (paymentStatus) {
+        if (paymentStatus === 'success') {
+            alert('✅ ¡Pago procesado! Estamos confirmando tu pago, en breve verás la confirmación.');
+        } else if (paymentStatus === 'failure') {
+            alert('❌ El pago no pudo procesarse. Podés intentar nuevamente o usar transferencia bancaria.');
+        } else if (paymentStatus === 'pending') {
+            alert('⏳ Tu pago está siendo procesado. Te notificaremos cuando se confirme.');
+        }
+    }
+
+    // ── Pagar con MercadoPago ──
+    window.pagarConMercadoPago = function() {
+        if (!audicionData || !audicionData.mercadoPagoInitPoint) {
+            alert('❌ No se encontró el link de pago. Contactá al equipo.');
+            return;
+        }
+        
+        // Redirigir a MercadoPago
+        window.location.href = audicionData.mercadoPagoInitPoint;
+    };
+
+    // ── Copiar alias ──
+    window.copiarAlias = function() {
+        navigator.clipboard.writeText('concurso.canto').then(() => {
+            const btn = document.getElementById('copy-btn');
+            btn.innerHTML = '<i class="fas fa-check mr-1"></i> ¡Copiado!';
+            setTimeout(() => { btn.innerHTML = '<i class="fas fa-copy mr-1"></i> Copiar alias'; }, 2000);
+        });
+    };
+
+    // ── Preview archivo ──
+    window.onArchivoSeleccionado = function(input) {
+        const file = input.files[0];
+        if (!file) return;
+        document.getElementById('archivo-nombre').textContent = file.name;
+        document.getElementById('archivo-info').classList.remove('hidden');
+        document.getElementById('upload-error').classList.add('hidden');
+    };
+
+    // ── Enviar comprobante ──
+    window.enviarComprobante = async function() {
+        const input   = document.getElementById('comprobante-input');
+        const errorEl = document.getElementById('upload-error');
+        const archivo = input.files[0];
+        errorEl.classList.add('hidden');
+
+        if (!archivo) {
+            errorEl.textContent = '⚠️ Seleccioná un archivo primero.';
+            errorEl.classList.remove('hidden');
+            return;
+        }
+
+        const btn          = document.getElementById('enviar-btn');
+        const progressWrap = document.getElementById('upload-progress');
+        const progressBar  = document.getElementById('upload-bar');
+        const progressPct  = document.getElementById('upload-pct');
+
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Subiendo...';
+        progressWrap.classList.remove('hidden');
+
+        try {
+            const ext  = archivo.name.split('.').pop().toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
+            const sRef = storageRef(storage, `inscripcion_comprobantes/${docId}_${Date.now()}.${ext}`);
+            const { uploadBytesResumable } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js');
+            let downloadURL;
+            await new Promise((resolve, reject) => {
+                const task = uploadBytesResumable(sRef, archivo);
+                task.on('state_changed',
+                    snap => {
+                        const pct = Math.round(snap.bytesTransferred / snap.totalBytes * 100);
+                        progressBar.style.width = pct + '%';
+                        progressPct.textContent = pct + '%';
+                    },
+                    reject,
+                    () => resolve()
+                );
+            });
+            downloadURL = await getDownloadURL(sRef);
+
+            await updateDoc(doc(db, 'audiciones', docId), {
+                estadoPago: 'enviado',
+                comprobante_url: downloadURL,
+                comprobante_fecha: serverTimestamp()
+            });
+
+            // WA al admin — síncrono antes del await no es posible acá, pero tras subir el archivo el navegador lo permite igual
+            const a = audicionData;
+            const adminURL = `${location.origin}/admin_audiciones.html`;
+            const msg = `💰 *Pago de inscripción recibido*\n\n👤 Artista: ${a.nombre || '—'}${a.ciudad ? `\n📍 Ciudad: ${a.ciudad}` : ''}\n📱 WhatsApp: ${a.telefono || '—'}\n\n🔗 Ver y aprobar pago:\n${adminURL}`;
+            window.open(`https://wa.me/543413632329?text=${encodeURIComponent(msg)}`, '_blank');
+
+            progressWrap.classList.add('hidden');
+            document.getElementById('pago-screen').classList.add('hidden');
+            document.getElementById('enviado-screen').classList.remove('hidden');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+
+        } catch(err) {
+            progressWrap.classList.add('hidden');
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-paper-plane mr-2"></i> Enviar comprobante';
+            errorEl.textContent = '❌ Error al subir el archivo: ' + err.message;
+            errorEl.classList.remove('hidden');
+        }
+    };
+
+    // ── Cargar datos al iniciar ──
+    if (!docId) {
+        document.getElementById('loading-state').classList.add('hidden');
+        document.getElementById('error-state').classList.remove('hidden');
+    } else {
+        (async () => {
+            try {
+                const snap = await getDoc(doc(db, 'audiciones', docId));
+                document.getElementById('loading-state').classList.add('hidden');
+
+                if (!snap.exists()) {
+                    document.getElementById('error-state').classList.remove('hidden');
+                    return;
+                }
+
+                audicionData = snap.data();
+                const estadoPago = audicionData.estadoPago;
+
+                if (estadoPago === 'pagado') {
+                    document.getElementById('confirmado-screen').classList.remove('hidden');
+                    
+                    // 📱 Si vino de MercadoPago con pago exitoso, notificar al admin automáticamente
+                    if (paymentStatus === 'success') {
+                        const adminPhone = '543413632329'; // Tu WhatsApp
+                        const nombre = audicionData.nombre || 'Sin nombre';
+                        const telefono = audicionData.telefono || 'Sin teléfono';
+                        const monto = '21.000';
+                        const metodo = audicionData.paymentDetails?.paymentMethod || 'MercadoPago';
+                        const adminURL = `${location.origin}/admin_audiciones.html`;
+                        
+                        const adminMsg = `💰 *¡PAGO CONFIRMADO!* ✅\n\n👤 Artista: ${nombre}\n📱 WhatsApp: ${telefono}\n💳 Monto: $${monto}\n🔹 Método: ${metodo}\n\n✅ Inscripción completa y pagada\n\n🔗 Ver en admin:\n${adminURL}`;
+                        
+                        const waUrl = `https://wa.me/${adminPhone}?text=${encodeURIComponent(adminMsg)}`;
+                        
+                        // Detectar si es móvil
+                        const isMobile = /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+                        
+                        // Mostrar mensaje informativo
+                        setTimeout(() => {
+                            const confirmadoDiv = document.getElementById('confirmado-screen');
+                            const avisoDiv = document.createElement('div');
+                            avisoDiv.className = 'mt-6 p-4 bg-blue-950/40 border border-blue-800/50 rounded-xl text-sm text-blue-300';
+                            avisoDiv.innerHTML = '<i class="fas fa-info-circle mr-2"></i><strong>Notificación enviada:</strong> Se notificó al equipo sobre tu pago confirmado.';
+                            confirmadoDiv.querySelector('.glass').appendChild(avisoDiv);
+                            
+                            // Abrir WhatsApp automáticamente
+                            if (isMobile) {
+                                window.location.href = waUrl;
+                            } else {
+                                window.open(waUrl, '_blank');
+                            }
+                        }, 1500);
+                        
+                        console.log('📱 Notificación de pago confirmado enviada al admin');
+                    }
+                } else if (estadoPago === 'enviado') {
+                    document.getElementById('enviado-screen').classList.remove('hidden');
+                } else {
+                    document.getElementById('artista-nombre').textContent = audicionData.nombre || '';
+                    document.getElementById('pago-screen').classList.remove('hidden');
+                    
+                    // Mostrar botón de MercadoPago si existe el link
+                    if (audicionData.mercadoPagoInitPoint) {
+                        document.getElementById('mercadopago-section').classList.remove('hidden');
+                        console.log('✅ Link de MercadoPago disponible');
+                    } else {
+                        // Si no hay MP, cambiar título
+                        document.getElementById('titulo-subir').textContent = 'Subí tu comprobante';
+                    }
+                }
+            } catch(e) {
+                document.getElementById('loading-state').classList.add('hidden');
+                document.getElementById('error-state').classList.remove('hidden');
+            }
+        })();
+    }
+</script>
+</body>
+</html>

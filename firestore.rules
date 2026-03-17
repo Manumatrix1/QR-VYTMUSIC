@@ -1,0 +1,137 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Usuarios autenticados (admins) tienen acceso total ──
+    match /{document=**} {
+      allow read, write: if request.auth != null;
+    }
+
+    // ── Configuración del sitio: admins escriben, público solo lee ──
+    match /config_sitio/{docId} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+
+    // ── Eventos: lectura pública (para cargar configuración de precio/fecha en preventa) ──
+    match /events/{eventId} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+    // Subcolecciones de eventos: tickets públicos (para ver_entradas.html)
+    match /events/{eventId}/{sub}/{docId} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+
+    // ── Colección pública: audiciones desde la landing page ──
+    match /audiciones/{docId} {
+      // Crear desde el formulario público
+      allow create: if request.resource.data.keys().hasAll(['nombre','telefono'])
+                    && request.resource.data.nombre is string
+                    && request.resource.data.nombre.size() >= 3
+                    && request.resource.data.nombre.size() <= 80
+                    && request.resource.data.telefono is string
+                    && request.resource.data.telefono.size() >= 7;
+      // Leer desde pago_inscripcion.html (sin login)
+      allow read: if true;
+      // Actualizar solo los campos de pago (comprobante) desde pago_inscripcion.html
+      allow update: if request.resource.data.diff(resource.data).affectedKeys()
+                       .hasOnly(['estadoPago','comprobante_url','comprobante_fecha']);
+    }
+
+    // ── Preventa de entradas: artistas sin login pueden crear y actualizar su orden ──
+    // Colecciones dinámicas ticket_orders_{eventId}
+    match /{colId}/{docId} {
+      allow create, update, read: if colId.matches('ticket_orders_.*');
+    }
+
+    // ── Pistas de audio: artistas sin login pueden subir y actualizar su pista ──
+    // Colecciones dinámicas pistas_{eventId}
+    match /{colId}/{docId} {
+      allow create, update, read: if colId.matches('pistas_.*');
+    }
+
+    // ── Artistas (colecciones raíz legacy): portal_pistas y subida_pistas las leen sin auth ──
+    match /{colId}/{docId} {
+      allow read: if colId.matches('artistas_.*');
+    }
+
+    // ── Eventos (colección legacy "eventos" ≠ "events"): lectura pública ──
+    match /eventos/{docId} {
+      allow read: if true;
+    }
+
+    // ── Jurados: lectura pública para selector de login en votacion_jurados_FINAL.html ──
+    match /jury_users/{docId} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+
+    // ── jury_evaluations global: reportes y votacion_jurados_FINAL leen sin auth ──
+    match /jury_evaluations/{docId} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+
+    // ── jury_votes global: feedback_en_vivo escribe sin auth ──
+    match /jury_votes/{docId} {
+      allow read, write: if true;
+    }
+
+    // ── access_log: escáner QR registra accesos sin auth ──
+    match /access_log/{docId} {
+      allow create: if true;
+      allow read: if request.auth != null;
+    }
+
+    // ── Votaciones de jurados: colecciones dinámicas jurados_{eventId} ──
+    match /{colId}/{docId} {
+      allow read, write: if colId.matches('jurados_.*');
+    }
+
+    // ── Votaciones colecciones dinámicas votaciones_jurados_{eventId} ──
+    match /{colId}/{docId} {
+      allow read, write: if colId.matches('votaciones_jurados_.*');
+    }
+
+    // ── Subcolecciones de eventos que necesitan write sin auth ──
+
+    // Votación de jurados: evaluaciones y votos
+    match /events/{eventId}/jury_evaluations/{docId} {
+      allow read, write: if true;
+    }
+    match /events/{eventId}/jury_votes/{docId} {
+      allow read, write: if true;
+    }
+
+    // Tickets: scanners actualizan estado de ingreso sin auth
+    match /events/{eventId}/tickets/{docId} {
+      allow read: if true;
+      allow update: if true;
+    }
+
+    // Artistas: voting_page actualiza contadores de votos sin auth
+    match /events/{eventId}/artists/{docId} {
+      allow read: if true;
+      allow update: if true;
+    }
+
+    // Live feedback: feedback_en_vivo escribe sin auth
+    match /events/{eventId}/live_feedback/{docId} {
+      allow read, write: if true;
+    }
+
+    // Votación pública por ticket: subcolección profunda (3 niveles)
+    // events/{eventId}/ticket_votes/{ticketId}/votes/{voteId}
+    match /events/{eventId}/ticket_votes/{ticketId}/votes/{voteId} {
+      allow read, write: if true;
+    }
+    // También cubrir el documento padre ticket_votes
+    match /events/{eventId}/ticket_votes/{ticketId} {
+      allow read, write: if true;
+    }
+
+  }
+}

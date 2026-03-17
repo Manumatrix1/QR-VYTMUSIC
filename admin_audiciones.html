@@ -203,7 +203,7 @@
 
 <script type="module">
     import { db, auth } from './firebase_config.js';
-    import { collection, onSnapshot, doc, updateDoc, getDoc, orderBy, query, deleteDoc, writeBatch } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+    import { collection, onSnapshot, doc, updateDoc, getDoc, orderBy, query, deleteDoc, writeBatch, serverTimestamp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
     import { onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
 
     // ── Auth guard ──
@@ -495,22 +495,71 @@
         } catch(e) { alert('Error al eliminar: ' + e.message); }
     };
 
-    // ── Aprobar + enviar link de pago por WA ──
+    // ── Aprobar + enviar link de pago por WA con MercadoPago ──
     window.aprobarYEnviarPago = async function() {
         if (!selectedDocId || !currentAudicion) return;
         const a     = currentAudicion;
         const phone = (a.telefono || '').replace(/\D/g, '');
         if (!phone) { alert('No hay número de teléfono para este artista.'); return; }
 
-        const nombre   = a.nombre || '';
-        const pagoLink = `${location.origin}/pago_inscripcion.html?id=${selectedDocId}`;
-        const msg = `¡Hola ${nombre}! 🎉\n\nTu audición para *VYT MUSIC* fue *APROBADA* ✅\n\nPara confirmar tu lugar, realizá el pago de inscripción:\n💰 *Monto:* $20.000\n🏦 *Alias:* concurso.canto\n\nLuego subí el comprobante en este link:\n${pagoLink}\n\n¡Nos vemos en el escenario! 🎤`;
+        const nombre = a.nombre || '';
+        
+        try {
+            // Aprobar inscripción
+            await updateDoc(doc(db, 'audiciones', selectedDocId), { 
+                estado: 'aceptado',
+                fechaAprobacion: serverTimestamp()
+            });
 
-        try { await updateDoc(doc(db, 'audiciones', selectedDocId), { estado: 'aceptado' }); }
-        catch(e) { console.warn(e.message); }
+            // Generar preferencia de pago en MercadoPago
+            console.log('🛒 Generando link de pago MercadoPago...');
+            const response = await fetch('https://us-central1-vyt-music.cloudfunctions.net/createPaymentV2', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    orderId: `inscripcion_${selectedDocId}`, // Prefijo para identificar audiciones
+                    eventId: 'inscripcion', // Identificador para webhook
+                    eventName: 'VYT MUSIC - Inscripción',
+                    ticketCount: 1,
+                    totalAmount: 21000, // $21,000 (para recibir ~$20,000 después comisión MP)
+                    payerEmail: a.email || null
+                })
+            });
 
-        window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank');
-        closeModal();
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error || 'Error generando link de pago');
+            }
+
+            console.log('✅ Preferencia creada:', data.preferenceId);
+
+            // Guardar datos de MercadoPago en la audición
+            await updateDoc(doc(db, 'audiciones', selectedDocId), {
+                mercadoPagoPreferenceId: data.preferenceId,
+                mercadoPagoInitPoint: data.initPoint,
+                fechaGeneracionPago: serverTimestamp()
+            });
+
+            // Enviar WhatsApp con link de MercadoPago
+            const pagoLink = `${location.origin}/pago_inscripcion.html?id=${selectedDocId}`;
+            const msg = `¡Hola ${nombre}! 🎉\n\nTu audición para *VYT MUSIC* fue *APROBADA* ✅\n\nPara confirmar tu lugar, realizá el pago de inscripción:\n💰 *Monto:* $21.000\n\n*OPCIÓN 1: Pagar con MercadoPago* 💳\n${data.initPoint}\n(Tarjeta, QR, efectivo en Rapipago)\n\n*OPCIÓN 2: Transferencia bancaria* 🏦\nAlias: concurso.canto\nLuego subí el comprobante en:\n${pagoLink}\n\n¡Nos vemos en el escenario! 🎤`;
+
+            window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank');
+            
+            alert('✅ Link de pago generado y enviado por WhatsApp');
+            closeModal();
+
+        } catch(e) { 
+            console.error('Error:', e);
+            alert('❌ Error: ' + e.message + '\n\nSe envió WhatsApp con opción manual.'); 
+            
+            // Fallback: enviar WhatsApp manual si falla MercadoPago
+            const pagoLink = `${location.origin}/pago_inscripcion.html?id=${selectedDocId}`;
+            const msg = `¡Hola ${nombre}! 🎉\n\nTu audición para *VYT MUSIC* fue *APROBADA* ✅\n\nPara confirmar tu lugar, realizá el pago de inscripción:\n💰 *Monto:* $21.000\n🏦 *Alias:* concurso.canto\n\nLuego subí el comprobante en este link:\n${pagoLink}\n\n¡Nos vemos en el escenario! 🎤`;
+            window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank');
+            closeModal();
+        }
     };
 
     // ── Rechazar + notificar por WA ──

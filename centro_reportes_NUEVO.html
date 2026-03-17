@@ -216,6 +216,67 @@
             </div>
         </section>
 
+        <!-- 🎤 ARTISTAS DE LA GENERACIÓN  -->
+        <section id="artists-section" class="mb-8">
+            <h2 class="text-3xl font-bold text-white mb-6 flex items-center gap-3">
+                <span>🎤</span>
+                Artistas de la Generación
+            </h2>
+            
+            <!-- Stats de Artistas -->
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                <div class="stat-card p-5 rounded-xl border-purple-500">
+                    <div class="flex items-center gap-3 mb-2">
+                        <span class="text-3xl">🎭</span>
+                        <h3 class="text-sm font-semibold text-gray-300">TOTAL ARTISTAS</h3>
+                    </div>
+                    <p id="stat-total-artists" class="text-3xl font-black text-purple-400">0</p>
+                </div>
+                
+                <div class="stat-card p-5 rounded-xl border-pink-500">
+                    <div class="flex items-center gap-3 mb-2">
+                        <span class="text-3xl">📊</span>
+                        <h3 class="text-sm font-semibold text-gray-300">PARTICIPACIONES</h3>
+                    </div>
+                    <p id="stat-total-participations" class="text-3xl font-black text-pink-400">0</p>
+                </div>
+                
+                <div class="stat-card p-5 rounded-xl border-blue-500">
+                    <div class="flex items-center gap-3 mb-2">
+                        <span class="text-3xl">⭐</span>
+                        <h3 class="text-sm font-semibold text-gray-300">MEJOR PUNTAJE</h3>
+                    </div>
+                    <p id="stat-best-score" class="text-3xl font-black text-blue-400">0</p>
+                </div>
+                
+                <div class="stat-card p-5 rounded-xl border-yellow-500">
+                    <div class="flex items-center gap-3 mb-2">
+                        <span class="text-3xl">📈</span>
+                        <h3 class="text-sm font-semibold text-gray-300">PROMEDIO GENERAL</h3>
+                    </div>
+                    <p id="stat-average-score" class="text-3xl font-black text-yellow-400">0</p>
+                </div>
+            </div>
+            
+            <!-- Buscador de Artistas -->
+            <div class="mb-6 p-4 bg-gray-800/50 rounded-xl border border-gray-700">
+                <input 
+                    type="text" 
+                    id="artist-search" 
+                    placeholder="🔍 Buscar artista por nombre..."
+                    class="w-full p-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-purple-500 focus:outline-none"
+                    oninput="filterArtists()">
+            </div>
+            
+            <!-- Grid de Artistas -->
+            <div id="artists-grid" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                <div class="col-span-full text-center text-gray-400 py-8">
+                    <div class="text-4xl mb-2">⏳</div>
+                    <p>Cargando artistas...</p>
+                </div>
+            </div>
+        </section>
+
         <!-- REPORTES RÁPIDOS -->
         <section class="mb-8">
             <h2 class="text-3xl font-bold text-white mb-6 flex items-center gap-3">
@@ -659,6 +720,10 @@
                     console.log('💰 Cargando datos económicos...');
                     await loadEconomicData(eventsInGroup);
                     
+                    // Cargar artistas de la generación
+                    console.log('🎤 Cargando artistas de la generación...');
+                    await loadArtistsData(eventsInGroup);
+                    
                     // Marcar botón activo en el selector secundario
                     const groupBtn = document.querySelector(`[data-group-id="${groupId}"]`);
                     if (groupBtn) {
@@ -673,6 +738,9 @@
                     
                     console.log('💰 Cargando datos económicos...');
                     await loadEconomicData(allEvents);
+                    
+                    console.log('🎤 Cargando artistas de todos los eventos...');
+                    await loadArtistsData(allEvents);
                     
                     // Marcar botón "Todos" como activo
                     const allBtn = document.getElementById('all-events-btn');
@@ -732,6 +800,7 @@
                 console.log('📊 Cambiando a TODOS los eventos');
                 document.getElementById('selected-group-info').classList.add('hidden');
                 await loadEconomicData(allEvents);
+                await loadArtistsData(allEvents);
                 selectedGroupId = null;
                 return;
             }
@@ -748,6 +817,7 @@
 
             // Cargar datos económicos
             await loadEconomicData(eventsInGroup);
+            await loadArtistsData(eventsInGroup);
             selectedGroupId = groupId;
         }
 
@@ -863,6 +933,194 @@
             
             console.log('✅ Desglose de galas renderizado');
             console.log('🎉 loadEconomicData COMPLETADA - Dashboard debería estar visible');
+        }
+
+        //  🎤 CARGAR ARTISTAS DE LA GENERACIÓN CON FOTOS Y PARTICIPACIONES
+        let allArtistsData = []; // Almacenar globalmente para filtrar
+        
+        async function loadArtistsData(events) {
+            console.log(`🎤 loadArtistsData: Procesando ${events.length} eventos`);
+            
+            const artistsGrid = document.getElementById('artists-grid');
+            artistsGrid.innerHTML = '<div class="col-span-full text-center text-gray-400 py-8"><div class="animate-spin rounded-full h-12 w-12 border-4 border-purple-500 border-t-transparent mx-auto mb-4"></div><p>Cargando artistas...</p></div>';
+            
+            const artistsMap = new Map(); // Agrupar artistas por nombre normalizado
+            let totalParticipations = 0;
+            let allScores = [];
+            
+            for (const event of events) {
+                try {
+                    // Cargar artistas de cada gala
+                    const artistsSnapshot = await getDocs(collection(db, `artistas_${event.id}`));
+                    
+                    if (artistsSnapshot.empty) {
+                        console.warn(`⚠️ No hay artistas en evento ${event.name}`);
+                        continue;
+                    }
+                    
+                    // Cargar evaluaciones de jurados para obtener puntuaciones
+                    const evaluationsSnapshot = await getDocs(collection(db, `events/${event.id}/jury_evaluations`));
+                    const evaluationsMap = new Map();
+                    
+                    evaluationsSnapshot.forEach(doc => {
+                        const data = doc.data();
+                        if (!evaluationsMap.has(data.artistId)) {
+                            evaluationsMap.set(data.artistId, []);
+                        }
+                        evaluationsMap.set(data.artistId, [...evaluationsMap.get(data.artistId), data.average || data.score || 0]);
+                    });
+                    
+                    artistsSnapshot.forEach(doc => {
+                        const artist = { id: doc.id, ...doc.data() };
+                        const normalizedName = (artist.nombre || artist.name || '').toLowerCase().trim();
+                        
+                        if (!normalizedName) return;
+                        
+                        // Calcular promedio de puntuaciones para este artista en esta gala
+                        const scores = evaluationsMap.get(artist.id) || [];
+                        const averageScore = scores.length > 0 
+                            ? scores.reduce((sum, s) => sum + s, 0) / scores.length 
+                            : 0;
+                        
+                        if (averageScore > 0) {
+                            allScores.push(averageScore);
+                        }
+                        
+                        if (!artistsMap.has(normalizedName)) {
+                            artistsMap.set(normalizedName, {
+                                name: artist.nombre || artist.name,
+                                photo: artist.photoURL || artist.fotoURL || 'https://via.placeholder.com/150?text=Sin+Foto',
+                                participations: [],
+                                scores: [],
+                                totalGalas: 0
+                            });
+                        }
+                        
+                        const artistData = artistsMap.get(normalizedName);
+                        artistData.participations.push({
+                            event: event.name,
+                            eventId: event.id,
+                            date: event.date,
+                            score: averageScore
+                        });
+                        artistData.scores.push(averageScore);
+                        artistData.totalGalas++;
+                        totalParticipations++;
+                    });
+                    
+                } catch (error) {
+                    console.error(`❌ Error cargando artistas del evento ${event.name}:`, error);
+                }
+            }
+            
+            // Convertir Map a Array para renderizar
+            allArtistsData = Array.from(artistsMap.values()).map(artist => ({
+                ...artist,
+                averageScore: artist.scores.length > 0
+                    ? artist.scores.reduce((sum, s) => sum + s, 0) / artist.scores.length
+                    : 0
+            }));
+            
+            // Ordenar por promedio (mayor a menor)
+            allArtistsData.sort((a, b) => b.averageScore - a.averageScore);
+            
+            // Actualizar stats
+            const bestScore = allScores.length > 0 ? Math.max(...allScores) : 0;
+            const averageScore = allScores.length > 0 
+                ? allScores.reduce((sum, s) => sum + s, 0) / allScores.length 
+                : 0;
+            
+            document.getElementById('stat-total-artists').textContent = allArtistsData.length;
+            document.getElementById('stat-total-participations').textContent = totalParticipations;
+            document.getElementById('stat-best-score').textContent = bestScore.toFixed(1);
+            document.getElementById('stat-average-score').textContent = averageScore.toFixed(1);
+            
+            console.log(`✅ ${allArtistsData.length} artistas cargados, ${totalParticipations} participaciones totales`);
+            
+            // Renderizar grid
+            renderArtistsGrid(allArtistsData);
+        }
+        
+        function renderArtistsGrid(artistsArray) {
+            const artistsGrid = document.getElementById('artists-grid');
+            
+            if (artistsArray.length === 0) {
+                artistsGrid.innerHTML = `
+                    <div class="col-span-full text-center text-gray-400 py-8">
+                        <div class="text-4xl mb-2">🎭</div>
+                        <p>No se encontraron artistas</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            artistsGrid.innerHTML = '';
+            
+            artistsArray.forEach((artist, index) => {
+                const card = document.createElement('div');
+                card.className = 'dashboard-card p-4 rounded-xl overflow-hidden relative group cursor-pointer';
+                card.innerHTML = `
+                    <div class="relative mb-3">
+                        <img src="${artist.photo}" 
+                             alt="${artist.name}"
+                             class="w-full h-40 object-cover rounded-lg"
+                             onerror="this.src='https://via.placeholder.com/150?text=${encodeURIComponent(artist.name)}'">
+                        <div class="absolute top-2 right-2 bg-black bg-opacity-80 px-2 py-1 rounded-full">
+                            <span class="text-lg font-bold ${getScoreColorClass(artist.averageScore)}">${artist.averageScore.toFixed(1)}</span>
+                        </div>
+                        ${index < 3 ? `<div class="absolute top-2 left-2 text-3xl">${['🥇', '🥈', '🥉'][index]}</div>` : ''}
+                    </div>
+                    <h3 class="font-bold text-white text-center mb-2 truncate">${artist.name}</h3>
+                    <div class="text-center space-y-1">
+                        <p class="text-sm text-gray-300">
+                            <span class="font-semibold">${artist.totalGalas}</span> ${artist.totalGalas === 1 ? 'gala' : 'galas'}
+                        </p>
+                        ${artist.participations.length > 1 ? `
+                            <p class="text-xs text-gray-400">
+                                ${artist.participations.map(p => p.event.split(' ')[p.event.split(' ').length - 1]).join(', ')}
+                            </p>
+                        ` : ''}
+                    </div>
+                    
+                    <!-- Tooltip con detalles -->
+                    <div class="absolute inset-0 bg-black bg-opacity-95 opacity-0 group-hover:opacity-100 transition-opacity duration-200 rounded-xl p-4 flex flex-col justify-center">
+                        <h4 class="font-bold text-white text-center mb-2">${artist.name}</h4>
+                        <div class="space-y-1 text-xs">
+                            ${artist.participations.map(p => `
+                                <div class="flex justify-between text-gray-300">
+                                    <span>${p.event}</span>
+                                    <span class="${getScoreColorClass(p.score)}">${p.score > 0 ? p.score.toFixed(1) : 'N/A'}</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                        <div class="mt-3 pt-3 border-t border-gray-700 text-center">
+                            <p class="text-sm text-purple-300 font-bold">Promedio: ${artist.averageScore.toFixed(1)}</p>
+                        </div>
+                    </div>
+                `;
+                artistsGrid.appendChild(card);
+            });
+        }
+        
+        function getScoreColorClass(score) {
+            if (score >= 90) return 'text-green-400';
+            if (score >= 80) return 'text-blue-400';
+            if (score >= 70) return 'text-yellow-400';
+            if (score >= 60) return 'text-orange-400';
+            return 'text-red-400';
+        }
+        
+        function filterArtists() {
+            const searchValue = document.getElementById('artist-search').value.toLowerCase().trim();
+            
+            if (searchValue === '') {
+                renderArtistsGrid(allArtistsData);
+            } else {
+                const filtered = allArtistsData.filter(artist => 
+                    artist.name.toLowerCase().includes(searchValue)
+                );
+                renderArtistsGrid(filtered);
+            }
         }
 
         // 🔍 DEBUG GLOBAL DE CLICS
