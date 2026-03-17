@@ -10,8 +10,8 @@
     <!-- Firebase SDK v11.6.1 -->
     <script type="module">
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
-        import { getFirestore, collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, onSnapshot, Timestamp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
-        import { getStorage, ref, getDownloadURL, deleteObject, getBlob } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js';
+        import { getFirestore, collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, onSnapshot, Timestamp, addDoc } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+        import { getStorage, ref, getDownloadURL, deleteObject, getBlob, uploadBytes } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js';
         
         import { app, db, storage } from './firebase_config.js';
         
@@ -19,8 +19,8 @@
         window.storage = storage;
         window.storageRef = ref;
         window.getBlobFn = getBlob;
-        window.firestoreModules = { collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, onSnapshot, Timestamp };
-        window.storageModules = { ref, getDownloadURL, deleteObject };
+        window.firestoreModules = { collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, onSnapshot, Timestamp, addDoc };
+        window.storageModules = { ref, getDownloadURL, deleteObject, uploadBytes };
     </script>
     
     <!-- JSZip para descarga masiva -->
@@ -1727,6 +1727,11 @@
                 submitBtn.disabled = true;
                 submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Subiendo...';
                 
+                // Validar módulos de Firebase
+                if (!window.storageModules || !window.firestoreModules) {
+                    throw new Error('Módulos de Firebase no están cargados. Recarga la página.');
+                }
+                
                 // Subir a Storage
                 const uploadExt = fileName.split('.').pop();
                 const sanitizedName = name.replace(/[^a-z0-9]/gi, '_');
@@ -1763,7 +1768,12 @@
                 
             } catch (error) {
                 console.error('Error subiendo pista de organización:', error);
-                alert('❌ Error al subir: ' + error.message);
+                console.error('Error completo:', {
+                    message: error.message,
+                    code: error.code,
+                    stack: error.stack
+                });
+                alert('❌ Error al subir: ' + (error.message || error.code || 'Error desconocido') + '\n\nRevisa la consola para más detalles.');
             } finally {
                 submitBtn.disabled = false;
                 submitBtn.innerHTML = '<i class="fas fa-upload"></i> Subir Pista de Organización';
