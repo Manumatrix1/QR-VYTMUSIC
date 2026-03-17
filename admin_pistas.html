@@ -431,6 +431,15 @@
                         
                         <div>
                             <label class="block text-white font-semibold mb-2">
+                                <i class="fas fa-user"></i> Artista/Ejecutante
+                            </label>
+                            <input type="text" id="orgTrackArtist" required
+                                placeholder="Ej: DJ Juan, Orquesta Municipal, María Fernández..."
+                                class="w-full px-4 py-3 rounded-lg bg-gray-700 text-white border-2 border-gray-600 focus:border-purple-500 focus:outline-none">
+                        </div>
+                        
+                        <div>
+                            <label class="block text-white font-semibold mb-2">
                                 <i class="fas fa-tag"></i> Categoría (opcional)
                             </label>
                             <input type="text" id="orgTrackCategory"
@@ -1648,6 +1657,7 @@
                                 <i class="fas fa-headphones text-pink-400"></i>
                                 ${track.name}
                             </h4>
+                            ${track.artist ? `<p class="text-purple-300 font-semibold"><i class="fas fa-user"></i> ${track.artist}</p>` : ''}
                             ${track.category ? `<p class="text-gray-400 text-sm"><i class="fas fa-tag"></i> ${track.category}</p>` : ''}
                             <p class="text-gray-500 text-xs mt-1">
                                 <i class="fas fa-clock"></i> ${track.uploadedAt?.toDate().toLocaleString('es-ES') || 'Sin fecha'}
@@ -1655,10 +1665,15 @@
                             </p>
                         </div>
                         <div class="flex gap-2 ml-4">
-                            <button onclick="toggleTrack('org_${track.id}', '${track.url}', 'Organización', '${track.name.replace(/'/g, "\\'")}', 0)"
+                            <button onclick="toggleTrack('org_${track.id}', '${track.url}', '${track.artist?.replace(/'/g, "\\'")}', '${track.name.replace(/'/g, "\\'")}', 0)"
                                 id="playBtn_org_${track.id}"
                                 class="bg-green-500 hover:bg-green-600 text-white px-3 py-2 rounded text-sm transition">
                                 <i class="fas fa-play"></i>
+                            </button>
+                            <button onclick="copyOrgTrackLink('${track.url}')"
+                                class="bg-blue-500 hover:bg-blue-600 text-white px-3 py-2 rounded text-sm transition"
+                                title="Copiar link de la pista">
+                                <i class="fas fa-link"></i>
                             </button>
                             <button onclick="deleteOrgTrack('${track.id}')"
                                 class="bg-red-500 hover:bg-red-600 text-white px-3 py-2 rounded text-sm transition">
@@ -1675,15 +1690,17 @@
             e.preventDefault();
             
             const nameInput = document.getElementById('orgTrackName');
+            const artistInput = document.getElementById('orgTrackArtist');
             const categoryInput = document.getElementById('orgTrackCategory');
             const fileInput = document.getElementById('orgTrackFile');
             const submitBtn = document.getElementById('orgTrackSubmitBtn');
             
             const name = nameInput.value.trim();
+            const artist = artistInput.value.trim();
             const category = categoryInput.value.trim();
             const file = fileInput.files[0];
             
-            if (!name || !file) {
+            if (!name || !artist || !file) {
                 alert('Por favor completa todos los campos obligatorios');
                 return;
             }
@@ -1726,6 +1743,7 @@
                 
                 await addDoc(orgTracksRef, {
                     name: name,
+                    artist: artist,
                     category: category || 'Sin categoría',
                     url: downloadURL,
                     storagePath: storagePath,
@@ -1739,6 +1757,7 @@
                 
                 // Resetear formulario
                 nameInput.value = '';
+                artistInput.value = '';
                 categoryInput.value = '';
                 fileInput.value = '';
                 
@@ -1750,6 +1769,29 @@
                 submitBtn.innerHTML = '<i class="fas fa-upload"></i> Subir Pista de Organización';
             }
         });
+
+        // Copiar link de pista de organización
+        window.copyOrgTrackLink = async function(trackUrl) {
+            try {
+                await navigator.clipboard.writeText(trackUrl);
+                alert('✅ Link copiado al portapapeles');
+            } catch (error) {
+                // Fallback para navegadores sin clipboard API
+                const textArea = document.createElement('textarea');
+                textArea.value = trackUrl;
+                textArea.style.position = 'fixed';
+                textArea.style.left = '-999999px';
+                document.body.appendChild(textArea);
+                textArea.select();
+                try {
+                    document.execCommand('copy');
+                    alert('✅ Link copiado al portapapeles');
+                } catch (err) {
+                    alert('❌ No se pudo copiar: ' + err.message);
+                }
+                document.body.removeChild(textArea);
+            }
+        };
 
         // Eliminar pista de organización
         window.deleteOrgTrack = async function(trackId) {
