@@ -447,6 +447,45 @@ exports.mercadopagoWebhookV2 = functions.https.onRequest(async (req, res) => {
 
         console.log(`✅ Orden ${orderId} actualizada a APPROVED automáticamente`);
 
+        // 📱 NOTIFICAR AL ADMIN POR WHATSAPP
+        try {
+          const orderData = orderDoc.data();
+          const clientName = orderData.artistName || 'Cliente';
+          const clientPhone = orderData.artistPhone || 'N/A';
+          const totalAmount = orderData.totalAmount || 0;
+          const quantity = orderData.quantity || 0;
+          const eventName = orderData.eventName || 'Evento';
+          
+          const CALLMEBOT_PHONE = process.env.CALLMEBOT_PHONE;
+          const CALLMEBOT_APIKEY = process.env.CALLMEBOT_APIKEY;
+          
+          if (CALLMEBOT_PHONE && CALLMEBOT_APIKEY && CALLMEBOT_APIKEY !== 'PEGAR_AQUI_TU_CLAVE_CALLMEBOT') {
+            const adminLink = `https://vyt-music.web.app/admin_preventa.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`;
+            const shortMessage = `🎉 PAGO APROBADO MP\n${clientName}\n${quantity} entradas - $${totalAmount.toLocaleString()}\nVer: ${adminLink}`;
+            
+            const waText = encodeURIComponent(shortMessage);
+            const callMeBotURL = `https://api.callmebot.com/whatsapp.php?phone=${CALLMEBOT_PHONE}&text=${waText}&apikey=${CALLMEBOT_APIKEY}`;
+            
+            console.log('📲 Enviando notificación WhatsApp con CallMeBot...');
+            
+            await fetch(callMeBotURL);
+            
+            console.log('✅ Notificación WhatsApp enviada exitosamente');
+            
+            // Guardar datos en Firebase
+            await orderRef.update({
+              whatsappNotificationSent: true,
+              whatsappNotificationMethod: 'callmebot',
+              whatsappNotificationTimestamp: admin.firestore.FieldValue.serverTimestamp()
+            });
+          } else {
+            console.log('⚠️ CallMeBot no configurado para notificaciones de preventa');
+          }
+        } catch (whatsappError) {
+          console.error('⚠️ Error enviando WhatsApp:', whatsappError);
+          // No bloqueamos el flujo si falla la notificación
+        }
+
         res.status(200).json({ 
           success: true,
           type: 'preventa', 
