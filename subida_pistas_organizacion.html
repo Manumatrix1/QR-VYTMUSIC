@@ -252,6 +252,7 @@ all.min.css">
         let pitchValue = 0;
         let globalAudio = null;
         let activeTonePlayer = null;
+        let activeBlobUrls = []; // Track para limpiar blobs
 
         // Funciones helper
         function formatTime(seconds) {
@@ -332,6 +333,8 @@ all.min.css">
         // Aplicar pitch shift
         async function applyPitchShiftToBlob(audioBlob, pitchSemitones) {
             const blobUrl = URL.createObjectURL(audioBlob);
+            activeBlobUrls.push(blobUrl); // Guardar para limpiar después
+            
             try {
                 const arrayBuf = await audioBlob.arrayBuffer();
                 const tempCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -347,9 +350,20 @@ all.min.css">
                     player.start(0);
                 }, duration + 0.5, ch);
                 
+                // Esperar un momento antes de revocar para que Tone.js termine
+                setTimeout(() => {
+                    const index = activeBlobUrls.indexOf(blobUrl);
+                    if (index > -1) activeBlobUrls.splice(index, 1);
+                    URL.revokeObjectURL(blobUrl);
+                }, 1000);
+                
                 return audioBufferToWav(rendered.get());
-            } finally {
+            } catch (error) {
+                // Si hay error, limpiar inmediatamente
+                const index = activeBlobUrls.indexOf(blobUrl);
+                if (index > -1) activeBlobUrls.splice(index, 1);
                 URL.revokeObjectURL(blobUrl);
+                throw error;
             }
         }
 
@@ -364,6 +378,9 @@ all.min.css">
                 try { activeTonePlayer.stop(); activeTonePlayer.dispose(); } catch(e){}
                 activeTonePlayer = null;
             }
+            // Limpiar blobs antiguos al parar
+            activeBlobUrls.forEach(url => URL.revokeObjectURL(url));
+            activeBlobUrls = [];
             document.getElementById('nowPlayingBanner').classList.add('hidden');
         };
 
@@ -443,12 +460,17 @@ all.min.css">
                     const file = document.getElementById('trackFile').files[0];
                     if (!file) return;
                     const fileUrl = URL.createObjectURL(file);
+                    activeBlobUrls.push(fileUrl); // Guardar para limpiar después
                     const pitchShift = new Tone.PitchShift(pitchValue).toDestination();
                     activeTonePlayer = new Tone.Player({
                         url: fileUrl,
                         onload: () => {
                             const dur = trimPoints.end - trimPoints.start;
                             activeTonePlayer.start('+0.05', trimPoints.start, dur > 0 ? dur : undefined);
+                        },
+                        onerror: (err) => {
+                            console.error('Error cargando audio en Tone.js:', err);
+                            stopPlayer();
                         }
                     }).connect(pitchShift);
                 } else {
@@ -706,6 +728,10 @@ all.min.css">
                 trimPoints = { start: 0, end: 0 };
                 pitchValue = 0;
                 updatePitchDisplay(0);
+                
+                // Limpiar blobs
+                activeBlobUrls.forEach(url => URL.revokeObjectURL(url));
+                activeBlobUrls = [];
                 
             } catch (error) {
                 console.error('Error:', error);
