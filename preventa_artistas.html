@@ -629,12 +629,14 @@
         }
 
         // ✨ NUEVA FUNCIÓN: Verificar compras acumuladas previas
-        async function checkPreviousPurchases(email, phone) {
+        async function checkPreviousPurchases(email, phone, name) {
             try {
                 // Limpiar teléfono para comparación consistente
-                const cleanPhone = phone.replace(/\D/g, '');
+                const cleanPhone = phone ? phone.replace(/\D/g, '') : '';
+                const cleanEmail = email ? email.toLowerCase().trim() : '';
+                const cleanName = name ? name.toLowerCase().trim() : '';
                 
-                console.log('🔍 Verificando compras previas para:', { email, cleanPhone });
+                console.log('🔍 Verificando compras previas para:', { email: cleanEmail, phone: cleanPhone, name: cleanName });
                 
                 // Consultar todas las órdenes aprobadas de este evento
                 const ordersRef = collection(db, `ticket_orders_${eventId}`);
@@ -648,16 +650,22 @@
                     const order = doc.data();
                     const orderEmail = (order.artistEmail || '').toLowerCase().trim();
                     const orderPhone = (order.artistPhone || '').replace(/\D/g, '');
+                    const orderName = (order.artistName || '').toLowerCase().trim();
                     
-                    // Verificar si coincide email o teléfono
-                    if (orderEmail === email.toLowerCase().trim() || orderPhone === cleanPhone) {
+                    // Verificar si coincide nombre, email o teléfono
+                    const matchByEmail = cleanEmail && orderEmail === cleanEmail;
+                    const matchByPhone = cleanPhone && orderPhone === cleanPhone;
+                    const matchByName = cleanName && orderName === cleanName;
+                    
+                    if (matchByEmail || matchByPhone || matchByName) {
                         const qty = (order.quantityAdults || 0) + (order.quantityKids || 0);
                         totalPreviousTickets += qty;
                         matchingOrders.push({
                             id: doc.id,
                             quantity: qty,
                             date: order.createdAt?.toDate?.() || new Date(order.createdAt),
-                            name: order.artistName
+                            name: order.artistName,
+                            matchType: matchByName ? 'nombre' : matchByEmail ? 'email' : 'teléfono'
                         });
                     }
                 });
@@ -665,15 +673,22 @@
                 previousPurchasesCount = totalPreviousTickets;
                 
                 if (totalPreviousTickets > 0) {
-                    console.log(`✅ Compras previas encontradas: ${totalPreviousTickets} entradas`, matchingOrders);
+                    console.log(`✅ Compras previas encontradas: ${totalPreviousTickets} entradas (coincidencia por ${matchingOrders[0].matchType})`, matchingOrders);
                     
                     // Mostrar aviso al usuario
                     const notice = document.getElementById('previous-purchases-notice');
                     if (notice) {
+                        const matchInfo = matchingOrders[0].matchType === 'nombre' ? 
+                            `Detectamos que <strong>${matchingOrders[0].name}</strong> ya compró antes.` :
+                            `Ya tenés compras previas.`;
+                        
                         notice.innerHTML = `
                             <div class="bg-green-900/30 border-2 border-green-500 rounded-xl p-4 mb-4">
                                 <p class="text-green-300 font-semibold mb-2">
-                                    ✅ ¡Perfecto! Ya tenés <strong>${totalPreviousTickets} entrada${totalPreviousTickets > 1 ? 's' : ''}</strong> comprada${totalPreviousTickets > 1 ? 's' : ''} aprobada${totalPreviousTickets > 1 ? 's' : ''}.
+                                    ✅ ¡Perfecto! ${matchInfo}
+                                </p>
+                                <p class="text-green-200 text-sm mb-2">
+                                    📊 Total: <strong>${totalPreviousTickets} entrada${totalPreviousTickets > 1 ? 's' : ''}</strong> comprada${totalPreviousTickets > 1 ? 's' : ''} aprobada${totalPreviousTickets > 1 ? 's' : ''} anteriormente.
                                 </p>
                                 <p class="text-green-200 text-sm">
                                     💡 Las nuevas entradas se acumulan para el precio. Si comprás más, se suman al total y obtenés el mejor precio.
@@ -1049,9 +1064,8 @@
                 
                 // ✨ NUEVO: Verificar compras automáticamente al confirmar el teléfono
                 const email = document.getElementById('artist-email').value.trim();
-                if (email && email.includes('@')) {
-                    await checkPreviousPurchases(email, phone);
-                }
+                const name = document.getElementById('artist-name').value.trim();
+                await checkPreviousPurchases(email, phone, name);
             } else {
                 input.value = '';
                 input.focus();
@@ -1063,6 +1077,22 @@
         // ✨ NUEVO: Listeners para verificar compras automáticamente cuando se completan los datos
         let emailCheckTimeout = null;
         let phoneCheckTimeout = null;
+        let nameCheckTimeout = null;
+
+        // Verificar por nombre (el más importante para detección temprana)
+        document.getElementById('artist-name').addEventListener('input', function() {
+            const name = this.value.trim();
+            // Esperar que terminen de escribir (debounce)
+            clearTimeout(nameCheckTimeout);
+            nameCheckTimeout = setTimeout(async () => {
+                // Validar nombre mínimo 3 caracteres
+                if (name.length >= 3) {
+                    const email = document.getElementById('artist-email').value.trim();
+                    const phone = document.getElementById('artist-phone').value.trim();
+                    await checkPreviousPurchases(email, phone, name);
+                }
+            }, 600); // Más rápido para nombre (600ms vs 800ms)
+        });
 
         document.getElementById('artist-email').addEventListener('input', function() {
             const email = this.value.trim();
@@ -1072,9 +1102,8 @@
                 // Validar formato email básico
                 if (email && email.includes('@') && email.includes('.')) {
                     const phone = document.getElementById('artist-phone').value.trim();
-                    if (phone) {
-                        await checkPreviousPurchases(email, phone);
-                    }
+                    const name = document.getElementById('artist-name').value.trim();
+                    await checkPreviousPurchases(email, phone, name);
                 }
             }, 800);
         });
@@ -1088,9 +1117,8 @@
                 // Validar teléfono mínimo 8 dígitos
                 if (cleanPhone.length >= 8) {
                     const email = document.getElementById('artist-email').value.trim();
-                    if (email && email.includes('@')) {
-                        await checkPreviousPurchases(email, phone);
-                    }
+                    const name = document.getElementById('artist-name').value.trim();
+                    await checkPreviousPurchases(email, phone, name);
                 }
             }, 800);
         });
