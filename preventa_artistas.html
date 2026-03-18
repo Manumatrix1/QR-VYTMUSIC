@@ -569,6 +569,8 @@
         const params = new URLSearchParams(window.location.search);
         const eventId = params.get('eventId');
         const eventName = params.get('eventName') || 'Evento';
+        const orderId = params.get('orderId'); // Parámetro opcional para retomar orden
+        const paymentStatus = params.get('payment_status'); // De retorno MercadoPago
 
         if (!eventId) {
             alert('❌ Error: No se especificó el evento');
@@ -2210,12 +2212,12 @@
 
         // Retomar orden aprobada si viene desde el WA del admin (link con ?orderId=XXX)
         async function tryResumeApprovedOrder() {
-            if (!returnedOrderId || paymentStatus) return; // solo orderId sin payment status de MP
+            if (!orderId || paymentStatus) return; // solo orderId sin payment status de MP
             try {
-                const orderSnap = await getDoc(doc(db, `ticket_orders_${eventId}`, returnedOrderId));
+                const orderSnap = await getDoc(doc(db, `ticket_orders_${eventId}`, orderId));
                 if (!orderSnap.exists()) return;
                 const orderData = orderSnap.data();
-                currentOrderId = returnedOrderId;
+                currentOrderId = orderId;
                 if (orderData.status === 'approved' && orderData.attendeeNames?.length === orderData.quantity) {
                     document.getElementById('section-request').classList.add('hidden');
                     window.attendeeNames = orderData.attendeeNames;
@@ -2226,7 +2228,7 @@
                 } else if (orderData.status === 'payment_uploaded') {
                     document.getElementById('section-request').classList.add('hidden');
                     document.getElementById('section-pending').classList.remove('hidden');
-                    document.getElementById('order-id-pending').textContent = returnedOrderId.substring(0, 8).toUpperCase();
+                    document.getElementById('order-id-pending').textContent = orderId.substring(0, 8).toUpperCase();
                     updateSteps(4);
                     startOrderListener();
                 }
