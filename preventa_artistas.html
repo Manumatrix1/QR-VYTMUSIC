@@ -239,6 +239,11 @@
                     <div id="telefono-ok" class="hidden mt-2 text-green-400 font-semibold text-sm">✅ Número confirmado (+54 agregado)</div>
                 </div>
 
+                <!-- ✨ Aviso de compras previas acumuladas -->
+                <div id="previous-purchases-notice" class="hidden">
+                    <!-- Se llena dinámicamente -->
+                </div>
+
                 <div>
                     <label class="block text-lg font-semibold mb-2">Cantidad de Entradas</label>
                     <input type="number" id="ticket-quantity" min="1" max="50" value="1" class="w-full p-4 rounded-lg bg-gray-700 border-2 border-gray-600 focus:border-purple-500 focus:outline-none text-white text-2xl font-bold text-center" required>
@@ -580,6 +585,7 @@
         let countdownInterval = null;
         let allArtistsTop = [];     // artistas cargados al inicio
         let selectedTopArtist = null; // artista elegido en el selector del tope
+        let previousPurchasesCount = 0; // ✨ Nuevo: contador de compras previas acumuladas
 
         // Aplica la configuración de deadline a la UI
         // Si hay un artista seleccionado con deadline_override, usa ese en vez del global
@@ -620,6 +626,79 @@
                 document.getElementById('deadline-text').textContent = 'Consultá fecha límite con el organizador';
             }
             updateTotal();
+        }
+
+        // ✨ NUEVA FUNCIÓN: Verificar compras acumuladas previas
+        async function checkPreviousPurchases(email, phone) {
+            try {
+                // Limpiar teléfono para comparación consistente
+                const cleanPhone = phone.replace(/\D/g, '');
+                
+                console.log('🔍 Verificando compras previas para:', { email, cleanPhone });
+                
+                // Consultar todas las órdenes aprobadas de este evento
+                const ordersRef = collection(db, `ticket_orders_${eventId}`);
+                const q = query(ordersRef, where('status', '==', 'approved'));
+                const snapshot = await getDocs(q);
+                
+                let totalPreviousTickets = 0;
+                const matchingOrders = [];
+                
+                snapshot.forEach(doc => {
+                    const order = doc.data();
+                    const orderEmail = (order.artistEmail || '').toLowerCase().trim();
+                    const orderPhone = (order.artistPhone || '').replace(/\D/g, '');
+                    
+                    // Verificar si coincide email o teléfono
+                    if (orderEmail === email.toLowerCase().trim() || orderPhone === cleanPhone) {
+                        const qty = (order.quantityAdults || 0) + (order.quantityKids || 0);
+                        totalPreviousTickets += qty;
+                        matchingOrders.push({
+                            id: doc.id,
+                            quantity: qty,
+                            date: order.createdAt?.toDate?.() || new Date(order.createdAt),
+                            name: order.artistName
+                        });
+                    }
+                });
+                
+                previousPurchasesCount = totalPreviousTickets;
+                
+                if (totalPreviousTickets > 0) {
+                    console.log(`✅ Compras previas encontradas: ${totalPreviousTickets} entradas`, matchingOrders);
+                    
+                    // Mostrar aviso al usuario
+                    const notice = document.getElementById('previous-purchases-notice');
+                    if (notice) {
+                        notice.innerHTML = `
+                            <div class="bg-green-900/30 border-2 border-green-500 rounded-xl p-4 mb-4">
+                                <p class="text-green-300 font-semibold mb-2">
+                                    ✅ ¡Perfecto! Ya tenés <strong>${totalPreviousTickets} entrada${totalPreviousTickets > 1 ? 's' : ''}</strong> comprada${totalPreviousTickets > 1 ? 's' : ''} aprobada${totalPreviousTickets > 1 ? 's' : ''}.
+                                </p>
+                                <p class="text-green-200 text-sm">
+                                    💡 Las nuevas entradas se acumulan para el precio. Si comprás más, se suman al total y obtenés el mejor precio.
+                                </p>
+                            </div>
+                        `;
+                        notice.classList.remove('hidden');
+                    }
+                } else {
+                    console.log('ℹ️ No hay compras previas');
+                    const notice = document.getElementById('previous-purchases-notice');
+                    if (notice) {
+                        notice.classList.add('hidden');
+                    }
+                }
+                
+                // Recalcular total con el nuevo contador
+                updateTotal();
+                
+                return totalPreviousTickets;
+            } catch (error) {
+                console.error('Error verificando compras previas:', error);
+                previousPurchasesCount = 0;
+                return 0;
+            }
         }
 
         // Carga artistas del evento y puebla el selector del tope
@@ -760,8 +839,12 @@
             const quantityKids = parseInt(document.getElementById('ticket-quantity-kids').value) || 0;
             const totalTickets = quantityAdults + quantityKids;
 
-            // Precio puerta si: pasó fecha límite O compran menos de 5 entradas
-            const isDoorPrice = currentPrice >= 15000 || totalTickets < 5;
+            // ✨ NUEVO: Sumar compras previas para calcular el precio correcto
+            const accumulatedTotal = previousPurchasesCount + totalTickets;
+            console.log(`💰 Cálculo de precio: ${previousPurchasesCount} previas + ${totalTickets} actuales = ${accumulatedTotal} total acumulado`);
+
+            // Precio puerta si: pasó fecha límite O total acumulado < 5 entradas
+            const isDoorPrice = currentPrice >= 15000 || accumulatedTotal < 5;
             const effectivePriceAdult = isDoorPrice ? 15000 : currentPrice;
             const effectivePriceKids  = isDoorPrice ? 8000 : (currentPrice / 2);
 
@@ -775,7 +858,35 @@
             // Mostrar/ocultar aviso de mínimo 5 entradas
             const minQtyNotice = document.getElementById('min-qty-notice');
             if (minQtyNotice) {
-                if (currentPrice < 15000 && totalTickets < 5) {
+                if (currentPrice < 15000 && accumulatedTotal < 5) {
+                    // Mostrar cuántas faltan si hay compras previas
+                    if (previousPurchasesCount > 0) {
+                        const needed = 5 - accumulatedTotal;
+                        minQtyNotice.innerHTML = `
+                            <p class="text-orange-200 font-semibold text-sm">
+                                💡 Ya tenés ${previousPurchasesCount} entrada${previousPurchasesCount > 1 ? 's' : ''}. 
+                                Te ${needed > 1 ? 'faltan' : 'falta'} <strong>${needed} más</strong> para alcanzar el precio anticipado ($10,000 c/u). 
+                                Con ${accumulatedTotal} el precio es de puerta (<strong>$15,000 c/u</strong>).
+                            </p>
+                        `;
+                    } else {
+                        minQtyNotice.innerHTML = `
+                            <p class="text-orange-200 font-semibold text-sm">
+                                💡 El precio anticipado aplica desde <strong>5 entradas</strong>. 
+                                Con menos de 5 el precio es el de puerta (<strong>$15,000 c/u</strong>) — pero igual podés comprarlas sin problema.
+                            </p>
+                        `;
+                    }
+                    minQtyNotice.classList.remove('hidden');
+                } else if (currentPrice < 15000 && accumulatedTotal >= 5 && previousPurchasesCount > 0) {
+                    // Mostrar mensaje de éxito si alcanzaron el mínimo
+                    minQtyNotice.innerHTML = `
+                        <p class="text-green-200 font-semibold text-sm">
+                            ✅ ¡Excelente! Con ${accumulatedTotal} entradas en total (${previousPurchasesCount} previas + ${totalTickets} nuevas) 
+                            obtenés el <strong>precio anticipado de $10,000 c/u</strong>.
+                        </p>
+                    `;
+                    minQtyNotice.className = 'bg-green-900/40 border border-green-400 rounded-lg p-4';
                     minQtyNotice.classList.remove('hidden');
                 } else {
                     minQtyNotice.classList.add('hidden');
@@ -916,7 +1027,7 @@
                 div.classList.add('hidden');
             }
         };
-        window.confirmarTelefono = function(correcto) {
+        window.confirmarTelefono = async function(correcto) {
             const div = document.getElementById('confirm-telefono');
             const ok  = document.getElementById('telefono-ok');
             const input = document.getElementById('artist-phone');
@@ -935,6 +1046,12 @@
                 
                 div.classList.add('hidden');
                 ok.classList.remove('hidden');
+                
+                // ✨ NUEVO: Verificar compras automáticamente al confirmar el teléfono
+                const email = document.getElementById('artist-email').value.trim();
+                if (email && email.includes('@')) {
+                    await checkPreviousPurchases(email, phone);
+                }
             } else {
                 input.value = '';
                 input.focus();
@@ -942,6 +1059,41 @@
                 ok.classList.add('hidden');
             }
         };
+
+        // ✨ NUEVO: Listeners para verificar compras automáticamente cuando se completan los datos
+        let emailCheckTimeout = null;
+        let phoneCheckTimeout = null;
+
+        document.getElementById('artist-email').addEventListener('input', function() {
+            const email = this.value.trim();
+            // Esperar que terminen de escribir (debounce)
+            clearTimeout(emailCheckTimeout);
+            emailCheckTimeout = setTimeout(async () => {
+                // Validar formato email básico
+                if (email && email.includes('@') && email.includes('.')) {
+                    const phone = document.getElementById('artist-phone').value.trim();
+                    if (phone) {
+                        await checkPreviousPurchases(email, phone);
+                    }
+                }
+            }, 800);
+        });
+
+        document.getElementById('artist-phone').addEventListener('input', function() {
+            const phone = this.value.trim();
+            // Esperar que terminen de escribir (debounce)
+            clearTimeout(phoneCheckTimeout);
+            phoneCheckTimeout = setTimeout(async () => {
+                const cleanPhone = phone.replace(/\D/g, '');
+                // Validar teléfono mínimo 8 dígitos
+                if (cleanPhone.length >= 8) {
+                    const email = document.getElementById('artist-email').value.trim();
+                    if (email && email.includes('@')) {
+                        await checkPreviousPurchases(email, phone);
+                    }
+                }
+            }, 800);
+        });
 
         // Display message
         function displayMessage(message, type = 'success') {
@@ -974,11 +1126,14 @@
             const quantityKids = parseInt(document.getElementById('ticket-quantity-kids').value) || 0;
             const quantity = quantityAdults + quantityKids;
             
-            const totalTickets = quantityAdults + quantityKids;
-            const isDoorPrice = currentPrice >= 15000 || totalTickets < 5;
+            // ✨ NUEVO: Calcular precio con total acumulado (previas + actuales)
+            const accumulatedTotal = previousPurchasesCount + quantity;
+            const isDoorPrice = currentPrice >= 15000 || accumulatedTotal < 5;
             const effectivePriceAdult = isDoorPrice ? 15000 : currentPrice;
             const effectivePriceKids  = isDoorPrice ? 8000 : (currentPrice / 2);
             const totalAmount = (quantityAdults * effectivePriceAdult) + (quantityKids * effectivePriceKids);
+            
+            console.log(`💰 Orden final: ${previousPurchasesCount} previas + ${quantity} nuevas = ${accumulatedTotal} total → Precio: $${effectivePriceAdult}`);
 
             // Recolectar nombres del Paso 1
             const attendeeNamesStep1 = [];
