@@ -876,10 +876,12 @@
             const accumulatedTotal = previousPurchasesCount + totalTickets;
             console.log(`💰 Cálculo de precio: ${previousPurchasesCount} previas + ${totalTickets} actuales = ${accumulatedTotal} total acumulado`);
 
-            // Precio puerta si: pasó fecha límite O total acumulado < 5 entradas
-            const isDoorPrice = currentPrice >= 15000 || accumulatedTotal < 5;
-            const effectivePriceAdult = isDoorPrice ? 15000 : currentPrice;
-            const effectivePriceKids  = isDoorPrice ? 8000 : (currentPrice / 2);
+            // LÓGICA CORREGIDA: Si tiene 5+ entradas acumuladas, SIEMPRE $10k (ignora deadline)
+            // Precio puerta SOLO si: tiene menos de 5 entradas acumuladas Y además pasó el deadline
+            const hasMinimunTickets = accumulatedTotal >= 5;
+            const isDoorPrice = !hasMinimunTickets && currentPrice >= 15000;
+            const effectivePriceAdult = hasMinimunTickets ? 10000 : (isDoorPrice ? 15000 : currentPrice);
+            const effectivePriceKids  = hasMinimunTickets ? 5000 : (isDoorPrice ? 8000 : (currentPrice / 2));
 
             const totalAdults = quantityAdults * effectivePriceAdult;
             const totalKids = quantityKids * effectivePriceKids;
@@ -891,7 +893,7 @@
             // Mostrar/ocultar aviso de mínimo 5 entradas
             const minQtyNotice = document.getElementById('min-qty-notice');
             if (minQtyNotice) {
-                if (currentPrice < 15000 && accumulatedTotal < 5) {
+                if (accumulatedTotal < 5) {
                     // Mostrar cuántas faltan si hay compras previas
                     if (previousPurchasesCount > 0) {
                         const needed = 5 - accumulatedTotal;
@@ -910,13 +912,14 @@
                             </p>
                         `;
                     }
+                    minQtyNotice.className = 'bg-orange-900/40 border border-orange-400 rounded-lg p-4';
                     minQtyNotice.classList.remove('hidden');
-                } else if (currentPrice < 15000 && accumulatedTotal >= 5 && previousPurchasesCount > 0) {
-                    // Mostrar mensaje de éxito si alcanzaron el mínimo
+                } else if (accumulatedTotal >= 5 && previousPurchasesCount > 0) {
+                    // ✅ Mostrar mensaje de éxito si alcanzaron el mínimo (ignora deadline)
                     minQtyNotice.innerHTML = `
                         <p class="text-green-200 font-semibold text-sm">
-                            ✅ ¡Excelente! Con ${accumulatedTotal} entradas en total (${previousPurchasesCount} previas + ${totalTickets} nuevas) 
-                            obtenés el <strong>precio anticipado de $10,000 c/u</strong>.
+                            ✅ ¡Perfecto! Con ${accumulatedTotal} entradas en total (${previousPurchasesCount} previas + ${totalTickets} ${totalTickets > 1 ? 'nuevas' : 'nueva'}) 
+                            obtenés el <strong>precio anticipado de $10,000 c/u</strong> — incluso si expiró la fecha límite.
                         </p>
                     `;
                     minQtyNotice.className = 'bg-green-900/40 border border-green-400 rounded-lg p-4';
