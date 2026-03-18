@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pistas de Organización - VYT MUSIC</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/
+
+all.min.css">
+    
+    <!-- Firebase SDK v11.6.1 -->
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
+        import { getFirestore, collection, doc, getDocs, addDoc, deleteDoc, onSnapshot, Timestamp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+        import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js';
+        
+        import { app, db, storage } from './firebase_config.js';
+        
+        window.db = db;
+        window.storage = storage;
+        window.firestoreModules = { collection, doc, getDocs, addDoc, deleteDoc, onSnapshot, Timestamp };
+        window.storageModules = { ref, uploadBytes, getDownloadURL, deleteObject };
+    </script>
+    
+    <!-- Wavesurfer.js para editor de audio -->
+    <script src="https://unpkg.com/wavesurfer.js@7"></script>
+    <script src="https://unpkg.com/wavesurfer.js@7/dist/plugins/regions.min.js"></script>
+    <!-- Tone.js para pitch shifting -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    
+    <style>
+        .waveform-container {
+            background: #0f172a;
+            border-radius: 0.5rem;
+            padding: 1rem;
+            margin: 1rem 0;
+        }
+        .wavesurfer-region {
+            border-left: 3px solid #22c55e !important;
+            border-right: 3px solid #ef4444 !important;
+        }
+        .wavesurfer-handle {
+            background: rgba(255,255,255,0.95) !important;
+            width: 18px !important;
+            border-radius: 4px !important;
+            box-shadow: 0 0 6px rgba(0,0,0,0.6) !important;
+            cursor: ew-resize !import ant;
+        }
+        .wavesurfer-handle::after {
+            font-size: 14px;
+            color: #1e293b;
+            font-weight: bold;
+        }
+        .wavesurfer-handle:first-child::after { content: '\25C4'; }
+        .wavesurfer-handle:last-child::after { content: '\25BA'; }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 min-h-screen">
+    
+    <!-- Header -->
+    <div class="bg-gradient-to-r from-pink-600 via-purple-600 to-pink-700 text-white py-4 shadow-lg">
+        <div class="container mx-auto px-4">
+            <div class="flex items-center justify-between">
+                <h1 class="text-3xl font-bold">🎧 Pistas de Organización</h1>
+                <button onclick="window.history.back()" class="bg-white/20 hover:bg-white/30 px-4 py-2 rounded-lg">
+                    <i class="fas fa-arrow-left"></i> Volver
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="container mx-auto px-4 py-8">
+        
+        <!-- Mensajes -->
+        <div id="messageContainer" class="mb-6"></div>
+        
+        <!-- Banner Reproduciendo -->
+        <div id="nowPlayingBanner" class="hidden mb-4 bg-gradient-to-r from-green-800 to-green-900 text-white px-4 py-3 rounded-lg shadow-lg">
+            <div class="flex items-center justify-between mb-2">
+                <span class="text-sm font-semibold flex items-center gap-2">
+                    <i class="fas fa-music animate-pulse"></i>
+                    <span id="nowPlayingText">Reproduciendo...</span>
+                </span>
+                <button onclick="stopPlayer()" class="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded text-sm">
+                    <i class="fas fa-stop"></i> Parar
+                </button>
+            </div>
+            <div class="flex items-center gap-3 text-xs">
+                <span id="currentTime" class="font-mono text-green-300">0:00</span>
+                <div class="flex-1 bg-gray-700 rounded-full h-2">
+                    <div id="progressBar" class="bg-green-400 h-full" style="width: 0%"></div>
+                </div>
+                <span id="totalTime" class="font-mono text-gray-300">0:00</span>
+            </div>
+        </div>
+
+        <div class="grid lg:grid-cols-2 gap-8">
+            
+            <!-- Formulario de subida -->
+            <div class="bg-gradient-to-br from-gray-800 to-gray-900 rounded-xl shadow-2xl p-6 border-2 border-pink-500">
+                <h2 class="text-2xl font-bold text-white mb-6 flex items-center gap-2">
+                    <i class="fas fa-upload text-pink-400"></i> Subir Nueva Pista
+                </h2>
+                
+                <form id="uploadForm" class="space-y-4">
+                    <div>
+                        <label class="block text-white font-semibold mb-2">
+                            <i class="fas fa-music"></i> Nombre de la Pista
+                        </label>
+                        <input type="text" id="trackName" required
+                            placeholder="Ej: Introducción Gala 1, Música de fondo..."
+                            class="w-full px-4 py-3 rounded-lg bg-gray-700 text-white border-2 border-gray-600 focus:border-pink-500 focus:outline-none">
+                    </div>
+                    
+                    <div>
+                        <label class="block text-white font-semibold mb-2">
+                            <i class="fas fa-user"></i> Artista/Ejecutante
+                        </label>
+                        <input type="text" id="trackArtist" required
+                            placeholder="Ej: DJ Juan, Orquesta Municipal, María Fernández..."
+                            class="w-full px-4 py-3 rounded-lg bg-gray-700 text-white border-2 border-gray-600 focus:border-pink-500 focus:outline-none">
+                    </div>
+                    
+                    <div>
+                        <label class="block text-white font-semibold mb-2">
+                            <i class="fas fa-tag"></i> Categoría (opcional)
+                        </label>
+                        <input type="text" id="trackCategory"
+                            placeholder="Ej: Fondo, Invitado, Presentación..."
+                            class="w-full px-4 py-3 rounded-lg bg-gray-700 text-white border-2 border-gray-600 focus:border-pink-500 focus:outline-none">
+                    </div>
+                    
+                    <div>
+                        <label class="block text-white font-semibold mb-2">
+                            <i class="fas fa-file-audio"></i> Archivo de Audio
+                        </label>
+                        <input type="file" id="trackFile" accept=".mp3,.wav,.mpeg,.mpga" required
+                            class="w-full px-4 py-3 rounded-lg bg-gray-700 text-white border-2 border-gray-600 focus:border-pink-500 focus:outline-none file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-pink-600 file:text-white hover:file:bg-pink-700">
+                        <p class="text-gray-400 text-sm mt-1">Máximo 100MB. Formatos: MP3, WAV, MPEG</p>
+                    </div>
+
+                    <!-- Editor de audio -->
+                    <div id="editorContainer" class="hidden">
+                        <div class="waveform-container border-2 border-purple-500 rounded-lg">
+                            <h4 class="text-white font-semibold mb-3">🎛️ Editor de Audio</h4>
+                            
+                            <!-- Info de recorte -->
+                            <div class="bg-purple-900/30 border border-purple-500/30 rounded-lg p-3 mb-3">
+                                <p class="text-purple-300 text-sm mb-1">
+                                    <i class="fas fa-info-circle"></i> Arrastrá los marcadores ⬅️ ➡️ para recortar
+                                </p>
+                                <div class="flex justify-between text-xs text-gray-300">
+                                    <span>Inicio: <strong id="trimStart" class="text-green-400">0:00</strong></span>
+                                    <span>Fin: <strong id="trimEnd" class="text-red-400">0:00</strong></span>
+                                    <span>Duración: <strong id="trimDuration" class="text-yellow-400">0:00</strong></span>
+                                </div>
+                            </div>
+                            
+                            <div id="waveform"></div>
+                            
+                            <div class="flex gap-4 mt-4 flex-wrap">
+                                <button type="button" id="playBtn" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg">
+                                    <i class="fas fa-play"></i> Reproducir
+                                </button>
+                                <button type="button" id="stopBtn" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg">
+                                    <i class="fas fa-stop"></i> Detener
+                                </button>
+                                <button type="button" id="resetTrimBtn" class="bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded-lg">
+                                    <i class="fas fa-undo"></i> Restaurar
+                                </button>
+                            </div>
+                            
+                            <!-- Botones móviles para ajustar recorte -->
+                            <div class="mt-3 bg-gray-800/50 rounded-lg p-3">
+                                <p class="text-gray-400 text-xs mb-2 text-center">
+                                    <i class="fas fa-cut"></i> Ajustar inicio / fin (±0.5 s)
+                                </p>
+                                <div class="grid grid-cols-2 gap-2">
+                                    <div class="flex items-center gap-1">
+                                        <span class="text-green-400 text-xs font-semibold flex-shrink-0">Inicio</span>
+                                        <button type="button" id="startLeft" class="bg-green-900/60 hover:bg-green-700 text-green-300 font-bold py-3 rounded-lg flex-1">◄</button>
+                                        <button type="button" id="startRight" class="bg-green-900/60 hover:bg-green-700 text-green-300 font-bold py-3 rounded-lg flex-1">►</button>
+                                    </div>
+                                    <div class="flex items-center gap-1">
+                                        <button type="button" id="endLeft" class="bg-red-900/60 hover:bg-red-700 text-red-300 font-bold py-3 rounded-lg flex-1">◄</button>
+                                        <button type="button" id="endRight" class="bg-red-900/60 hover:bg-red-700 text-red-300 font-bold py-3 rounded-lg flex-1">►</button>
+                                        <span class="text-red-400 text-xs font-semibold flex-shrink-0">Fin</span>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Volumen -->
+                            <div class="mt-4">
+                                <label class="block text-white font-semibold mb-2">
+                                    <i class="fas fa-volume-up"></i> Volumen
+                                </label>
+                                <input type="range" id="volumeSlider" min="0" max="200" value="100" 
+                                    class="w-full h-2 bg-gray-700 rounded-lg">
+                                <p class="text-gray-400 text-sm mt-1">Volumen: <span id="volumeValue">100</span>%</p>
+                            </div>
+                            
+                            <!-- Tonalidad -->
+                            <div class="mt-4 bg-purple-900/20 border border-purple-500/30 rounded-lg p-3">
+                                <label class="block text-white font-semibold mb-2 text-sm">
+                                    <i class="fas fa-arrows-alt-v"></i> Tonalidad
+                                </label>
+                                <div class="flex items-center justify-between gap-3">
+                                    <button type="button" id="pitchDown" class="bg-gray-700 hover:bg-gray-600 text-white font-bold text-2xl w-14 h-14 rounded-xl">−</button>
+                                    <span id="pitchDisplay" class="text-purple-400 font-bold text-sm">0 semitonos (original)</span>
+                                    <button type="button" id="pitchUp" class="bg-gray-700 hover:bg-gray-600 text-white font-bold text-2xl w-14 h-14 rounded-xl">+</button>
+                                </div>
+                                <div class="text-center mt-2">
+                                    <button type="button" id="resetPitch" class="text-xs text-gray-500 hover:text-gray-300 underline">Restaurar a 0</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <button type="submit" id="submitBtn"
+                        class="w-full bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-700 hover:to-purple-700 text-white font-bold py-4 px-6 rounded-xl transition-all transform hover:scale-105 shadow-lg">
+                        <i class="fas fa-upload"></i> Subir Pista de Organización
+                    </button>
+                </form>
+            </div>
+
+            <!-- Lista de pistas -->
+            <div class="bg-gradient-to-br from-gray-800 to-gray-900 rounded-xl shadow-2xl p-6 border-2 border-purple-500">
+                <h2 class="text-2xl font-bold text-white mb-6 flex items-center gap-2">
+                    <i class="fas fa-list"></i> Pistas Subidas (<span id="trackCount">0</span>)
+                </h2>
+                <div id="tracksListContainer" class="space-y-3">
+                    <p class="text-gray-400 text-center py-8">Aún no hay pistas de organización</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        const params = new URLSearchParams(window.location.search);
+        const eventId = params.get('eventId');
+        
+        if (!eventId) {
+            alert('Falta el parámetro eventId');
+            window.location.href = 'eventos.html';
+        }
+
+        let orgTracksData = [];
+        let wavesurfer = null;
+        let currentRegion = null;
+        let trimPoints = { start: 0, end: 0 };
+        let pitchValue = 0;
+        let globalAudio = null;
+        let activeTonePlayer = null;
+
+        // Funciones helper
+        function formatTime(seconds) {
+            if(isNaN(seconds)) return '0:00';
+            const mins = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${mins}:${secs.toString().padStart(2, '0')}`;
+        }
+
+        function displayMessage(message, type = 'success') {
+            const colors = { success: 'bg-green-600', error: 'bg-red-600', info: 'bg-blue-600' };
+            const container = document.getElementById('messageContainer');
+            container.innerHTML = `<div class="${colors[type]} text-white p-4 rounded-lg shadow-lg">${message}</div>`;
+            setTimeout(() => { container.innerHTML = ''; }, 5000);
+        }
+
+        function updateTrimDisplay(start, end, duration) {
+            document.getElementById('trimStart').textContent = formatTime(start);
+            document.getElementById('trimEnd').textContent = formatTime(end);
+            document.getElementById('trimDuration').textContent = formatTime(duration);
+        }
+
+        function updatePitchDisplay(val) {
+            pitchValue = val;
+            const display = document.getElementById('pitchDisplay');
+            if (val === 0) display.textContent = '0 semitonos (original)';
+            else if (val > 0) display.textContent = `+${val} semitono${Math.abs(val) > 1 ? 's' : ''} (más agudo)`;
+            else display.textContent = `${val} semitono${Math.abs(val) > 1 ? 's' : ''} (más grave)`;
+        }
+
+        // Convertir AudioBuffer a WAV Blob
+        function audioBufferToWav(buffer) {
+            const numCh = buffer.numberOfChannels;
+            const sr = buffer.sampleRate;
+            const len = buffer.length;
+            const dataBytes = len * numCh * 2;
+            const ab = new ArrayBuffer(44 + dataBytes);
+            const dv = new DataView(ab);
+            const out = new Int16Array(ab, 44);
+            
+            const ws = (off, s) => { for (let i = 0; i < s.length; i++) dv.setUint8(off + i, s.charCodeAt(i)); };
+            ws(0, 'RIFF'); dv.setUint32(4, 36 + dataBytes, true);
+            ws(8, 'WAVE'); ws(12, 'fmt ');
+            dv.setUint32(16, 16, true); dv.setUint16(20, 1, true);
+            dv.setUint16(22, numCh, true); dv.setUint32(24, sr, true);
+            dv.setUint32(28, sr * numCh * 2, true); dv.setUint16(32, numCh * 2, true);
+            dv.setUint16(34, 16, true); ws(36, 'data'); dv.setUint32(40, dataBytes, true);
+            
+            const chs = Array.from({ length: numCh }, (_, c) => buffer.getChannelData(c));
+            for (let i = 0, o = 0; i < len; i++) {
+                for (let c = 0; c < numCh; c++) {
+                    const v = chs[c][i];
+                    out[o++] = v >= 1 ? 32767 : v <= -1 ? -32768 : (v * 32767) | 0;
+                }
+            }
+            return new Blob([ab], { type: 'audio/wav' });
+        }
+
+        // Recortar audio
+        async function trimAudioFile(file, startTime, endTime) {
+            const duration = endTime - startTime;
+            const tmpCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const arrayBuffer = await file.arrayBuffer();
+            const decoded = await tmpCtx.decodeAudioData(arrayBuffer);
+            await tmpCtx.close();
+            
+            const frameCount = Math.ceil(duration * decoded.sampleRate);
+            const offCtx = new OfflineAudioContext(decoded.numberOfChannels, frameCount, decoded.sampleRate);
+            const src = offCtx.createBufferSource();
+            src.buffer = decoded;
+            src.connect(offCtx.destination);
+            src.start(0, startTime, duration);
+            
+            const rendered = await offCtx.startRendering();
+            return audioBufferToWav(rendered);
+        }
+
+        // Aplicar pitch shift
+        async function applyPitchShiftToBlob(audioBlob, pitchSemitones) {
+            const blobUrl = URL.createObjectURL(audioBlob);
+            try {
+                const arrayBuf = await audioBlob.arrayBuffer();
+                const tempCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const decodedBuf = await tempCtx.decodeAudioData(arrayBuf);
+                const duration = decodedBuf.duration;
+                const ch = decodedBuf.numberOfChannels;
+                tempCtx.close();
+                
+                const rendered = await Tone.Offline(async () => {
+                    const ps = new Tone.PitchShift(pitchSemitones).toDestination();
+                    const player = new Tone.Player(blobUrl).connect(ps);
+                    await Tone.loaded();
+                    player.start(0);
+                }, duration + 0.5, ch);
+                
+                return audioBufferToWav(rendered.get());
+            } finally {
+                URL.revokeObjectURL(blobUrl);
+            }
+        }
+
+        // Reproductor global
+        window.stopPlayer = function() {
+            if (globalAudio) {
+                globalAudio.pause();
+                globalAudio.currentTime = 0;
+                globalAudio = null;
+            }
+            if(activeTonePlayer) {
+                try { activeTonePlayer.stop(); activeTonePlayer.dispose(); } catch(e){}
+                activeTonePlayer = null;
+            }
+            document.getElementById('nowPlayingBanner').classList.add('hidden');
+        };
+
+        window.playTrack = function(url, name) {
+            stopPlayer();
+            if (wavesurfer && wavesurfer.isPlaying()) wavesurfer.stop();
+            
+            globalAudio = new Audio(url);
+            globalAudio.play();
+            globalAudio.addEventListener('ended', () => stopPlayer());
+            globalAudio.addEventListener('timeupdate', () => {
+                if (!globalAudio) return;
+                const current = globalAudio.currentTime;
+                const total = globalAudio.duration;
+                if (!isNaN(total) && total > 0) {
+                    document.getElementById('progressBar').style.width = ` ${(current / total) * 100}%`;
+                    document.getElementById('currentTime').textContent = formatTime(current);
+                    document.getElementById('totalTime').textContent = formatTime(total);
+                }
+            });
+            
+            document.getElementById('nowPlayingText').textContent = name;
+            document.getElementById('nowPlayingBanner').classList.remove('hidden');
+        };
+
+        // Configurar editor de audio
+        document.getElementById('trackFile').addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            document.getElementById('editorContainer').classList.remove('hidden');
+            
+            if (wavesurfer) wavesurfer.destroy();
+            
+            const RegionsPlugin = WaveSurfer.Regions.create();
+            
+            wavesurfer = WaveSurfer.create({
+                container: '#waveform',
+                waveColor: '#a78bfa',
+                progressColor: '#8b5cf6',
+                cursorColor: '#ffffff',
+                barWidth: 2,
+                height: 100,
+                plugins: [RegionsPlugin]
+            });
+            
+            wavesurfer.loadBlob(file);
+            
+            wavesurfer.on('ready', () => {
+                const duration = wavesurfer.getDuration();
+                RegionsPlugin.clearRegions();
+                
+                currentRegion = RegionsPlugin.addRegion({
+                    start: 0,
+                    end: duration,
+                    color: 'rgba(168, 85, 247, 0.2)',
+                    drag: true,
+                    resize: true
+                });
+                
+                trimPoints = { start: 0, end: duration };
+                updateTrimDisplay(0, duration, duration);
+                
+                currentRegion.on('update-end', () => {
+                    trimPoints = { start: currentRegion.start, end: currentRegion.end };
+                    updateTrimDisplay(currentRegion.start, currentRegion.end, currentRegion.end - currentRegion.start);
+                });
+            });
+        });
+        
+        // Botones del editor
+        document.getElementById('playBtn').addEventListener('click', async () => {
+            if (wavesurfer && currentRegion) {
+                stopPlayer();
+                if (pitchValue !== 0) {
+                    await Tone.start();
+                    const file = document.getElementById('trackFile').files[0];
+                    if (!file) return;
+                    const fileUrl = URL.createObjectURL(file);
+                    const pitchShift = new Tone.PitchShift(pitchValue).toDestination();
+                    activeTonePlayer = new Tone.Player({
+                        url: fileUrl,
+                        onload: () => {
+                            const dur = trimPoints.end - trimPoints.start;
+                            activeTonePlayer.start('+0.05', trimPoints.start, dur > 0 ? dur : undefined);
+                        }
+                    }).connect(pitchShift);
+                } else {
+                    currentRegion.play();
+                }
+            }
+        });
+        
+        document.getElementById('stopBtn').addEventListener('click', () => {
+            if (wavesurfer) wavesurfer.stop();
+            if(activeTonePlayer) {
+                try { activeTonePlayer.stop(); activeTonePlayer.dispose(); } catch(e){}
+                activeTonePlayer = null;
+            }
+        });
+        
+        document.getElementById('resetTrimBtn').addEventListener('click', () => {
+            if (wavesurfer && currentRegion) {
+                const duration = wavesurfer.getDuration();
+                currentRegion.setOptions({ start: 0, end: duration });
+                trimPoints = { start: 0, end: duration };
+                updateTrimDisplay(0, duration, duration);
+            }
+        });
+        
+        document.getElementById('volumeSlider').addEventListener('input', (e) => {
+            const volume = e.target.value / 100;
+            document.getElementById('volumeValue').textContent = e.target.value;
+            if (wavesurfer) wavesurfer.setVolume(volume);
+        });
+        
+        document.getElementById('pitchDown').addEventListener('click', () => {
+            updatePitchDisplay(Math.max(-4, pitchValue - 0.5));
+        });
+        
+        document.getElementById('pitchUp').addEventListener('click', () => {
+            updatePitchDisplay(Math.min(4, pitchValue + 0.5));
+        });
+        
+        document.getElementById('resetPitch').addEventListener('click', () => {
+            updatePitchDisplay(0);
+        });
+        
+        // Ajustes finos móviles
+        function adjustTrim(field, delta) {
+            if (!currentRegion || !wavesurfer) return;
+            const dur = wavesurfer.getDuration();
+            if (field === 'start') {
+                trimPoints.start = Math.max(0, Math.min(trimPoints.start + delta, trimPoints.end - 0.5));
+            } else {
+                trimPoints.end = Math.max(trimPoints.start + 0.5, Math.min(trimPoints.end + delta, dur));
+            }
+            currentRegion.setOptions({ start: trimPoints.start, end: trimPoints.end });
+            updateTrimDisplay(trimPoints.start, trimPoints.end, trimPoints.end - trimPoints.start);
+        }
+        
+        document.getElementById('startLeft').addEventListener('click', () => adjustTrim('start', -0.5));
+        document.getElementById('startRight').addEventListener('click', () => adjustTrim('start', 0.5));
+        document.getElementById('endLeft').addEventListener('click', () => adjustTrim('end', -0.5));
+        document.getElementById('endRight').addEventListener('click', () => adjustTrim('end', 0.5));
+
+        // Cargar pistas en tiempo real
+        function loadOrgTracks() {
+            const { collection, onSnapshot } = window.firestoreModules;
+            const tracksRef = collection(window.db, `pistas_organizacion_${eventId}`);
+            
+            onSnapshot(tracksRef, (snapshot) => {
+                orgTracksData = [];
+                snapshot.forEach(doc => {
+                    orgTracksData.push({ id: doc.id, ...doc.data() });
+                });
+                displayTracks();
+            });
+        }
+
+        function displayTracks() {
+            const container = document.getElementById('tracksListContainer');
+            const count = document.getElementById('trackCount');
+            
+            count.textContent = orgTracksData.length;
+            
+            if (orgTracksData.length === 0) {
+                container.innerHTML = '<p class="text-gray-400 text-center py-8">Aún no hay pistas de organización</p>';
+                return;
+            }
+            
+            orgTracksData.sort((a, b) => {
+                const dateA = a.uploadedAt?.toDate() || new Date(0);
+                const dateB = b.uploadedAt?.toDate() || new Date(0);
+                return dateB - dateA;
+            });
+            
+            container.innerHTML = orgTracksData.map(track => `
+                <div class="bg-gray-700 rounded-lg p-4 border border-gray-600 hover:border-purple-500 transition">
+                    <div class="flex items-center justify-between">
+                        <div class="flex-1">
+                            <h4 class="text-white font-bold"><i class="fas fa-headphones text-pink-400"></i> ${track.name}</h4>
+                            ${track.artist ? `<p class="text-purple-300 font-semibold"><i class="fas fa-user"></i> ${track.artist}</p>` : ''}
+                            ${track.category ? `<p class="text-gray-400 text-sm"><i class="fas fa-tag"></i> ${track.category}</p>` : ''}
+                            ${track.trim_start !== null ? `<p class="text-yellow-400 text-xs">✂️ Recortada: ${formatTime(track.trim_start)} → ${formatTime(track.trim_end)}</p>` : ''}
+                            ${track.pitch_shift ? `<p class="text-purple-400 text-xs">🎵 Tonalidad: ${track.pitch_shift > 0 ? '+' : ''}${track.pitch_shift} semitonos</p>` : ''}
+                            <p class="text-gray-500 text-xs mt-1">
+                                <i class="fas fa-clock"></i> ${track.uploadedAt?.toDate().toLocaleString('es-ES') || ''}
+                                <span class="ml-2"><i class="fas fa-file"></i> ${(track.size / (1024 * 1024)).toFixed(2)} MB</span>
+                            </p>
+                        </div>
+                        <div class="flex gap-2 ml-4">
+                            <button onclick="playTrack('${track.url}', '${track.name.replace(/'/g, "\\'")}')"
+                                class="bg-green-500 hover:bg-green-600 text-white px-3 py-2 rounded text-sm">
+                                <i class="fas fa-play"></i>
+                            </button>
+                            <button onclick="copyLink('${track.url}')"
+                                class="bg-blue-500 hover:bg-blue-600 text-white px-3 py-2 rounded text-sm">
+                                <i class="fas fa-link"></i>
+                            </button>
+                            <button onclick="deleteTrack('${track.id}', '${track.storagePath}')"
+                                class="bg-red-500 hover:bg-red-600 text-white px-3 py-2 rounded text-sm">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        window.copyLink = async function(url) {
+            try {
+                await navigator.clipboard.writeText(url);
+                displayMessage('✅ Link copiado', 'success');
+            } catch (e) {
+                const textArea = document.createElement('textarea');
+                textArea.value = url;
+                textArea.style.position = 'fixed';
+                textArea.style.left = '-999999px';
+                document.body.appendChild(textArea);
+                textArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textArea);
+                displayMessage('✅ Link copiado', 'success');
+            }
+        };
+
+        window.deleteTrack = async function(trackId, storagePath) {
+            if (!confirm('¿Eliminar esta pista?')) return;
+            
+            try {
+                const { doc, deleteDoc } = window.firestoreModules;
+                const { ref, deleteObject } = window.storageModules;
+                
+                if (storagePath) {
+                    const fileRef = ref(window.storage, storagePath);
+                    await deleteObject(fileRef);
+                }
+                
+                await deleteDoc(doc(window.db, `pistas_organizacion_${eventId}`, trackId));
+                displayMessage('✅ Pista eliminada', 'success');
+            } catch (error) {
+                console.error('Error eliminando:', error);
+                displayMessage('❌ Error al eliminar', 'error');
+            }
+        };
+
+        // Subir pista
+        document.getElementById('uploadForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const nameInput = document.getElementById('trackName');
+            const artistInput = document.getElementById('trackArtist');
+            const categoryInput = document.getElementById('trackCategory');
+            const fileInput = document.getElementById('trackFile');
+            const submitBtn = document.getElementById('submitBtn');
+            
+            const name = nameInput.value.trim();
+            const artist = artistInput.value.trim();
+            const category = categoryInput.value.trim();
+            const file = fileInput.files[0];
+            
+            if (!name || !artist || !file) {
+                displayMessage('Por favor completa todos los campos obligatorios', 'error');
+                return;
+            }
+            
+            const fileName = file.name.toLowerCase();
+            const validExtensions = ['.mp3', '.wav', '.mpeg', '.mpga'];
+            if (!validExtensions.some(ext => fileName.endsWith(ext))) {
+                displayMessage('Formato no válido. Solo MP3, WAV, MPEG', 'error');
+                return;
+            }
+            
+            const MAX_SIZE_MB = 100;
+            if (file.size / (1024 * 1024) > MAX_SIZE_MB) {
+                displayMessage(`Archivo muy grande. Máximo: ${MAX_SIZE_MB} MB`, 'error');
+                return;
+            }
+            
+            try {
+                submitBtn.disabled = true;
+                submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Subiendo...';
+                
+                let finalFile = file;
+                const originalDuration = wavesurfer ? wavesurfer.getDuration() : 0;
+                
+                // Aplicar recorte si hay región activa
+                if (currentRegion && (trimPoints.start > 0 || trimPoints.end < originalDuration)) {
+                    displayMessage('⏳ Recortando audio...', 'info');
+                    finalFile = await trimAudioFile(file, trimPoints.start, trimPoints.end);
+                }
+                
+                // Aplicar pitch shift si está cambiado
+                if (pitchValue !== 0) {
+                    displayMessage('⏳ Aplicando cambios de tonalidad...', 'info');
+                    finalFile = await applyPitchShiftToBlob(finalFile, pitchValue);
+                }
+                
+                displayMessage('⏳ Subiendo a Firebase...', 'info');
+                
+                const { ref, uploadBytes, getDownloadURL } = window.storageModules;
+                const uploadExt = fileName.split('.').pop();
+                const sanitizedName = name.replace(/[^a-z0-9]/gi, '_');
+                const storagePath = `pistas_organizacion/${eventId}/${sanitizedName}_${Date.now()}.${uploadExt}`;
+                
+                const fileRef = ref(window.storage, storagePath);
+                await uploadBytes(fileRef, finalFile);
+                const downloadURL = await getDownloadURL(fileRef);
+                
+                const { collection, addDoc, Timestamp } = window.firestoreModules;
+                const tracksRef = collection(window.db, `pistas_organizacion_${eventId}`);
+                
+                const hasTrim = trimPoints.start > 0 || (originalDuration > 0 && trimPoints.end < originalDuration);
+                
+                await addDoc(tracksRef, {
+                    name: name,
+                    artist: artist,
+                    category: category || 'Sin categoría',
+                    url: downloadURL,
+                    storagePath: storagePath,
+                    size: finalFile.size,
+                    format: uploadExt,
+                    trim_start: hasTrim ? trimPoints.start : null,
+                    trim_end: hasTrim ? trimPoints.end : null,
+                    pitch_shift: pitchValue !== 0 ? pitchValue : null,
+                    uploadedAt: Timestamp.now(),
+                    uploadedBy: 'admin'
+                });
+                
+                displayMessage('✅ Pista subida exitosamente', 'success');
+                
+                // Resetear
+                nameInput.value = '';
+                artistInput.value = '';
+                categoryInput.value = '';
+                fileInput.value = '';
+                document.getElementById('editorContainer').classList.add('hidden');
+                if (wavesurfer) wavesurfer.destroy();
+                trimPoints = { start: 0, end: 0 };
+                pitchValue = 0;
+                updatePitchDisplay(0);
+                
+            } catch (error) {
+                console.error('Error:', error);
+                displayMessage('❌ Error al subir: ' + error.message, 'error');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="fas fa-upload"></i> Subir Pista de Organización';
+            }
+        });
+
+        // Inicializar
+        loadOrgTracks();
+    </script>
+</body>
+</html>
