@@ -97,36 +97,58 @@
                 ui.shareSummaryBtn.disabled = true;
                 return;
             }
-            const prefixData = tickets.reduce((acc, ticket) => {
-                if (ticket.prefix) {
-                    if (!acc[ticket.prefix]) {
-                        acc[ticket.prefix] = { count: 0, artistName: ticket.artistName || '' };
-                    }
-                    acc[ticket.prefix].count++;
-                    if (!acc[ticket.prefix].artistName && ticket.artistName) {
-                        acc[ticket.prefix].artistName = ticket.artistName;
-                    }
+            
+            // 🔄 NUEVA LÓGICA: Agrupar por PERSONA (nombre normalizado) en lugar de por prefix individual
+            const personData = tickets.reduce((acc, ticket) => {
+                if (!ticket.artistName) return acc; // Skip tickets sin nombre
+                
+                // Normalizar el nombre para agrupar correctamente (lowercase, sin espacios extra)
+                const normalizedName = (ticket.artistName || '').toLowerCase().trim();
+                
+                if (!acc[normalizedName]) {
+                    acc[normalizedName] = { 
+                        count: 0, 
+                        displayName: ticket.artistName, // Mantener el nombre original con mayúsculas
+                        prefixes: [], // TODOS los prefixes de esta persona
+                        email: ticket.email || '',
+                        phone: ticket.phone || ''
+                    };
                 }
+                
+                acc[normalizedName].count++;
+                
+                // Agregar prefix si no está ya en el array
+                if (ticket.prefix && !acc[normalizedName].prefixes.includes(ticket.prefix)) {
+                    acc[normalizedName].prefixes.push(ticket.prefix);
+                }
+                
+                // Actualizar email/phone si no los teníamos
+                if (ticket.email && !acc[normalizedName].email) acc[normalizedName].email = ticket.email;
+                if (ticket.phone && !acc[normalizedName].phone) acc[normalizedName].phone = ticket.phone;
+                
                 return acc;
             }, {});
-            const artistPrefixes = Object.keys(prefixData).sort();
+            
+            const artistNames = Object.keys(personData).sort();
             ui.artistsListDiv.innerHTML = '';
-            artistPrefixes.forEach(prefix => {
-                const { count, artistName } = prefixData[prefix];
-                const displayName = artistName || prefix;
+            
+            artistNames.forEach(normalizedName => {
+                const { count, displayName, prefixes, email, phone } = personData[normalizedName];
+                const primaryPrefix = prefixes[0]; // Usar el primer prefix como principal
+                
                 const card = document.createElement('div');
                 card.className = 'artist-card';
                 card.innerHTML = `
-                    <a href="visor_qr_compartido.html?eventId=${eventId}&artist=${encodeURIComponent(prefix)}" class="flex-grow">
+                    <a href="visor_qr_compartido.html?eventId=${eventId}&artist=${encodeURIComponent(primaryPrefix)}" class="flex-grow">
                         <h3 class="text-xl font-bold text-sky-400">${displayName}</h3>
-                        ${artistName ? `<p class="text-xs text-gray-500">Código: ${prefix}</p>` : ''}
-                        <p class="text-sm text-gray-400">${count} entrada(s)</p>
+                        ${prefixes.length > 1 ? `<p class="text-xs text-amber-400">🔗 ${prefixes.length} compras agrupadas</p>` : `<p class="text-xs text-gray-500">Código: ${primaryPrefix}</p>`}
+                        <p class="text-sm text-gray-400">${count} entrada(s) total</p>
                     </a>
                     <div class="flex space-x-1">
-                        <button data-prefix="${prefix}" data-artist-name="${displayName}" class="view-detailed-btn px-2 py-1.5 bg-green-600 text-white font-medium rounded text-xs hover:bg-green-700">👥 Ver Invitados</button>
-                        <button data-prefix="${prefix}" data-artist-name="${displayName}" class="add-more-btn px-2 py-1.5 bg-blue-600 text-white font-medium rounded text-xs hover:bg-blue-700">+ Más</button>
-                        <button data-prefix="${prefix}" data-artist-name="${displayName}" class="share-artist-btn px-2 py-1.5 bg-purple-600 text-white font-medium rounded text-xs hover:bg-purple-700">Compartir</button>
-                        <button data-prefix="${prefix}" data-artist-name="${displayName}" class="delete-artist-tickets-btn px-2 py-1.5 bg-red-600 text-white font-medium rounded text-xs hover:bg-red-700">Borrar</button>
+                        <button data-prefixes='${JSON.stringify(prefixes)}' data-artist-name="${displayName}" class="view-detailed-btn px-2 py-1.5 bg-green-600 text-white font-medium rounded text-xs hover:bg-green-700">👥 Ver Invitados</button>
+                        <button data-prefix="${primaryPrefix}" data-artist-name="${displayName}" class="add-more-btn px-2 py-1.5 bg-blue-600 text-white font-medium rounded text-xs hover:bg-blue-700">+ Más</button>
+                        <button data-prefixes='${JSON.stringify(prefixes)}' data-artist-name="${displayName}" class="share-artist-btn px-2 py-1.5 bg-purple-600 text-white font-medium rounded text-xs hover:bg-purple-700">Compartir</button>
+                        <button data-prefixes='${JSON.stringify(prefixes)}' data-artist-name="${displayName}" class="delete-artist-tickets-btn px-2 py-1.5 bg-red-600 text-white font-medium rounded text-xs hover:bg-red-700">Borrar</button>
                     </div>`;
                 ui.artistsListDiv.appendChild(card);
             });
@@ -136,9 +158,18 @@
             const target = e.target;
             
             if (target.classList.contains('view-detailed-btn')) {
-                const prefix = target.dataset.prefix;
-                // Ir a la nueva página de gestión detallada
-                window.location.href = `visor_invitados_detallado.html?eventId=${eventId}&artist=${encodeURIComponent(prefix)}&eventName=${encodeURIComponent(eventName)}`;
+                // 🔄 NUEVO: Si tiene múltiples prefixes, ir al visor que muestra TODOS
+                const prefixesJSON = target.dataset.prefixes;
+                const prefixes = JSON.parse(prefixesJSON);
+                
+                if (prefixes.length === 1) {
+                    // Solo una compra - ir directo
+                    window.location.href = `visor_invitados_detallado.html?eventId=${eventId}&artist=${encodeURIComponent(prefixes[0])}&eventName=${encodeURIComponent(eventName)}`;
+                } else {
+                    // Múltiples compras - pasar TODOS los prefixes
+                    const prefixesParam = prefixes.map(p => encodeURIComponent(p)).join(',');
+                    window.location.href = `visor_invitados_detallado.html?eventId=${eventId}&artists=${prefixesParam}&eventName=${encodeURIComponent(eventName)}`;
+                }
             }
             
             if (target.classList.contains('add-more-btn')) {
@@ -149,34 +180,53 @@
             }
             
             if (target.classList.contains('share-artist-btn')) {
-                const prefix = target.dataset.prefix;
-                const artistName = target.dataset.artistName || prefix;
+                // 🔄 NUEVO: Si tiene múltiples prefixes, crear link que muestre TODOS
+                const prefixesJSON = target.dataset.prefixes;
+                const prefixes = JSON.parse(prefixesJSON);
+                const artistName = target.dataset.artistName;
                 const baseUrl = 'https://vyt-music.web.app';
-                const shareableLink = `${baseUrl}/visor_qr_compartido.html?eventId=${eventId}&artist=${encodeURIComponent(prefix)}`;
-                showShareModal(shareableLink, `Enlace de QR para "${artistName}"`);
+                
+                let shareableLink;
+                if (prefixes.length === 1) {
+                    shareableLink = `${baseUrl}/visor_qr_compartido.html?eventId=${eventId}&artist=${encodeURIComponent(prefixes[0])}`;
+                } else {
+                    // Múltiples prefixes - pasar todos separados por coma
+                    const prefixesParam = prefixes.map(p => encodeURIComponent(p)).join(',');
+                    shareableLink = `${baseUrl}/visor_qr_compartido.html?eventId=${eventId}&artists=${prefixesParam}`;
+                }
+                
+                showShareModal(shareableLink, `Enlace de QR para "${artistName}"${prefixes.length > 1 ? ` (${prefixes.length} compras)` : ''}`);
             }
             
             if (target.classList.contains('delete-artist-tickets-btn')) {
-                const prefix = target.dataset.prefix;
-                const artistName = target.dataset.artistName || prefix;
-                if (confirm(`¿Estás seguro de que quieres borrar TODAS las entradas del artista "${artistName}"? Esta acción no se puede deshacer.`)) {
-                    // Lógica para borrar las entradas
+                // 🔄 NUEVO: Borrar TODOS los tickets de TODOS los prefixes de esta persona
+                const prefixesJSON = target.dataset.prefixes;
+                const prefixes = JSON.parse(prefixesJSON);
+                const artistName = target.dataset.artistName;
+                
+                const confirmMsg = prefixes.length > 1 
+                    ? `¿Estás seguro de que quieres borrar TODAS las entradas de "${artistName}"?\n\nEsta persona tiene ${prefixes.length} compras agrupadas. Se borrarán TODAS sus entradas.\n\nEsta acción no se puede deshacer.`
+                    : `¿Estás seguro de que quieres borrar TODAS las entradas de "${artistName}"? Esta acción no se puede deshacer.`;
+                
+                if (confirm(confirmMsg)) {
                     try {
-                        const ticketsToDeleteQuery = query(collection(db, `events/${eventId}/tickets`), where("prefix", "==", prefix));
-                        const ticketsSnapshot = await getDocs(ticketsToDeleteQuery);
+                        const batch = writeBatch(db);
+                        let totalDeleted = 0;
                         
-                        if (ticketsSnapshot.empty) {
-                            alert('No se encontraron entradas para este artista.');
-                            return;
+                        // Borrar tickets de TODOS los prefixes
+                        for (const prefix of prefixes) {
+                            const ticketsToDeleteQuery = query(collection(db, `events/${eventId}/tickets`), where("prefix", "==", prefix));
+                            const ticketsSnapshot = await getDocs(ticketsToDeleteQuery);
+                            
+                            ticketsSnapshot.forEach((doc) => {
+                                batch.delete(doc.ref);
+                                totalDeleted++;
+                            });
                         }
                         
-                        const batch = writeBatch(db);
-                        ticketsSnapshot.forEach((doc) => {
-                            batch.delete(doc.ref);
-                        });
                         await batch.commit();
                         
-                        alert(`Se han borrado ${ticketsSnapshot.size} entradas del artista "${artistName}".`);
+                        alert(`Se han borrado ${totalDeleted} entrada(s) de "${artistName}"${prefixes.length > 1 ? ` (${prefixes.length} compras agrupadas)` : ''}.`);
                         loadArtistsWithTickets(); // Recargar la lista
                         
                     } catch (error) {
