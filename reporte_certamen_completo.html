@@ -2582,6 +2582,62 @@ totalVotes: 0,
         }
 
         // 🏆 FUNCIONES PARA SELECTOR DE BONUS POR PARTICIPACIÓN
+        
+        // 📊 FUNCIÓN PARA ACTUALIZAR ESTADÍSTICAS GLOBALES INMEDIATAMENTE
+        function updateGlobalStats() {
+            console.log('📊 Actualizando estadísticas globales...');
+            
+            // Actualizar contadores básicos
+            const totalGalasEl = document.getElementById('total-galas');
+            const totalArtistsEl = document.getElementById('total-unique-artists');
+            const totalVotesEl = document.getElementById('total-all-votes');
+            const totalJurorsEl = document.getElementById('total-jurors');
+            const averageScoreEl = document.getElementById('average-score');
+            
+            if (totalGalasEl) totalGalasEl.textContent = selectedGalas.length || 0;
+            if (totalArtistsEl) totalArtistsEl.textContent = reportData.allParticipants.size || 0;
+            
+            // Calcular total de evaluaciones de jurados
+            let totalJuryEvaluations = 0;
+            let totalPublicVotes = 0;
+            reportData.allParticipants.forEach(participant => {
+                if (participant.galaDetails) {
+                    Object.values(participant.galaDetails).forEach(detail => {
+                        totalJuryEvaluations += detail.juryCount || 0;
+                        totalPublicVotes += detail.votes || 0;
+                    });
+                }
+            });
+            
+            const totalVotes = totalJuryEvaluations + totalPublicVotes;
+            if (totalVotesEl) totalVotesEl.textContent = totalVotes || 0;
+            if (totalJurorsEl) totalJurorsEl.textContent = totalJuryEvaluations || 0;
+            
+            // Calcular promedio general
+            let totalScoreSum = 0;
+            let totalParticipantsWithScore = 0;
+            reportData.allParticipants.forEach(participant => {
+                if (participant.finalScore && participant.finalScore > 0) {
+                    totalScoreSum += participant.finalScore;
+                    totalParticipantsWithScore++;
+                }
+            });
+            const averageScore = totalParticipantsWithScore > 0 ? 
+                (totalScoreSum / totalParticipantsWithScore) : 0;
+            
+            if (averageScoreEl) {
+                averageScoreEl.textContent = averageScore.toFixed(1);
+            }
+            
+            console.log(`✅ Estadísticas actualizadas:`, {
+                galas: selectedGalas.length,
+                artistas: reportData.allParticipants.size,
+                votosTotal: totalVotes,
+                evaluacionesJurados: totalJuryEvaluations,
+                promedioGeneral: averageScore.toFixed(1)
+            });
+        }
+        
         // 🆕 FUNCIÓN MEJORADA PARA MOSTRAR SELECTOR CON TODOS LOS ARTISTAS
         function showBonusSelector() {
             const participantsList = document.getElementById('penalty-participants-list');
@@ -2590,6 +2646,15 @@ totalVotes: 0,
             // 🔍 DEBUG: Ver exactamente qué artistas llegaron aquí
             console.log(`🔍 DEBUG showBonusSelector: Total artistas cargados: ${participantsArray.length}`);
             console.log('🔍 Lista de artistas:', participantsArray.map(p => p.name).sort());
+            
+            // 📊 ACTUALIZAR ESTADÍSTICAS GLOBALES ANTES DE MOSTRAR EL SELECTOR
+            updateGlobalStats();
+            
+            // 🎨 HACER VISIBLE LA SECCIÓN DEL REPORTE PARA MOSTRAR ESTADÍSTICAS
+            const reportContent = document.getElementById('report-content');
+            if (reportContent) {
+                reportContent.classList.remove('hidden');
+            }
             
             // Ordenar por promedio final (descendente)
             participantsArray.sort((a, b) => b.finalScore - a.finalScore);
