@@ -1431,32 +1431,68 @@
 
                 console.log(`🎟️ QR generados en ${gala.name}:`, qrCounts);
 
+                // 🎯 PASO 1: Calcular puntajes de los que SÍ CANTARON
+                const artistsQueCantaron = [];
+                const artistasAusentes = [];
+                
                 artistsSnapshot.docs.forEach(artistDoc => {
                     const artistData = artistDoc.data();
-                    
-                    // 🎯 CALCULAR PROMEDIO DE JURADOS PARA ESTE ARTISTA
                     const artistJuryScores = juryScores[artistDoc.id] || [];
                     const juryAverage = artistJuryScores.length > 0 
                         ? artistJuryScores.reduce((sum, score) => sum + score, 0) / artistJuryScores.length 
                         : 0;
                     
-                    // 🎟️ OBTENER CANTIDAD DE QR GENERADOS
+                    // Verificar estado del artista
+                    const estado = artistData.estado || 'canto'; // Por defecto "canto" si no tiene el campo
+                    const confirmado = artistData.confirmado !== undefined ? artistData.confirmado : true;
+                    
+                    if (estado === 'ausente' && confirmado) {
+                        // Es un ausente confirmado
+                        artistasAusentes.push({
+                            doc: artistDoc,
+                            data: artistData
+                        });
+                    } else {
+                        // Cantó (o no está marcado como ausente)
+                        if (juryAverage > 0) {
+                            artistsQueCantaron.push({
+                                doc: artistDoc,
+                                data: artistData,
+                                juryAverage: juryAverage,
+                                juryScores: artistJuryScores
+                            });
+                        }
+                    }
+                });
+
+                // 🎯 PASO 2: Calcular PUNTAJE MÍNIMO de los que cantaron
+                let puntajeMinimoGala = 0;
+                if (artistsQueCantaron.length > 0) {
+                    const puntajes = artistsQueCantaron.map(a => a.juryAverage);
+                    puntajeMinimoGala = Math.min(...puntajes);
+                    console.log(`📊 ${gala.name}: Puntaje mínimo calculado: ${puntajeMinimoGala.toFixed(2)} (de ${artistsQueCantaron.length} artistas que cantaron)`);
+                }
+
+                // 🎯 PASO 3: Procesar artistas que CANTARON
+                artistsQueCantaron.forEach(({ doc: artistDoc, data: artistData, juryAverage, juryScores: artistJuryScores }) => {
                     const qrGenerated = qrCounts[artistDoc.id] || 0;
                     
                     const participantData = {
                         id: artistDoc.id,
                         name: artistData.name,
                         photoURL: artistData.photoURL,
-                        score: juryAverage, // ✅ USAR PROMEDIO DE JURADOS
-                        votes: artistJuryScores.length, // ✅ CANTIDAD DE JURADOS QUE EVALUARON
+                        score: juryAverage,
+                        votes: artistJuryScores.length,
                         galaName: gala.name,
-                        juryScores: artistJuryScores, // Para debugging
-                        publicScore: artistData.totalScore || 0, // Mantener score público por referencia
+                        juryScores: artistJuryScores,
+                        publicScore: artistData.totalScore || 0,
                         publicVotes: artistData.totalRatingsCount || 0,
-                        qrCodesGenerated: qrGenerated // 🎟️ Cantidad de entradas vendidas
+                        qrCodesGenerated: qrGenerated,
+                        estado: 'canto', // ✅ Identificador de que cantó
+                        esAusente: false
                     };
 
-                    console.log(`🎭 ${artistData.name} en ${gala.name}: Jurados: ${juryAverage.toFixed(1)}/10 (${artistJuryScores.length} evaluaciones) | Público: ${participantData.publicScore} | QR: ${qrGenerated}`);
+                    console.log(`✅ ${artistData.name} CANTÓ en ${gala.name}: ${juryAverage.toFixed(1)}/10 (${artistJuryScores.length} evaluaciones)`);
 
                     galaData.participants.push(participantData);
                     reportData.totalVotes += participantData.votes;
@@ -1513,6 +1549,79 @@
                         });
                     }
                 });
+
+                // 🎯 PASO 4: Procesar artistas AUSENTES (asignar puntaje mínimo)
+                if (artistasAusentes.length > 0 && puntajeMinimoGala > 0) {
+                    console.log(`\n⚠️ Procesando ${artistasAusentes.length} ausentes en ${gala.name}`);
+                    
+                    artistasAusentes.forEach(({ doc: artistDoc, data: artistData }) => {
+                        const qrGenerated = qrCounts[artistDoc.id] || 0;
+                        
+                        const participantData = {
+                            id: artistDoc.id,
+                            name: artistData.name,
+                            photoURL: artistData.photoURL,
+                            score: puntajeMinimoGala, // ✅ PUNTAJE MÍNIMO AUTOMÁTICO
+                            votes: 0, // No tiene evaluaciones porque no cantó
+                            galaName: gala.name,
+                            juryScores: [], // Sin evaluaciones
+                            publicScore: 0,
+                            publicVotes: 0,
+                            qrCodesGenerated: qrGenerated,
+                            estado: 'ausente', // ✅ Identificador de ausente
+                            esAusente: true
+                        };
+
+                        console.log(`❌ ${artistData.name} AUSENTE en ${gala.name}: Se asigna puntaje mínimo ${puntajeMinimoGala.toFixed(1)}/10`);
+
+                        galaData.participants.push(participantData);
+                        reportData.totalScore += participantData.score;
+                        // NO sumar votes porque no tiene evaluaciones
+
+                        // 🔍 BUSCAR NOMBRE SIMILAR
+                        const existingNames = Array.from(reportData.allParticipants.keys());
+                        const similarName = findSimilarName(artistData.name, existingNames, artistData.photoURL);
+                        const finalName = similarName || artistData.name;
+                        
+                        if (similarName) {
+                            console.log(`🔗 Unificando "${artistData.name}" con "${similarName}"`);
+                        }
+
+                        // Acumular en el ranking general
+                        if (reportData.allParticipants.has(finalName)) {
+                            const existing = reportData.allParticipants.get(finalName);
+                            existing.totalScore += participantData.score;
+                            // NO sumar votes
+                            existing.galas.push(gala.name);
+                            existing.qrCodesGenerated = (existing.qrCodesGenerated || 0) + participantData.qrCodesGenerated;
+                            existing.galaDetails = existing.galaDetails || {};
+                            existing.galaDetails[gala.name] = {
+                                score: participantData.score,
+                                votes: 0,
+                                participated: true,
+                                esAusente: true // ✅ Marcar como ausente
+                            };
+                        } else {
+                            reportData.allParticipants.set(finalName, {
+                                name: finalName,
+                                photoURL: artistData.photoURL,
+                                totalScore: participantData.score,
+totalVotes: 0,
+                                galas: [gala.name],
+                                avgScore: 0,
+                                qrCodesGenerated: participantData.qrCodesGenerated || 0,
+                                galaDetails: {
+                                    [gala.name]: {
+                                        score: participantData.score,
+                                        votes: 0,
+                                        participated: true,
+                                        esAusente: true // ✅ Marcar como ausente
+                                    }
+                                }
+                            });
+                        }
+                    });
+                }
 
                 reportData.galas.push(galaData);
             }
@@ -1955,12 +2064,18 @@
                                         // 🎯 MOSTRAR SCORE CORRECTO SEGÚN SI PARTICIPÓ O NO
                                         let scoreToShow, scoreClass, badge, votesInfo;
                                         
-                                        if (galaDetail.participated) {
-                                            // ✅ PARTICIPÓ: Mostrar score real
+                                        if (galaDetail.esAusente) {
+                                            // ⚠️ AUSENTE CONFIRMADO: Recibió puntaje mímínimo
+                                            scoreToShow = galaDetail.score;
+                                            scoreClass = 'text-orange-400';
+                                            badge = '⚠️';
+                                            votesInfo = 'ausente*';
+                                        } else if (galaDetail.participated) {
+                                            // ✅ CANTÓ: Mostrar score real
                                             scoreToShow = galaDetail.score;
                                             scoreClass = 'text-green-400';
                                             badge = '✅';
-                                            votesInfo = `${galaDetail.juryCount || 0} jur.`;
+                                            votesInfo = `${galaDetail.juryCount || galaDetail.votes || 0} jur.`;
                                         } else if (participant.duplicated && galaDetail.repeated) {
                                             // 🔄 DUPLICADO: Faltó pero se le duplicó (usuario lo seleccionó)
                                             scoreToShow = galaDetail.score;
@@ -2027,7 +2142,8 @@
                     <div class="bg-blue-900/30 p-4 rounded-lg border border-blue-500/30">
                         <h5 class="text-lg font-bold text-blue-400 mb-3">📖 Leyenda</h5>
                         <div class="text-sm text-gray-300 space-y-1">
-                            <p><span class="text-green-400">✅ Verde:</span> Participó en la gala</p>
+                            <p><span class="text-green-400">✅ Verde:</span> Participó y cantó en la gala</p>
+                            <p><span class="text-orange-400">⚠️ Naranja:</span> Ausente confirmado (recibe puntaje mínimo de la gala)</p>
                             <p><span class="text-yellow-400">🔄 Amarillo:</span> Duplicado (faltó a 1 gala)</p>
                             <p><span class="text-red-400">❌ Rojo:</span> Faltó (sin duplicar)</p>
                             <p><span class="text-green-400">⭐ Bonus:</span> +0.5 por participación completa</p>

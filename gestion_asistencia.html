@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestión de Asistencia - VYT MUSIC</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        body { 
+            font-family: 'Inter', sans-serif; 
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+        }
+        .artist-card {
+            transition: all 0.3s ease;
+        }
+        .artist-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+        }
+        .status-button {
+            transition: all 0.2s ease;
+        }
+        .status-button.active {
+            transform: scale(1.05);
+        }
+    </style>
+</head>
+<body class="min-h-screen text-white">
+    
+    <!-- Header -->
+    <div class="bg-gradient-to-r from-purple-600 via-pink-600 to-purple-700 shadow-2xl">
+        <div class="container mx-auto px-4 py-6">
+            <div class="flex items-center justify-between flex-wrap gap-4">
+                <div>
+                    <h1 class="text-3xl md:text-4xl font-bold mb-2">🎭 Gestión de Asistencia</h1>
+                    <p id="eventNameDisplay" class="text-purple-100 text-lg">Cargando evento...</p>
+                </div>
+                <button onclick="window.history.back()" class="bg-white/20 hover:bg-white/30 px-6 py-3 rounded-lg font-semibold transition">
+                    <i class="fas fa-arrow-left mr-2"></i> Volver
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="container mx-auto px-4 py-8">
+        
+        <!-- Mensajes -->
+        <div id="messageContainer" class="mb-6"></div>
+
+        <!-- Instrucciones -->
+        <div class="bg-gradient-to-r from-blue-900/50 to-blue-800/50 border border-blue-500/50 rounded-xl p-6 mb-8 backdrop-blur-sm">
+            <h2 class="text-xl font-bold mb-3 flex items-center gap-2">
+                <i class="fas fa-info-circle text-blue-400"></i>
+                ¿Cómo funciona?
+            </h2>
+            <ul class="space-y-2 text-blue-100">
+                <li class="flex items-start gap-2">
+                    <i class="fas fa-check text-green-400 mt-1"></i>
+                    <span><strong>Por defecto todos están marcados como "Cantó"</strong> cuando agregas artistas a la gala</span>
+                </li>
+                <li class="flex items-start gap-2">
+                    <i class="fas fa-times text-red-400 mt-1"></i>
+                    <span><strong>Si alguien faltó:</strong> Clickeá el botón "Ausente" debajo de su nombre</span>
+                </li>
+                <li class="flex items-start gap-2">
+                    <i class="fas fa-calculator text-yellow-400 mt-1"></i>
+                    <span><strong>Sistema automático:</strong> Los ausentes recibirán el puntaje más bajo de los que SÍ cantaron</span>
+                </li>
+                <li class="flex items-start gap-2">
+                    <i class="fas fa-save text-purple-400 mt-1"></i>
+                    <span><strong>Los cambios se guardan automáticamente</strong> al hacer click</span>
+                </li>
+            </ul>
+        </div>
+
+        <!-- Loading -->
+        <div id="loadingSection" class="text-center py-12">
+            <i class="fas fa-spinner fa-spin text-5xl text-purple-400 mb-4"></i>
+            <p class="text-xl text-gray-300">Cargando artistas...</p>
+        </div>
+
+        <!-- Lista de Artistas -->
+        <div id="artistsSection" class="hidden">
+            <div class="bg-gray-800/50 backdrop-blur-sm rounded-xl p-6 mb-6 border border-gray-700">
+                <div class="flex items-center justify-between flex-wrap gap-4">
+                    <div>
+                        <h2 class="text-2xl font-bold text-white mb-1">Artistas de esta Gala</h2>
+                        <p class="text-gray-400">Total: <span id="totalArtists" class="text-purple-400 font-bold">0</span> artistas</p>
+                    </div>
+                    <div class="flex gap-4">
+                        <div class="text-center">
+                            <div class="text-3xl font-bold text-green-400" id="countCanto">0</div>
+                            <div class="text-sm text-gray-400">✅ Cantaron</div>
+                        </div>
+                        <div class="text-center">
+                            <div class="text-3xl font-bold text-red-400" id="countAusente">0</div>
+                            <div class="text-sm text-gray-400">❌ Ausentes</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Grid de Artistas -->
+            <div id="artistsContainer" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <!-- Se llena dinámicamente -->
+            </div>
+
+            <!-- Sin artistas -->
+            <div id="noArtistsMessage" class="hidden text-center py-12">
+                <i class="fas fa-users-slash text-6xl text-gray-600 mb-4"></i>
+                <p class="text-xl text-gray-400">No hay artistas registrados en esta gala</p>
+                <p class="text-gray-500 mt-2">Agrega artistas primero desde "Gestión de Artistas"</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase + Scripts -->
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
+        import { getFirestore, collection, doc, getDocs, updateDoc, getDoc } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+        import { app, db } from './firebase_config.js';
+
+        const params = new URLSearchParams(window.location.search);
+        const eventId = params.get('eventId');
+        const eventName = params.get('eventName') || 'Evento';
+
+        if (!eventId) {
+            alert('❌ Falta el parámetro eventId');
+            window.location.href = 'eventos.html';
+        }
+
+        document.getElementById('eventNameDisplay').textContent = decodeURIComponent(eventName);
+
+        let artistsData = [];
+
+        // Funciones helper
+        function displayMessage(message, type = 'success') {
+            const colors = { 
+                success: 'bg-green-600 border-green-400', 
+                error: 'bg-red-600 border-red-400', 
+                info: 'bg-blue-600 border-blue-400' 
+            };
+            const container = document.getElementById('messageContainer');
+            container.innerHTML = `
+                <div class="${colors[type]} border-2 text-white px-6 py-4 rounded-xl shadow-lg backdrop-blur-sm">
+                    <div class="flex items-center gap-3">
+                        <i class="fas ${type === 'success' ? 'fa-check-circle' : type === 'error' ? 'fa-exclamation-circle' : 'fa-info-circle'} text-2xl"></i>
+                        <span class="font-semibold">${message}</span>
+                    </div>
+                </div>
+            `;
+            setTimeout(() => { container.innerHTML = ''; }, 4000);
+        }
+
+        function updateCounters() {
+            const cantaron = artistsData.filter(a => a.estado === 'canto').length;
+            const ausentes = artistsData.filter(a => a.estado === 'ausente').length;
+            
+            document.getElementById('totalArtists').textContent = artistsData.length;
+            document.getElementById('countCanto').textContent = cantaron;
+            document.getElementById('countAusente').textContent = ausentes;
+        }
+
+        // Cargar artistas
+        async function loadArtists() {
+            try {
+                console.log('🔍 Cargando artistas del evento:', eventId);
+                
+                const artistsSnapshot = await getDocs(collection(db, `events/${eventId}/artists`));
+                
+                if (artistsSnapshot.empty) {
+                    document.getElementById('loadingSection').classList.add('hidden');
+                    document.getElementById('artistsSection').classList.remove('hidden');
+                    document.getElementById('noArtistsMessage').classList.remove('hidden');
+                    return;
+                }
+
+                artistsData = artistsSnapshot.docs.map(doc => ({
+                    id: doc.id,
+                    ...doc.data(),
+                    // Si no tiene estado, por defecto es "canto"
+                    estado: doc.data().estado || 'canto',
+                    confirmado: doc.data().confirmado !== undefined ? doc.data().confirmado : true
+                }));
+
+                console.log(`✅ ${artistsData.length} artistas cargados`);
+                
+                // Ordenar alfabéticamente
+                artistsData.sort((a, b) => a.name.localeCompare(b.name));
+
+                displayArtists();
+                updateCounters();
+
+                document.getElementById('loadingSection').classList.add('hidden');
+                document.getElementById('artistsSection').classList.remove('hidden');
+
+            } catch (error) {
+                console.error('❌ Error cargando artistas:', error);
+                displayMessage('Error al cargar artistas: ' + error.message, 'error');
+                document.getElementById('loadingSection').classList.add('hidden');
+            }
+        }
+
+        // Mostrar artistas
+        function displayArtists() {
+            const container = document.getElementById('artistsContainer');
+            
+            container.innerHTML = artistsData.map(artist => {
+                const isCanto = artist.estado === 'canto';
+                const isAusente = artist.estado === 'ausente';
+                
+                return `
+                    <div class="artist-card bg-gray-800/70 backdrop-blur-sm border-2 ${isAusente ? 'border-red-500/50' : 'border-gray-700'} rounded-xl p-6 shadow-lg">
+                        <!-- Foto -->
+                        <div class="flex items-center gap-4 mb-4">
+                            ${artist.photoURL ? 
+                                `<img src="${artist.photoURL}" alt="${artist.name}" class="w-16 h-16 rounded-full object-cover border-2 ${isAusente ? 'border-red-500 opacity-60' : 'border-purple-500'} shadow-lg">` :
+                                `<div class="w-16 h-16 rounded-full bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center text-2xl font-bold border-2 ${isAusente ? 'border-red-500 opacity-60' : 'border-purple-400'} shadow-lg">
+                                    ${artist.name.charAt(0).toUpperCase()}
+                                </div>`
+                            }
+                            <div class="flex-1">
+                                <h3 class="text-lg font-bold ${isAusente ? 'text-gray-400' : 'text-white'}">${artist.name}</h3>
+                                <p class="text-sm ${isAusente ? 'text-red-400' : 'text-purple-400'} font-semibold">
+                                    ${isAusente ? '❌ Ausente' : '✅ Presente'}
+                                </p>
+                            </div>
+                        </div>
+
+                        <!-- Botones de Estado -->
+                        <div class="grid grid-cols-2 gap-3">
+                            <button 
+                                onclick="cambiarEstado('${artist.id}', 'canto')"
+                                class="status-button ${isCanto ? 'active' : ''} ${isCanto ? 'bg-green-600 border-green-400' : 'bg-gray-700 border-gray-600'} border-2 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg transition-all">
+                                <i class="fas fa-microphone mr-2"></i> Cantó
+                            </button>
+                            <button 
+                                onclick="cambiarEstado('${artist.id}', 'ausente')"
+                                class="status-button ${isAusente ? 'active' : ''} ${isAusente ? 'bg-red-600 border-red-400' : 'bg-gray-700 border-gray-600'} border-2 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-lg transition-all">
+                                <i class="fas fa-times mr-2"></i> Ausente
+                            </button>
+                        </div>
+
+                        ${isAusente ? `
+                            <div class="mt-4 bg-red-900/30 border border-red-500/50 rounded-lg p-3">
+                                <p class="text-xs text-red-300">
+                                    <i class="fas fa-info-circle mr-1"></i>
+                                    Recibirá automáticamente el puntaje más bajo de los que cantaron
+                                </p>
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Cambiar estado de artista
+        window.cambiarEstado = async function(artistId, nuevoEstado) {
+            try {
+                console.log(`🔄 Cambiando estado de ${artistId} a ${nuevoEstado}`);
+                
+                // Actualizar en Firestore
+                const artistRef = doc(db, `events/${eventId}/artists`, artistId);
+                await updateDoc(artistRef, {
+                    estado: nuevoEstado,
+                    confirmado: true,
+                    updatedAt: new Date()
+                });
+
+                // Actualizar en array local
+                const artist = artistsData.find(a => a.id === artistId);
+                if (artist) {
+                    artist.estado = nuevoEstado;
+                    artist.confirmado = true;
+                }
+
+                // Re-renderizar
+                displayArtists();
+                updateCounters();
+
+                displayMessage(
+                    nuevoEstado === 'canto' 
+                        ? `✅ ${artist.name} marcado como PRESENTE` 
+                        : `❌ ${artist.name} marcado como AUSENTE (recibirá puntaje compensatorio)`,
+                    nuevoEstado === 'canto' ? 'success' : 'info'
+                );
+
+            } catch (error) {
+                console.error('❌ Error actualizando estado:', error);
+                displayMessage('Error al actualizar estado: ' + error.message, 'error');
+            }
+        };
+
+        // Inicializar
+        loadArtists();
+    </script>
+</body>
+</html>
