@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Diagnóstico Grupos - VYTMUSIC</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
+        import { getFirestore, collection, getDocs } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+        import { app, db } from './firebase_config.js';
+        
+        window.db = db;
+        window.firestoreModules = { collection, getDocs };
+    </script>
+</head>
+<body class="bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 min-h-screen text-white p-8">
+    
+    <div class="max-w-7xl mx-auto">
+        <h1 class="text-4xl font-bold mb-8 text-center">🔍 Diagnóstico de Grupos y Eventos</h1>
+        
+        <div class="bg-yellow-900/50 border-2 border-yellow-600 rounded-lg p-4 mb-6">
+            <p class="text-yellow-200 text-sm">
+                <strong>Este diagnóstico muestra:</strong>
+                <br>• Qué eventos están en cada grupo/generación
+                <br>• Cuántos artistas tiene cada evento
+                <br>• Si hay eventos mal asignados
+            </p>
+        </div>
+        
+        <button onclick="runDiagnostic()" class="bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-lg font-bold mb-6">
+            ▶️ Ejecutar Diagnóstico
+        </button>
+        
+        <div id="results" class="space-y-6"></div>
+    </div>
+
+    <script type="module">
+        const { collection, getDocs } = window.firestoreModules;
+        const db = window.db;
+        
+        window.runDiagnostic = async function() {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '<div class="text-center text-gray-400">Analizando datos...</div>';
+            
+            try {
+                // Cargar grupos
+                const groupsSnapshot = await getDocs(collection(db, 'event_groups'));
+                const groups = groupsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                
+                // Cargar eventos
+                const eventsSnapshot = await getDocs(collection(db, 'events'));
+                const events = eventsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                
+                console.log('📊 Grupos encontrados:', groups);
+                console.log('📊 Eventos encontrados:', events);
+                
+                let html = '';
+                
+                // Analizar cada grupo
+                for (const group of groups) {
+                    const eventsInGroup = events.filter(e => e.groupId === group.id);
+                    
+                    html += `
+                        <div class="bg-gray-800 rounded-lg p-6 border-2 ${group.name.includes('13') ? 'border-green-500' : 'border-blue-500'}">
+                            <h2 class="text-2xl font-bold mb-4">
+                                ${group.name} 
+                                <span class="text-sm text-gray-400">(${eventsInGroup.length} eventos)</span>
+                            </h2>
+                            
+                            <div class="space-y-3">
+                    `;
+                    
+                    for (const event of eventsInGroup) {
+                        // Contar artistas en subcollection
+                        const artistsSnapshot = await getDocs(collection(db, `events/${event.id}/artists`));
+                        const artistCount = artistsSnapshot.size;
+                        
+                        // Listar nombres de artistas
+                        const artistNames = artistsSnapshot.docs.map(doc => doc.data().nombre || doc.data().name);
+                        
+                        html += `
+                            <div class="bg-gray-700 p-4 rounded-lg">
+                                <div class="flex justify-between items-center mb-2">
+                                    <span class="font-bold">${event.name || event.nombre_evento || 'Sin nombre'}</span>
+                                    <span class="bg-purple-600 px-3 py-1 rounded-full text-sm">${artistCount} artistas</span>
+                                </div>
+                                <div class="text-xs text-gray-400">
+                                    <p><strong>Event ID:</strong> ${event.id}</p>
+                                    <p><strong>Group ID:</strong> ${event.groupId}</p>
+                                    ${artistNames.length > 0 ? `
+                                        <p class="mt-2"><strong>Artistas:</strong> ${artistNames.join(', ')}</p>
+                                    ` : '<p class="mt-2 text-red-400">⚠️ Sin artistas</p>'}
+                                </div>
+                            </div>
+                        `;
+                    }
+                    
+                    html += `
+                            </div>
+                        </div>
+                    `;
+                }
+                
+                // Eventos sin grupo
+                const eventsWithoutGroup = events.filter(e => !e.groupId);
+                if (eventsWithoutGroup.length > 0) {
+                    html += `
+                        <div class="bg-red-900/50 rounded-lg p-6 border-2 border-red-500">
+                            <h2 class="text-2xl font-bold mb-4">
+                                ⚠️ Eventos SIN GRUPO 
+                                <span class="text-sm text-gray-400">(${eventsWithoutGroup.length} eventos)</span>
+                            </h2>
+                            <div class="space-y-2">
+                    `;
+                    
+                    for (const event of eventsWithoutGroup) {
+                        html += `
+                            <div class="bg-red-800/50 p-3 rounded">
+                                <p class="font-bold">${event.name || event.nombre_evento || 'Sin nombre'}</p>
+                                <p class="text-xs text-gray-400">Event ID: ${event.id}</p>
+                            </div>
+                        `;
+                    }
+                    
+                    html += `
+                            </div>
+                        </div>
+                    `;
+                }
+                
+                resultsDiv.innerHTML = html;
+                
+            } catch (error) {
+                console.error('❌ Error en diagnóstico:', error);
+                resultsDiv.innerHTML = `<div class="bg-red-900 p-4 rounded-lg text-red-200">Error: ${error.message}</div>`;
+            }
+        };
+    </script>
+</body>
+</html>
