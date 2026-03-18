@@ -1,0 +1,840 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🔍 Auditoría de Datos - VYTMUSIC</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+        }
+        .stat-card {
+            background: linear-gradient(135deg, rgba(51, 65, 85, 0.95), rgba(30, 41, 59, 0.95));
+            border: 1px solid rgba(148, 163, 184, 0.2);
+            transition: all 0.3s ease;
+        }
+        .stat-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+            border-color: rgba(56, 189, 248, 0.5);
+        }
+        .alert-critical { border-left: 4px solid #ef4444; }
+        .alert-warning { border-left: 4px solid #f59e0b; }
+        .alert-success { border-left: 4px solid #10b981; }
+        .pulse-dot {
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: .5; }
+        }
+    </style>
+</head>
+<body class="min-h-screen p-4 sm:p-6">
+    
+    <!-- Header -->
+    <div class="max-w-7xl mx-auto mb-8">
+        <div class="bg-gradient-to-r from-purple-600 via-blue-600 to-cyan-600 rounded-2xl p-6 shadow-2xl">
+            <div class="flex items-center justify-between flex-wrap gap-4">
+                <div>
+                    <h1 class="text-4xl font-black text-white mb-2">🔍 Auditoría de Datos</h1>
+                    <p class="text-cyan-100 text-lg">Control Total del Sistema VYTMUSIC</p>
+                </div>
+                <div class="flex gap-3">
+                    <button onclick="refreshData()" class="bg-white/20 hover:bg-white/30 text-white font-semibold px-6 py-3 rounded-xl transition-all">
+                        <i class="fas fa-sync-alt"></i> Actualizar
+                    </button>
+                    <button onclick="exportAllData()" class="bg-green-500 hover:bg-green-600 text-white font-semibold px-6 py-3 rounded-xl transition-all">
+                        <i class="fas fa-download"></i> Exportar Todo
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="max-w-7xl mx-auto">
+        
+        <!-- Selector de Evento -->
+        <div class="mb-6">
+            <label class="block text-white font-semibold mb-2">Seleccionar Evento/Gala:</label>
+            <select id="eventSelector" onchange="loadEventData()" 
+                class="w-full max-w-md px-4 py-3 rounded-lg bg-gray-800 text-white border-2 border-gray-700 focus:border-blue-500 focus:outline-none">
+                <option value="">-- Cargando eventos... --</option>
+            </select>
+        </div>
+
+        <!-- Alertas Críticas -->
+        <div id="alertsContainer" class="mb-6 space-y-3">
+            <!-- Alertas se generarán aquí -->
+        </div>
+
+        <!-- Resumen General -->
+        <div class="grid md:grid-cols-4 gap-4 mb-8">
+            <div class="stat-card rounded-xl p-6 text-center">
+                <div class="text-cyan-400 text-4xl mb-2"><i class="fas fa-users"></i></div>
+                <h3 class="text-gray-400 text-sm uppercase mb-1">Artistas</h3>
+                <p id="stat-artists" class="text-white text-3xl font-bold">-</p>
+                <p id="stat-artists-groups" class="text-gray-500 text-xs mt-1">Sin grupo: -</p>
+            </div>
+            <div class="stat-card rounded-xl p-6 text-center">
+                <div class="text-green-400 text-4xl mb-2"><i class="fas fa-ticket-alt"></i></div>
+                <h3 class="text-gray-400 text-sm uppercase mb-1">Entradas Vendidas</h3>
+                <p id="stat-tickets" class="text-white text-3xl font-bold">-</p>
+                <p id="stat-tickets-money" class="text-green-400 text-sm mt-1">$-</p>
+            </div>
+            <div class="stat-card rounded-xl p-6 text-center">
+                <div class="text-purple-400 text-4xl mb-2"><i class="fas fa-vote-yea"></i></div>
+                <h3 class="text-gray-400 text-sm uppercase mb-1">Votos Público</h3>
+                <p id="stat-votes-public" class="text-white text-3xl font-bold">-</p>
+                <p id="stat-votes-participation" class="text-gray-500 text-xs mt-1">Participación: -%</p>
+            </div>
+            <div class="stat-card rounded-xl p-6 text-center">
+                <div class="text-yellow-400 text-4xl mb-2"><i class="fas fa-gavel"></i></div>
+                <h3 class="text-gray-400 text-sm uppercase mb-1">Votos Jurados</h3>
+                <p id="stat-votes-jury" class="text-white text-3xl font-bold">-</p>
+                <p id="stat-jury-active" class="text-gray-500 text-xs mt-1">Jurados activos: -</p>
+            </div>
+        </div>
+
+        <!-- Tabs de Detalles -->
+        <div class="bg-gray-800/50 rounded-2xl border border-gray-700 overflow-hidden mb-8">
+            <!-- Tab Headers -->
+            <div class="flex border-b border-gray-700 overflow-x-auto">
+                <button onclick="switchTab('artistas')" class="tab-btn active px-6 py-4 font-semibold text-white hover:bg-gray-700/50 transition-all" data-tab="artistas">
+                    <i class="fas fa-users mr-2"></i>Artistas
+                </button>
+                <button onclick="switchTab('entradas')" class="tab-btn px-6 py-4 font-semibold text-gray-400 hover:bg-gray-700/50 transition-all" data-tab="entradas">
+                    <i class="fas fa-ticket-alt mr-2"></i>Entradas
+                </button>
+                <button onclick="switchTab('votos-publico')" class="tab-btn px-6 py-4 font-semibold text-gray-400 hover:bg-gray-700/50 transition-all" data-tab="votos-publico">
+                    <i class="fas fa-vote-yea mr-2"></i>Votos Público
+                </button>
+                <button onclick="switchTab('votos-jurados')" class="tab-btn px-6 py-4 font-semibold text-gray-400 hover:bg-gray-700/50 transition-all" data-tab="votos-jurados">
+                    <i class="fas fa-gavel mr-2"></i>Votos Jurados
+                </button>
+                <button onclick="switchTab('rankings')" class="tab-btn px-6 py-4 font-semibold text-gray-400 hover:bg-gray-700/50 transition-all" data-tab="rankings">
+                    <i class="fas fa-trophy mr-2"></i>Rankings
+                </button>
+                <button onclick="switchTab('inconsistencias')" class="tab-btn px-6 py-4 font-semibold text-gray-400 hover:bg-gray-700/50 transition-all" data-tab="inconsistencias">
+                    <i class="fas fa-exclamation-triangle mr-2"></i>Inconsistencias
+                </button>
+            </div>
+
+            <!-- Tab Content -->
+            <div class="p-6">
+                <!-- TAB: Artistas -->
+                <div id="tab-artistas" class="tab-content">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-white text-xl font-bold">Lista de Artistas</h3>
+                        <button onclick="exportTab('artistas')" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg text-sm">
+                            <i class="fas fa-download"></i> Exportar
+                        </button>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left">
+                            <thead class="bg-gray-900/50 border-b border-gray-700">
+                                <tr>
+                                    <th class="px-4 py-3 text-gray-400 font-semibold">Nombre</th>
+                                    <th class="px-4 py-3 text-gray-400 font-semibold">Generación/Grupo</th>
+                                    <th class="px-4 py-3 text-gray-400 font-semibold">Estilo</th>
+                                    <th class="px-4 py-3 text-gray-400 font-semibold">Pistas</th>
+                                    <th class="px-4 py-3 text-gray-400 font-semibold">Votos Público</th>
+                                    <th class="px-4 py-3 text-gray-400 font-semibold">Votos Jurados</th>
+                                </tr>
+                            </thead>
+                            <tbody id="artists-table-body" class="divide-y divide-gray-700">
+                                <tr><td colspan="6" class="px-4 py-8 text-center text-gray-500">Cargando...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- TAB: Entradas -->
+                <div id="tab-entradas" class="tab-content hidden">
+                    <div class="grid md:grid-cols-2 gap-6 mb-6">
+                        <div class="stat-card rounded-lg p-4">
+                            <h4 class="text-gray-400 text-sm mb-2">Entradas Anticipadas</h4>
+                            <p id="tickets-anticipado-count" class="text-white text-2xl font-bold">-</p>
+                            <p id="tickets-anticipado-money" class="text-green-400 text-lg">$-</p>
+                        </div>
+                        <div class="stat-card rounded-lg p-4">
+                            <h4 class="text-gray-400 text-sm mb-2">Entradas en Puerta</h4>
+                            <p id="tickets-puerta-count" class="text-white text-2xl font-bold">-</p>
+                            <p id="tickets-puerta-money" class="text-green-400 text-lg">$-</p>
+                        </div>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left">
+                            <thead class="bg-gray-900/50 border-b border-gray-700">
+                                <tr>
+                                    <th class="px-4 py-3 text-gray-400 font-semibold">ID Orden</th>
+                                    <th class="px-4 py-3 text-gray-400 font-semibold">Comprador</th>
+                                    <th class="px-4 py-3 text-gray-400 font-semibold">Cantidad</th>
+                                    <th class="px-4 py-3 text-gray-400 font-semibold">Total</th>
+                                    <th class="px-4 py-3 text-gray-400 font-semibold">Tipo</th>
+                                    <th class="px-4 py-3 text-gray-400 font-semibold">Estado</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tickets-table-body" class="divide-y divide-gray-700">
+                                <tr><td colspan="6" class="px-4 py-8 text-center text-gray-500">Cargando...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- TAB: Votos Público -->
+                <div id="tab-votos-publico" class="tab-content hidden">
+                    <div id="public-votes-chart" class="mb-6">
+                        <!-- Gráfico generado dinámicamente -->
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left">
+                            <thead class="bg-gray-900/50 border-b border-gray-700">
+                                <tr>
+                                    <th class="px-4 py-3 text-gray-400 font-semibold">Artista</th>
+                                    <th class="px-4 py-3 text-gray-400 font-semibold">Total Votos</th>
+                                    <th class="px-4 py-3 text-gray-400 font-semibold">% del Total</th>
+                                </tr>
+                            </thead>
+                            <tbody id="public-votes-table-body" class="divide-y divide-gray-700">
+                                <tr><td colspan="3" class="px-4 py-8 text-center text-gray-500">Cargando...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- TAB: Votos Jurados -->
+                <div id="tab-votos-jurados" class="tab-content hidden">
+                    <div class="grid md:grid-cols-3 gap-4 mb-6">
+                        <div class="stat-card rounded-lg p-4">
+                            <h4 class="text-gray-400 text-sm mb-2">Jurados Activos</h4>
+                            <p id="jury-count" class="text-white text-2xl font-bold">-</p>
+                        </div>
+                        <div class="stat-card rounded-lg p-4">
+                            <h4 class="text-gray-400 text-sm mb-2">Evaluaciones Completas</h4>
+                            <p id="jury-evaluations-count" class="text-white text-2xl font-bold">-</p>
+                        </div>
+                        <div class="stat-card rounded-lg p-4">
+                            <h4 class="text-gray-400 text-sm mb-2">Votos Individuales</h4>
+                            <p id="jury-votes-count" class="text-white text-2xl font-bold">-</p>
+                        </div>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left">
+                            <thead class="bg-gray-900/50 border-b border-gray-700">
+                                <tr>
+                                    <th class="px-4 py-3 text-gray-400 font-semibold">Artista</th>
+                                    <th class="px-4 py-3 text-gray-400 font-semibold">Ev. Completas</th>
+                                    <th class="px-4 py-3 text-gray-400 font-semibold">Promedio</th>
+                                </tr>
+                            </thead>
+                            <tbody id="jury-votes-table-body" class="divide-y divide-gray-700">
+                                <tr><td colspan="3" class="px-4 py-8 text-center text-gray-500">Cargando...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- TAB: Rankings -->
+                <div id="tab-rankings" class="tab-content hidden">
+                    <div class="grid md:grid-cols-3 gap-6">
+                        <!-- Ranking Combinado -->
+                        <div class="stat-card rounded-lg p-4">
+                            <h4 class="text-white font-bold mb-4 flex items-center gap-2">
+                                <i class="fas fa-trophy text-yellow-400"></i> Ranking Combinado
+                            </h4>
+                            <div id="ranking-combined" class="space-y-2">
+                                <p class="text-gray-500 text-sm">Calculando...</p>
+                            </div>
+                        </div>
+
+                        <!-- Ranking Jurados -->
+                        <div class="stat-card rounded-lg p-4">
+                            <h4 class="text-white font-bold mb-4 flex items-center gap-2">
+                                <i class="fas fa-gavel text-purple-400"></i> Ranking Jurados
+                            </h4>
+                            <div id="ranking-jury" class="space-y-2">
+                                <p class="text-gray-500 text-sm">Calculando...</p>
+                            </div>
+                        </div>
+
+                        <!-- Ranking Público -->
+                        <div class="stat-card rounded-lg p-4">
+                            <h4 class="text-white font-bold mb-4 flex items-center gap-2">
+                                <i class="fas fa-users text-cyan-400"></i> Ranking Público
+                            </h4>
+                            <div id="ranking-public" class="space-y-2">
+                                <p class="text-gray-500 text-sm">Calculando...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB: Inconsistencias -->
+                <div id="tab-inconsistencias" class="tab-content hidden">
+                    <div id="inconsistencies-list" class="space-y-3">
+                        <p class="text-gray-500 text-center py-8">Analizando datos...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Botón Volver -->
+        <div class="text-center">
+            <a href="panel_evento.html" class="inline-block bg-gray-700 hover:bg-gray-600 text-white font-semibold px-8 py-3 rounded-xl transition-all">
+                <i class="fas fa-arrow-left mr-2"></i> Volver al Panel
+            </a>
+        </div>
+    </div>
+
+    <!-- Firebase -->
+    <script type="module">
+        import { db } from './firebase_config.js';
+        import { getFirestore, collection, doc, getDocs, getDoc, query, where, orderBy } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        let currentEventId = null;
+        let currentEventData = {
+            artists: [],
+            tickets: [],
+            publicVotes: [],
+            juryVotes: [],
+            juryEvaluations: [],
+            jurors: [],
+            qrCodes: []
+        };
+
+        // Cargar eventos
+        async function loadEvents() {
+            try {
+                const eventsSnap = await getDocs(collection(db, 'events'));
+                const selector = document.getElementById('eventSelector');
+                selector.innerHTML = '<option value="">-- Seleccionar Evento --</option>';
+                
+                eventsSnap.forEach(doc => {
+                    const data = doc.data();
+                    selector.innerHTML += `<option value="${doc.id}">${data.nombre_evento || doc.id}</option>`;
+                });
+            } catch (error) {
+                console.error('Error cargando eventos:', error);
+            }
+        }
+
+        // Cargar datos de un evento
+        window.loadEventData = async function() {
+            const selector = document.getElementById('eventSelector');
+            currentEventId = selector.value;
+            
+            if (!currentEventId) return;
+
+            showLoading();
+
+            try {
+                // Cargar todo en paralelo
+                const [
+                    artistsSnap,
+                    ticketsSnap,
+                    publicVotesSnap,
+                    juryVotesSnap,
+                    juryEvalsSnap,
+                    qrCodesSnap
+                ] = await Promise.all([
+                    getDocs(collection(db, `events/${currentEventId}/artists`)),
+                    getDocs(collection(db, `ticket_orders_${currentEventId}`)),
+                    getDocs(collection(db, `events/${currentEventId}/votes`)),
+                    getDocs(collection(db, `events/${currentEventId}/jury_votes`)),
+                    getDocs(collection(db, `events/${currentEventId}/jury_evaluations`)),
+                    getDocs(collection(db, `events/${currentEventId}/qr_codes`))
+                ]);
+
+                currentEventData = {
+                    artists: artistsSnap.docs.map(d => ({ id: d.id, ...d.data() })),
+                    tickets: ticketsSnap.docs.map(d => ({ id: d.id, ...d.data() })),
+                    publicVotes: publicVotesSnap.docs.map(d => ({ id: d.id, ...d.data() })),
+                    juryVotes: juryVotesSnap.docs.map(d => ({ id: d.id, ...d.data() })),
+                    juryEvaluations: juryEvalsSnap.docs.map(d => ({ id: d.id, ...d.data() })),
+                    qrCodes: qrCodesSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+                };
+
+                updateAllStats();
+                checkInconsistencies();
+                renderCurrentTab();
+            } catch (error) {
+                console.error('Error cargando datos:', error);
+                alert('Error al cargar datos del evento');
+            }
+        };
+
+        // Actualizar estadísticas generales
+        function updateAllStats() {
+            const { artists, tickets, publicVotes, juryEvaluations } = currentEventData;
+
+            // Artistas
+            const artistsWithoutGroup = artists.filter(a => !a.grupo || a.grupo === '').length;
+            document.getElementById('stat-artists').textContent = artists.length;
+            document.getElementById('stat-artists-groups').textContent = `Sin grupo: ${artistsWithoutGroup}`;
+            document.getElementById('stat-artists-groups').className = 
+                artistsWithoutGroup > 0 ? 'text-red-400 text-xs mt-1' : 'text-green-400 text-xs mt-1';
+
+            // Entradas
+            const approvedTickets = tickets.filter(t => t.estado_pago === 'approved');
+            const totalTickets = approvedTickets.reduce((sum, t) => sum + (t.cantidad || 0), 0);
+            const totalMoney = approvedTickets.reduce((sum, t) => sum + (t.precio_total || 0), 0);
+            document.getElementById('stat-tickets').textContent = totalTickets;
+            document.getElementById('stat-tickets-money').textContent = `$${totalMoney.toLocaleString()}`;
+
+            // Votos públicos
+            const totalPublicVotes = publicVotes.length;
+            const participation = totalTickets > 0 ? ((totalPublicVotes / totalTickets) * 100).toFixed(1) : 0;
+            document.getElementById('stat-votes-public').textContent = totalPublicVotes;
+            document.getElementById('stat-votes-participation').textContent = `Participación: ${participation}%`;
+
+            // Votos jurados
+            const totalJuryEvals = juryEvaluations.length;
+            document.getElementById('stat-votes-jury').textContent = totalJuryEvals;
+            document.getElementById('stat-jury-active').textContent = `Evaluaciones: ${totalJuryEvals}`;
+        }
+
+        // Verificar inconsistencias
+        function checkInconsistencies() {
+            const { artists, tickets, publicVotes, juryEvaluations } = currentEventData;
+            const alerts = [];
+
+            // 1. Artistas sin grupo
+            const artistsNoGroup = artists.filter(a => !a.grupo || a.grupo === '');
+            if (artistsNoGroup.length > 0) {
+                alerts.push({
+                    type: 'critical',
+                    title: `${artistsNoGroup.length} artistas sin generación/grupo`,
+                    description: 'Estos artistas no aparecerán en reportes por generación',
+                    action: 'Asignar grupos manualmente en Gestión de Artistas'
+                });
+            }
+
+            // 2. Votos con artista inexistente
+            const validArtistIds = new Set(artists.map(a => a.id));
+            const invalidPublicVotes = publicVotes.filter(v => !validArtistIds.has(v.artista_id));
+            if (invalidPublicVotes.length > 0) {
+                alerts.push({
+                    type: 'warning',
+                    title: `${invalidPublicVotes.length} votos públicos a artistas inexistentes`,
+                    description: 'Posibles artistas eliminados después de votar',
+                    action: 'Revisar manualmente'
+                });
+            }
+
+            // 3. Tickets sin QR
+            const approvedTickets = tickets.filter(t => t.estado_pago === 'approved');
+            const ticketsWithoutQR = approvedTickets.filter(t => !t.tickets || t.tickets.length === 0);
+            if (ticketsWithoutQR.length > 0) {
+                alerts.push({
+                    type: 'critical',
+                    title: `${ticketsWithoutQR.length} órdenes aprobadas sin QR generado`,
+                    description: 'Dinero recibido pero sin entradas emitidas',
+                    action: 'Generar QR manualmente'
+                });
+            }
+
+            // Mostrar alertas
+            const container = document.getElementById('alertsContainer');
+            if (alerts.length === 0) {
+                container.innerHTML = `
+                    <div class="alert-success stat-card rounded-xl p-4 flex items-center gap-3">
+                        <i class="fas fa-check-circle text-green-400 text-2xl"></i>
+                        <div>
+                            <h4 class="text-white font-bold">✅ Sin inconsistencias detectadas</h4>
+                            <p class="text-gray-400 text-sm">Todos los datos están correctos</p>
+                        </div>
+                    </div>
+                `;
+            } else {
+                container.innerHTML = alerts.map(alert => `
+                    <div class="alert-${alert.type === 'critical' ? 'critical' : 'warning'} stat-card rounded-xl p-4">
+                        <div class="flex items-start gap-3">
+                            <i class="fas fa-exclamation-triangle text-${alert.type === 'critical' ? 'red' : 'yellow'}-400 text-2xl"></i>
+                            <div class="flex-1">
+                                <h4 class="text-white font-bold mb-1">${alert.title}</h4>
+                                <p class="text-gray-400 text-sm mb-2">${alert.description}</p>
+                                <p class="text-${alert.type === 'critical' ? 'red' : 'yellow'}-400 text-xs font-semibold">→ ${alert.action}</p>
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+            }
+
+            // Actualizar tab de inconsistencias
+            const list = document.getElementById('inconsistencies-list');
+            if (alerts.length === 0) {
+                list.innerHTML = `
+                    <div class="text-center py-12">
+                        <i class="fas fa-check-circle text-green-400 text-6xl mb-4"></i>
+                        <p class="text-white text-xl font-bold">No se encontraron inconsistencias</p>
+                        <p class="text-gray-400 mt-2">Todos los datos están correctos y consistentes</p>
+                    </div>
+                `;
+            } else {
+                list.innerHTML = alerts.map((alert, i) => `
+                    <div class="stat-card rounded-lg p-4">
+                        <div class="flex items-start gap-3">
+                            <div class="bg-${alert.type === 'critical' ? 'red' : 'yellow'}-500/20 rounded-full w-10 h-10 flex items-center justify-center flex-shrink-0">
+                                <span class="text-${alert.type === 'critical' ? 'red' : 'yellow'}-400 font-bold">${i + 1}</span>
+                            </div>
+                            <div class="flex-1">
+                                <h4 class="text-white font-bold mb-2">${alert.title}</h4>
+                                <p class="text-gray-400 text-sm mb-2">${alert.description}</p>
+                                <p class="text-${alert.type === 'critical' ? 'red' : 'yellow'}-400 text-sm font-semibold">
+                                    <i class="fas fa-lightbulb mr-2"></i>${alert.action}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+            }
+        }
+
+        // Renderizar tab actual
+        function renderCurrentTab() {
+            const activeTab = document.querySelector('.tab-btn.active').dataset.tab;
+            
+            switch(activeTab) {
+                case 'artistas':
+                    renderArtists();
+                    break;
+                case 'entradas':
+                    renderTickets();
+                    break;
+                case 'votos-publico':
+                    renderPublicVotes();
+                    break;
+                case 'votos-jurados':
+                    renderJuryVotes();
+                    break;
+                case 'rankings':
+                    renderRankings();
+                    break;
+                case 'inconsistencias':
+                    // Ya renderizado en checkInconsistencies()
+                    break;
+            }
+        }
+
+        // Renderizar artistas
+        function renderArtists() {
+            const { artists, publicVotes, juryEvaluations } = currentEventData;
+            const tbody = document.getElementById('artists-table-body');
+
+            if (artists.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="px-4 py-8 text-center text-gray-500">No hay artistas registrados</td></tr>';
+                return;
+            }
+
+            // Contar votos y calcular promedios
+            const artistsWithStats = artists.map(artist => {
+                const votesCount = publicVotes.filter(v => v.artista_id === artist.id).length;
+                const evals = juryEvaluations.filter(e => e.artista_id === artist.id);
+                const avgJury = evals.length > 0 
+                    ? (evals.reduce((sum, e) => sum + (e.total_avg || 0), 0) / evals.length).toFixed(2)
+                    : '-';
+
+                return {
+                    ...artist,
+                    votesCount,
+                    avgJury,
+                    evalsCount: evals.length
+                };
+            });
+
+            tbody.innerHTML = artistsWithStats.map(artist => `
+                <tr class="hover:bg-gray-700/30">
+                    <td class="px-4 py-3 text-white font-semibold">${artist.nombre || '-'}</td>
+                    <td class="px-4 py-3">
+                        ${artist.grupo 
+                            ? `<span class="bg-purple-500/20 text-purple-300 px-2 py-1 rounded text-xs">${artist.grupo}</span>`
+                            : `<span class="bg-red-500/20 text-red-300 px-2 py-1 rounded text-xs">Sin grupo</span>`
+                        }
+                    </td>
+                    <td class="px-4 py-3 text-gray-400 text-sm">${artist.estilo_cancion || '-'}</td>
+                    <td class="px-4 py-3 text-gray-400 text-sm">-</td>
+                    <td class="px-4 py-3 text-cyan-400 font-semibold">${artist.votesCount}</td>
+                    <td class="px-4 py-3 text-yellow-400 font-semibold">${artist.evalsCount > 0 ? `${artist.avgJury} (${artist.evalsCount})` : '-'}</td>
+                </tr>
+            `).join('');
+        }
+
+        // Renderizar entradas
+        function renderTickets() {
+            const { tickets } = currentEventData;
+            const approved = tickets.filter(t => t.estado_pago === 'approved');
+
+            // Stats por tipo
+            const anticipado = approved.filter(t => t.tipo_pago === 'anticipado');
+            const puerta = approved.filter(t => t.tipo_pago === 'puerta' || t.tipo_pago === 'manual');
+
+            const countAnt = anticipado.reduce((sum, t) => sum + (t.cantidad || 0), 0);
+            const moneyAnt = antic anticipado.reduce((sum, t) => sum + (t.precio_total || 0), 0);
+            
+            const countPuerta = puerta.reduce((sum, t) => sum + (t.cantidad || 0), 0);
+            const moneyPuerta = puerta.reduce((sum, t) => sum + (t.precio_total || 0), 0);
+
+            document.getElementById('tickets-anticipado-count').textContent = countAnt;
+            document.getElementById('tickets-anticipado-money').textContent = `$${moneyAnt.toLocaleString()}`;
+            document.getElementById('tickets-puerta-count').textContent = countPuerta;
+            document.getElementById('tickets-puerta-money').textContent = `$${moneyPuerta.toLocaleString()}`;
+
+            // Tabla
+            const tbody = document.getElementById('tickets-table-body');
+            if (approved.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="px-4 py-8 text-center text-gray-500">No hay entradas vendidas</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = approved.map(ticket => `
+                <tr class="hover:bg-gray-700/30">
+                    <td class="px-4 py-3 text-gray-400 font-mono text-xs">${ticket.id.substring(0, 8)}...</td>
+                    <td class="px-4 py-3 text-white">${ticket.nombre || '-'}</td>
+                    <td class="px-4 py-3 text-white font-semibold">${ticket.cantidad || 0}</td>
+                    <td class="px-4 py-3 text-green-400 font-semibold">$${(ticket.precio_total || 0).toLocaleString()}</td>
+                    <td class="px-4 py-3">
+                        <span class="bg-blue-500/20 text-blue-300 px-2 py-1 rounded text-xs">${ticket.tipo_pago || '-'}</span>
+                    </td>
+                    <td class="px-4 py-3">
+                        <span class="bg-green-500/20 text-green-300 px-2 py-1 rounded text-xs">${ticket.estado_pago || '-'}</span>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        // Renderizar votos públicos
+        function renderPublicVotes() {
+            const { artists, publicVotes } = currentEventData;
+            const tbody = document.getElementById('public-votes-table-body');
+
+            // Agrupar votos por artista
+            const votesByArtist = {};
+            publicVotes.forEach(v => {
+                if (!votesByArtist[v.artista_id]) {
+                    votesByArtist[v.artista_id] = 0;
+                }
+                votesByArtist[v.artista_id]++;
+            });
+
+            const total = publicVotes.length;
+            const ranking = Object.entries(votesByArtist)
+                .map(([artistaId, votes]) => {
+                    const artist = artists.find(a => a.id === artistaId);
+                    return {
+                        artistId,
+                        nombre: artist ? artist.nombre : 'Desconocido',
+                        votes,
+                        percentage: ((votes / total) * 100).toFixed(1)
+                    };
+                })
+                .sort((a, b) => b.votes - a.votes);
+
+            if (ranking.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="3" class="px-4 py-8 text-center text-gray-500">No hay votos públicos registrados</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = ranking.map((item, index) => `
+                <tr class="hover:bg-gray-700/30">
+                    <td class="px-4 py-3">
+                        <div class="flex items-center gap-2">
+                            <span class="bg-cyan-500/20 text-cyan-300 w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold">
+                                ${index + 1}
+                            </span>
+                            <span class="text-white font-semibold">${item.nombre}</span>
+                        </div>
+                    </td>
+                    <td class="px-4 py-3 text-cyan-400 font-bold text-lg">${item.votes}</td>
+                    <td class="px-4 py-3 text-gray-400">${item.percentage}%</td>
+                </tr>
+            `).join('');
+        }
+
+        // Renderizar votos jurados
+        function renderJuryVotes() {
+            const { artists, juryEvaluations } = currentEventData;
+            const tbody = document.getElementById('jury-votes-table-body');
+
+            document.getElementById('jury-count').textContent = '-';
+            document.getElementById('jury-evaluations-count').textContent = juryEvaluations.length;
+            document.getElementById('jury-votes-count').textContent = '-';
+
+            // Agrupar evaluaciones por artista
+            const evalsByArtist = {};
+            juryEvaluations.forEach(e => {
+                if (!evalsByArtist[e.artista_id]) {
+                    evalsByArtist[e.artista_id] = [];
+                }
+                evalsByArtist[e.artista_id].push(e.total_avg || 0);
+            });
+
+            const ranking = Object.entries(evalsByArtist)
+                .map(([artistaId, evals]) => {
+                    const artist = artists.find(a => a.id === artistaId);
+                    const avg = (evals.reduce((sum, val) => sum + val, 0) / evals.length).toFixed(2);
+                    return {
+                        artistId,
+                        nombre: artist ? artist.nombre : 'Desconocido',
+                        count: evals.length,
+                        avg: parseFloat(avg)
+                    };
+                })
+                .sort((a, b) => b.avg - a.avg);
+
+            if (ranking.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="3" class="px-4 py-8 text-center text-gray-500">No hay evaluaciones de jurados</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = ranking.map((item, index) => `
+                <tr class="hover:bg-gray-700/30">
+                    <td class="px-4 py-3">
+                        <div class="flex items-center gap-2">
+                            <span class="bg-yellow-500/20 text-yellow-300 w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold">
+                                ${index + 1}
+                            </span>
+                            <span class="text-white font-semibold">${item.nombre}</span>
+                        </div>
+                    </td>
+                    <td class="px-4 py-3 text-gray-400">${item.count}</td>
+                    <td class="px-4 py-3 text-yellow-400 font-bold text-lg">${item.avg}/10</td>
+                </tr>
+            `).join('');
+        }
+
+        // Renderizar rankings
+        function renderRankings() {
+            const { artists, publicVotes, juryEvaluations } = currentEventData;
+
+            // Calcular puntuaciones
+            const scores = artists.map(artist => {
+                // Votos públicos
+                const publicCount = publicVotes.filter(v => v.artista_id === artist.id).length;
+                const maxPublic = Math.max(...artists.map(a => 
+                    publicVotes.filter(v => v.artista_id === a.id).length
+                ), 1);
+                const publicScore = (publicCount / maxPublic) * 50;
+
+                // Votos jurados
+                const evals = juryEvaluations.filter(e => e.artista_id === artist.id);
+                const avgJury = evals.length > 0
+                    ? evals.reduce((sum, e) => sum + (e.total_avg || 0), 0) / evals.length
+                    : 0;
+                const juryScore = (avgJury / 10) * 50;
+
+                // Combinado
+                const combined = publicScore + juryScore;
+
+                return {
+                    nombre: artist.nombre,
+                    publicScore,
+                    juryScore,
+                    combined,
+                    publicCount,
+                    avgJury
+                };
+            });
+
+            // Ranking combinado
+            const combined = scores.sort((a, b) => b.combined - a.combined).slice(0, 10);
+            document.getElementById('ranking-combined').innerHTML = combined.map((item, i) => `
+                <div class="flex items-center justify-between py-2 border-b border-gray-700 last:border-0">
+                    <div class="flex items-center gap-2">
+                        <span class="text-yellow-400 font-bold">#${i + 1}</span>
+                        <span class="text-white text-sm">${item.nombre}</span>
+                    </div>
+                    <span class="text-yellow-400 font-bold">${item.combined.toFixed(1)}</span>
+                </div>
+            `).join('');
+
+            // Ranking jurados
+            const jury = scores.sort((a, b) => b.juryScore - a.juryScore).slice(0, 10);
+            document.getElementById('ranking-jury').innerHTML = jury.map((item, i) => `
+                <div class="flex items-center justify-between py-2 border-b border-gray-700 last:border-0">
+                    <div class="flex items-center gap-2">
+                        <span class="text-purple-400 font-bold">#${i + 1}</span>
+                        <span class="text-white text-sm">${item.nombre}</span>
+                    </div>
+                    <span class="text-purple-400 font-bold">${item.avgJury.toFixed(2)}/10</span>
+                </div>
+            `).join('');
+
+            // Ranking público
+            const publicRank = scores.sort((a, b) => b.publicCount - a.publicCount).slice(0, 10);
+            document.getElementById('ranking-public').innerHTML = publicRank.map((item, i) => `
+                <div class="flex items-center justify-between py-2 border-b border-gray-700 last:border-0">
+                    <div class="flex items-center gap-2">
+                        <span class="text-cyan-400 font-bold">#${i + 1}</span>
+                        <span class="text-white text-sm">${item.nombre}</span>
+                    </div>
+                    <span class="text-cyan-400 font-bold">${item.publicCount} votos</span>
+                </div>
+            `).join('');
+        }
+
+        // Switch tabs
+        window.switchTab = function(tabName) {
+            // Desactivar todos
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.remove('active', 'text-white');
+                btn.classList.add('text-gray-400');
+            });
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.add('hidden');
+            });
+
+            // Activar actual
+            const btn = document.querySelector(`[data-tab="${tabName}"]`);
+            btn.classList.add('active', 'text-white');
+            btn.classList.remove('text-gray-400');
+            document.getElementById(`tab-${tabName}`).classList.remove('hidden');
+
+            renderCurrentTab();
+        };
+
+        // Refresh
+        window.refreshData = function() {
+            if (currentEventId) {
+                loadEventData();
+            } else {
+                alert('Selecciona un evento primero');
+            }
+        };
+
+        // Export
+        window.exportAllData = function() {
+            if (!currentEventId) {
+                alert('Selecciona un evento primero');
+                return;
+            }
+
+            const dataStr = JSON.stringify(currentEventData, null, 2);
+            const blob = new Blob([dataStr], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `auditoria_${currentEventId}_${new Date().toISOString().split('T')[0]}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+        };
+
+        window.exportTab = function(tabName) {
+            alert(`Exportar ${tabName} - En desarrollo`);
+        };
+
+        function showLoading() {
+            document.getElementById('stat-artists').textContent = '...';
+            document.getElementById('stat-tickets').textContent = '...';
+            document.getElementById('stat-votes-public').textContent = '...';
+            document.getElementById('stat-votes-jury').textContent = '...';
+        }
+
+        // Inicializar
+        loadEvents();
+    </script>
+</body>
+</html>
