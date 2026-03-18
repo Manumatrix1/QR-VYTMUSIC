@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Corregir Evento G2 - VYTMUSIC</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
+        import { getFirestore, collection, getDocs, doc, updateDoc } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+        import { app, db } from './firebase_config.js';
+        
+        window.db = db;
+        window.firestoreModules = { collection, getDocs, doc, updateDoc };
+    </script>
+</head>
+<body class="bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 min-h-screen text-white p-8">
+    
+    <div class="max-w-4xl mx-auto">
+        <h1 class="text-4xl font-bold mb-8 text-center">🔧 Corregir Evento G2 (grupo A)</h1>
+        
+        <div class="bg-yellow-900/50 border-2 border-yellow-600 rounded-lg p-4 mb-6">
+            <p class="text-yellow-200 text-sm">
+                <strong>Este script corrige el problema donde:</strong>
+                <br>• "VYT-MUSIC (G2 (grupo A))" está en Generación 13 (INCORRECTO)
+                <br>• Debe estar en Generación 12 (CORRECTO)
+                <br><br>
+                <strong>⚠️ IMPORTANTE:</strong> Solo ejecutá esto UNA VEZ.
+            </p>
+        </div>
+        
+        <button onclick="corregirEvento()" class="bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-lg font-bold mb-6 w-full">
+            ▶️ Ejecutar Corrección
+        </button>
+        
+        <div id="results" class="space-y-4"></div>
+    </div>
+
+    <script type="module">
+        const { collection, getDocs, doc, updateDoc } = window.firestoreModules;
+        const db = window.db;
+        
+        window.corregirEvento = async function() {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '<div class="text-center text-gray-400">Analizando eventos...</div>';
+            
+            try {
+                // 1. Cargar todos los grupos
+                const groupsSnapshot = await getDocs(collection(db, 'event_groups'));
+                const groups = groupsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                
+                // Encontrar IDs de Gen 12 y Gen 13
+                const gen12 = groups.find(g => g.name.includes('12'));
+                const gen13 = groups.find(g => g.name.includes('13'));
+                
+                if (!gen12 || !gen13) {
+                    resultsDiv.innerHTML = '<div class="bg-red-900 p-4 rounded-lg">❌ No se encontraron los grupos de Gen 12 o Gen 13</div>';
+                    return;
+                }
+                
+                console.log('Gen 12 ID:', gen12.id, gen12.name);
+                console.log('Gen 13 ID:', gen13.id, gen13.name);
+                
+                // 2. Cargar todos los eventos
+                const eventsSnapshot = await getDocs(collection(db, 'events'));
+                const events = eventsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                
+                // 3. Encontrar el evento problemático: "VYT-MUSIC (G2 (grupo A))"
+                const eventoProblematico = events.find(e => 
+                    e.name && e.name.includes('G2') && e.name.includes('grupo A')
+                );
+                
+                if (!eventoProblematico) {
+                    resultsDiv.innerHTML = '<div class="bg-red-900 p-4 rounded-lg">❌ No se encontró el evento "VYT-MUSIC (G2 (grupo A))"</div>';
+                    return;
+                }
+                
+                console.log('Evento encontrado:', eventoProblematico);
+                
+                // 4. Verificar si está en Gen 13 (incorrecto)
+                if (eventoProblematico.groupId === gen13.id) {
+                    // CORREGIR: Moverlo a Gen 12
+                    const eventoRef = doc(db, 'events', eventoProblematico.id);
+                    await updateDoc(eventoRef, {
+                        groupId: gen12.id
+                    });
+                    
+                    resultsDiv.innerHTML = `
+                        <div class="bg-green-900 p-6 rounded-lg border-2 border-green-500">
+                            <h3 class="text-2xl font-bold mb-4">✅ Corrección Exitosa</h3>
+                            <div class="space-y-2 text-sm">
+                                <p><strong>Evento:</strong> ${eventoProblematico.name}</p>
+                                <p><strong>ID:</strong> ${eventoProblematico.id}</p>
+                                <p><strong>Movido de:</strong> ${gen13.name} (ID: ${gen13.id})</p>
+                                <p><strong>Movido a:</strong> ${gen12.name} (ID: ${gen12.id})</p>
+                            </div>
+                            <div class="mt-4 p-3 bg-blue-900/50 rounded">
+                                <p class="font-bold">🔄 Siguiente paso:</p>
+                                <p class="mt-2">Recargá el Centro de Reportes con Ctrl+F5 y verificá que:</p>
+                                <ul class="list-disc list-inside mt-2 space-y-1">
+                                    <li>Gen 13 ya NO muestra "VYT-MUSIC (G2 (grupo A))"</li>
+                                    <li>Gen 12 SÍ muestra "VYT-MUSIC (G2 (grupo A))"</li>
+                                    <li>Los totales son correctos en cada generación</li>
+                                </ul>
+                            </div>
+                        </div>
+                    `;
+                    
+                } else if (eventoProblematico.groupId === gen12.id) {
+                    resultsDiv.innerHTML = `
+                        <div class="bg-blue-900 p-6 rounded-lg border-2 border-blue-500">
+                            <h3 class="text-2xl font-bold mb-4">ℹ️ Ya está correcto</h3>
+                            <p>El evento "${eventoProblematico.name}" ya está asignado a ${gen12.name}.</p>
+                            <p class="mt-2">Si seguís viendo problemas en el Centro de Reportes:</p>
+                            <ul class="list-disc list-inside mt-2 space-y-1">
+                                <li>Presioná Ctrl+F5 para limpiar el cache</li>
+                                <li>Cerrá y volvé a abrir el navegador</li>
+                            </ul>
+                        </div>
+                    `;
+                } else {
+                    resultsDiv.innerHTML = `
+                        <div class="bg-yellow-900 p-6 rounded-lg border-2 border-yellow-500">
+                            <h3 class="text-2xl font-bold mb-4">⚠️ Estado Inesperado</h3>
+                            <p>El evento tiene un groupId diferente: ${eventoProblematico.groupId}</p>
+                            <p class="mt-2">Se esperaba Gen 12 (${gen12.id}) o Gen 13 (${gen13.id})</p>
+                        </div>
+                    `;
+                }
+                
+            } catch (error) {
+                console.error('❌ Error:', error);
+                resultsDiv.innerHTML = `<div class="bg-red-900 p-4 rounded-lg text-red-200">Error: ${error.message}</div>`;
+            }
+        };
+    </script>
+</body>
+</html>
