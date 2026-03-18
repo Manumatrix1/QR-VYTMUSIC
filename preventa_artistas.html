@@ -638,19 +638,28 @@
                 
                 console.log('🔍 Verificando compras previas para:', { email: cleanEmail, phone: cleanPhone, name: cleanName });
                 
-                // Consultar todas las órdenes aprobadas de este evento
+                // Consultar todas las órdenes aprobadas de este evento (approved O tickets_generated)
                 const ordersRef = collection(db, `ticket_orders_${eventId}`);
-                const q = query(ordersRef, where('status', '==', 'approved'));
-                const snapshot = await getDocs(q);
+                const snapshot = await getDocs(ordersRef); // Sin query, traer todas y filtrar localmente
                 
                 let totalPreviousTickets = 0;
                 const matchingOrders = [];
                 
+                console.log(`📦 Total de órdenes en Firebase: ${snapshot.size}`);
+                
                 snapshot.forEach(doc => {
                     const order = doc.data();
+                    
+                    // Solo contar órdenes aprobadas o con tickets generados
+                    if (order.status !== 'approved' && order.status !== 'tickets_generated') {
+                        return; // Saltar esta orden
+                    }
+                    
                     const orderEmail = (order.artistEmail || '').toLowerCase().trim();
                     const orderPhone = (order.artistPhone || '').replace(/\D/g, '');
                     const orderName = (order.artistName || '').toLowerCase().trim();
+                    
+                    console.log(`  - Orden ${doc.id}: nombre="${orderName}", email="${orderEmail}", status="${order.status}"`);
                     
                     // Verificar si coincide nombre, email o teléfono
                     const matchByEmail = cleanEmail && orderEmail === cleanEmail;
@@ -660,17 +669,24 @@
                     if (matchByEmail || matchByPhone || matchByName) {
                         const qty = (order.quantityAdults || 0) + (order.quantityKids || 0);
                         totalPreviousTickets += qty;
+                        
+                        const matchType = matchByName ? 'nombre' : matchByEmail ? 'email' : 'teléfono';
+                        console.log(`    ✅ COINCIDENCIA por ${matchType}: ${qty} entradas`);
+                        
                         matchingOrders.push({
                             id: doc.id,
                             quantity: qty,
                             date: order.createdAt?.toDate?.() || new Date(order.createdAt),
                             name: order.artistName,
-                            matchType: matchByName ? 'nombre' : matchByEmail ? 'email' : 'teléfono'
+                            matchType: matchType
                         });
                     }
                 });
                 
                 previousPurchasesCount = totalPreviousTickets;
+                
+                console.log(`🎯 TOTAL ACUMULADO: ${totalPreviousTickets} entradas previas`);
+
                 
                 if (totalPreviousTickets > 0) {
                     console.log(`✅ Compras previas encontradas: ${totalPreviousTickets} entradas (coincidencia por ${matchingOrders[0].matchType})`, matchingOrders);
