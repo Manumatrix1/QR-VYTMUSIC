@@ -3,43 +3,63 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Reporte de Entradas por Artista - VYTMUSIC</title>
+    <title>Lista de Invitados por Artista - VYTMUSIC</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #111827; color: #f9fafb; }
-        .artist-card { 
+        .artist-section { 
             background-color: #1f2937; 
-            border: 1px solid #374151; 
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 1rem 1.5rem;
+            border: 2px solid #374151; 
+            padding: 1.5rem;
+            border-radius: 0.75rem;
+            margin-bottom: 1.5rem;
+        }
+        .guest-list {
+            background-color: #111827;
+            padding: 1rem;
             border-radius: 0.5rem;
+            margin-top: 0.75rem;
+        }
+        .guest-item {
+            padding: 0.5rem;
+            border-bottom: 1px solid #374151;
+        }
+        .guest-item:last-child {
+            border-bottom: none;
+        }
+        @media print {
+            body { background-color: white; color: black; }
+            .no-print { display: none; }
+            .artist-section { page-break-inside: avoid; }
         }
     </style>
 </head>
 <body class="antialiased">
-    <div class="container mx-auto max-w-2xl p-4 sm:p-6">
-        <header class="text-center mb-8">
+    <div class="container mx-auto max-w-4xl p-4 sm:p-6">
+        <header class="text-center mb-8 no-print">
             <img src="https://i.imgur.com/rqkZi9P.png" alt="VYTMUSIC Logo" class="mx-auto mb-4 bg-white rounded-full" style="max-width: 120px;">
-            <h1 class="text-4xl sm:text-5xl font-bold text-sky-400">Reporte de Entradas</h1>
+            <h1 class="text-3xl sm:text-4xl font-bold text-sky-400">📋 Lista de Invitados por Artista</h1>
             <p id="event-name-display" class="text-lg text-gray-300 mt-2"></p>
+            <button onclick="window.print()" class="mt-4 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg">
+                🖨️ Imprimir Lista
+            </button>
         </header>
 
-        <div id="total-summary" class="bg-gray-800 p-6 rounded-lg shadow-xl mb-8 text-center">
-            <h2 class="text-lg font-semibold text-yellow-400">Total de Entradas Convocadas</h2>
-            <p id="total-tickets-summary" class="text-5xl font-bold mt-2">0</p>
+        <div id="total-summary" class="bg-gradient-to-r from-purple-600 to-pink-600 p-6 rounded-xl shadow-2xl mb-8 text-center">
+            <h2 class="text-lg font-semibold text-white">Total de Invitados</h2>
+            <p id="total-tickets-summary" class="text-6xl font-black mt-2">0</p>
+            <p class="text-sm text-purple-100 mt-2"><span id="artist-count">0</span> artista(s)</p>
         </div>
 
-        <main id="report-container" class="space-y-3">
-            <p class="text-center text-gray-400">Cargando reporte...</p>
+        <main id="report-container" class="space-y-4">
+            <p class="text-center text-gray-400">Cargando lista de invitados...</p>
         </main>
     </div>
 
     <script type="module">
         import { db } from './firebase_config.js';
-        import { collection, onSnapshot, query } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { collection, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         const urlParams = new URLSearchParams(window.location.search);
         const eventId = urlParams.get('eventId');
@@ -49,40 +69,148 @@
             document.body.innerHTML = '<p class="text-center text-red-500">Error: No se ha especificado un evento.</p>';
         } else {
             document.getElementById('event-name-display').textContent = eventName ? `Gala: ${decodeURIComponent(eventName)}` : '';
+            loadReport();
         }
 
-        const ticketsQuery = query(collection(db, `events/${eventId}/tickets`));
-        onSnapshot(ticketsQuery, (snapshot) => {
-            const tickets = snapshot.docs.map(doc => doc.data());
-            
-            // Actualizar el total general
-            document.getElementById('total-tickets-summary').textContent = tickets.length;
+        async function loadReport() {
+            try {
+                // 1. Cargar artistas
+                const artistsSnap = await getDocs(collection(db, `events/${eventId}/artists`));
+                const artistsMap = {};
+                artistsSnap.forEach(doc => {
+                    const data = doc.data();
+                    artistsMap[doc.id] = data.nombre || 'Sin nombre';
+                });
 
-            const prefixCounts = tickets.reduce((acc, ticket) => {
-                const prefix = ticket.prefix || "Sin Grupo";
-                acc[prefix] = (acc[prefix] || 0) + 1;
-                return acc;
-            }, {});
-            
-            // Renderizar el desglose
-            const container = document.getElementById('report-container');
-            container.innerHTML = '';
-            const sortedPrefixes = Object.keys(prefixCounts).sort();
-            if (sortedPrefixes.length === 0) {
-                container.innerHTML = '<p class="text-center text-gray-400">Aún no se han generado entradas para este evento.</p>';
-                return;
+                // 2. Cargar entradas
+                const ticketsSnap = await getDocs(collection(db, `events/${eventId}/tickets`));
+                const tickets = [];
+                ticketsSnap.forEach(doc => {
+                    tickets.push({ id: doc.id, ...doc.data() });
+                });
+
+                // 3. Agrupar por artista
+                const artistGroups = {};
+                
+                tickets.forEach(ticket => {
+                    const prefix = ticket.prefix || "Sin Artista";
+                    const compradorNombre = ticket.comprador_nombre || ticket.nombre || "Invitado sin nombre";
+                    
+                    if (!artistGroups[prefix]) {
+                        artistGroups[prefix] = {
+                            tickets: [],
+                            artistName: "Cargando..."
+                        };
+                    }
+                    
+                    artistGroups[prefix].tickets.push({
+                        nombre: compradorNombre,
+                        ticketId: ticket.id,
+                        timestamp: ticket.timestamp
+                    });
+                });
+
+                // 4. Buscar nombres de artistas por prefix
+                for (const prefix in artistGroups) {
+                    let artistName = "❓ Artista no encontrado";
+                    
+                    // Buscar artista que tenga este prefix
+                    for (const [artistId, name] of Object.entries(artistsMap)) {
+                        // Verificar si algún ticket tiene compras asociadas a este artista
+                        const matchingTickets = tickets.filter(t => 
+                            t.prefix === prefix && 
+                            (t.artista_id === artistId || t.artistaId === artistId)
+                        );
+                        
+                        if (matchingTickets.length > 0) {
+                            artistName = name;
+                            break;
+                        }
+                    }
+                    
+                    // Si no se encontró por artista_id, usar el prefix para buscar por nombre
+                    if (artistName === "❓ Artista no encontrado") {
+                        // Intentar extraer nombre del prefix (ej: "PREV_DARIO" -> buscar "Dario")
+                        const prefixName = prefix.replace(/^PREV_/i, '').toLowerCase();
+                        for (const name of Object.values(artistsMap)) {
+                            if (name.toLowerCase().includes(prefixName) || prefixName.includes(name.toLowerCase())) {
+                                artistName = name;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    artistGroups[prefix].artistName = artistName;
+                }
+
+                // 5. Renderizar
+                const container = document.getElementById('report-container');
+                const totalTickets = tickets.length;
+                const artistCount = Object.keys(artistGroups).length;
+
+                document.getElementById('total-tickets-summary').textContent = totalTickets;
+                document.getElementById('artist-count').textContent = artistCount;
+
+                if (artistCount === 0) {
+                    container.innerHTML = '<p class="text-center text-gray-400 text-lg">Aún no hay invitados registrados.</p>';
+                    return;
+                }
+
+                container.innerHTML = '';
+                
+                // Ordenar por nombre de artista
+                const sortedPrefixes = Object.keys(artistGroups).sort((a, b) => {
+                    return artistGroups[a].artistName.localeCompare(artistGroups[b].artistName);
+                });
+
+                sortedPrefixes.forEach(prefix => {
+                    const group = artistGroups[prefix];
+                    const ticketCount = group.tickets.length;
+                    
+                    const section = document.createElement('div');
+                    section.className = 'artist-section';
+                    
+                    let guestListHTML = '';
+                    group.tickets
+                        .sort((a, b) => a.nombre.localeCompare(b.nombre))
+                        .forEach((ticket, index) => {
+                            guestListHTML += `
+                                <div class="guest-item text-gray-300">
+                                    <span class="text-yellow-400 font-bold">${index + 1}.</span> 
+                                    ${ticket.nombre}
+                                </div>
+                            `;
+                        });
+                    
+                    section.innerHTML = `
+                        <div class="flex justify-between items-start mb-3">
+                            <div>
+                                <h3 class="text-2xl font-bold text-sky-300">🎤 ${group.artistName}</h3>
+                                <p class="text-xs text-gray-500 mt-1">Código: ${prefix}</p>
+                            </div>
+                            <div class="text-right">
+                                <div class="bg-green-600 text-white font-black text-3xl px-4 py-2 rounded-lg">
+                                    ${ticketCount}
+                                </div>
+                                <p class="text-xs text-gray-400 mt-1">invitado(s)</p>
+                            </div>
+                        </div>
+                        
+                        <div class="guest-list">
+                            <h4 class="text-sm font-bold text-gray-400 mb-2 uppercase tracking-wide">Lista de Invitados:</h4>
+                            ${guestListHTML}
+                        </div>
+                    `;
+                    
+                    container.appendChild(section);
+                });
+
+            } catch (error) {
+                console.error('Error cargando reporte:', error);
+                document.getElementById('report-container').innerHTML = 
+                    `<p class="text-center text-red-500">Error al cargar el reporte: ${error.message}</p>`;
             }
-            sortedPrefixes.forEach(prefix => {
-                const count = prefixCounts[prefix];
-                const card = document.createElement('div');
-                card.className = 'artist-card';
-                card.innerHTML = `
-                    <span class="font-semibold text-xl text-sky-300">${prefix}</span>
-                    <span class="font-bold text-2xl text-green-400">${count}</span>
-                `;
-                container.appendChild(card);
-            });
-        });
+        }
     </script>
 </body>
 </html>
