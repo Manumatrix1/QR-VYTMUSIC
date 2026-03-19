@@ -9,11 +9,14 @@
     <script type="module">
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
         import { getFirestore, collection, getDocs, doc, deleteDoc } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+        import { getAuth, signInWithEmailAndPassword, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
         
-        import { app, db } from './firebase_config.js';
+        import { app, db, auth } from './firebase_config.js';
         
         window.db = db;
+        window.auth = auth;
         window.firestoreModules = { collection, getDocs, doc, deleteDoc };
+        window.authModules = { signInWithEmailAndPassword, onAuthStateChanged };
     </script>
 </head>
 <body class="bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 min-h-screen text-white p-6">
@@ -24,7 +27,27 @@
         <div class="bg-gradient-to-r from-red-600 to-orange-600 rounded-2xl p-6 shadow-2xl mb-8">
             <h1 class="text-4xl font-black text-white mb-2">🎯 Eliminar Duplicados de Nanci</h1>
             <p class="text-orange-100 text-lg">Herramienta DIRECTA - Sin complicaciones</p>
+            <p id="authStatus" class="text-orange-200 text-sm mt-2 font-semibold"></p>
         </div>
+
+        <!-- Login Form (se oculta después de login) -->
+        <div id="loginSection" class="bg-gray-800 rounded-xl p-6 border-2 border-red-500 mb-8">
+            <h2 class="text-2xl font-bold mb-4">🔐 Autenticación Requerida</h2>
+            <p class="text-gray-300 mb-4">Debes iniciar sesión para eliminar tickets (reglas de seguridad Firebase)</p>
+            <div class="space-y-4">
+                <input type="email" id="loginEmail" placeholder="Email" 
+                       class="w-full p-3 bg-gray-700 text-white rounded-lg border-2 border-gray-600 focus:border-red-500">
+                <input type="password" id="loginPassword" placeholder="Contraseña" 
+                       class="w-full p-3 bg-gray-700 text-white rounded-lg border-2 border-gray-600 focus:border-red-500">
+                <button onclick="login()" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-6 rounded-lg">
+                    🔓 Iniciar Sesión
+                </button>
+                <p id="loginError" class="text-red-400 text-sm text-center"></p>
+            </div>
+        </div>
+
+        <!-- Contenido Principal (solo visible después de login) -->
+        <div id="mainContent" class="hidden">
 
         <!-- Selector de Evento -->
         <div class="bg-gray-800 rounded-xl p-6 border-2 border-purple-500 mb-6">
@@ -57,10 +80,13 @@
             <!-- Lista de Tickets -->
             <div class="bg-gray-800 rounded-xl p-6 border-2 border-yellow-500 mb-6">
                 <div class="flex items-center justify-between mb-4">
-                    <h2 class="text-2xl font-bold">2️⃣ Tickets de Nanci Encontrados</h2>
-                    <button onclick="seleccionarTodos()" class="bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded-lg">
-                        Seleccionar Todos
-                    </button>
+        </div><!-- Cierre de mainContent -->
+
+    </div>
+
+    <script type="module">
+        const { collection, getDocs, doc, deleteDoc } = window.firestoreModules;
+        const { signInWithEmailAndPassword, onAuthStateChanged } = window.auth
                 </div>
                 <div id="ticketsList" class="space-y-3 max-h-96 overflow-y-auto">
                     <!-- Se llenarán dinámicamente -->
@@ -82,6 +108,50 @@
     <script type="module">
         const { collection, getDocs, doc, deleteDoc } = window.firestoreModules;
         
+        let currentUser = null;
+
+        // Login
+        window.login = async function() {
+            const email = document.getElementById('loginEmail').value;
+            const password = document.getElementById('loginPassword').value;
+            const errorEl = document.getElementById('loginError');
+
+            if (!email || !password) {
+                errorEl.textContent = '❌ Completa email y contraseña';
+                return;
+            }
+
+            try {
+                errorEl.textContent = '🔄 Autenticando...';
+                await signInWithEmailAndPassword(window.auth, email, password);
+                errorEl.textContent = '';
+            } catch (error) {
+                console.error('Error en login:', error);
+                errorEl.textContent = `❌ Error: ${error.message}`;
+            }
+        };
+
+        // Detectar estado de autenticación
+        onAuthStateChanged(window.auth, (user) => {
+            currentUser = user;
+            
+            const authStatus = document.getElementById('authStatus');
+            const loginSection = document.getElementById('loginSection');
+            const mainContent = document.getElementById('mainContent');
+
+            if (user) {
+                // Usuario autenticado
+                authStatus.textContent = `✅ Sesión activa: ${user.email}`;
+                loginSection.classList.add('hidden');
+                mainContent.classList.remove('hidden');
+                loadEvents();
+            } else {
+                // No autenticado
+                authStatus.textContent = '⚠️ No autenticado - Por favor inicia sesión';
+                loginSection.classList.remove('hidden');
+                mainContent.classList.add('hidden');
+            }
+        });
         let currentEventId = null;
         let nanciTickets = [];
         let selectedTickets = new Set();
