@@ -83,10 +83,10 @@
                 
                 artistsSnap.forEach(doc => {
                     const data = doc.data();
-                    // Intentar múltiples nombres de campo
-                    const nombre = data.nombre || data.name || data.artistName || data.artist_name || 'Sin nombre';
+                    // Los artistas se guardan con el campo "name" (no "nombre")
+                    const nombre = data.name || data.nombre || data.artistName || data.artist_name || 'Sin nombre';
                     artistsMap[doc.id] = nombre;
-                    console.log('Artista:', doc.id, '→', nombre);
+                    console.log('✅ Artista:', doc.id, '→', nombre);
                 });
 
                 // 2. Cargar todas las entradas
@@ -120,28 +120,37 @@
                 for (const prefix in prefixCounts) {
                     let artistName = null;
                     
-                    // Estrategia 1: Buscar por artista_id en los tickets
+                    // Estrategia 1: Buscar por artistId en los tickets (campo real: "artistId" no "artista_id")
                     for (const [artistId, name] of Object.entries(artistsMap)) {
                         const matchingTickets = tickets.filter(t => 
                             t.prefix === prefix && 
-                            (t.artista_id === artistId || t.artistaId === artistId)
+                            (t.artistId === artistId || t.artista_id === artistId)  // Probar ambos
                         );
                         
                         if (matchingTickets.length > 0) {
                             artistName = name;
-                            console.log(`✅ Prefix "${prefix}" matched con artista "${name}" por ID`);
+                            console.log(`✅ Prefix "${prefix}" matched con artista "${name}" por artistId`);
                             break;
                         }
                     }
                     
-                    // Estrategia 2: Intentar extraer nombre del prefix (ej: "PREV_DARIO" -> "Dario")
+                    // Estrategia 2: Buscar por artistName directamente en el ticket
+                    if (!artistName) {
+                        const ticketWithArtist = tickets.find(t => t.prefix === prefix && t.artistName);
+                        if (ticketWithArtist) {
+                            artistName = ticketWithArtist.artistName;
+                            console.log(`✅ Prefix "${prefix}" matched usando artistName del ticket: "${artistName}"`);
+                        }
+                    }
+                    
+                    // Estrategia 3: Intentar extraer nombre del prefix (ej: "PREV_DARIO" -> "Dario")
                     if (!artistName) {
                         const prefixName = prefix.replace(/^PREV_/i, '').toLowerCase();
                         for (const name of Object.values(artistsMap)) {
                             if (name.toLowerCase().includes(prefixName) || 
                                 prefixName.includes(name.toLowerCase())) {
                                 artistName = name;
-                                console.log(`✅ Prefix "${prefix}" matched con artista "${name}" por nombre`);
+                                console.log(`✅ Prefix "${prefix}" matched con artista "${name}" por similitud de nombre`);
                                 break;
                             }
                         }
