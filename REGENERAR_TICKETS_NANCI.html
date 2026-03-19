@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🔧 Regenerar Tickets de Nanci</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+    
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
+        import { getAuth, signInWithEmailAndPassword } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
+        import { getFirestore, collection, getDocs, addDoc, query, where } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+        
+        import { app, db, auth } from './firebase_config.js';
+        
+        window.db = db;
+        window.auth = auth;
+        window.firebaseModules = { signInWithEmailAndPassword, collection, getDocs, addDoc, query, where };
+    </script>
+</head>
+<body class="bg-gradient-to-br from-red-900 via-purple-900 to-gray-900 min-h-screen text-white p-6">
+    
+    <div class="max-w-4xl mx-auto">
+        
+        <!-- Header -->
+        <div class="bg-gradient-to-r from-red-600 to-pink-600 rounded-2xl p-6 shadow-2xl mb-8">
+            <h1 class="text-4xl font-black text-white mb-2">🔧 Regenerar Tickets de Nanci</h1>
+            <p class="text-red-100 text-lg">Recuperación de los 7 tickets eliminados por error</p>
+        </div>
+
+        <!-- Información -->
+        <div class="bg-yellow-900/50 border-2 border-yellow-500 rounded-xl p-6 mb-6">
+            <h2 class="text-2xl font-bold mb-4">📋 Datos a Regenerar:</h2>
+            <div class="space-y-2 text-yellow-100">
+                <p><strong>Evento:</strong> VYT-MUSIC(G1 grupo B)</p>
+                <p><strong>Artista:</strong> Nanci</p>
+                <p><strong>Invitados (7):</strong></p>
+                <ul class="list-disc list-inside ml-4 space-y-1">
+                    <li>Santa Ruíz Diaz</li>
+                    <li>Pabla Ruiz Díaz</li>
+                    <li>Elsa Ruiz Díaz</li>
+                    <li>Gregoria Ruiz Díaz</li>
+                    <li>Ceferina Pérez</li>
+                    <li>Martina Ruiz Díaz</li>
+                    <li>Miguel Olivera</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Login -->
+        <div id="loginSection" class="bg-gray-800 rounded-xl p-6 border-2 border-purple-500 mb-6">
+            <h3 class="text-xl font-bold mb-4">🔐 Autenticación Requerida</h3>
+            <div class="space-y-4">
+                <input type="email" id="email" placeholder="Email" 
+                       class="w-full p-3 bg-gray-700 text-white rounded-lg border-2 border-gray-600">
+                <input type="password" id="password" placeholder="Contraseña" 
+                       class="w-full p-3 bg-gray-700 text-white rounded-lg border-2 border-gray-600">
+                <button onclick="regenerar()" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-4 rounded-lg text-xl">
+                    🔄 REGENERAR LOS 7 TICKETS AHORA
+                </button>
+                <p id="loginError" class="text-red-400 text-sm text-center"></p>
+            </div>
+        </div>
+
+        <!-- Progreso -->
+        <div id="progressSection" class="hidden mb-6">
+            <div class="bg-blue-900/50 border-2 border-blue-500 rounded-xl p-6">
+                <h3 class="text-xl font-bold mb-4">⏳ Regenerando tickets...</h3>
+                <div id="progressLog" class="space-y-2 text-blue-200 font-mono text-sm max-h-96 overflow-y-auto">
+                    <!-- Log dinámico -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Resultado -->
+        <div id="resultSection" class="hidden">
+            <div id="resultCard" class="rounded-xl p-6 border-2">
+                <h2 class="text-3xl font-bold mb-4">✅ Tickets Regenerados</h2>
+                <div id="resultContent">
+                    <!-- Contenido dinámico -->
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script type="module">
+        const { signInWithEmailAndPassword, collection, getDocs, addDoc, query, where } = window.firebaseModules;
+
+        const INVITADOS = [
+            'Santa Ruíz Diaz',
+            'Pabla Ruiz Díaz',
+            'Elsa Ruiz Díaz',
+            'Gregoria Ruiz Díaz',
+            'Ceferina Pérez',
+            'Martina Ruiz Díaz',
+            'Miguel Olivera'
+        ];
+
+        function log(message, type = 'info') {
+            const logContainer = document.getElementById('progressLog');
+            const icons = { info: 'ℹ️', success: '✅', error: '❌', warning: '⚠️' };
+            const colors = { 
+                info: 'text-blue-300', 
+                success: 'text-green-300', 
+                error: 'text-red-300', 
+                warning: 'text-yellow-300' 
+            };
+            
+            const div = document.createElement('div');
+            div.className = colors[type];
+            div.textContent = `${icons[type]} ${message}`;
+            logContainer.appendChild(div);
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+
+        window.regenerar = async function() {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const errorEl = document.getElementById('loginError');
+
+            if (!email || !password) {
+                errorEl.textContent = '❌ Completa email y contraseña';
+                return;
+            }
+
+            try {
+                // Login
+                errorEl.textContent = '🔄 Autenticando...';
+                await signInWithEmailAndPassword(window.auth, email, password);
+                
+                document.getElementById('loginSection').classList.add('hidden');
+                document.getElementById('progressSection').classList.remove('hidden');
+
+                log('Autenticación exitosa', 'success');
+                log('Buscando evento "VYT-MUSIC(G1 grupo B)"...', 'info');
+
+                // 1. Buscar el evento
+                const eventsSnap = await getDocs(collection(window.db, 'events'));
+                let targetEvent = null;
+
+                eventsSnap.forEach(doc => {
+                    const data = doc.data();
+                    const eventName = data.nombre_evento || data.nombre || '';
+                    
+                    // Buscar el evento Gala 1 Grupo B
+                    if (eventName.toLowerCase().includes('g1') && 
+                        eventName.toLowerCase().includes('grupo b')) {
+                        targetEvent = { id: doc.id, nombre: eventName, data: data };
+                    }
+                });
+
+                if (!targetEvent) {
+                    log('❌ ERROR: No se encontró el evento "VYT-MUSIC(G1 grupo B)"', 'error');
+                    log('Eventos disponibles:', 'warning');
+                    eventsSnap.forEach(doc => {
+                        log(`  • ${doc.data().nombre_evento || doc.data().nombre}`, 'info');
+                    });
+                    return;
+                }
+
+                log(`✅ Evento encontrado: ${targetEvent.nombre} (ID: ${targetEvent.id})`, 'success');
+                log('Buscando artista "Nanci"...', 'info');
+
+                // 2. Buscar el artista Nanci
+                const artistsSnap = await getDocs(collection(window.db, `events/${targetEvent.id}/artists`));
+                let nanciArtist = null;
+
+                artistsSnap.forEach(doc => {
+                    const artist = doc.data();
+                    const artistName = (artist.nombre || artist.name || '').toLowerCase();
+                    
+                    if (artistName.includes('nanci') || artistName.includes('nancy')) {
+                        nanciArtist = { 
+                            id: doc.id, 
+                            nombre: artist.nombre || artist.name,
+                            prefix: artist.prefix || `PREV_${artist.nombre?.toUpperCase() || 'NANCI'}`
+                        };
+                    }
+                });
+
+                if (!nanciArtist) {
+                    log('❌ ERROR: No se encontró el artista "Nanci" en este evento', 'error');
+                    log(`Artistas en ${targetEvent.nombre}:`, 'warning');
+                    artistsSnap.forEach(doc => {
+                        log(`  • ${doc.data().nombre || doc.data().name}`, 'info');
+                    });
+                    return;
+                }
+
+                log(`✅ Artista encontrado: ${nanciArtist.nombre} (Prefix: ${nanciArtist.prefix})`, 'success');
+                log('', 'info');
+                log('🔄 Creando los 7 tickets...', 'info');
+                log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'info');
+
+                // 3. Crear los 7 tickets
+                const ticketsCreados = [];
+                const timestamp = Date.now();
+
+                for (let i = 0; i < INVITADOS.length; i++) {
+                    const invitado = INVITADOS[i];
+                    
+                    // Generar código QR único
+                    const qrCode = `${nanciArtist.prefix}_${invitado.replace(/\s+/g, '_').toUpperCase()}_${timestamp + i}`;
+                    
+                    const ticketData = {
+                        name: invitado,
+                        artistName: nanciArtist.nombre,
+                        artistId: nanciArtist.id,
+                        prefix: nanciArtist.prefix,
+                        qr_code: qrCode,
+                        type: 'preventa',
+                        timestamp: timestamp + i,
+                        fecha_creacion: new Date().toISOString(),
+                        regenerado: true,
+                        regenerado_fecha: new Date().toISOString(),
+                        regenerado_por: email
+                    };
+
+                    try {
+                        const docRef = await addDoc(
+                            collection(window.db, `events/${targetEvent.id}/tickets`),
+                            ticketData
+                        );
+
+                        log(`${i + 1}/7 ✅ ${invitado} → ${qrCode}`, 'success');
+                        ticketsCreados.push({ id: docRef.id, ...ticketData });
+                        
+                        // Pausa breve para evitar sobrecarga
+                        await new Promise(resolve => setTimeout(resolve, 200));
+
+                    } catch (error) {
+                        log(`${i + 1}/7 ❌ Error al crear ticket para ${invitado}: ${error.message}`, 'error');
+                    }
+                }
+
+                log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'info');
+                log('', 'info');
+
+                if (ticketsCreados.length === 7) {
+                    log('🎉 ¡ÉXITO COMPLETO! Los 7 tickets fueron regenerados correctamente', 'success');
+                } else {
+                    log(`⚠️ Se crearon ${ticketsCreados.length} de 7 tickets`, 'warning');
+                }
+
+                // Mostrar resultado final
+                document.getElementById('progressSection').classList.add('hidden');
+                document.getElementById('resultSection').classList.remove('hidden');
+
+                const resultCard = document.getElementById('resultCard');
+                const resultContent = document.getElementById('resultContent');
+
+                if (ticketsCreados.length === 7) {
+                    resultCard.className = 'bg-green-900/50 border-2 border-green-500 rounded-xl p-6';
+                    resultContent.innerHTML = `
+                        <p class="text-green-200 text-xl mb-6">¡Los 7 tickets de Nanci fueron regenerados exitosamente!</p>
+                        
+                        <div class="bg-green-800/30 border border-green-500 rounded-lg p-4 mb-6">
+                            <p class="font-bold mb-2">Tickets creados:</p>
+                            <ul class="list-disc list-inside space-y-1 text-green-100">
+                                ${ticketsCreados.map(t => `<li>${t.name} (${t.qr_code})</li>`).join('')}
+                            </ul>
+                        </div>
+
+                        <div class="grid md:grid-cols-2 gap-4">
+                            <a href="reporte_entradas_publico.html?eventId=${targetEvent.id}" 
+                               class="block text-center bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-lg">
+                                📊 Ver en Reporte de Público
+                            </a>
+                            <a href="VER_Y_SELECCIONAR_TICKETS_NANCI.html" 
+                               class="block text-center bg-purple-600 hover:bg-purple-700 text-white font-bold py-4 rounded-lg">
+                                👁️ Ver Todos los Tickets de Nanci
+                            </a>
+                        </div>
+                    `;
+                } else {
+                    resultCard.className = 'bg-yellow-900/50 border-2 border-yellow-500 rounded-xl p-6';
+                    resultContent.innerHTML = `
+                        <p class="text-yellow-200 text-xl mb-4">Se regeneraron ${ticketsCreados.length} de 7 tickets</p>
+                        <p class="text-yellow-100 mb-6">Revisa el log arriba para ver los detalles de cada ticket.</p>
+                        <button onclick="location.reload()" class="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold py-4 rounded-lg">
+                            🔄 Intentar Nuevamente
+                        </button>
+                    `;
+                }
+
+            } catch (error) {
+                console.error('Error:', error);
+                errorEl.textContent = `❌ Error: ${error.message}`;
+                
+                document.getElementById('progressSection').classList.remove('hidden');
+                log(`❌ ERROR CRÍTICO: ${error.message}`, 'error');
+                log(`Stack: ${error.stack}`, 'error');
+            }
+        };
+
+        // Enter para enviar
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('password').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') regenerar();
+            });
+        });
+    </script>
+</body>
+</html>
