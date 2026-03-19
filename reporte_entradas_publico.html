@@ -106,14 +106,60 @@
                     tickets.push({ id: doc.id, ...ticket });
                 });
 
-                // 3. Contar por prefix
+                // 3. Contar por prefix CON ANÁLISIS DE DUPLICADOS
                 const prefixCounts = {};
+                const prefixTickets = {}; // Guardar todos los tickets por prefix para análisis
+                
                 tickets.forEach(ticket => {
                     const prefix = ticket.prefix || "Sin Grupo";
                     prefixCounts[prefix] = (prefixCounts[prefix] || 0) + 1;
+                    
+                    // Guardar ticket para análisis detallado
+                    if (!prefixTickets[prefix]) {
+                        prefixTickets[prefix] = [];
+                    }
+                    prefixTickets[prefix].push({
+                        id: ticket.id,
+                        timestamp: ticket.timestamp || ticket.createdAt || 'sin fecha',
+                        buyer: ticket.buyerName || ticket.nombre_comprador || ticket.comprador || 'sin nombre',
+                        artistId: ticket.artistId || ticket.artista_id || 'sin artistId'
+                    });
                 });
+                
                 console.log('📊 Conteo por prefix:', prefixCounts);
                 console.log('📊 Total tickets contados:', tickets.length);
+                
+                // ANÁLISIS DE DUPLICADOS: Mostrar todos los tickets de cada prefix
+                console.log('🔍 ANÁLISIS DETALLADO DE TICKETS POR PREFIX:');
+                for (const prefix in prefixTickets) {
+                    const ticketList = prefixTickets[prefix];
+                    console.log(`\n📦 Prefix "${prefix}" - ${ticketList.length} tickets:`);
+                    
+                    // Detectar posibles duplicados por timestamp
+                    const seenTimestamps = {};
+                    const seenIds = {};
+                    let hasDuplicates = false;
+                    
+                    ticketList.forEach((t, idx) => {
+                        const timestampKey = `${t.timestamp}_${t.buyer}`;
+                        const isDuplicateTimestamp = seenTimestamps[timestampKey];
+                        const isDuplicateId = seenIds[t.id];
+                        
+                        if (isDuplicateTimestamp || isDuplicateId) {
+                            hasDuplicates = true;
+                            console.warn(`   ⚠️ [${idx + 1}] ID: ${t.id} | ${t.timestamp} | ${t.buyer} | artistId: ${t.artistId} | ⚠️ POSIBLE DUPLICADO`);
+                        } else {
+                            console.log(`   ✅ [${idx + 1}] ID: ${t.id} | ${t.timestamp} | ${t.buyer} | artistId: ${t.artistId}`);
+                        }
+                        
+                        seenTimestamps[timestampKey] = true;
+                        seenIds[t.id] = true;
+                    });
+                    
+                    if (hasDuplicates) {
+                        console.error(`   ❌ DUPLICADOS DETECTADOS en prefix "${prefix}"`);
+                    }
+                }
 
                 // 4. Matchear prefix con nombre de artista
                 const artistGroups = {}; // { prefix: { name, count } }
