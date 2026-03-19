@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🔥 ELIMINAR DUPLICADOS - AUTOMÁTICO</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
+        import { getAuth, signInWithEmailAndPassword } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
+        import { getFirestore, collection, getDocs, doc, deleteDoc } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+        
+        import { app, db, auth } from './firebase_config.js';
+        
+        window.db = db;
+        window.auth = auth;
+        window.firebaseModules = { signInWithEmailAndPassword, collection, getDocs, doc, deleteDoc };
+    </script>
+
+    <style>
+        body { 
+            background: linear-gradient(135deg, #1a0000 0%, #4a0000 100%); 
+            font-family: system-ui, -apple-system, sans-serif;
+        }
+        .glow {
+            animation: glow 2s ease-in-out infinite alternate;
+        }
+        @keyframes glow {
+            from { box-shadow: 0 0 20px #ff0000, 0 0 30px #ff0000; }
+            to { box-shadow: 0 0 30px #ff3333, 0 0 50px #ff3333; }
+        }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4">
+    
+    <div class="max-w-2xl w-full">
+        
+        <!-- Login Section -->
+        <div id="loginSection" class="bg-gray-900 rounded-2xl p-8 border-4 border-red-600 glow">
+            <div class="text-center mb-8">
+                <h1 class="text-5xl font-black text-red-500 mb-4">🔥 ELIMINAR DUPLICADOS</h1>
+                <p class="text-gray-300 text-xl font-bold">SOLUCIÓN AUTOMÁTICA - UN SOLO CLICK</p>
+            </div>
+
+            <div class="space-y-4 mb-6">
+                <input type="email" 
+                       id="email" 
+                       placeholder="Email de admin" 
+                       class="w-full p-4 bg-gray-800 text-white rounded-xl border-2 border-gray-700 focus:border-red-500 text-lg"
+                       autocomplete="email">
+                <input type="password" 
+                       id="password" 
+                       placeholder="Contraseña" 
+                       class="w-full p-4 bg-gray-800 text-white rounded-xl border-2 border-gray-700 focus:border-red-500 text-lg"
+                       autocomplete="current-password">
+            </div>
+
+            <button onclick="iniciarEliminacion()" 
+                    class="w-full bg-gradient-to-r from-red-600 to-red-800 hover:from-red-700 hover:to-red-900 text-white font-black text-2xl py-6 rounded-xl transition-all transform hover:scale-105 glow">
+                🔥 ELIMINAR DUPLICADOS AHORA
+            </button>
+
+            <p id="loginError" class="mt-4 text-red-400 text-center font-semibold"></p>
+        </div>
+
+        <!-- Progress Section -->
+        <div id="progressSection" class="hidden bg-gray-900 rounded-2xl p-8 border-4 border-yellow-500 mt-6">
+            <h2 class="text-3xl font-black text-yellow-400 mb-6 text-center">⚡ PROCESANDO...</h2>
+            <div id="progressLog" class="space-y-2 max-h-96 overflow-y-auto bg-black rounded-xl p-4 font-mono text-sm">
+                <!-- Log messages here -->
+            </div>
+        </div>
+
+        <!-- Result Section -->
+        <div id="resultSection" class="hidden bg-gray-900 rounded-2xl p-8 border-4 border-green-500 mt-6">
+            <h2 class="text-4xl font-black text-green-400 mb-4 text-center">✅ COMPLETADO</h2>
+            <div id="resultSummary" class="text-white text-xl text-center space-y-2">
+                <!-- Summary here -->
+            </div>
+            <button onclick="location.reload()" 
+                    class="w-full mt-6 bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl">
+                🔄 Volver a ejecutar
+            </button>
+        </div>
+
+    </div>
+
+    <script type="module">
+        const { signInWithEmailAndPassword, collection, getDocs, doc, deleteDoc } = window.firebaseModules;
+
+        function log(message, type = 'info') {
+            const logContainer = document.getElementById('progressLog');
+            const colors = {
+                info: 'text-blue-400',
+                success: 'text-green-400',
+                warning: 'text-yellow-400',
+                error: 'text-red-400',
+                highlight: 'text-purple-400'
+            };
+            
+            const div = document.createElement('div');
+            div.className = `${colors[type]} mb-1`;
+            div.textContent = `${new Date().toLocaleTimeString()} | ${message}`;
+            logContainer.appendChild(div);
+            logContainer.scrollTop = logContainer.scrollHeight;
+            
+            console.log(message);
+        }
+
+        window.iniciarEliminacion = async function() {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const errorEl = document.getElementById('loginError');
+
+            if (!email || !password) {
+                errorEl.textContent = '❌ Completa email y contraseña';
+                return;
+            }
+
+            errorEl.textContent = '🔄 Autenticando...';
+
+            try {
+                // 1. LOGIN
+                await signInWithEmailAndPassword(window.auth, email, password);
+                
+                // Ocultar login, mostrar progreso
+                document.getElementById('loginSection').classList.add('hidden');
+                document.getElementById('progressSection').classList.remove('hidden');
+
+                log('✅ Autenticación exitosa', 'success');
+                log('🔍 Iniciando búsqueda de duplicados en TODOS los eventos...', 'highlight');
+
+                // 2. BUSCAR TODOS LOS EVENTOS
+                const eventsSnap = await getDocs(collection(window.db, 'events'));
+                log(`📊 Encontrados ${eventsSnap.size} eventos`, 'info');
+
+                let totalEliminados = 0;
+                let totalAnalizados = 0;
+
+                // 3. PROCESAR CADA EVENTO
+                for (const eventDoc of eventsSnap.docs) {
+                    const eventId = eventDoc.id;
+                    const eventData = eventDoc.data();
+                    const eventName = eventData.nombre_evento || eventData.nombre || eventId;
+
+                    log(`\n📂 Analizando: "${eventName}"`, 'highlight');
+
+                    // 4. OBTENER TICKETS
+                    const ticketsSnap = await getDocs(collection(window.db, `events/${eventId}/tickets`));
+                    
+                    if (ticketsSnap.empty) {
+                        log(`   ℹ️ Sin tickets`, 'info');
+                        continue;
+                    }
+
+                    // 5. FILTRAR TICKETS DE NANCI
+                    const nanciTickets = [];
+                    ticketsSnap.forEach(ticketDoc => {
+                        const ticket = ticketDoc.data();
+                        const artistName = (ticket.artistName || ticket.artist_name || ticket.prefix || '').toLowerCase();
+                        const personName = (ticket.name || ticket.nombre || ticket.buyerName || '').toLowerCase();
+
+                        if (artistName.includes('nanci') || artistName.includes('nancy') ||
+                            personName.includes('nanci') || personName.includes('nancy')) {
+                            nanciTickets.push({
+                                id: ticketDoc.id,
+                                name: ticket.name || 'Sin nombre',
+                                artistName: ticket.artistName || ticket.prefix || 'Sin artista',
+                                timestamp: ticket.timestamp?.seconds || 0,
+                                rawTimestamp: ticket.timestamp
+                            });
+                        }
+                    });
+
+                    totalAnalizados += nanciTickets.length;
+
+                    if (nanciTickets.length === 0) {
+                        log(`   ✅ No hay tickets de Nanci`, 'info');
+                        continue;
+                    }
+
+                    log(`   🎯 Encontrados ${nanciTickets.length} tickets de Nanci`, 'warning');
+
+                    // 6. DETECTAR DUPLICADOS POR TIMESTAMP
+                    // Ordenar por timestamp
+                    nanciTickets.sort((a, b) => a.timestamp - b.timestamp);
+
+                    const duplicados = [];
+                    const mantener = [];
+
+                    // Agrupar por bloques de tiempo (mismo minuto)
+                    const groups = {};
+                    nanciTickets.forEach(ticket => {
+                        const timeKey = Math.floor(ticket.timestamp / 60); // Agrupar por minuto
+                        if (!groups[timeKey]) {
+                            groups[timeKey] = [];
+                        }
+                        groups[timeKey].push(ticket);
+                    });
+
+                    // El primero de cada grupo se mantiene, los demás son duplicados
+                    for (const timeKey in groups) {
+                        const group = groups[timeKey];
+                        if (group.length > 1) {
+                            log(`   ⚠️ Grupo con ${group.length} tickets en tiempo similar`, 'warning');
+                            mantener.push(group[0]);
+                            for (let i = 1; i < group.length; i++) {
+                                duplicados.push(group[i]);
+                            }
+                        } else {
+                            mantener.push(group[0]);
+                        }
+                    }
+
+                    if (duplicados.length === 0) {
+                        log(`   ✅ No hay duplicados en este evento`, 'success');
+                        continue;
+                    }
+
+                    log(`   🗑️ ELIMINANDO ${duplicados.length} DUPLICADOS...`, 'error');
+
+                    // 7. ELIMINAR DUPLICADOS
+                    let eliminados = 0;
+                    for (const ticket of duplicados) {
+                        try {
+                            await deleteDoc(doc(window.db, `events/${eventId}/tickets`, ticket.id));
+                            eliminados++;
+                            log(`      ✅ Eliminado: ${ticket.name} (${ticket.id.substring(0, 12)}...)`, 'success');
+                        } catch (error) {
+                            log(`      ❌ Error: ${ticket.id} - ${error.message}`, 'error');
+                        }
+                    }
+
+                    totalEliminados += eliminados;
+                    log(`   ✅ ${eliminados} duplicados eliminados | ${mantener.length} tickets VÁLIDOS mantenidos`, 'success');
+                }
+
+                // 8. MOSTRAR RESUMEN FINAL
+                log('\n═══════════════════════════════════════', 'highlight');
+                log('✅ PROCESO COMPLETADO', 'success');
+                log(`📊 Total tickets de Nanci analizados: ${totalAnalizados}`, 'info');
+                log(`🗑️ Total duplicados eliminados: ${totalEliminados}`, 'success');
+                log('═══════════════════════════════════════', 'highlight');
+
+                // Mostrar resultado
+                document.getElementById('resultSection').classList.remove('hidden');
+                document.getElementById('resultSummary').innerHTML = `
+                    <p class="text-3xl font-black mb-4">🎉 ¡TODO LISTO!</p>
+                    <p class="text-2xl">📊 Tickets analizados: <span class="text-yellow-400">${totalAnalizados}</span></p>
+                    <p class="text-2xl">🗑️ Duplicados eliminados: <span class="text-green-400">${totalEliminados}</span></p>
+                    <p class="text-lg mt-4 text-gray-400">Los duplicados han sido eliminados permanentemente</p>
+                `;
+
+            } catch (error) {
+                console.error('Error:', error);
+                
+                if (error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password') {
+                    errorEl.textContent = '❌ Email o contraseña incorrectos';
+                } else if (error.code === 'auth/too-many-requests') {
+                    errorEl.textContent = '❌ Demasiados intentos. Espera unos minutos.';
+                } else {
+                    errorEl.textContent = `❌ Error: ${error.message}`;
+                    log(`❌ ERROR FATAL: ${error.message}`, 'error');
+                }
+                
+                document.getElementById('loginSection').classList.remove('hidden');
+                document.getElementById('progressSection').classList.add('hidden');
+            }
+        };
+
+        // Enter key para ejecutar
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('password').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    iniciarEliminacion();
+                }
+            });
+        });
+    </script>
+</body>
+</html>
