@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>📊 Verificar Tickets de Nanci</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
+        import { getAuth, signInWithEmailAndPassword } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
+        import { getFirestore, collection, getDocs } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+        
+        import { app, db, auth } from './firebase_config.js';
+        
+        window.db = db;
+        window.auth = auth;
+        window.firebaseModules = { signInWithEmailAndPassword, collection, getDocs };
+    </script>
+</head>
+<body class="bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 min-h-screen text-white p-6">
+    
+    <div class="max-w-4xl mx-auto">
+        
+        <!-- Header -->
+        <div class="bg-gradient-to-r from-purple-600 to-pink-600 rounded-2xl p-6 shadow-2xl mb-8">
+            <h1 class="text-4xl font-black text-white mb-2">📊 ¿Cuántos Tickets de Nanci Quedaron?</h1>
+            <p class="text-purple-100 text-lg">Verificación rápida - Deberían ser 7</p>
+        </div>
+
+        <!-- Login -->
+        <div id="loginSection" class="bg-gray-800 rounded-xl p-6 border-2 border-purple-500 mb-6">
+            <div class="space-y-4">
+                <input type="email" id="email" placeholder="Email" 
+                       class="w-full p-3 bg-gray-700 text-white rounded-lg border-2 border-gray-600">
+                <input type="password" id="password" placeholder="Contraseña" 
+                       class="w-full p-3 bg-gray-700 text-white rounded-lg border-2 border-gray-600">
+                <button onclick="verificar()" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-4 rounded-lg text-xl">
+                    🔍 VERIFICAR AHORA
+                </button>
+                <p id="loginError" class="text-red-400 text-sm text-center"></p>
+            </div>
+        </div>
+
+        <!-- Resultado -->
+        <div id="resultSection" class="hidden">
+            
+            <!-- Stats -->
+            <div class="grid grid-cols-2 gap-6 mb-6">
+                <div id="statCard" class="rounded-2xl p-8 text-center border-4">
+                    <p class="text-gray-300 text-xl mb-2">Tickets de Nanci encontrados:</p>
+                    <p id="stat-count" class="text-white text-7xl font-black">-</p>
+                </div>
+                <div class="bg-gray-800 rounded-2xl p-8 text-center border-4 border-gray-600">
+                    <p class="text-gray-300 text-xl mb-2">Deberían ser:</p>
+                    <p class="text-green-400 text-7xl font-black">7</p>
+                </div>
+            </div>
+
+            <!-- Diagnóstico -->
+            <div id="diagnosticCard" class="rounded-xl p-6 mb-6">
+                <h2 class="text-2xl font-bold mb-4">📋 Diagnóstico</h2>
+                <div id="diagnosticContent" class="text-lg space-y-2">
+                    <!-- Contenido dinámico -->
+                </div>
+            </div>
+
+            <!-- Acciones -->
+            <div id="actionsCard" class="bg-gray-800 rounded-xl p-6 border-2 border-blue-500">
+                <h2 class="text-2xl font-bold mb-4">🔧 Acciones Recomendadas</h2>
+                <div id="actionsContent" class="space-y-3">
+                    <!-- Acciones dinámicas -->
+                </div>
+            </div>
+
+        </div>
+
+    </div>
+
+    <script type="module">
+        const { signInWithEmailAndPassword, collection, getDocs } = window.firebaseModules;
+
+        window.verificar = async function() {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const errorEl = document.getElementById('loginError');
+
+            if (!email || !password) {
+                errorEl.textContent = '❌ Completa email y contraseña';
+                return;
+            }
+
+            try {
+                errorEl.textContent = '🔄 Verificando...';
+                await signInWithEmailAndPassword(window.auth, email, password);
+                
+                document.getElementById('loginSection').classList.add('hidden');
+                document.getElementById('resultSection').classList.remove('hidden');
+
+                // Obtener eventos
+                const eventsSnap = await getDocs(collection(window.db, 'events'));
+                
+                let totalNanciTickets = 0;
+                const eventosConNanci = [];
+
+                // Buscar en cada evento
+                for (const eventDoc of eventsSnap.docs) {
+                    const eventId = eventDoc.id;
+                    const eventData = eventDoc.data();
+                    const eventName = eventData.nombre_evento || eventData.nombre || eventId;
+
+                    const ticketsSnap = await getDocs(collection(window.db, `events/${eventId}/tickets`));
+                    
+                    let nanciCount = 0;
+                    ticketsSnap.forEach(ticketDoc => {
+                        const ticket = ticketDoc.data();
+                        const artistName = (ticket.artistName || ticket.artist_name || ticket.prefix || '').toLowerCase();
+                        const personName = (ticket.name || ticket.nombre || '').toLowerCase();
+
+                        if (artistName.includes('nanci') || artistName.includes('nancy') ||
+                            personName.includes('nanci') || personName.includes('nancy')) {
+                            nanciCount++;
+                        }
+                    });
+
+                    if (nanciCount > 0) {
+                        totalNanciTickets += nanciCount;
+                        eventosConNanci.push({ nombre: eventName, count: nanciCount, id: eventId });
+                    }
+                }
+
+                // Mostrar resultado
+                const statCount = document.getElementById('stat-count');
+                const statCard = document.getElementById('statCard');
+                const diagnosticCard = document.getElementById('diagnosticCard');
+                const diagnosticContent = document.getElementById('diagnosticContent');
+                const actionsContent = document.getElementById('actionsContent');
+
+                statCount.textContent = totalNanciTickets;
+
+                // Colorear según resultado
+                if (totalNanciTickets === 7) {
+                    statCard.className = 'bg-green-900 rounded-2xl p-8 text-center border-4 border-green-500';
+                    diagnosticCard.className = 'bg-green-900/30 border-2 border-green-500 rounded-xl p-6 mb-6';
+                    diagnosticContent.innerHTML = `
+                        <p class="text-green-300 text-xl font-bold">✅ ¡PERFECTO! Hay exactamente 7 tickets</p>
+                        <p class="text-green-200">Todo está correcto. Nanci tiene los 7 tickets válidos.</p>
+                    `;
+                    actionsContent.innerHTML = `
+                        <p class="text-gray-300">✅ No se requieren acciones - Sistema correcto</p>
+                        <a href="VER_Y_SELECCIONAR_TICKETS_NANCI.html" class="block text-center bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg mt-4">
+                            Ver detalles de los 7 tickets
+                        </a>
+                    `;
+                } else if (totalNanciTickets === 0) {
+                    statCard.className = 'bg-red-900 rounded-2xl p-8 text-center border-4 border-red-500';
+                    diagnosticCard.className = 'bg-red-900/30 border-2 border-red-500 rounded-xl p-6 mb-6';
+                    diagnosticContent.innerHTML = `
+                        <p class="text-red-300 text-xl font-bold">❌ CRÍTICO: NO hay tickets de Nanci</p>
+                        <p class="text-red-200">Se eliminaron TODOS los tickets. Necesitamos recuperarlos.</p>
+                    `;
+                    actionsContent.innerHTML = `
+                        <p class="text-yellow-300 font-bold">🆘 Opciones de recuperación:</p>
+                        <div class="bg-yellow-900/30 border border-yellow-500 rounded p-4 mt-2">
+                            <p class="text-yellow-200 mb-2">1. Si tienes backup reciente de Firebase</p>
+                            <p class="text-yellow-200 mb-2">2. Regenerar los 7 tickets desde cero</p>
+                            <p class="text-yellow-200">3. Revisar historial de Firebase (últimas 24-48h)</p>
+                        </div>
+                        <button onclick="alert('Contacta al desarrollador con esta información')" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-lg mt-4">
+                            🆘 Solicitar ayuda para recuperar
+                        </button>
+                    `;
+                } else if (totalNanciTickets > 7) {
+                    statCard.className = 'bg-yellow-900 rounded-2xl p-8 text-center border-4 border-yellow-500';
+                    diagnosticCard.className = 'bg-yellow-900/30 border-2 border-yellow-500 rounded-xl p-6 mb-6';
+                    const diferencia = totalNanciTickets - 7;
+                    diagnosticContent.innerHTML = `
+                        <p class="text-yellow-300 text-xl font-bold">⚠️ HAY ${diferencia} TICKET(S) DE MÁS</p>
+                        <p class="text-yellow-200">Hay ${totalNanciTickets} tickets cuando deberían ser 7.</p>
+                        <p class="text-yellow-200 mt-2">Distribución por evento:</p>
+                        ${eventosConNanci.map(e => `<p class="text-yellow-100">  • ${e.nombre}: ${e.count} tickets</p>`).join('')}
+                    `;
+                    actionsContent.innerHTML = `
+                        <p class="text-yellow-300 font-bold">Se necesita eliminar ${diferencia} duplicado(s):</p>
+                        <a href="VER_Y_SELECCIONAR_TICKETS_NANCI.html" class="block text-center bg-orange-600 hover:bg-orange-700 text-white font-bold py-4 rounded-lg mt-4">
+                            🔍 Ver y eliminar duplicados manualmente
+                        </a>
+                        <p class="text-gray-400 text-sm mt-2 text-center">Usa la herramienta para seleccionar cuáles eliminar</p>
+                    `;
+                } else {
+                    // Menos de 7
+                    statCard.className = 'bg-red-900 rounded-2xl p-8 text-center border-4 border-red-500';
+                    diagnosticCard.className = 'bg-red-900/30 border-2 border-red-500 rounded-xl p-6 mb-6';
+                    const faltantes = 7 - totalNanciTickets;
+                    diagnosticContent.innerHTML = `
+                        <p class="text-red-300 text-xl font-bold">❌ FALTAN ${faltantes} TICKET(S)</p>
+                        <p class="text-red-200">Solo hay ${totalNanciTickets} tickets cuando deberían ser 7.</p>
+                        <p class="text-red-200 mt-2">Se eliminaron tickets válidos por error.</p>
+                        ${eventosConNanci.length > 0 ? `
+                        <p class="text-red-100 mt-2">Tickets encontrados:</p>
+                        ${eventosConNanci.map(e => `<p class="text-red-100">  • ${e.nombre}: ${e.count} tickets</p>`).join('')}
+                        ` : ''}
+                    `;
+                    actionsContent.innerHTML = `
+                        <p class="text-yellow-300 font-bold">🆘 Se necesita recuperar ${faltantes} ticket(s):</p>
+                        <div class="bg-yellow-900/30 border border-yellow-500 rounded p-4 mt-2">
+                            <p class="text-yellow-200 mb-2">✅ Ver los ${totalNanciTickets} que quedaron</p>
+                            <p class="text-yellow-200 mb-2">⚠️ Regenerar los ${faltantes} faltantes</p>
+                            <p class="text-yellow-200">📋 Verificar backup de Firebase</p>
+                        </div>
+                        <a href="VER_Y_SELECCIONAR_TICKETS_NANCI.html" class="block text-center bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg mt-4">
+                            Ver tickets que quedaron
+                        </a>
+                    `;
+                }
+
+            } catch (error) {
+                errorEl.textContent = `❌ ${error.message}`;
+            }
+        };
+
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('password').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') verificar();
+            });
+        });
+    </script>
+</body>
+</html>
