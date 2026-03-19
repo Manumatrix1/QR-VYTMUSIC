@@ -105,6 +105,18 @@
             <h2 class="text-2xl font-bold text-white mb-4 flex items-center gap-2">
                 <i class="fas fa-trash-alt"></i> Acciones de Limpieza
             </h2>
+            
+            <!-- Limpieza Automática de Nanci -->
+            <div id="nanciCleanupSection" class="hidden mb-4">
+                <div class="bg-yellow-950/50 rounded-lg p-4 mb-3">
+                    <h3 class="text-yellow-300 font-bold mb-2">🎯 Limpieza Rápida de Nanci</h3>
+                    <p class="text-yellow-200 text-sm">Se detectaron duplicados de Nanci. Click para eliminar automáticamente.</p>
+                </div>
+                <button onclick="autoCleanNanci()" class="w-full bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-4 px-6 rounded-xl transition-all mb-4">
+                    <i class="fas fa-magic"></i> Auto-Limpiar Duplicados de Nanci (Rápido)
+                </button>
+            </div>
+            
             <div class="bg-red-950/50 rounded-lg p-4 mb-4">
                 <p class="text-red-200 font-semibold mb-2">⚠️ ADVERTENCIA:</p>
                 <p class="text-red-300">Esta acción eliminará PERMANENTEMENTE los tickets huérfanos de Firebase. No se puede deshacer.</p>
@@ -263,37 +275,52 @@
                 console.log('📊 Total tickets:', tickets.length);
                 console.log('📦 Tickets por prefix:', ticketsByPrefix);
 
-                // 3. Detectar tickets DUPLICADOS (mismo timestamp + comprador + artista)
+                // 3. Detectar tickets DUPLICADOS usando MÚLTIPLES estrategias
                 orphanTickets = [];
                 const validTickets = [];
-                const seenTickets = new Map(); // Clave: timestamp_buyer_artist → primer ticket visto
+                const seenTickets = new Map(); // Clave única → primer ticket visto
                 
                 tickets.forEach(ticket => {
-                    // Crear clave única basada en datos del ticket
+                    // Estrategia 1: Por timestamp + nombre de persona (en el ticket)
                     const timestamp = ticket.timestamp?.seconds || ticket.timestamp || ticket.createdAt?.seconds || 0;
-                    const buyer = (ticket.buyerName || ticket.nombre_comprador || ticket.comprador || 'unknown').toLowerCase().trim();
-                    const artistId = ticket.artistId || ticket.artista_id || 'unknown';
-                    const artistName = (ticket.artistName || ticket.artist_name || 'unknown').toLowerCase().trim();
+                    const personName = (ticket.name || ticket.nombre || ticket.buyerName || ticket.nombre_comprador || 'unknown').toLowerCase().trim();
+                    const artistName = (ticket.artistName || ticket.artist_name || ticket.prefix || 'unknown').toLowerCase().trim();
                     
-                    // Clave para detectar duplicados
-                    const key = `${timestamp}_${buyer}_${artistName}`;
+                    // Crear varias claves posibles para detectar duplicados
+                    const keys = [
+                        `${timestamp}_${personName}_${artistName}`, // Clave principal
+                        `${personName}_${artistName}`, // Por nombre + artista (si timestamp diferente)
+                        `${ticket.id}` // Por ID (no debería haber IDs duplicados)
+                    ];
                     
-                    // Si ya vimos un ticket con esta misma combinación, es un duplicado
-                    if (seenTickets.has(key)) {
-                        const original = seenTickets.get(key);
+                    let isDuplicate = false;
+                    let matchedKey = null;
+                    
+                    // Verificar si alguna clave ya existe
+                    for (const key of keys) {
+                        if (seenTickets.has(key)) {
+                            isDuplicate = true;
+                            matchedKey = key;
+                            break;
+                        }
+                    }
+                    
+                    if (isDuplicate) {
+                        const original = seenTickets.get(matchedKey);
                         orphanTickets.push(ticket);
-                        console.warn(`⚠️ Ticket DUPLICADO detectado:`);
-                        console.warn(`   Original: ${original.id} | Fecha: ${new Date(original.timestamp?.seconds * 1000 || 0).toLocaleString()}`);
-                        console.warn(`   Duplicado: ${ticket.id} | Artista: ${artistName} | Comprador: ${buyer}`);
+                        console.warn(`⚠️ Ticket DUPLICADO:`);
+                        console.warn(`   Original: ${original.id} | ${original.name || original.nombre} | ${original.artistName}`);
+                        console.warn(`   Duplicado: ${ticket.id} | ${personName} | ${artistName}`);
+                        console.warn(`   Clave match: ${matchedKey}`);
                     } else {
-                        // Primer ticket con esta combinación - es válido
-                        seenTickets.set(key, ticket);
+                        // Registrar todas las claves para este ticket
+                        keys.forEach(key => seenTickets.set(key, ticket));
                         validTickets.push(ticket);
                     }
                 });
 
                 console.log('✅ Tickets válidos (únicos):', validTickets.length);
-                console.log('❌ Tickets duplicados:', orphanTickets.length);
+                console.log('❌ Tickets duplicados detectados:', orphanTickets.length);
 
                 // 4. Actualizar estadísticas
                 document.getElementById('stat-total').textContent = tickets.length;
@@ -335,6 +362,17 @@
                 // 7. Mostrar botón de limpieza si hay huérfanos
                 if (orphanTickets.length > 0) {
                     document.getElementById('actionsContainer').classList.remove('hidden');
+                    
+                    // Verificar si hay duplicados de Nanci específicamente
+                    const nanciOrphans = orphanTickets.filter(t => {
+                        const artistName = (t.artistName || t.prefix || '').toLowerCase();
+                        return artistName.includes('nanci') || artistName.includes('nancy');
+                    });
+                    
+                    if (nanciOrphans.length > 0) {
+                        console.log(`🎯 Detectados ${nanciOrphans.length} duplicados de Nanci`);
+                        document.getElementById('nanciCleanupSection').classList.remove('hidden');
+                    }
                 } else {
                     alert('✅ No se encontraron tickets huérfanos. Todo está perfecto!');
                 }
@@ -408,6 +446,50 @@
 
             if (confirmed) {
                 cleanupOrphanTickets();
+            }
+        };
+
+        // AUTO-LIMPIEZA DE NANCI (SIN CONFIRMACIÓN)
+        window.autoCleanNanci = async function() {
+            const statusEl = document.getElementById('cleanupStatus');
+            statusEl.textContent = '🎯 Limpiando duplicados de Nanci...';
+            statusEl.className = 'mt-4 text-center text-blue-400 font-semibold';
+
+            try {
+                // Filtrar solo tickets de Nanci
+                const nanciOrphans = orphanTickets.filter(t => {
+                    const artistName = (t.artistName || t.prefix || '').toLowerCase();
+                    return artistName.includes('nanci') || artistName.includes('nancy');
+                });
+
+                console.log(`🎯 Eliminando ${nanciOrphans.length} duplicados de Nanci automáticamente...`);
+
+                let deleted = 0;
+                let errors = 0;
+
+                for (const ticket of nanciOrphans) {
+                    try {
+                        await deleteDoc(doc(window.db, `events/${currentEventId}/tickets`, ticket.id));
+                        deleted++;
+                        console.log(`✅ Eliminado Nanci duplicado: ${ticket.id}`);
+                    } catch (error) {
+                        errors++;
+                        console.error(`❌ Error eliminando ${ticket.id}:`, error);
+                    }
+                }
+
+                statusEl.textContent = `✅ Nanci limpiada: ${deleted} duplicado(s) eliminado(s)${errors > 0 ? `, ${errors} error(es)` : ''}`;
+                statusEl.className = 'mt-4 text-center text-green-400 font-semibold';
+
+                // Reanalizar después de 1.5 segundos
+                setTimeout(() => {
+                    analyzeTickets();
+                }, 1500);
+
+            } catch (error) {
+                console.error('Error en auto-limpieza de Nanci:', error);
+                statusEl.textContent = `❌ Error: ${error.message}`;
+                statusEl.className = 'mt-4 text-center text-red-400 font-semibold';
             }
         };
 
