@@ -6,7 +6,7 @@
     <title>🚀 Escáner Rápido - VYTMUSIC</title>
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/html5-qrcode@2.3.4/html5-qrcode.min.js"></script>
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
     <style>
         body { 
             font-family: system-ui, -apple-system, sans-serif; 
@@ -66,17 +66,25 @@
             height: 100% !important;
         }
         
-        /* Marco de escaneo - OPTIMIZADO MÁS GRANDE */
+        /* Marco de escaneo - ROI 60% CENTRAL (Arquitectura MercadoPago) */
         .scan-frame {
             position: fixed; top: 50%; left: 50%; 
             transform: translate(-50%, -50%);
-            width: 500px; height: 500px; z-index: 60;  /* ⚡ Aumentado de 400 a 500 */
+            width: 60vw; height: 60vw;  /* 🎯 60% CENTRO PRIORITARIO (MercadoPago standard) */
+            max-width: 500px; max-height: 500px;
+            z-index: 60;
             pointer-events: none;
+            animation: scanPulse 2s ease-in-out infinite;
+        }
+        
+        @keyframes scanPulse {
+            0%, 100% { opacity: 0.8; }
+            50% { opacity: 1; box-shadow: 0 0 30px rgba(16, 185, 129, 0.5); }
         }
         
         .scan-corner {
-            position: absolute; width: 70px; height: 70px;  /* ⚡ Aumentado de 60 a 70 */
-            border: 6px solid #10b981;  /* ⚡ Más grueso para mejor visibilidad */
+            position: absolute; width: 80px; height: 80px;
+            border: 8px solid #10b981;  /* ⚡ EXTRA GRUESO */
         }
         .corner-tl { top: 0; left: 0; border-right: 0; border-bottom: 0; }
         .corner-tr { top: 0; right: 0; border-left: 0; border-bottom: 0; }
@@ -145,6 +153,18 @@
         .btn-search {
             background: linear-gradient(135deg, #3b82f6, #2563eb);
             color: white; flex: 2;
+        }
+        
+        .btn-torch {
+            background: linear-gradient(135deg, #f59e0b, #d97706);
+            color: white;
+            border: 3px solid #fbbf24;
+            box-shadow: 0 0 20px rgba(245, 158, 11, 0.4);
+        }
+        
+        .btn-torch.active {
+            background: linear-gradient(135deg, #fbbf24, #f59e0b);
+            box-shadow: 0 0 30px rgba(251, 191, 36, 0.8);
         }
         
         .btn-close {
@@ -248,13 +268,16 @@
     <!-- Botones inferiores -->
     <div class="bottom-bar">
         <button class="btn btn-search" id="btn-search">
-            🔍 Buscar Manual
+            🔍 Buscar
+        </button>
+        <button class="btn btn-torch hidden" id="btn-torch">
+            🔦 Linterna
         </button>
         <button class="btn btn-generate" id="btn-generate" style="background: rgba(234, 88, 12, 0.4); border-color: #ea580c; color: #fdba74;">
-            ⚡ Generar Lote (Grupos)
+            ⚡ Lote
         </button>
         <button class="btn btn-close" id="btn-close">
-            ❌ Cerrar
+            ❌
         </button>
     </div>
 
@@ -265,12 +288,16 @@
                 🔍 BÚSQUEDA MANUAL
             </h2>
             <p class="text-sm text-gray-300 mb-4 text-center">
-                Buscá por: <strong class="text-yellow-300">N° de entrada</strong>, <strong class="text-yellow-300">Nombre</strong> o <strong class="text-yellow-300">ID</strong>
+                Buscá por: <strong class="text-yellow-300">N° de entrada</strong>, <strong class="text-yellow-300">Nombre</strong>, <strong class="text-yellow-300">Artista</strong> o <strong class="text-yellow-300">ID</strong>
             </p>
+            <div class="mb-3 flex gap-2">
+                <button id="filter-all" class="flex-1 px-4 py-2 rounded-lg bg-blue-600 text-white font-bold text-sm">TODOS</button>
+                <button id="filter-artist" class="flex-1 px-4 py-2 rounded-lg bg-gray-700 text-gray-300 font-bold text-sm">POR ARTISTA</button>
+            </div>
             <input type="text" 
                    class="search-input" 
                    id="search-input"
-                   placeholder="Ej: 1, 0045, María López..."
+                   placeholder="Ej: 1, 0045, María López, Artista..."
                    autocomplete="off">
             <div id="search-results"></div>
             <button class="btn btn-close w-full mt-4" id="close-search">
@@ -292,10 +319,13 @@
             scanner: null,
             tickets: new Map(),
             counter: 0,
-            scanning: true,
             isOnline: navigator.onLine,
             syncQueue: [], // Cola de sincronización offline
-            unsubscribe: null // Para detener listener de tiempo real
+            unsubscribe: null, // Para detener listener de tiempo real
+            torchOn: false, // Estado de la linterna
+            searchMode: 'all', // Modo de búsqueda: 'all' o 'artist'
+            lastScanTime: 0, // Anti-duplicado ultra-rápido
+            processingFrame: false // Evitar procesamiento paralelo
         };
 
         // UI
@@ -402,8 +432,8 @@
             ui.counter.textContent = state.counter;
         }
 
-        // 🔊 Sonido de escaneo exitoso
-        function playBeep() {
+        // 🔊 Sonido de escaneo - PARAMETRIZABLE
+        function playBeep(frequency = 800, duration = 100) {
             try {
                 const audioContext = new (window.AudioContext || window.webkitAudioContext)();
                 const oscillator = audioContext.createOscillator();
@@ -412,20 +442,21 @@
                 oscillator.connect(gainNode);
                 gainNode.connect(audioContext.destination);
                 
-                oscillator.frequency.value = 800; // Frecuencia del beep
+                oscillator.frequency.value = frequency; // Frecuencia ajustable
                 oscillator.type = 'sine';
                 
+                const durationSeconds = duration / 1000;
                 gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-                gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + durationSeconds);
                 
                 oscillator.start(audioContext.currentTime);
-                oscillator.stop(audioContext.currentTime + 0.1);
+                oscillator.stop(audioContext.currentTime + durationSeconds);
             } catch (error) {
                 console.log('Audio no disponible:', error);
             }
         }
 
-        // Mostrar feedback
+        // Mostrar feedback - OPTIMIZADO ESTILO MERCADOPAGO
         function showFeedback(type, name, detail) {
             const colors = {
                 success: 'flash-success',
@@ -451,24 +482,31 @@
             
             document.body.appendChild(flash);
             
-            // 🔊 Sonido
+            // 🔊 Sonido (diferente por tipo)
             if (type === 'success') {
-                playBeep();
+                playBeep(800, 100);  // Agudo y corto
+            } else if (type === 'warning') {
+                playBeep(600, 150);  // Medio y un poco más largo
+            } else if (type === 'error') {
+                playBeep(400, 200);  // Grave y largo
             }
             
-            // Vibración si disponible
+            // 📳 Vibración TÁCTIL (estilo MercadoPago)
             if (navigator.vibrate) {
-                if (type === 'success') navigator.vibrate(200);
-                else if (type === 'error') navigator.vibrate([100, 50, 100]);
+                if (type === 'success') {
+                    navigator.vibrate([50, 30, 100]);  // ✅ Doble pulso ascendente
+                } else if (type === 'warning') {
+                    navigator.vibrate([150, 50, 150]);  // ⚠️ Doble pulso igual
+                } else if (type === 'error') {
+                    navigator.vibrate([200, 100, 200, 100, 200]);  // ❌ Triple pulso fuerte
+                }
             }
 
             setTimeout(() => flash.remove(), 1000);
         }
 
-        // Procesar escaneo con MODO OFFLINE
+        // Procesar escaneo con MODO OFFLINE y validación asíncrona
         async function processTicket(ticketId) {
-            if (!state.scanning) return;
-            
             const ticket = state.tickets.get(ticketId);
 
             if (!ticket) {
@@ -534,47 +572,126 @@
             try {
                 state.scanner = new Html5Qrcode("qr-reader");
                 
+                // 🎯🎯🎯 CONFIGURACIÓN ARQUITECTURA MERCADOPAGO 🎯🎯🎯
+                // Basada en: capture fps:30, ROI dinámico 60%, processing asíncrono
                 const config = {
-                    fps: 60, // ⚡ OPTIMIZADO - 2x más rápido que antes
-                    qrbox: { width: 500, height: 500 }, // 📱 OPTIMIZADO - 25% más grande
+                    fps: 30, // 🎯 FPS ÓPTIMO (MercadoPago usa 30, más estable que 120)
+                    qrbox: function(viewfinderWidth, viewfinderHeight) {
+                        // 🎯 ROI DINÁMICO - Centro prioritario 60% (igual que MP)
+                        const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+                        const qrboxSize = Math.floor(minEdge * 0.6);  // 60% área central
+                        return { width: qrboxSize, height: qrboxSize };
+                    },
                     aspectRatio: 1.0,
+                    disableFlip: false, // 🔄 Perspectiva correction básica
                     experimentalFeatures: {
-                        useBarCodeDetectorIfSupported: true  // 🚀 API nativa del navegador
+                        useBarCodeDetectorIfSupported: true  // 🚀 Detect-then-decode strategy
                     },
                     formatsToSupport: [
-                        Html5QrcodeSupportedFormats.QR_CODE,
-                        Html5QrcodeSupportedFormats.CODE_128,  // ✅ CÓDIGO DE BARRAS
-                        Html5QrcodeSupportedFormats.CODE_39,   // ✅ CÓDIGO DE BARRAS
-                        Html5QrcodeSupportedFormats.EAN_13,    // ✅ CÓDIGO DE BARRAS
-                        Html5QrcodeSupportedFormats.EAN_8,     // ✅ CÓDIGO DE BARRAS
-                        Html5QrcodeSupportedFormats.UPC_A,     // ✨ NUEVO FORMATO
-                        Html5QrcodeSupportedFormats.UPC_E      // ✨ NUEVO FORMATO
+                        Html5QrcodeSupportedFormats.QR_CODE,      // Principal
+                        Html5QrcodeSupportedFormats.CODE_128,     // Códigos de barras
+                        Html5QrcodeSupportedFormats.CODE_39,
+                        Html5QrcodeSupportedFormats.EAN_13,
+                        Html5QrcodeSupportedFormats.EAN_8,
+                        Html5QrcodeSupportedFormats.UPC_A,
+                        Html5QrcodeSupportedFormats.UPC_E,
+                        Html5QrcodeSupportedFormats.CODABAR       // Extra robustez
                     ],
                     rememberLastUsedCamera: true,
-                    showTorchButtonIfSupported: true  // 🔦 Linterna automática
+                    showTorchButtonIfSupported: false,  // Custom torch control
+                    // 🎯 VIDEO CONSTRAINTS - Máxima compatibilidad
+                    videoConstraints: {
+                        facingMode: "environment",
+                        // Auto-ajustes continuos (similar a CameraX/AVFoundation)
+                        focusMode: { ideal: "continuous" },
+                        exposureMode: { ideal: "continuous" },
+                        whiteBalanceMode: { ideal: "continuous" },
+                        // Resolución óptima para QR
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 }
+                    }
                 };
 
                 await state.scanner.start(
                     { facingMode: "environment" },
                     config,
                     (decodedText) => {
-                        if (state.scanning) {
-                            state.scanning = false;
-                            processTicket(decodedText);
-                            setTimeout(() => { state.scanning = true; }, 1200);
+                        // 🎯 ANTI-DUPLICACIÓN (MercadoPago usa cooldown 1500ms)
+                        const now = Date.now();
+                        if (now - state.lastScanTime < 1500) {
+                            console.log('⏭️ Cooldown activo - ignorado');
+                            return;
                         }
+                        
+                        // 🔒 Evitar procesamiento paralelo
+                        if (state.processingFrame) {
+                            console.log('⚠️ Ya procesando - ignorado');
+                            return;
+                        }
+                        
+                        state.lastScanTime = now;
+                        state.processingFrame = true;
+                        
+                        // 🎯 PROCESAMIENTO ASÍNCRONO
+                        processTicket(decodedText).finally(() => {
+                            state.processingFrame = false;
+                        });
                     },
-                    () => {} // Errores silenciosos
+                    (errorMessage) => {
+                        // 🔇 Errores silenciosos pero logueados
+                        if (errorMessage.includes('NotFoundException')) {
+                            // Normal - no hay QR en frame
+                        } else {
+                            console.warn('Scanner error:', errorMessage);
+                        }
+                    }
                 );
+                
+                // 🔦 DETECTAR Y ACTIVAR LINTERNA
+                try {
+                    const capabilities = state.scanner.getRunningTrackCameraCapabilities();
+                    if (capabilities && capabilities.torch) {
+                        ui.btnTorch.classList.remove('hidden');
+                        console.log('🔦 Linterna disponible');
+                    }
+                } catch (e) {
+                    console.log('⚠️ Linterna no disponible');
+                }
 
-                console.log('✅ Escáner iniciado');
+                console.log('✅ Scanner iniciado - Arquitectura MercadoPago');
+                console.log('  📹 FPS: 30 (estable)');
+                console.log('  🎯 ROI: 60% centro prioritario');
+                console.log('  ⏱️ Cooldown: 1500ms');
+                console.log('  📊 Formatos: QR + 7 códigos de barras');
+                console.log('  🔄 Processing: Asíncrono con lock');
             } catch (error) {
                 console.error('❌ Error iniciando escáner:', error);
                 alert('❌ No se pudo acceder a la cámara');
             }
         }
 
-        // Búsqueda manual
+        // 🔦 TOGGLE LINTERNA
+        async function toggleTorch() {
+            try {
+                state.torchOn = !state.torchOn;
+                const track = state.scanner.getRunningTrackCameraCapabilities();
+                await track.applyConstraints({
+                    advanced: [{ torch: state.torchOn }]
+                });
+                
+                ui.btnTorch.classList.toggle('active', state.torchOn);
+                ui.btnTorch.textContent = state.torchOn ? '🔆 ENCENDIDA' : '🔦 Linterna';
+                
+                // 📳 Vibración de feedback
+                if (navigator.vibrate) navigator.vibrate(50);
+                
+                console.log(`🔦 Linterna: ${state.torchOn ? 'ON' : 'OFF'}`);
+            } catch (error) {
+                console.warn('⚠️ Error con linterna:', error);
+            }
+        }
+        
+        // Búsqueda manual MEJORADA con filtro por ARTISTA
         function performSearch(query) {
             const normalized = query.toLowerCase().trim();
             
@@ -583,30 +700,75 @@
                 return;
             }
 
-            const results = Array.from(state.tickets.values()).filter(ticket => {
-                const nameMatch = ticket.name.toLowerCase().includes(normalized);
-                const numberMatch = ticket.ticketNumber && ticket.ticketNumber.toString().includes(query.trim());
-                const formattedMatch = ticket.ticketNumberFormatted && ticket.ticketNumberFormatted.includes(query.trim());
-                const idMatch = ticket.id.toLowerCase().includes(normalized);
-                return nameMatch || numberMatch || formattedMatch || idMatch;
-            });
+            let results = Array.from(state.tickets.values());
+            
+            if (state.searchMode === 'artist') {
+                // 👤 MODO BÚSQUEDA POR ARTISTA
+                results = results.filter(ticket => {
+                    const artistMatch = ticket.artistName && ticket.artistName.toLowerCase().includes(normalized);
+                    return artistMatch;
+                });
+            } else {
+                // 🔍 MODO BÚSQUEDA GENERAL
+                results = results.filter(ticket => {
+                    const nameMatch = ticket.name.toLowerCase().includes(normalized);
+                    const numberMatch = ticket.ticketNumber && ticket.ticketNumber.toString().includes(query.trim());
+                    const formattedMatch = ticket.ticketNumberFormatted && ticket.ticketNumberFormatted.includes(query.trim());
+                    const idMatch = ticket.id.toLowerCase().includes(normalized);
+                    const artistMatch = ticket.artistName && ticket.artistName.toLowerCase().includes(normalized);
+                    return nameMatch || numberMatch || formattedMatch || idMatch || artistMatch;
+                });
+            }
 
             if (results.length === 0) {
                 ui.searchResults.innerHTML = '<div class="no-results">❌ No se encontraron resultados</div>';
                 return;
             }
 
-            ui.searchResults.innerHTML = results.map(ticket => `
-                <div class="search-result ${ticket.used ? 'used' : ''}" 
-                     onclick="window.selectTicket('${ticket.id}', ${ticket.used})">
-                    <div class="result-name">
-                        ${ticket.ticketNumberFormatted ? `<span class="result-number">Nº ${ticket.ticketNumberFormatted}</span>` : ''}
-                        ${ticket.name}
+            // Agrupar por artista si está en modo artista
+            let groupedResults = results;
+            if (state.searchMode === 'artist') {
+                const artistGroups = {};
+                results.forEach(ticket => {
+                    const artistName = ticket.artistName || 'Sin Artista';
+                    if (!artistGroups[artistName]) {
+                        artistGroups[artistName] = [];
+                    }
+                    artistGroups[artistName].push(ticket);
+                });
+                
+                ui.searchResults.innerHTML = Object.entries(artistGroups).map(([artistName, tickets]) => `
+                    <div class="mb-4">
+                        <div class="bg-purple-900/50 border-l-4 border-purple-400 px-4 py-2 mb-2 rounded">
+                            <div class="font-black text-lg text-purple-200">🎤 ${artistName}</div>
+                            <div class="text-xs text-purple-300">${tickets.length} invitado(s) - ${tickets.filter(t => !t.used).length} disponible(s)</div>
+                        </div>
+                        ${tickets.map(ticket => `
+                            <div class="search-result ${ticket.used ? 'used' : ''} ml-4" 
+                                 onclick="window.selectTicket('${ticket.id}', ${ticket.used})">
+                                <div class="result-name">
+                                    ${ticket.ticketNumberFormatted ? `<span class="result-number">Nº ${ticket.ticketNumberFormatted}</span>` : ''}
+                                    ${ticket.name}
+                                </div>
+                                ${ticket.used ? '<div class="text-red-400 font-bold mt-2">⚠️ YA INGRESÓ</div>' : '<div class="text-green-400 font-bold mt-2">✅ DISPONIBLE</div>'}
+                            </div>
+                        `).join('')}
                     </div>
-                    <div class="result-id">${ticket.id}</div>
-                    ${ticket.used ? '<div class="text-red-400 font-bold mt-2">⚠️ YA INGRESÓ</div>' : ''}
-                </div>
-            `).join('');
+                `).join('');
+            } else {
+                ui.searchResults.innerHTML = results.map(ticket => `
+                    <div class="search-result ${ticket.used ? 'used' : ''}" 
+                         onclick="window.selectTicket('${ticket.id}', ${ticket.used})">
+                        <div class="result-name">
+                            ${ticket.ticketNumberFormatted ? `<span class="result-number">Nº ${ticket.ticketNumberFormatted}</span>` : ''}
+                            ${ticket.name}
+                        </div>
+                        ${ticket.artistName ? `<div class="text-xs text-purple-300 mt-1">🎤 ${ticket.artistName}</div>` : ''}
+                        <div class="result-id">${ticket.id}</div>
+                        ${ticket.used ? '<div class="text-red-400 font-bold mt-2">⚠️ YA INGRESÓ</div>' : ''}
+                    </div>
+                `).join('');
+            }
         }
 
         // Seleccionar ticket de búsqueda
@@ -691,6 +853,31 @@
         ui.searchInput.addEventListener('input', (e) => {
             performSearch(e.target.value);
         });
+        
+        // Botones de filtro de búsqueda
+        ui.filterAll = document.getElementById('filter-all');
+        ui.filterArtist = document.getElementById('filter-artist');
+        
+        ui.filterAll.addEventListener('click', () => {
+            state.searchMode = 'all';
+            ui.filterAll.className = 'flex-1 px-4 py-2 rounded-lg bg-blue-600 text-white font-bold text-sm';
+            ui.filterArtist.className = 'flex-1 px-4 py-2 rounded-lg bg-gray-700 text-gray-300 font-bold text-sm';
+            ui.searchInput.placeholder = 'Ej: 1, 0045, María López, Artista...';
+            performSearch(ui.searchInput.value);
+        });
+        
+        ui.filterArtist.addEventListener('click', () => {
+            state.searchMode = 'artist';
+            ui.filterArtist.className = 'flex-1 px-4 py-2 rounded-lg bg-purple-600 text-white font-bold text-sm';
+            ui.filterAll.className = 'flex-1 px-4 py-2 rounded-lg bg-gray-700 text-gray-300 font-bold text-sm';
+            ui.searchInput.placeholder = '🎤 Escribí el nombre del artista...';
+            ui.searchInput.value = '';
+            ui.searchResults.innerHTML = '<div class="no-results">Escribí el nombre del artista para ver sus invitados</div>';
+        });
+        
+        // Botón linterna
+        ui.btnTorch = document.getElementById('btn-torch');
+        ui.btnTorch.addEventListener('click', toggleTorch);
 
         ui.btnGenerate.addEventListener('click', () => {
             window.location.href = `generador_lote_puerta_express.html?eventId=${state.eventId}&eventName=${encodeURIComponent(state.eventName)}`;

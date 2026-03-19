@@ -1,0 +1,843 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>🎭 Escáner GALA - VYTMUSIC</title>
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body { 
+            font-family: system-ui, -apple-system, sans-serif; 
+            background: #000; 
+            color: #fff; 
+            overflow: hidden;
+            -webkit-user-select: none;
+            user-select: none;
+            position: fixed;
+            width: 100vw;
+            height: 100vh;
+        }
+        
+        .hidden { display: none !important; }
+        
+        /* CONTADOR TOP - MUY VISIBLE */
+        .counter-bar {
+            position: fixed; top: 0; left: 0; right: 0; z-index: 200;
+            background: rgba(0, 0, 0, 0.95); backdrop-filter: blur(10px);
+            padding: 20px; text-align: center;
+            border-bottom: 5px solid #10b981;
+            box-shadow: 0 4px 20px rgba(16, 185, 129, 0.4);
+        }
+        
+        .back-btn {
+            position: absolute; left: 15px; top: 50%; transform: translateY(-50%);
+            background: rgba(59, 130, 246, 0.4); color: #fff;
+            padding: 12px 18px; border: 3px solid #3b82f6; border-radius: 10px;
+            font-size: 1.3rem; cursor: pointer; transition: all 0.2s;
+            text-decoration: none; font-weight: 900;
+            box-shadow: 0 0 15px rgba(59, 130, 246, 0.5);
+        }
+        
+        .back-btn:active { transform: translateY(-50%) scale(0.9); }
+        
+        .counter-number {
+            font-size: 4rem; font-weight: 900; color: #10b981;
+            text-shadow: 0 0 30px rgba(16, 185, 129, 0.8);
+            line-height: 1; display: block;
+        }
+        
+        .counter-label {
+            font-size: 1rem; color: #9ca3af; 
+            text-transform: uppercase; margin-top: 8px;
+            letter-spacing: 2px;
+        }
+        
+        /* CÁMARA FULLSCREEN - MÁXIMA VISIBILIDAD */
+        #qr-reader { 
+            width: 100vw !important; 
+            height: 100vh !important; 
+            position: fixed !important; 
+            top: 0 !important; 
+            left: 0 !important;
+            z-index: 1;
+        }
+        
+        #qr-reader video {
+            object-fit: cover !important;
+            width: 100% !important;
+            height: 100% !important;
+            position: absolute !important;
+            top: 0 !important;
+            left: 0 !important;
+        }
+        
+        /* ⚡ MARCO DE ESCANEO - EXTRA GRANDE Y VISIBLE */
+        .scan-frame {
+            position: fixed; 
+            top: 50%; 
+            left: 50%; 
+            transform: translate(-50%, -50%);
+            width: 70vw;  /* ⚡ 70% del ancho de pantalla */
+            height: 70vw; /* ⚡ Cuadrado */
+            max-width: 600px;  /* ⚡ Más grande que antes */
+            max-height: 600px;
+            z-index: 100;  
+            pointer-events: none;
+        }
+        
+        .scan-corner {
+            position: absolute; 
+            width: 100px;  /* ⚡ Esquinas más grandes */
+            height: 100px;
+            border: 8px solid #10b981;  /* ⚡ Bordes más gruesos */
+            animation: cornerGlow 2s ease-in-out infinite;
+        }
+        
+        @keyframes cornerGlow {
+            0%, 100% { 
+                border-color: #10b981; 
+                box-shadow: 0 0 15px rgba(16, 185, 129, 0.6);
+            }
+            50% { 
+                border-color: #34d399; 
+                box-shadow: 0 0 30px rgba(52, 211, 153, 0.8);
+            }
+        }
+        
+        .corner-tl { top: 0; left: 0; border-right: 0; border-bottom: 0; }
+        .corner-tr { top: 0; right: 0; border-left: 0; border-bottom: 0; }
+        .corner-bl { bottom: 0; left: 0; border-right: 0; border-top: 0; }
+        .corner-br { bottom: 0; right: 0; border-left: 0; border-top: 0; }
+        
+        /* AYUDA VISUAL - GUÍA DE ESCANEO */
+        .scan-guide {
+            position: fixed;
+            top: 20%;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 150;
+            background: rgba(16, 185, 129, 0.95);
+            color: white;
+            padding: 15px 30px;
+            border-radius: 20px;
+            font-size: 1.2rem;
+            font-weight: 900;
+            text-align: center;
+            box-shadow: 0 4px 30px rgba(16, 185, 129, 0.6);
+            animation: guideFloat 3s ease-in-out infinite;
+            pointer-events: none;
+        }
+        
+        @keyframes guideFloat {
+            0%, 100% { transform: translateX(-50%) translateY(0); }
+            50% { transform: translateX(-50%) translateY(-10px); }
+        }
+        
+        /* FEEDBACK VISUAL - PANTALLA COMPLETA */
+        .feedback-flash {
+            position: fixed; inset: 0; z-index: 300;
+            display: flex; align-items: center; justify-content: center;
+            animation: flashFade 1.5s ease-out forwards;
+            pointer-events: none;
+        }
+        
+        .flash-success { background: rgba(16, 185, 129, 0.98); }
+        .flash-warning { background: rgba(245, 158, 11, 0.98); }
+        .flash-error { background: rgba(239, 68, 68, 0.98); }
+        
+        @keyframes flashFade {
+            0% { opacity: 0; }
+            15% { opacity: 1; }
+            85% { opacity: 1; }
+            100% { opacity: 0; }
+        }
+        
+        .feedback-content { text-align: center; max-width: 90%; }
+        
+        .feedback-icon { 
+            font-size: 8rem; /* ⚡ ENORME */
+            margin-bottom: 1.5rem; 
+            animation: iconBounce 0.5s ease-out;
+        }
+        
+        @keyframes iconBounce {
+            0% { transform: scale(0.3); }
+            50% { transform: scale(1.2); }
+            100% { transform: scale(1); }
+        }
+        
+        .feedback-name { 
+            font-size: 3rem; /* ⚡ MUY GRANDE */
+            font-weight: 900; 
+            margin-bottom: 0.8rem;
+            text-shadow: 0 4px 10px rgba(0,0,0,0.3);
+        }
+        
+        .feedback-detail { 
+            font-size: 1.8rem; /* ⚡ LEGIBLE */
+            font-weight: 700;
+            opacity: 0.95; 
+        }
+        
+        /* BOTONES BOTTOM - MÁS GRANDES Y TÁCTILES */
+        .bottom-bar {
+            position: fixed; bottom: 0; left: 0; right: 0; z-index: 200;
+            background: rgba(0, 0, 0, 0.95); backdrop-filter: blur(10px);
+            padding: 20px; display: flex; gap: 15px;
+            border-top: 3px solid #374151;
+        }
+        
+        .btn {
+            flex: 1; padding: 25px; border: none; border-radius: 15px;
+            font-weight: 900; font-size: 1.2rem; cursor: pointer;
+            transition: all 0.2s; text-transform: uppercase;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+        }
+        
+        .btn:active { transform: scale(0.92); }
+        
+        .btn-search {
+            background: linear-gradient(135deg, #3b82f6, #2563eb);
+            color: white; flex: 2;
+            border: 3px solid #60a5fa;
+        }
+        
+        .btn-torch {
+            background: linear-gradient(135deg, #f59e0b, #d97706);
+            color: white;
+            border: 3px solid #fbbf24;
+        }
+        
+        /* MODAL SEARCH - OPTIMIZADO */
+        .search-modal {
+            position: fixed; inset: 0; z-index: 400;
+            background: rgba(0, 0, 0, 0.98);
+            display: flex; align-items: center; justify-content: center;
+            padding: 20px;
+        }
+        
+        .search-content {
+            background: #1f2937; border-radius: 25px;
+            padding: 30px; width: 100%; max-width: 600px;
+            max-height: 85vh; overflow-y: auto;
+            border: 3px solid #3b82f6;
+        }
+        
+        .search-input {
+            width: 100%; padding: 20px; border-radius: 15px;
+            border: 3px solid #374151; background: #111827;
+            color: white; font-size: 1.3rem; margin-bottom: 20px;
+            font-weight: 600;
+        }
+        
+        .search-input:focus {
+            outline: none; border-color: #3b82f6;
+            box-shadow: 0 0 20px rgba(59, 130, 246, 0.5);
+        }
+        
+        .search-result {
+            background: #374151; border-radius: 15px;
+            padding: 20px; margin-bottom: 15px;
+            cursor: pointer; transition: all 0.2s;
+            border: 3px solid transparent;
+        }
+        
+        .search-result:active {
+            background: #4b5563; border-color: #3b82f6;
+            transform: scale(0.95);
+        }
+        
+        .search-result.used {
+            background: #7f1d1d; border-color: #991b1b;
+            opacity: 0.6; cursor: not-allowed;
+        }
+        
+        .result-name {
+            font-size: 1.5rem; font-weight: 900; margin-bottom: 8px;
+        }
+        
+        .result-number {
+            display: inline-block; background: #fbbf24; color: #000;
+            padding: 5px 15px; border-radius: 8px; 
+            font-weight: 900; margin-right: 10px;
+        }
+        
+        /* ESTADO CONEXIÓN */
+        .connection-status {
+            position: fixed; top: 140px; right: 20px; z-index: 250;
+            padding: 12px 20px; border-radius: 12px;
+            font-weight: 900; font-size: 0.9rem;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+        }
+        
+        .status-online {
+            background: rgba(16, 185, 129, 0.4);
+            border: 2px solid #10b981;
+            color: #d1fae5;
+        }
+        
+        .status-offline {
+            background: rgba(239, 68, 68, 0.4);
+            border: 2px solid #ef4444;
+            color: #fecaca;
+        }
+        
+        .no-results {
+            text-align: center; padding: 40px;
+            color: #9ca3af; font-size: 1.2rem;
+        }
+        
+        /* RESPONSIVE */
+        @media (max-width: 640px) {
+            .counter-number { font-size: 3rem; }
+            .feedback-icon { font-size: 6rem; }
+            .feedback-name { font-size: 2rem; }
+            .feedback-detail { font-size: 1.3rem; }
+            .scan-frame { width: 80vw; height: 80vw; }
+            .scan-corner { width: 80px; height: 80px; }
+        }
+    </style>
+</head>
+<body>
+    
+    <!-- 📊 CONTADOR -->
+    <div class="counter-bar">
+        <a href="#" id="back-link" class="back-btn">←</a>
+        <div>
+            <span class="counter-number" id="entry-counter">0</span>
+            <p class="counter-label">Personas Ingresadas</p>
+        </div>
+    </div>
+
+    <!-- 🔴 ESTADO CONEXIÓN -->
+    <div id="connection-status" class="connection-status status-online">
+        🟢 ONLINE
+    </div>
+
+    <!-- 📸 CÁMARA FULLSCREEN -->
+    <div id="qr-reader"></div>
+
+    <!-- 🎯 MARCO DE ESCANEO CON GUÍA -->
+    <div class="scan-guide" id="scan-guide">
+        📱 APUNTA AL QR o CÓDIGO DE BARRAS
+    </div>
+
+    <div class="scan-frame">
+        <div class="scan-corner corner-tl"></div>
+        <div class="scan-corner corner-tr"></div>
+        <div class="scan-corner corner-bl"></div>
+        <div class="scan-corner corner-br"></div>
+    </div>
+
+    <!-- 🎛️ BOTONES BOTTOM -->
+    <div class="bottom-bar">
+        <button id="btn-search" class="btn btn-search">
+            🔍 BUSCAR MANUAL
+        </button>
+        <button id="btn-torch" class="btn btn-torch">
+            🔦 LINTERNA
+        </button>
+    </div>
+
+    <!-- 🔍 MODAL BÚSQUEDA -->
+    <div id="search-modal" class="search-modal hidden">
+        <div class="search-content">
+            <h2 class="text-3xl font-black mb-5 text-white text-center">
+                🔍 Buscar Entrada
+            </h2>
+            <input 
+                type="text" 
+                id="search-input" 
+                class="search-input"
+                placeholder="Nombre, número o código..."
+                autocomplete="off"
+                autofocus
+            >
+            <div id="search-results" class="mb-5">
+                <div class="no-results">Escribe para buscar...</div>
+            </div>
+            <button id="close-search" class="btn btn-search w-full">
+                CERRAR
+            </button>
+        </div>
+    </div>
+
+    <script type="module">
+        import { db } from './firebase_config.js';
+        import { collection, doc, getDocs, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // ESTADO GLOBAL
+        const state = {
+            scanner: null,
+            scanning: true,
+            eventId: null,
+            eventName: null,
+            tickets: new Map(),
+            entryCount: 0,
+            isOnline: navigator.onLine,
+            syncQueue: [],
+            lastScanTime: 0,
+            torchOn: false,
+            cameraCapabilities: null
+        };
+
+        // UI ELEMENTS
+        const ui = {
+            counter: document.getElementById('entry-counter'),
+            searchModal: document.getElementById('search-modal'),
+            searchInput: document.getElementById('search-input'),
+            searchResults: document.getElementById('search-results'),
+            btnSearch: document.getElementById('btn-search'),
+            btnTorch: document.getElementById('btn-torch'),
+            closeSearch: document.getElementById('close-search'),
+            backLink: document.getElementById('back-link'),
+            connectionStatus: document.getElementById('connection-status'),
+            scanGuide: document.getElementById('scan-guide')
+        };
+
+        // OBTENER PARÁMETROS
+        const urlParams = new URLSearchParams(window.location.search);
+        state.eventId = urlParams.get('eventId');
+        state.eventName = urlParams.get('eventName') || 'Evento';
+
+        if (!state.eventId) {
+            alert('❌ Error: No se especificó el evento');
+            window.location.href = 'eventos.html';
+        }
+
+        ui.backLink.href = `panel_evento_SIMPLE.html?eventId=${state.eventId}&eventName=${encodeURIComponent(state.eventName)}`;
+
+        // 🔦 FUNCIONALIDAD LINTERNA
+        async function toggleTorch() {
+            if (!state.cameraCapabilities || !state.cameraCapabilities.torch) {
+                showFeedback('warning', '🔦 NO DISPONIBLE', 'Este dispositivo no tiene linterna');
+                return;
+            }
+
+            try {
+                state.torchOn = !state.torchOn;
+                const track = state.scanner.getRunningTrackCameraCapabilities();
+                await track.applyConstraints({
+                    advanced: [{ torch: state.torchOn }]
+                });
+                
+                ui.btnTorch.textContent = state.torchOn ? '🔆 APAGAR' : '🔦 LINTERNA';
+                ui.btnTorch.style.background = state.torchOn 
+                    ? 'linear-gradient(135deg, #fbbf24, #f59e0b)'
+                    : 'linear-gradient(135deg, #f59e0b, #d97706)';
+                
+                console.log(`🔦 Linterna: ${state.torchOn ? 'ENCENDIDA' : 'APAGADA'}`);
+            } catch (error) {
+                console.warn('⚠️ Error con linterna:', error);
+            }
+        }
+
+        ui.btnTorch.addEventListener('click', toggleTorch);
+
+        // 📊 CARGAR TODAS LAS ENTRADAS
+        async function loadAllTickets() {
+            console.log('📥 Cargando entradas del evento...');
+            
+            try {
+                const ticketsRef = collection(db, `events/${state.eventId}/tickets`);
+                const snapshot = await getDocs(ticketsRef);
+                
+                state.tickets.clear();
+                let usedCount = 0;
+                
+                snapshot.forEach(docSnap => {
+                    const ticket = docSnap.data();
+                    state.tickets.set(docSnap.id, {
+                        id: docSnap.id,
+                        name: ticket.name || 'Sin nombre',
+                        ticketNumber: ticket.ticketNumber,
+                        ticketNumberFormatted: ticket.ticketNumberFormatted,
+                        used: ticket.used || false,
+                        prefix: ticket.prefix || ''
+                    });
+                    
+                    if (ticket.used) usedCount++;
+                });
+                
+                state.entryCount = usedCount;
+                ui.counter.textContent = usedCount;
+                
+                console.log(`✅ ${state.tickets.size} entradas cargadas (${usedCount} ya ingresaron)`);
+                
+            } catch (error) {
+                console.error('❌ Error cargando tickets:', error);
+                alert('Error al cargar entradas. Verifica tu conexión.');
+            }
+        }
+
+        // ✨ FEEDBACK VISUAL - PANTALLA COMPLETA
+        function showFeedback(type, name, detail, duration = 1500) {
+            const icons = {
+                success: '✅',
+                warning: '⚠️',
+                error: '❌'
+            };
+            
+            const flash = document.createElement('div');
+            flash.className = `feedback-flash flash-${type}`;
+            flash.innerHTML = `
+                <div class="feedback-content">
+                    <div class="feedback-icon">${icons[type]}</div>
+                    <div class="feedback-name">${name}</div>
+                    <div class="feedback-detail">${detail}</div>
+                </div>
+            `;
+            
+            document.body.appendChild(flash);
+            
+            // 📳 VIBRACIÓN TÁCTIL
+            if (navigator.vibrate) {
+                if (type === 'success') navigator.vibrate([50, 50, 100]); // ✅ Triple vibración
+                if (type === 'warning') navigator.vibrate([200, 50, 200]); // ⚠️ Doble largo
+                if (type === 'error') navigator.vibrate(300); // ❌ Vibración larga
+            }
+            
+            // 🔊 SONIDO
+            playSound(type);
+            
+            setTimeout(() => flash.remove(), duration);
+        }
+
+        // 🔊 AUDIO FEEDBACK
+        function playSound(type) {
+            const audio = new Audio();
+            
+            if (type === 'success') {
+                // Tono agudo - ✅ CORRECTO
+                audio.src = 'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFgYJ3anRQT0U9Nzk1S0tLS0tLMzk5OTk5OQ==';
+            } else if (type === 'warning') {
+                // Tono medio - ⚠️ ADVERTENCIA
+                audio.src = 'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFgYJ3anRQT0U9Nzk1P09PT09PTzM5OTk5OTk5';
+            } else {
+                // Tono grave - ❌ ERROR
+                audio.src = 'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFgYJ3anRQT0U9Nzk1Kz09PT09PTM5OTk5OTk5';
+            }
+            
+            audio.volume = 0.5;
+            audio.play().catch(() => {}); // Silenciar error si audio bloqueado
+        }
+
+        // 🎯 PROCESAR ENTRADA ESCANEADA
+        async function processTicket(ticketId) {
+            const now = Date.now();
+            
+            // ⚡ ANTI-DUPLICADO: Ignorar si escaneó hace menos de 2 segundos
+            if (now - state.lastScanTime < 2000) {
+                console.log('⏭️ Escaneo duplicado ignorado');
+                return;
+            }
+            state.lastScanTime = now;
+            
+            console.log(`🎫 Procesando: ${ticketId}`);
+            
+            const ticket = state.tickets.get(ticketId);
+            
+            if (!ticket) {
+                showFeedback('error', '❌ NO ENCONTRADA', 'Entrada no existe en este evento');
+                return;
+            }
+            
+            if (ticket.used) {
+                showFeedback('warning', ticket.name, '⚠️ YA INGRESÓ ANTES');
+                return;
+            }
+            
+            // ✅ MARCAR COMO USADA
+            try {
+                const ticketRef = doc(db, `events/${state.eventId}/tickets`, ticketId);
+                const updateData = {
+                    used: true,
+                    usedAt: new Date().toISOString(),
+                    usedBy: 'Escáner Puerta'
+                };
+                
+                await updateDoc(ticketRef, updateData);
+                
+                // Actualizar localmente
+                ticket.used = true;
+                state.entryCount++;
+                ui.counter.textContent = state.entryCount;
+                
+                showFeedback('success', ticket.name, `✅ INGRESO ${state.entryCount}`);
+                console.log(`✅ Entrada ${ticketId} marcada como usada`);
+                
+            } catch (error) {
+                console.error('❌ Error actualizando:', error);
+                
+                // 📴 MODO OFFLINE - Guardar en cola
+                if (!state.isOnline) {
+                    state.syncQueue.push({
+                        action: 'markUsed',
+                        ticketId: ticketId,
+                        data: {
+                            used: true,
+                            usedAt: new Date().toISOString(),
+                            usedBy: 'Escáner Puerta (Offline)'
+                        }
+                    });
+                    localStorage.setItem(`syncQueue_${state.eventId}`, JSON.stringify(state.syncQueue));
+                    
+                    ticket.used = true;
+                    state.entryCount++;
+                    ui.counter.textContent = state.entryCount;
+                    
+                    showFeedback('success', ticket.name, `📴 INGRESO ${state.entryCount} (OFFLINE)`);
+                } else {
+                    showFeedback('error', 'ERROR', 'No se pudo guardar - Reintenta');
+                }
+            }
+        }
+
+        // 🚀 INICIAR ESCÁNER - CONFIGURACIÓN ULTRA-OPTIMIZADA
+        async function startScanner() {
+            try {
+                state.scanner = new Html5Qrcode("qr-reader");
+                
+                // ⚡ CONFIGURACIÓN EXTREMA PARA GALAS (OSCURO, RÁPIDO, PRECISO)
+                const config = {
+                    fps: 120,  // ⚡ FPS MÁXIMO - Detección instantánea
+                    qrbox: function(viewfinderWidth, viewfinderHeight) {
+                        // ⚡ QR BOX ADAPTATIVO - 80% del área disponible
+                        const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+                        const qrboxSize = Math.floor(minEdge * 0.8);
+                        return { width: qrboxSize, height: qrboxSize };
+                    },
+                    aspectRatio: 1.0,
+                    disableFlip: false,  // ⚡ Permitir flip para códigos invertidos
+                    experimentalFeatures: {
+                        useBarCodeDetectorIfSupported: true  // 🚀 API nativa (más rápida)
+                    },
+                    formatsToSupport: [
+                        Html5QrcodeSupportedFormats.QR_CODE,
+                        Html5QrcodeSupportedFormats.CODE_128,
+                        Html5QrcodeSupportedFormats.CODE_39,
+                        Html5QrcodeSupportedFormats.EAN_13,
+                        Html5QrcodeSupportedFormats.EAN_8,
+                        Html5QrcodeSupportedFormats.CODE_93,
+                        Html5QrcodeSupportedFormats.CODABAR
+                    ],
+                    rememberLastUsedCamera: true,
+                    showTorchButtonIfSupported: true,  // 🔦 Botón linterna nativo
+                    // ⚡ MEJORAS CRÍTICAS
+                    videoConstraints: {
+                        facingMode: "environment",
+                        focusMode: "continuous",  // ⚡ AUTO-ENFOQUE CONTINUO
+                        exposureMode: "continuous",  // ⚡ AUTO-EXPOSICIÓN (para oscuridad)
+                        whiteBalanceMode: "continuous",  // ⚡ BALANCE BLANCO
+                        advanced: [
+                            { zoom: 1.5 },  // ⚡ ZOOM 1.5x - Ayuda con códigos pequeños
+                            { brightness: 1.2 }  // ⚡ +20% BRILLO
+                        ]
+                    }
+                };
+
+                // ⚡ CONSTRAINTS AVANZADOS PARA CÁMARA
+                const cameraConstraints = {
+                    facingMode: "environment",
+                    aspectRatio: 1.0,
+                    focusMode: { ideal: "continuous" },
+                    exposureMode: { ideal: "continuous" },
+                    whiteBalanceMode: { ideal: "continuous" },
+                    zoom: { ideal: 1.5 }  // Zoom aumentado
+                };
+
+                await state.scanner.start(
+                    cameraConstraints,
+                    config,
+                    // ✅ CALLBACK DE ÉXITO
+                    (decodedText) => {
+                        if (state.scanning) {
+                            state.scanning = false;
+                            processTicket(decodedText);
+                            // ⚡ Reactivar después de 1.5s (sincronizado con feedback)
+                            setTimeout(() => { state.scanning = true; }, 1500);
+                        }
+                    },
+                    // ⚠️ CALLBACK DE ERROR (silencioso)
+                    () => {}
+                );
+
+                // 🔦 Detectar si tiene linterna disponible
+                try {
+                    const tracks = await state.scanner.getRunningTrackCameraCapabilities();
+                    state.cameraCapabilities = tracks;
+                    
+                    if (tracks && tracks.torch) {
+                        ui.btnTorch.classList.remove('hidden');
+                        console.log('🔦 Linterna disponible');
+                    } else {
+                        console.log('⚠️ Linterna no disponible en este dispositivo');
+                    }
+                } catch (e) {
+                    console.log('⚠️ No se pudo detectar capacidades de cámara');
+                }
+
+                console.log('✅ Escáner GALA iniciado - Configuración máxima');
+                console.log('  - FPS: 120');
+                console.log('  - QR Box: 80% área');
+                console.log('  - Auto-enfoque: CONTINUO');
+                console.log('  - Zoom: 1.5x');
+                console.log('  - Formatos: QR + 6 tipos de códigos de barras');
+
+                // Ocultar guía después de 5 segundos
+                setTimeout(() => {
+                    ui.scanGuide.style.opacity = '0.3';
+                }, 5000);
+
+            } catch (error) {
+                console.error('❌ Error iniciando escáner:', error);
+                alert(`❌ No se pudo acceder a la cámara\n\n${error.message}\n\nVerifica los permisos en Configuración.`);
+            }
+        }
+
+        // 🔍 BÚSQUEDA MANUAL
+        function performSearch(query) {
+            const normalized = query.toLowerCase().trim();
+            
+            if (normalized.length < 1) {
+                ui.searchResults.innerHTML = '<div class="no-results">Escribe para buscar...</div>';
+                return;
+            }
+
+            const results = Array.from(state.tickets.values()).filter(ticket => {
+                const nameMatch = ticket.name.toLowerCase().includes(normalized);
+                const numberMatch = ticket.ticketNumber && ticket.ticketNumber.toString().includes(query.trim());
+                const formattedMatch = ticket.ticketNumberFormatted && ticket.ticketNumberFormatted.includes(query.trim());
+                const idMatch = ticket.id.toLowerCase().includes(normalized);
+                const prefixMatch = ticket.prefix && ticket.prefix.toLowerCase().includes(normalized);
+                return nameMatch || numberMatch || formattedMatch || idMatch || prefixMatch;
+            });
+
+            if (results.length === 0) {
+                ui.searchResults.innerHTML = '<div class="no-results">❌ No se encontraron resultados</div>';
+                return;
+            }
+
+            // Ordenar: primero los no usados
+            results.sort((a, b) => {
+                if (a.used === b.used) return 0;
+                return a.used ? 1 : -1;
+            });
+
+            ui.searchResults.innerHTML = results.slice(0, 20).map(ticket => `
+                <div class="search-result ${ticket.used ? 'used' : ''}" 
+                     onclick="window.selectTicket('${ticket.id}', ${ticket.used})">
+                    <div class="result-name">
+                        ${ticket.ticketNumberFormatted ? `<span class="result-number">Nº ${ticket.ticketNumberFormatted}</span>` : ''}
+                        ${ticket.name}
+                    </div>
+                    ${ticket.used ? '<div class="text-red-400 font-bold mt-2">⚠️ YA INGRESÓ</div>' : '<div class="text-green-400 font-bold mt-2">✅ DISPONIBLE</div>'}
+                </div>
+            `).join('');
+        }
+
+        window.selectTicket = async function(ticketId, isUsed) {
+            if (isUsed) {
+                showFeedback('warning', 'YA INGRESÓ', 'Esta persona ya entró', 1000);
+                return;
+            }
+
+            ui.searchModal.classList.add('hidden');
+            ui.searchInput.value = '';
+            await processTicket(ticketId);
+        };
+
+        // 🌐 SINCRONIZACIÓN OFFLINE
+        async function syncOfflineData() {
+            if (state.syncQueue.length === 0) return;
+            
+            console.log(`🔄 Sincronizando ${state.syncQueue.length} operaciones...`);
+            
+            const pendingOps = [...state.syncQueue];
+            state.syncQueue = [];
+            
+            for (const op of pendingOps) {
+                try {
+                    if (op.action === 'markUsed') {
+                        const ticketRef = doc(db, `events/${state.eventId}/tickets`, op.ticketId);
+                        await updateDoc(ticketRef, op.data);
+                        console.log(`✅ Sincronizado: ${op.ticketId}`);
+                    }
+                } catch (error) {
+                    console.warn(`⚠️ Error sincronizando ${op.ticketId}`, error);
+                    state.syncQueue.push(op);
+                }
+            }
+            
+            localStorage.setItem(`syncQueue_${state.eventId}`, JSON.stringify(state.syncQueue));
+        }
+
+        // 📡 CONEXIÓN LISTENERS
+        function updateConnectionStatus() {
+            if (state.isOnline) {
+                ui.connectionStatus.className = 'connection-status status-online';
+                ui.connectionStatus.innerHTML = `🟢 ONLINE${state.syncQueue.length > 0 ? ` - ${state.syncQueue.length} pendientes` : ''}`;
+            } else {
+                ui.connectionStatus.className = 'connection-status status-offline';
+                ui.connectionStatus.innerHTML = '🔴 OFFLINE - Guardando local';
+            }
+        }
+
+        window.addEventListener('online', async () => {
+            console.log('🟢 Conexión restaurada');
+            state.isOnline = true;
+            updateConnectionStatus();
+            await syncOfflineData();
+            updateConnectionStatus();
+        });
+
+        window.addEventListener('offline', () => {
+            console.log('🔴 Sin conexión');
+            state.isOnline = false;
+            updateConnectionStatus();
+        });
+
+        // 🎛️ EVENT LISTENERS
+        ui.btnSearch.addEventListener('click', () => {
+            ui.searchModal.classList.remove('hidden');
+            ui.searchInput.focus();
+        });
+
+        ui.closeSearch.addEventListener('click', () => {
+            ui.searchModal.classList.add('hidden');
+            ui.searchInput.value = '';
+        });
+
+        ui.searchInput.addEventListener('input', (e) => {
+            performSearch(e.target.value);
+        });
+
+        // 🚀 INICIALIZACIÓN
+        async function init() {
+            console.log('🎭 Inicializando escáner GALA OPTIMIZADO...');
+            
+            // Cargar cola offline
+            const savedQueue = localStorage.getItem(`syncQueue_${state.eventId}`);
+            if (savedQueue) {
+                state.syncQueue = JSON.parse(savedQueue);
+                console.log(`📴 ${state.syncQueue.length} operaciones offline pendientes`);
+            }
+            
+            updateConnectionStatus();
+            
+            await loadAllTickets();
+            await startScanner();
+            
+            console.log('✅ Sistema listo para escanear');
+        }
+
+        // INICIAR
+        init();
+    </script>
+</body>
+</html>

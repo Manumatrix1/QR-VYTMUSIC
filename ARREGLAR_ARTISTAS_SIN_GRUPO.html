@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🔧 Arreglar Artistas Sin Grupo</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
+        import { getAuth, signInWithEmailAndPassword } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
+        import { getFirestore, collection, getDocs, doc, updateDoc } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+        
+        import { app, db, auth } from './firebase_config.js';
+        
+        window.db = db;
+        window.auth = auth;
+        window.firebaseModules = { signInWithEmailAndPassword, collection, getDocs, doc, updateDoc };
+    </script>
+</head>
+<body class="bg-gradient-to-br from-gray-900 via-green-900 to-gray-900 min-h-screen text-white p-6">
+    
+    <div class="max-w-4xl mx-auto">
+        
+        <!-- Header -->
+        <div class="bg-gradient-to-r from-green-600 to-teal-600 rounded-2xl p-6 shadow-2xl mb-8">
+            <h1 class="text-4xl font-black text-white mb-2">🔧 Arreglar Artistas Sin Grupo</h1>
+            <p class="text-green-100 text-lg">Solo agrega campo "grupo" - NO elimina NADA</p>
+        </div>
+
+        <!-- Warning -->
+        <div class="bg-yellow-900 border-2 border-yellow-500 rounded-xl p-4 mb-6">
+            <p class="text-yellow-200 font-bold">⚠️ Esta herramienta es SEGURA:</p>
+            <ul class="text-yellow-100 mt-2 space-y-1">
+                <li>✅ Solo AGREGA el campo "grupo" a artistas que no lo tienen</li>
+                <li>✅ NO elimina tickets</li>
+                <li>✅ NO modifica artistas que ya tienen grupo</li>
+                <li>✅ NO toca QR codes</li>
+            </ul>
+        </div>
+
+        <!-- Login -->
+        <div id="loginSection" class="bg-gray-800 rounded-xl p-6 border-2 border-green-500 mb-6">
+            <h2 class="text-2xl font-bold mb-4">🔐 Login</h2>
+            <div class="space-y-4">
+                <input type="email" id="email" placeholder="Email" 
+                       class="w-full p-3 bg-gray-700 text-white rounded-lg border-2 border-gray-600 focus:border-green-500">
+                <input type="password" id="password" placeholder="Contraseña" 
+                       class="w-full p-3 bg-gray-700 text-white rounded-lg border-2 border-gray-600 focus:border-green-500">
+                <button onclick="ejecutar()" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-4 rounded-lg text-xl">
+                    🔧 ARREGLAR ARTISTAS SIN GRUPO
+                </button>
+                <p id="loginError" class="text-red-400 text-sm text-center"></p>
+            </div>
+        </div>
+
+        <!-- Progress -->
+        <div id="progressSection" class="hidden bg-gray-800 rounded-xl p-6 border-2 border-blue-500 mb-6">
+            <h2 class="text-2xl font-bold mb-4">⚡ Procesando...</h2>
+            <div id="progressLog" class="bg-black rounded-lg p-4 max-h-96 overflow-y-auto font-mono text-sm space-y-1">
+                <!-- Log aquí -->
+            </div>
+        </div>
+
+        <!-- Result -->
+        <div id="resultSection" class="hidden bg-gray-800 rounded-xl p-6 border-2 border-green-500">
+            <h2 class="text-3xl font-black text-green-400 mb-4 text-center">✅ COMPLETADO</h2>
+            <div id="resultSummary" class="text-white text-xl space-y-2">
+                <!-- Resultado aquí -->
+            </div>
+            <button onclick="location.reload()" class="w-full mt-6 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg">
+                🔄 Ejecutar de nuevo
+            </button>
+        </div>
+
+    </div>
+
+    <script type="module">
+        const { signInWithEmailAndPassword, collection, getDocs, doc, updateDoc } = window.firebaseModules;
+
+        function log(message, type = 'info') {
+            const logContainer = document.getElementById('progressLog');
+            const colors = {
+                info: 'text-blue-300',
+                success: 'text-green-400',
+                warning: 'text-yellow-300',
+                error: 'text-red-400'
+            };
+            
+            const div = document.createElement('div');
+            div.className = colors[type];
+            div.textContent = `${new Date().toLocaleTimeString()} | ${message}`;
+            logContainer.appendChild(div);
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+
+        window.ejecutar = async function() {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const errorEl = document.getElementById('loginError');
+
+            if (!email || !password) {
+                errorEl.textContent = '❌ Completa email y contraseña';
+                return;
+            }
+
+            try {
+                errorEl.textContent = '🔄 Autenticando...';
+                await signInWithEmailAndPassword(window.auth, email, password);
+                
+                document.getElementById('loginSection').classList.add('hidden');
+                document.getElementById('progressSection').classList.remove('hidden');
+
+                log('✅ Autenticación exitosa', 'success');
+                log('🔍 Buscando artistas sin campo "grupo"...', 'info');
+
+                // Obtener eventos
+                const eventsSnap = await getDocs(collection(window.db, 'events'));
+                log(`📊 Encontrados ${eventsSnap.size} eventos`, 'info');
+
+                let totalArtistas = 0;
+                let artistasSinGrupo = 0;
+                let artistasArreglados = 0;
+                let errores = 0;
+
+                // Procesar cada evento
+                for (const eventDoc of eventsSnap.docs) {
+                    const eventId = eventDoc.id;
+                    const eventData = eventDoc.data();
+                    const eventName = eventData.nombre_evento || eventData.nombre || eventId;
+
+                    log(`\n📂 Evento: "${eventName}"`, 'info');
+
+                    // Obtener artistas
+                    const artistsSnap = await getDocs(collection(window.db, `events/${eventId}/artists`));
+                    
+                    if (artistsSnap.empty) {
+                        log('   ℹ️ Sin artistas', 'info');
+                        continue;
+                    }
+
+                    totalArtistas += artistsSnap.size;
+
+                    // Verificar cada artista
+                    for (const artistDoc of artistsSnap.docs) {
+                        const artist = artistDoc.data();
+                        
+                        // Si NO tiene campo "grupo"
+                        if (!artist.grupo) {
+                            artistasSinGrupo++;
+                            
+                            // Detectar grupo automáticamente por nombre del evento
+                            let grupoAsignado = 'Generación 13'; // Default
+                            
+                            const eventNameLower = eventName.toLowerCase();
+                            if (eventNameLower.includes('gala 1') || eventNameLower.includes('primera gala')) {
+                                grupoAsignado = 'Gala 1';
+                            } else if (eventNameLower.includes('gala 2') || eventNameLower.includes('segunda gala')) {
+                                grupoAsignado = 'Gala 2';
+                            } else if (eventNameLower.includes('gala 3') || eventNameLower.includes('tercera gala')) {
+                                grupoAsignado = 'Gala 3';
+                            } else if (eventNameLower.includes('final')) {
+                                grupoAsignado = 'Final';
+                            }
+                            
+                            try {
+                                // AGREGAR campo grupo (NO modifica nada más)
+                                await updateDoc(doc(window.db, `events/${eventId}/artists`, artistDoc.id), {
+                                    grupo: grupoAsignado
+                                });
+                                
+                                artistasArreglados++;
+                                log(`   ✅ ${artist.nombre} → grupo: "${grupoAsignado}"`, 'success');
+                                
+                            } catch (error) {
+                                errores++;
+                                log(`   ❌ Error con ${artist.nombre}: ${error.message}`, 'error');
+                            }
+                        }
+                    }
+
+                    if (artistasSinGrupo === 0) {
+                        log('   ✅ Todos los artistas tienen grupo', 'success');
+                    }
+                }
+
+                // Resultado final
+                log('\n═══════════════════════════════════════', 'info');
+                log('✅ PROCESO COMPLETADO', 'success');
+                log(`📊 Total artistas: ${totalArtistas}`, 'info');
+                log(`🔧 Artistas sin grupo encontrados: ${artistasSinGrupo}`, 'warning');
+                log(`✅ Artistas arreglados: ${artistasArreglados}`, 'success');
+                log(`❌ Errores: ${errores}`, errores > 0 ? 'error' : 'info');
+                log('═══════════════════════════════════════', 'info');
+
+                // Mostrar resultado
+                document.getElementById('resultSection').classList.remove('hidden');
+                document.getElementById('resultSummary').innerHTML = `
+                    <div class="text-center">
+                        <div class="bg-green-900/30 border-2 border-green-500 rounded-xl p-6">
+                            <p class="text-3xl font-bold mb-4">✅ PROBLEMA RESUELTO</p>
+                            <p>📊 Total artistas: <span class="text-green-400 font-black">${totalArtistas}</span></p>
+                            <p>🔧 Sin grupo (antes): <span class="text-yellow-400 font-black">${artistasSinGrupo}</span></p>
+                            <p>✅ Arreglados: <span class="text-green-400 font-black">${artistasArreglados}</span></p>
+                            ${errores > 0 ? `<p class="text-red-400">❌ Errores: ${errores}</p>` : ''}
+                        </div>
+                        <p class="text-gray-400 mt-4">Los reportes ahora deberían funcionar correctamente</p>
+                    </div>
+                `;
+
+            } catch (error) {
+                console.error('Error:', error);
+                errorEl.textContent = `❌ ${error.message}`;
+                document.getElementById('loginSection').classList.remove('hidden');
+                document.getElementById('progressSection').classList.add('hidden');
+            }
+        };
+
+        // Enter para ejecutar
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('password').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') ejecutar();
+            });
+        });
+    </script>
+</body>
+</html>
