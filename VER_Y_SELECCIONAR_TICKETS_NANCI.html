@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🔍 Ver y Seleccionar Tickets de Nanci</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
+        import { getAuth, signInWithEmailAndPassword } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
+        import { getFirestore, collection, getDocs, doc, deleteDoc } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+        
+        import { app, db, auth } from './firebase_config.js';
+        
+        window.db = db;
+        window.auth = auth;
+        window.firebaseModules = { signInWithEmailAndPassword, collection, getDocs, doc, deleteDoc };
+    </script>
+</head>
+<body class="bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900 min-h-screen text-white p-6">
+    
+    <div class="max-w-6xl mx-auto">
+        
+        <!-- Header -->
+        <div class="bg-gradient-to-r from-blue-600 to-purple-600 rounded-2xl p-6 shadow-2xl mb-8">
+            <h1 class="text-4xl font-black text-white mb-2">🔍 Tickets de Nanci - Selección Manual</h1>
+            <p class="text-blue-100 text-lg">Elige TÚ cuáles eliminar - NO automático</p>
+        </div>
+
+        <!-- Login -->
+        <div id="loginSection" class="bg-gray-800 rounded-xl p-6 border-2 border-blue-500 mb-6">
+            <h2 class="text-2xl font-bold mb-4">🔐 Login</h2>
+            <div class="space-y-4">
+                <input type="email" id="email" placeholder="Email" 
+                       class="w-full p-3 bg-gray-700 text-white rounded-lg border-2 border-gray-600 focus:border-blue-500">
+                <input type="password" id="password" placeholder="Contraseña" 
+                       class="w-full p-3 bg-gray-700 text-white rounded-lg border-2 border-gray-600 focus:border-blue-500">
+                <button onclick="login()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg">
+                    Iniciar Sesión
+                </button>
+                <p id="loginError" class="text-red-400 text-sm text-center"></p>
+            </div>
+        </div>
+
+        <!-- Content -->
+        <div id="mainContent" class="hidden">
+            
+            <!-- Selector Evento -->
+            <div class="bg-gray-800 rounded-xl p-6 border-2 border-purple-500 mb-6">
+                <h2 class="text-2xl font-bold mb-4">1️⃣ Selecciona Evento</h2>
+                <select id="eventSelector" class="w-full p-4 bg-gray-700 text-white rounded-lg border-2 border-gray-600 text-lg font-semibold mb-4">
+                    <option value="">Cargando eventos...</option>
+                </select>
+                <button onclick="cargarTickets()" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-4 rounded-lg">
+                    🔍 Cargar Tickets de Nanci
+                </button>
+            </div>
+
+            <!-- Resultados -->
+            <div id="resultsSection" class="hidden">
+                
+                <!-- Stats -->
+                <div class="grid grid-cols-3 gap-4 mb-6">
+                    <div class="bg-green-900 rounded-lg p-4 text-center border-2 border-green-500">
+                        <p class="text-green-300 text-sm uppercase">Total</p>
+                        <p id="stat-total" class="text-white text-3xl font-black">0</p>
+                    </div>
+                    <div class="bg-red-900 rounded-lg p-4 text-center border-2 border-red-500">
+                        <p class="text-red-300 text-sm uppercase">Seleccionados</p>
+                        <p id="stat-selected" class="text-white text-3xl font-black">0</p>
+                    </div>
+                    <div class="bg-blue-900 rounded-lg p-4 text-center border-2 border-blue-500">
+                        <p class="text-blue-300 text-sm uppercase">Quedarán</p>
+                        <p id="stat-remaining" class="text-white text-3xl font-black">0</p>
+                    </div>
+                </div>
+
+                <!-- Lista -->
+                <div class="bg-gray-800 rounded-xl p-6 border-2 border-yellow-500 mb-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <h2 class="text-2xl font-bold">2️⃣ Tickets Encontrados</h2>
+                        <div class="space-x-2">
+                            <button onclick="seleccionarTodos()" class="bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded-lg">
+                                Marcar Todos
+                            </button>
+                            <button onclick="deseleccionarTodos()" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg">
+                                Desmarcar Todos
+                            </button>
+                        </div>
+                    </div>
+                    <div id="ticketsList" class="space-y-2 max-h-[600px] overflow-y-auto">
+                        <!-- Tickets aquí -->
+                    </div>
+                </div>
+
+                <!-- Botón Eliminar -->
+                <div class="bg-red-900 rounded-xl p-6 border-2 border-red-500">
+                    <h2 class="text-2xl font-bold mb-4">3️⃣ Eliminar Seleccionados</h2>
+                    <button onclick="eliminar()" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-6 rounded-lg text-xl">
+                        🗑️ ELIMINAR TICKETS SELECCIONADOS
+                    </button>
+                    <p id="deleteStatus" class="mt-4 text-center text-white"></p>
+                </div>
+
+            </div>
+        </div>
+
+    </div>
+
+    <script type="module">
+        const { signInWithEmailAndPassword, collection, getDocs, doc, deleteDoc } = window.firebaseModules;
+        
+        let currentUser = null;
+        let currentEventId = null;
+        let allTickets = [];
+        let selectedIds = new Set();
+
+        // Login
+        window.login = async function() {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const errorEl = document.getElementById('loginError');
+
+            if (!email || !password) {
+                errorEl.textContent = '❌ Completa ambos campos';
+                return;
+            }
+
+            try {
+                errorEl.textContent = '🔄 Autenticando...';
+                const userCredential = await signInWithEmailAndPassword(window.auth, email, password);
+                currentUser = userCredential.user;
+                
+                document.getElementById('loginSection').classList.add('hidden');
+                document.getElementById('mainContent').classList.remove('hidden');
+                
+                await loadEvents();
+                
+            } catch (error) {
+                errorEl.textContent = `❌ ${error.message}`;
+            }
+        };
+
+        // Cargar eventos
+        async function loadEvents() {
+            try {
+                const eventsSnap = await getDocs(collection(window.db, 'events'));
+                const selector = document.getElementById('eventSelector');
+                selector.innerHTML = '<option value="">Selecciona un evento...</option>';
+                
+                eventsSnap.forEach(doc => {
+                    const event = doc.data();
+                    const nombre = event.nombre_evento || event.nombre || doc.id;
+                    const option = document.createElement('option');
+                    option.value = doc.id;
+                    option.textContent = nombre;
+                    selector.appendChild(option);
+                });
+                
+            } catch (error) {
+                alert('Error cargando eventos: ' + error.message);
+            }
+        }
+
+        // Cargar tickets
+        window.cargarTickets = async function() {
+            const selector = document.getElementById('eventSelector');
+            currentEventId = selector.value;
+            
+            if (!currentEventId) {
+                alert('❌ Selecciona un evento primero');
+                return;
+            }
+
+            try {
+                console.log('Cargando tickets de evento:', currentEventId);
+                
+                const ticketsSnap = await getDocs(collection(window.db, `events/${currentEventId}/tickets`));
+                
+                allTickets = [];
+                ticketsSnap.forEach(ticketDoc => {
+                    const ticket = ticketDoc.data();
+                    const artistName = (ticket.artistName || ticket.artist_name || ticket.prefix || '').toLowerCase();
+                    const personName = (ticket.name || ticket.nombre || ticket.buyerName || '').toLowerCase();
+
+                    if (artistName.includes('nanci') || artistName.includes('nancy') ||
+                        personName.includes('nanci') || personName.includes('nancy')) {
+                        
+                        allTickets.push({
+                            id: ticketDoc.id,
+                            name: ticket.name || ticket.nombre || 'Sin nombre',
+                            artistName: ticket.artistName || ticket.prefix || 'Sin artista',
+                            timestamp: ticket.timestamp,
+                            prefix: ticket.prefix || 'N/A',
+                            buyerName: ticket.buyerName || ticket.name || 'N/A',
+                            qrCode: ticket.qrCode || 'Sin QR'
+                        });
+                    }
+                });
+
+                console.log(`Encontrados ${allTickets.length} tickets de Nanci`);
+
+                if (allTickets.length === 0) {
+                    alert('✅ No se encontraron tickets de Nanci en este evento');
+                    return;
+                }
+
+                // Ordenar por timestamp
+                allTickets.sort((a, b) => {
+                    const aTime = a.timestamp?.seconds || 0;
+                    const bTime = b.timestamp?.seconds || 0;
+                    return aTime - bTime;
+                });
+
+                mostrarTickets();
+                document.getElementById('resultsSection').classList.remove('hidden');
+                
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        };
+
+        // Mostrar tickets
+        function mostrarTickets() {
+            const container = document.getElementById('ticketsList');
+            container.innerHTML = '';
+            
+            actualizarStats();
+
+            allTickets.forEach((ticket, index) => {
+                const fecha = ticket.timestamp?.seconds 
+                    ? new Date(ticket.timestamp.seconds * 1000).toLocaleString('es-ES', {
+                        day: '2-digit',
+                        month: '2-digit',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        second: '2-digit'
+                    })
+                    : 'Sin fecha';
+                
+                const isSelected = selectedIds.has(ticket.id);
+                
+                const div = document.createElement('div');
+                div.className = `bg-gray-700 rounded-lg p-4 border-2 ${isSelected ? 'border-red-500 bg-red-900/30' : 'border-gray-600'} hover:border-yellow-500 transition-all`;
+                div.innerHTML = `
+                    <label class="flex items-start gap-4 cursor-pointer">
+                        <input type="checkbox" 
+                               ${isSelected ? 'checked' : ''}
+                               class="w-6 h-6 mt-1 rounded cursor-pointer"
+                               onchange="toggleTicket('${ticket.id}')">
+                        <div class="flex-1">
+                            <div class="flex items-center gap-2 mb-2">
+                                <span class="bg-blue-600 text-white px-2 py-1 rounded text-sm font-bold">#${index + 1}</span>
+                                <span class="text-white font-bold text-lg">${ticket.name}</span>
+                            </div>
+                            <p class="text-gray-300"><strong>Artista:</strong> ${ticket.artistName}</p>
+                            <p class="text-gray-300"><strong>Prefix:</strong> ${ticket.prefix}</p>
+                            <p class="text-gray-300"><strong>Comprador:</strong> ${ticket.buyerName}</p>
+                            <p class="text-gray-400 text-sm"><strong>Fecha:</strong> ${fecha}</p>
+                            <p class="text-yellow-400 text-xs font-mono mt-1">ID: ${ticket.id}</p>
+                        </div>
+                    </label>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        window.toggleTicket = function(ticketId) {
+            if (selectedIds.has(ticketId)) {
+                selectedIds.delete(ticketId);
+            } else {
+                selectedIds.add(ticketId);
+            }
+            mostrarTickets();
+        };
+
+        window.seleccionarTodos = function() {
+            selectedIds.clear();
+            allTickets.forEach(t => selectedIds.add(t.id));
+            mostrarTickets();
+        };
+
+        window.deseleccionarTodos = function() {
+            selectedIds.clear();
+            mostrarTickets();
+        };
+
+        function actualizarStats() {
+            document.getElementById('stat-total').textContent = allTickets.length;
+            document.getElementById('stat-selected').textContent = selectedIds.size;
+            document.getElementById('stat-remaining').textContent = allTickets.length - selectedIds.size;
+        }
+
+        window.eliminar = async function() {
+            if (selectedIds.size === 0) {
+                alert('❌ No hay tickets seleccionados');
+                return;
+            }
+
+            const confirmMsg = `⚠️ VAS A ELIMINAR ${selectedIds.size} TICKETS\n\n` +
+                               `QUEDARÁN ${allTickets.length - selectedIds.size} TICKETS\n\n` +
+                               `Esta acción NO SE PUEDE DESHACER.\n\n` +
+                               `¿Estás SEGURA?`;
+            
+            if (!confirm(confirmMsg)) {
+                return;
+            }
+
+            const statusEl = document.getElementById('deleteStatus');
+            statusEl.textContent = `🔄 Eliminando ${selectedIds.size} tickets...`;
+            statusEl.className = 'mt-4 text-center text-blue-400 font-semibold text-xl';
+
+            try {
+                let eliminados = 0;
+                let errores = 0;
+
+                for (const ticketId of selectedIds) {
+                    try {
+                        await deleteDoc(doc(window.db, `events/${currentEventId}/tickets`, ticketId));
+                        eliminados++;
+                    } catch (error) {
+                        errores++;
+                        console.error(`Error eliminando ${ticketId}:`, error);
+                    }
+                }
+
+                statusEl.textContent = `✅ ${eliminados} eliminados${errores > 0 ? ` | ${errores} errores` : ''}`;
+                statusEl.className = 'mt-4 text-center text-green-400 font-semibold text-xl';
+
+                setTimeout(() => {
+                    cargarTickets();
+                }, 2000);
+
+            } catch (error) {
+                statusEl.textContent = `❌ Error: ${error.message}`;
+                statusEl.className = 'mt-4 text-center text-red-400 font-semibold text-xl';
+            }
+        };
+    </script>
+</body>
+</html>
