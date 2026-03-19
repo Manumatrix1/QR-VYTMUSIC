@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎭 Organizador de Certamen - VYTMUSIC</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.3/Sortable.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <style>
+        body { background: #0f172a; font-family: 'Inter', system-ui, sans-serif; }
+
+        /* Columnas del kanban */
+        .kanban-col {
+            min-width: 220px;
+            max-width: 260px;
+            flex-shrink: 0;
+            background: #1e293b;
+            border-radius: 16px;
+            border: 2px solid #334155;
+            transition: border-color 0.2s;
+        }
+        .kanban-col.drag-over { border-color: #818cf8; background: #1e2d4a; }
+
+        /* Zona de drop */
+        .drop-zone {
+            min-height: 80px;
+            border-radius: 10px;
+            transition: background 0.2s;
+        }
+        .drop-zone.sortable-drag-over { background: #1e3a5f; }
+
+        /* Tarjeta artista */
+        .artist-card {
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 12px;
+            cursor: grab;
+            transition: all 0.2s;
+            user-select: none;
+        }
+        .artist-card:hover { border-color: #818cf8; transform: translateY(-1px); box-shadow: 0 4px 15px rgba(129,140,248,0.2); }
+        .artist-card.sortable-ghost { opacity: 0.4; border: 2px dashed #818cf8; }
+        .artist-card.sortable-chosen { cursor: grabbing; transform: scale(1.03); box-shadow: 0 8px 30px rgba(0,0,0,0.5); }
+
+        /* Status badges */
+        .badge-canto { background: #14532d; border-color: #16a34a; color: #4ade80; }
+        .badge-ausente { background: #450a0a; border-color: #dc2626; color: #f87171; }
+        .badge-noprog { background: #1e293b; border-color: #475569; color: #94a3b8; }
+
+        /* Pool column */
+        .pool-col {
+            width: 260px;
+            min-width: 260px;
+            flex-shrink: 0;
+        }
+
+        /* Barra de búsqueda focus */
+        input:focus { outline: none; }
+
+        /* Scrollbar personalizada */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #1e293b; }
+        ::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #64748b; }
+
+        /* Toast */
+        #toast {
+            transition: opacity 0.3s, transform 0.3s;
+        }
+        #toast.hide { opacity: 0; transform: translateY(10px); pointer-events: none; }
+
+        /* Animación entrada */
+        .fade-in { animation: fadeIn 0.3s ease; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* Botón status activo */
+        .btn-status.active-canto { background: #16a34a; color: white; }
+        .btn-status.active-ausente { background: #dc2626; color: white; }
+        .btn-status.active-noprog { background: #475569; color: white; }
+    </style>
+</head>
+<body class="min-h-screen">
+
+    <!-- HEADER -->
+    <header class="bg-gradient-to-r from-purple-900 via-indigo-900 to-blue-900 border-b border-white/10 px-4 py-3 sticky top-0 z-50 shadow-2xl">
+        <div class="flex items-center gap-3 flex-wrap">
+            <!-- Logo y título -->
+            <div class="flex items-center gap-2 mr-2">
+                <span class="text-2xl">🎭</span>
+                <div>
+                    <h1 class="text-white font-black text-lg leading-tight">Organizador</h1>
+                    <p class="text-purple-300 text-xs">Certamen VYTMUSIC</p>
+                </div>
+            </div>
+
+            <!-- Selector de evento -->
+            <select id="eventSelector" class="bg-white/10 border border-white/20 text-white rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-400">
+                <option value="">⏳ Cargando eventos...</option>
+            </select>
+
+            <!-- Filtro generación -->
+            <input type="text" id="filterGen" placeholder="🔍 Buscar artista o generación..." 
+                   class="bg-white/10 border border-white/20 text-white placeholder-white/50 rounded-lg px-3 py-2 text-sm w-48 focus:ring-2 focus:ring-purple-400">
+
+            <!-- Stats rápidos -->
+            <div class="flex items-center gap-3 ml-auto">
+                <span class="text-white/60 text-sm" id="statsLabel">— artistas</span>
+                <button onclick="addColumn()" class="bg-purple-600 hover:bg-purple-500 text-white font-semibold px-4 py-2 rounded-lg text-sm transition-all flex items-center gap-2">
+                    <i class="fas fa-plus"></i> Nuevo grupo
+                </button>
+                <button onclick="saveState(true)" class="bg-green-600 hover:bg-green-500 text-white font-semibold px-4 py-2 rounded-lg text-sm transition-all flex items-center gap-2">
+                    <i class="fas fa-save"></i> Guardar
+                </button>
+                <button onclick="clearBoard()" title="Limpiar tablero" class="bg-red-800 hover:bg-red-700 text-white px-3 py-2 rounded-lg text-sm transition-all">
+                    <i class="fas fa-trash-alt"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- LOADING STATE -->
+    <div id="loadingState" class="flex items-center justify-center h-64">
+        <div class="text-center">
+            <div class="text-5xl mb-4 animate-bounce">🎵</div>
+            <p class="text-white/60 text-lg">Cargando artistas...</p>
+        </div>
+    </div>
+
+    <!-- TABLERO PRINCIPAL -->
+    <div id="board" class="hidden flex gap-4 p-4 overflow-x-auto" style="min-height: calc(100vh - 64px); align-items: flex-start;">
+
+        <!-- POOL: Artistas sin asignar -->
+        <div class="pool-col">
+            <div class="bg-gradient-to-b from-indigo-900 to-indigo-800 border-2 border-indigo-500 rounded-2xl overflow-hidden shadow-xl">
+                <div class="p-3 border-b border-indigo-600 flex items-center justify-between">
+                    <div>
+                        <h3 class="text-white font-bold text-sm flex items-center gap-2">
+                            <span>🎤</span> Sin asignar
+                        </h3>
+                        <p class="text-indigo-300 text-xs mt-0.5" id="poolCount">0 artistas</p>
+                    </div>
+                    <span class="text-indigo-400 text-xs bg-indigo-800 px-2 py-1 rounded-lg font-mono" id="poolCountBadge">0</span>
+                </div>
+                <!-- Buscador pool -->
+                <div class="p-2 border-b border-indigo-700">
+                    <input type="text" id="poolSearch" placeholder="Buscar..." 
+                           class="w-full bg-indigo-950 border border-indigo-600 text-white text-xs rounded-lg px-2 py-1.5 placeholder-indigo-400">
+                </div>
+                <!-- Drop zone pool -->
+                <div id="pool-drop" class="drop-zone p-2 space-y-2 overflow-y-auto" style="max-height: calc(100vh - 180px);">
+                    <!-- Cards se generan aquí -->
+                </div>
+            </div>
+        </div>
+
+        <!-- COLUMNAS DINÁMICAS -->
+        <div id="columns" class="flex gap-4" style="align-items: flex-start;">
+            <!-- Columnas se agregan dinámicamente -->
+        </div>
+
+        <!-- Botón agregar columna (fin) -->
+        <div class="flex-shrink-0">
+            <button onclick="addColumn()" class="h-20 w-28 border-2 border-dashed border-white/20 hover:border-purple-400 rounded-2xl text-white/40 hover:text-purple-400 flex flex-col items-center justify-center gap-1 transition-all mt-1">
+                <i class="fas fa-plus text-xl"></i>
+                <span class="text-xs">Nuevo grupo</span>
+            </button>
+        </div>
+
+    </div>
+
+    <!-- TOAST -->
+    <div id="toast" class="hide fixed bottom-6 right-6 z-50 bg-gray-800 border border-gray-600 text-white px-5 py-3 rounded-xl shadow-2xl flex items-center gap-3 text-sm font-semibold">
+        <span id="toastIcon">✅</span>
+        <span id="toastMsg">Guardado</span>
+    </div>
+
+    <!-- MODAL: Nuevo grupo -->
+    <div id="modalCol" class="hidden fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+        <div class="bg-gray-900 border border-gray-700 rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+            <h3 class="text-white font-bold text-lg mb-4">➕ Nuevo grupo / gala</h3>
+            <input type="text" id="newColName" placeholder="Ej: Gala 1 - Grupo A" maxlength="40"
+                   class="w-full bg-gray-800 border border-gray-600 text-white rounded-xl px-4 py-3 mb-3 focus:border-purple-500">
+            <!-- Color del encabezado -->
+            <div class="mb-4">
+                <p class="text-gray-400 text-xs mb-2">Color del grupo:</p>
+                <div class="flex gap-2 flex-wrap" id="colorPicker">
+                    <button onclick="selectColor('purple')" data-color="purple" class="col-btn w-8 h-8 rounded-full bg-purple-600 ring-2 ring-transparent hover:ring-purple-300 transition-all"></button>
+                    <button onclick="selectColor('blue')" data-color="blue" class="col-btn w-8 h-8 rounded-full bg-blue-600 ring-2 ring-transparent hover:ring-blue-300 transition-all"></button>
+                    <button onclick="selectColor('green')" data-color="green" class="col-btn w-8 h-8 rounded-full bg-green-600 ring-2 ring-transparent hover:ring-green-300 transition-all"></button>
+                    <button onclick="selectColor('yellow')" data-color="yellow" class="col-btn w-8 h-8 rounded-full bg-yellow-500 ring-2 ring-transparent hover:ring-yellow-300 transition-all"></button>
+                    <button onclick="selectColor('red')" data-color="red" class="col-btn w-8 h-8 rounded-full bg-red-600 ring-2 ring-transparent hover:ring-red-300 transition-all"></button>
+                    <button onclick="selectColor('pink')" data-color="pink" class="col-btn w-8 h-8 rounded-full bg-pink-600 ring-2 ring-transparent hover:ring-pink-300 transition-all"></button>
+                    <button onclick="selectColor('orange')" data-color="orange" class="col-btn w-8 h-8 rounded-full bg-orange-500 ring-2 ring-transparent hover:ring-orange-300 transition-all"></button>
+                    <button onclick="selectColor('teal')" data-color="teal" class="col-btn w-8 h-8 rounded-full bg-teal-600 ring-2 ring-transparent hover:ring-teal-300 transition-all"></button>
+                </div>
+            </div>
+            <div class="flex gap-3">
+                <button onclick="confirmAddColumn()" class="flex-1 bg-purple-600 hover:bg-purple-500 text-white font-bold py-3 rounded-xl transition-all">
+                    Crear grupo
+                </button>
+                <button onclick="document.getElementById('modalCol').classList.add('hidden')" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 rounded-xl transition-all">
+                    Cancelar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script type="module">
+        import { app, db } from './firebase_config.js';
+        import { collection, getDocs, doc, updateDoc, query, orderBy, onSnapshot, getDoc } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+
+        // ═══════════════════════════════════════════
+        // ESTADO GLOBAL
+        // ═══════════════════════════════════════════
+        let allArtists = [];          // Todos los artistas del evento
+        let artistStatus = {};        // { artistId: 'canto' | 'ausente' | 'noprog' }
+        let columnAssignments = {};   // { artistId: columnId }
+        let columns = [];             // [{ id, name, color }]
+        let allEvents = [];
+        let currentEventId = null;
+        let selectedColor = 'purple';
+        let sortableInstances = {};
+
+        // Colores disponibles para columnas
+        const colorMap = {
+            purple: { bg: 'from-purple-900 to-purple-800', border: 'border-purple-500', badge: 'bg-purple-900 text-purple-300', header: 'bg-purple-900' },
+            blue:   { bg: 'from-blue-900 to-blue-800',     border: 'border-blue-500',   badge: 'bg-blue-900 text-blue-300',   header: 'bg-blue-900' },
+            green:  { bg: 'from-green-900 to-green-800',   border: 'border-green-500',  badge: 'bg-green-900 text-green-300', header: 'bg-green-900' },
+            yellow: { bg: 'from-yellow-900 to-yellow-800', border: 'border-yellow-500', badge: 'bg-yellow-900 text-yellow-300',header: 'bg-yellow-900' },
+            red:    { bg: 'from-red-900 to-red-800',       border: 'border-red-500',    badge: 'bg-red-900 text-red-300',     header: 'bg-red-900' },
+            pink:   { bg: 'from-pink-900 to-pink-800',     border: 'border-pink-500',   badge: 'bg-pink-900 text-pink-300',   header: 'bg-pink-900' },
+            orange: { bg: 'from-orange-900 to-orange-800', border: 'border-orange-600', badge: 'bg-orange-900 text-orange-300',header: 'bg-orange-900' },
+            teal:   { bg: 'from-teal-900 to-teal-800',     border: 'border-teal-500',   badge: 'bg-teal-900 text-teal-300',   header: 'bg-teal-900' },
+        };
+
+        // ═══════════════════════════════════════════
+        // CARGA DE EVENTOS
+        // ═══════════════════════════════════════════
+        async function loadEvents() {
+            try {
+                const eventsSnap = await getDocs(query(collection(db, 'events'), orderBy('createdAt', 'desc')));
+                allEvents = eventsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+                const sel = document.getElementById('eventSelector');
+                sel.innerHTML = '<option value="">— Seleccionar evento —</option>';
+                allEvents.forEach(ev => {
+                    const opt = document.createElement('option');
+                    opt.value = ev.id;
+                    opt.textContent = ev.name + (ev.date ? ` (${ev.date})` : '');
+                    sel.appendChild(opt);
+                });
+
+                // Auto-seleccionar evento activo si existe
+                const activeEvent = allEvents.find(e => e.isActive);
+                if (activeEvent) {
+                    sel.value = activeEvent.id;
+                    await loadArtists(activeEvent.id);
+                } else {
+                    document.getElementById('loadingState').innerHTML = `
+                        <div class="text-center text-white/50">
+                            <div class="text-5xl mb-3">📂</div>
+                            <p>Seleccioná un evento para comenzar</p>
+                        </div>`;
+                }
+            } catch (err) {
+                console.error(err);
+                showToast('Error al cargar eventos', '❌');
+            }
+        }
+
+        // ═══════════════════════════════════════════
+        // CARGA DE ARTISTAS + PUNTAJES
+        // ═══════════════════════════════════════════
+        async function loadArtists(eventId) {
+            currentEventId = eventId;
+            document.getElementById('loadingState').classList.remove('hidden');
+            document.getElementById('board').classList.add('hidden');
+            document.getElementById('loadingState').innerHTML = `
+                <div class="text-center">
+                    <div class="text-5xl mb-4 animate-bounce">🎵</div>
+                    <p class="text-white/60 text-lg">Cargando artistas...</p>
+                </div>`;
+
+            try {
+                // Cargar artistas del evento
+                const artistsSnap = await getDocs(collection(db, `events/${eventId}/artists`));
+                allArtists = artistsSnap.docs.map(d => ({
+                    id: d.id,
+                    name: d.data().name || 'Sin nombre',
+                    photoURL: d.data().photoURL || null,
+                    generacion: d.data().generacion || d.data().grupo || '',
+                    galas: 0,
+                    avg: null
+                }));
+
+                // Cargar puntajes de jurados (si existen)
+                try {
+                    const evalSnap = await getDocs(collection(db, `events/${eventId}/jury_evaluations`));
+                    // Agrupar puntajes por artista
+                    const scoresByArtist = {};
+                    evalSnap.docs.forEach(eDoc => {
+                        const data = eDoc.data();
+                        const aid = data.artista_id || data.artistId;
+                        const score = data.promedio || data.puntuacion_final || data.totalScore;
+                        if (aid && score != null) {
+                            if (!scoresByArtist[aid]) scoresByArtist[aid] = [];
+                            scoresByArtist[aid].push(Number(score));
+                        }
+                    });
+                    // Calcular promedio y galas para cada artista
+                    allArtists.forEach(a => {
+                        const scores = scoresByArtist[a.id];
+                        if (scores && scores.length > 0) {
+                            a.galas = scores.length;
+                            a.avg = (scores.reduce((s, v) => s + v, 0) / scores.length).toFixed(1);
+                        }
+                    });
+                } catch (_) { /* No hay evaluaciones aún */ }
+
+                // Intentar también con jury_votes (estructura alternativa)
+                if (allArtists.every(a => a.avg === null)) {
+                    try {
+                        const votesSnap = await getDocs(collection(db, `events/${eventId}/jury_votes`));
+                        const votesByArtist = {};
+                        votesSnap.docs.forEach(vDoc => {
+                            const data = vDoc.data();
+                            const aid = data.artista_id || data.artistId;
+                            if (!votesByArtist[aid]) votesByArtist[aid] = [];
+                            // Calcular total de las categorías
+                            const scores = data.puntuaciones || data.scores;
+                            if (scores) {
+                                const vals = Object.values(scores).filter(v => typeof v === 'number');
+                                if (vals.length > 0) {
+                                    const avg = vals.reduce((s, v) => s + v, 0) / vals.length;
+                                    votesByArtist[aid].push(avg);
+                                }
+                            }
+                        });
+                        allArtists.forEach(a => {
+                            const votes = votesByArtist[a.id];
+                            if (votes && votes.length > 0) {
+                                a.galas = votes.length;
+                                a.avg = (votes.reduce((s, v) => s + v, 0) / votes.length).toFixed(1);
+                            }
+                        });
+                    } catch (_) { /* Sin votos */ }
+                }
+
+                // Cargar estado guardado
+                loadSavedState(eventId);
+
+                document.getElementById('loadingState').classList.add('hidden');
+                document.getElementById('board').classList.remove('hidden');
+
+                renderBoard();
+                document.getElementById('statsLabel').textContent = `${allArtists.length} artistas`;
+
+            } catch (err) {
+                console.error(err);
+                document.getElementById('loadingState').innerHTML = `
+                    <div class="text-center text-red-400">
+                        <div class="text-5xl mb-3">❌</div>
+                        <p>Error al cargar artistas: ${err.message}</p>
+                    </div>`;
+            }
+        }
+
+        // ═══════════════════════════════════════════
+        // ESTADO: GUARDAR / CARGAR
+        // ═══════════════════════════════════════════
+        function saveState(showConfirm = false) {
+            if (!currentEventId) return;
+            const state = { columns, artistStatus, columnAssignments };
+            localStorage.setItem(`organizador_${currentEventId}`, JSON.stringify(state));
+            if (showConfirm) showToast('Estado guardado', '💾');
+        }
+
+        function loadSavedState(eventId) {
+            const raw = localStorage.getItem(`organizador_${eventId}`);
+            if (raw) {
+                try {
+                    const state = JSON.parse(raw);
+                    columns = state.columns || [];
+                    artistStatus = state.artistStatus || {};
+                    columnAssignments = state.columnAssignments || {};
+                } catch (_) {
+                    columns = [];
+                    artistStatus = {};
+                    columnAssignments = {};
+                }
+            } else {
+                columns = [];
+                artistStatus = {};
+                columnAssignments = {};
+            }
+        }
+
+        // ═══════════════════════════════════════════
+        // RENDER TABLERO
+        // ═══════════════════════════════════════════
+        function renderBoard() {
+            renderPool();
+            renderColumns();
+        }
+
+        function getPoolArtists() {
+            const filter = document.getElementById('poolSearch').value.toLowerCase();
+            return allArtists.filter(a => {
+                const inPool = !columnAssignments[a.id];
+                const matchFilter = !filter || a.name.toLowerCase().includes(filter);
+                return inPool && matchFilter;
+            });
+        }
+
+        function renderPool() {
+            const pool = document.getElementById('pool-drop');
+            const poolArtists = getPoolArtists();
+            pool.innerHTML = '';
+            poolArtists.forEach(a => {
+                pool.appendChild(createArtistCard(a));
+            });
+            const count = poolArtists.length;
+            document.getElementById('poolCount').textContent = `${count} artista${count !== 1 ? 's' : ''}`;
+            document.getElementById('poolCountBadge').textContent = count;
+        }
+
+        function renderColumns() {
+            const container = document.getElementById('columns');
+            container.innerHTML = '';
+
+            // Destruir instancias sortable anteriores
+            Object.values(sortableInstances).forEach(s => s.destroy && s.destroy());
+            sortableInstances = {};
+
+            columns.forEach(col => {
+                const colEl = createColumnElement(col);
+                container.appendChild(colEl);
+
+                // Agregar artistas asignados a esta columna
+                const dropZone = colEl.querySelector('.drop-zone');
+                const colArtists = allArtists.filter(a => columnAssignments[a.id] === col.id);
+                colArtists.forEach(a => dropZone.appendChild(createArtistCard(a)));
+
+                // Inicializar SortableJS en la columna
+                sortableInstances[col.id] = new Sortable(dropZone, {
+                    group: 'artists',
+                    animation: 150,
+                    ghostClass: 'sortable-ghost',
+                    chosenClass: 'sortable-chosen',
+                    dragClass: 'sortable-drag',
+                    onAdd(evt) {
+                        const artistId = evt.item.dataset.artistId;
+                        columnAssignments[artistId] = col.id;
+                        updateColumnCount(col.id);
+                        updatePoolCount();
+                        saveState();
+                    },
+                    onRemove(evt) {
+                        updateColumnCount(col.id);
+                        updatePoolCount();
+                    }
+                });
+            });
+
+            // SortableJS en pool
+            if (sortableInstances['pool']) sortableInstances['pool'].destroy();
+            const poolDrop = document.getElementById('pool-drop');
+            sortableInstances['pool'] = new Sortable(poolDrop, {
+                group: 'artists',
+                animation: 150,
+                ghostClass: 'sortable-ghost',
+                chosenClass: 'sortable-chosen',
+                onAdd(evt) {
+                    const artistId = evt.item.dataset.artistId;
+                    delete columnAssignments[artistId];
+                    updatePoolCount();
+                    saveState();
+                }
+            });
+        }
+
+        function createArtistCard(artist) {
+            const status = artistStatus[artist.id] || 'noprog';
+            const statusConfig = {
+                canto:  { label: 'Cantó', icon: '✅', cls: 'badge-canto',  btnActive: 'active-canto' },
+                ausente:{ label: 'Ausente', icon: '❌', cls: 'badge-ausente',btnActive: 'active-ausente'},
+                noprog: { label: 'Sin prog', icon: '⏱️', cls: 'badge-noprog',btnActive: 'active-noprog'}
+            };
+            const sc = statusConfig[status];
+
+            const card = document.createElement('div');
+            card.className = 'artist-card p-2 fade-in';
+            card.dataset.artistId = artist.id;
+
+            const initial = artist.name.charAt(0).toUpperCase();
+            const avgDisplay = artist.avg !== null ? artist.avg : '—';
+            const galasDisplay = artist.galas > 0 ? artist.galas : '—';
+            const photoEl = artist.photoURL
+                ? `<img src="${artist.photoURL}" alt="${artist.name}" class="w-12 h-12 rounded-full object-cover border-2 border-gray-600 flex-shrink-0">`
+                : `<div class="w-12 h-12 rounded-full bg-gradient-to-br from-purple-600 to-indigo-700 flex items-center justify-center text-white font-bold text-lg flex-shrink-0 border-2 border-gray-600">${initial}</div>`;
+
+            card.innerHTML = `
+                <div class="flex items-start gap-2 mb-2">
+                    ${photoEl}
+                    <div class="flex-1 min-w-0">
+                        <p class="text-white text-xs font-bold leading-tight truncate">${artist.name}</p>
+                        ${artist.generacion ? `<p class="text-gray-500 text-xs truncate">${artist.generacion}</p>` : ''}
+                        <div class="flex gap-2 mt-1">
+                            <span class="text-gray-400 text-xs" title="Galas">🎤 ${galasDisplay}</span>
+                            <span class="text-yellow-400 text-xs font-semibold" title="Promedio">⭐ ${avgDisplay}</span>
+                        </div>
+                    </div>
+                </div>
+                <!-- Botones status -->
+                <div class="flex gap-1">
+                    <button onclick="setStatus('${artist.id}', 'canto', this)" 
+                            class="btn-status flex-1 text-xs py-1 rounded-lg border border-green-600 text-green-400 hover:bg-green-700 hover:text-white transition-all ${status === 'canto' ? 'active-canto' : ''}"
+                            title="Cantó">
+                        ✅
+                    </button>
+                    <button onclick="setStatus('${artist.id}', 'ausente', this)" 
+                            class="btn-status flex-1 text-xs py-1 rounded-lg border border-red-700 text-red-400 hover:bg-red-700 hover:text-white transition-all ${status === 'ausente' ? 'active-ausente' : ''}"
+                            title="Ausente">
+                        ❌
+                    </button>
+                    <button onclick="setStatus('${artist.id}', 'noprog', this)" 
+                            class="btn-status flex-1 text-xs py-1 rounded-lg border border-gray-600 text-gray-400 hover:bg-gray-600 hover:text-white transition-all ${status === 'noprog' ? 'active-noprog' : ''}"
+                            title="No programado">
+                        ⏱️
+                    </button>
+                </div>
+            `;
+            return card;
+        }
+
+        function createColumnElement(col) {
+            const colors = colorMap[col.color] || colorMap.purple;
+            const colArtistCount = allArtists.filter(a => columnAssignments[a.id] === col.id).length;
+
+            const div = document.createElement('div');
+            div.className = `kanban-col`;
+            div.dataset.colId = col.id;
+
+            div.innerHTML = `
+                <div class="bg-gradient-to-b ${colors.bg} border-2 ${colors.border} rounded-2xl overflow-hidden h-full">
+                    <div class="p-3 border-b border-white/10 flex items-center justify-between gap-2">
+                        <div class="flex-1 min-w-0">
+                            <h3 class="text-white font-bold text-sm truncate" id="col-title-${col.id}">${col.name}</h3>
+                            <p class="text-white/50 text-xs" id="col-count-${col.id}">${colArtistCount} artistas</p>
+                        </div>
+                        <div class="flex gap-1">
+                            <button onclick="renameColumn('${col.id}')" class="text-white/40 hover:text-white p-1 rounded transition-all" title="Renombrar">
+                                <i class="fas fa-pen text-xs"></i>
+                            </button>
+                            <button onclick="deleteColumn('${col.id}')" class="text-white/40 hover:text-red-400 p-1 rounded transition-all" title="Eliminar grupo">
+                                <i class="fas fa-trash text-xs"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="drop-zone p-2 space-y-2 overflow-y-auto" id="col-drop-${col.id}" style="max-height: calc(100vh - 180px);">
+                        <!-- Cards se sueltan aquí -->
+                    </div>
+                </div>`;
+
+            return div;
+        }
+
+        function updateColumnCount(colId) {
+            const count = document.querySelectorAll(`#col-drop-${colId} .artist-card`).length;
+            const el = document.getElementById(`col-count-${colId}`);
+            if (el) el.textContent = `${count} artista${count !== 1 ? 's' : ''}`;
+        }
+
+        function updatePoolCount() {
+            const count = document.querySelectorAll('#pool-drop .artist-card').length;
+            document.getElementById('poolCount').textContent = `${count} artista${count !== 1 ? 's' : ''}`;
+            document.getElementById('poolCountBadge').textContent = count;
+        }
+
+        // ═══════════════════════════════════════════
+        // ACCIONES
+        // ═══════════════════════════════════════════
+        window.setStatus = function(artistId, newStatus, btn) {
+            artistStatus[artistId] = newStatus;
+            // Actualizar estilos de los 3 botones en esta tarjeta
+            const card = btn.closest('.artist-card');
+            card.querySelectorAll('.btn-status').forEach(b => {
+                b.classList.remove('active-canto', 'active-ausente', 'active-noprog');
+            });
+            const activeClass = { canto: 'active-canto', ausente: 'active-ausente', noprog: 'active-noprog' }[newStatus];
+            btn.classList.add(activeClass);
+            saveState();
+        };
+
+        window.addColumn = function() {
+            document.getElementById('newColName').value = '';
+            selectColor('purple');
+            document.getElementById('modalCol').classList.remove('hidden');
+            setTimeout(() => document.getElementById('newColName').focus(), 100);
+        };
+
+        window.confirmAddColumn = function() {
+            const name = document.getElementById('newColName').value.trim();
+            if (!name) { showToast('Ingresá un nombre para el grupo', '⚠️'); return; }
+            const id = 'col_' + Date.now();
+            columns.push({ id, name, color: selectedColor });
+            saveState();
+            document.getElementById('modalCol').classList.add('hidden');
+            renderColumns();
+            showToast(`Grupo "${name}" creado`, '✅');
+        };
+
+        window.renameColumn = function(colId) {
+            const col = columns.find(c => c.id === colId);
+            if (!col) return;
+            const newName = prompt('Nuevo nombre:', col.name);
+            if (newName && newName.trim()) {
+                col.name = newName.trim();
+                const titleEl = document.getElementById(`col-title-${colId}`);
+                if (titleEl) titleEl.textContent = col.name;
+                saveState();
+                showToast('Grupo renombrado', '✏️');
+            }
+        };
+
+        window.deleteColumn = function(colId) {
+            const col = columns.find(c => c.id === colId);
+            if (!col) return;
+            const count = allArtists.filter(a => columnAssignments[a.id] === colId).length;
+            const msg = count > 0
+                ? `¿Eliminar "${col.name}"? Los ${count} artistas volverán al pool.`
+                : `¿Eliminar el grupo "${col.name}"?`;
+            if (!confirm(msg)) return;
+
+            // Devolver artistas al pool
+            allArtists.forEach(a => {
+                if (columnAssignments[a.id] === colId) delete columnAssignments[a.id];
+            });
+            columns = columns.filter(c => c.id !== colId);
+            saveState();
+            renderBoard();
+            showToast(`Grupo "${col.name}" eliminado`, '🗑️');
+        };
+
+        window.clearBoard = function() {
+            if (!confirm('¿Limpiar todo el tablero? Se perderán los grupos y asignaciones.')) return;
+            columns = [];
+            artistStatus = {};
+            columnAssignments = {};
+            saveState();
+            renderBoard();
+            showToast('Tablero limpiado', '🧹');
+        };
+
+        window.selectColor = function(color) {
+            selectedColor = color;
+            document.querySelectorAll('.col-btn').forEach(btn => {
+                btn.classList.toggle('ring-white', btn.dataset.color === color);
+                btn.classList.toggle('scale-125', btn.dataset.color === color);
+                btn.classList.toggle('ring-transparent', btn.dataset.color !== color);
+            });
+        };
+
+        // ═══════════════════════════════════════════
+        // FILTROS
+        // ═══════════════════════════════════════════
+        document.getElementById('filterGen').addEventListener('input', function() {
+            const val = this.value.toLowerCase();
+            document.querySelectorAll('.artist-card').forEach(card => {
+                const artistId = card.dataset.artistId;
+                const artist = allArtists.find(a => a.id === artistId);
+                if (!artist) return;
+                const matches = !val
+                    || artist.name.toLowerCase().includes(val)
+                    || (artist.generacion && artist.generacion.toLowerCase().includes(val));
+                card.style.display = matches ? '' : 'none';
+            });
+        });
+
+        document.getElementById('poolSearch').addEventListener('input', function() {
+            const val = this.value.toLowerCase();
+            document.querySelectorAll('#pool-drop .artist-card').forEach(card => {
+                const artistId = card.dataset.artistId;
+                const artist = allArtists.find(a => a.id === artistId);
+                if (!artist) return;
+                const matches = !val || artist.name.toLowerCase().includes(val);
+                card.style.display = matches ? '' : 'none';
+            });
+        });
+
+        document.getElementById('eventSelector').addEventListener('change', function() {
+            if (this.value) loadArtists(this.value);
+        });
+
+        // Enter en modal columna
+        document.getElementById('newColName').addEventListener('keydown', e => {
+            if (e.key === 'Enter') confirmAddColumn();
+            if (e.key === 'Escape') document.getElementById('modalCol').classList.add('hidden');
+        });
+
+        // Cerrar modal al hacer click fuera
+        document.getElementById('modalCol').addEventListener('click', function(e) {
+            if (e.target === this) this.classList.add('hidden');
+        });
+
+        // ═══════════════════════════════════════════
+        // TOAST HELPER
+        // ═══════════════════════════════════════════
+        let toastTimer;
+        function showToast(msg, icon = '✅') {
+            clearTimeout(toastTimer);
+            const toast = document.getElementById('toast');
+            document.getElementById('toastMsg').textContent = msg;
+            document.getElementById('toastIcon').textContent = icon;
+            toast.classList.remove('hide');
+            toastTimer = setTimeout(() => toast.classList.add('hide'), 2500);
+        }
+        window.showToast = showToast;
+
+        // ═══════════════════════════════════════════
+        // INICIALIZACIÓN
+        // ═══════════════════════════════════════════
+        loadEvents();
+
+        // Atajos de teclado
+        document.addEventListener('keydown', e => {
+            if (e.ctrlKey && e.key === 's') { e.preventDefault(); saveState(true); }
+            if (e.key === 'Escape') document.getElementById('modalCol').classList.add('hidden');
+        });
+
+    </script>
+</body>
+</html>
