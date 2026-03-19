@@ -575,25 +575,6 @@
             const artistName = selectedOption.dataset?.name || order.artistName || '';
             const artistPhoto = selectedOption.dataset?.photo || '';
 
-            // ── WA al artista ANTES de los await (síncrono) ──
-            if (order.artistPhone) {
-                let _phone = order.artistPhone.replace(/\D/g, '');
-                
-                // ✅ NORMALIZAR: Agregar código 54 si falta (números argentinos de 10-11 dígitos)
-                if (!_phone.startsWith('54') && _phone.length >= 10 && _phone.length <= 11) {
-                    _phone = '54' + _phone;
-                }
-                
-                const _qrLink = `https://vyt-music.web.app/ver_entradas.html?orderId=${orderId}&eventId=${eventId}`;
-                
-                // 📋 Crear lista de invitados si existen nombres
-                const names = order.attendeeNames || [];
-                const namesList = names.length > 0 ? `\n\n👥 *Invitados (${names.length}):*\n${names.map(n => `• ${n}`).join('\n')}` : '';
-                
-                const _msg = `✅ *Tu pago fue aprobado*\n\n¡Tus entradas QR ya están listas!${namesList}\n\nEntrá desde este link para verlas y descargarlas:\n${_qrLink}\n\n🎤 VYT-MUSIC`;
-                window.open(`https://wa.me/${_phone}?text=${encodeURIComponent(_msg)}`, '_blank');
-            }
-
             btn.disabled = true;
             btn.textContent = '⏳ Generando QRs...';
 
@@ -668,6 +649,24 @@
                         ticketIds: ticketIds,
                         generatedAt: serverTimestamp()
                     });
+                }
+
+                // ── Enviar WA DESPUÉS de generar los tickets (para que el link ya funcione) ──
+                if (order.artistPhone) {
+                    let _phone = order.artistPhone.replace(/\D/g, '');
+                    if (!_phone.startsWith('54') && _phone.length >= 10 && _phone.length <= 11) {
+                        _phone = '54' + _phone;
+                    }
+                    const _qrLink = `https://vyt-music.web.app/ver_entradas.html?orderId=${orderId}&eventId=${eventId}`;
+                    const namesForWA = order.attendeeNames || [];
+                    const namesList = namesForWA.length > 0 ? `\n\n👥 *Invitados (${namesForWA.length}):*\n${namesForWA.map(n => `• ${n}`).join('\n')}` : '';
+                    const _msg = `✅ *Tu pago fue aprobado*\n\n¡Tus entradas QR ya están listas!${namesList}\n\nEntrá desde este link para verlas y descargarlas:\n${_qrLink}\n\n🎤 VYT-MUSIC`;
+                    const waWindow = window.open(`https://wa.me/${_phone}?text=${encodeURIComponent(_msg)}`, '_blank');
+                    // Si el popup fue bloqueado, mostrar link en el modal
+                    if (!waWindow) {
+                        btn.textContent = '✅ QRs listos';
+                        alert(`✅ QRs generados!\n\nSi WhatsApp no abrió automáticamente, copiá este link y enviáselo a ${order.artistName}:\n\n${_qrLink}`);
+                    }
                 }
 
                 closeApproveModal();

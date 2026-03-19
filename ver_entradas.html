@@ -75,6 +75,9 @@
         const orderId = params.get('orderId');
         const eventIdParam = params.get('eventId'); // si viene en el URL nos salteamos buscar en todos los eventos
 
+        let retryCount = 0;
+        const MAX_RETRIES = 10;
+
         if (!orderId) {
             showError('No se especificó ID de orden');
         } else {
@@ -113,6 +116,23 @@
                 }
 
                 // Verificar que la orden tenga tickets generados
+                if (orderData.status === 'approved' && (!orderData.ticketIds || orderData.ticketIds.length === 0)) {
+                    // Tickets todavía se están generando - reintentar automáticamente
+                    retryCount++;
+                    if (retryCount <= MAX_RETRIES) {
+                        document.getElementById('loading-section').classList.remove('hidden');
+                        document.getElementById('loading-section').innerHTML = `
+                            <div class="animate-spin rounded-full h-16 w-16 border-4 border-purple-500 border-t-transparent mx-auto mb-4"></div>
+                            <p class="text-yellow-400 font-semibold text-lg">⏳ Tus entradas se están preparando...</p>
+                            <p class="text-gray-400 text-sm mt-2">Intento ${retryCount}/${MAX_RETRIES} — reintentando en 3 segundos</p>
+                        `;
+                        setTimeout(() => loadTickets(), 3000);
+                        return;
+                    }
+                    showError('Las entradas están siendo procesadas. Por favor actualizá la página en unos segundos.');
+                    return;
+                }
+
                 if (orderData.status !== 'tickets_generated' || !orderData.ticketIds || orderData.ticketIds.length === 0) {
                     showError('Las entradas aún no han sido generadas. Contacta al organizador.');
                     return;
@@ -226,7 +246,7 @@
                 grid.appendChild(cardWrapper);
 
                 // ✅ Generar QR Code con URL CORRECTA y eventId VALIDADO
-                const qrData = `https://vytmusic.netlify.app/escaner_qr_final.html?ticket=${ticket.id}&eventId=${eventId}`;
+                const qrData = `https://vyt-music.web.app/escaner_qr_final.html?ticket=${ticket.id}&eventId=${eventId}`;
                 console.log(`📦 Generando QR para ticket ${ticket.id}:`, qrData);
                 
                 try {
