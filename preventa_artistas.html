@@ -930,9 +930,37 @@
             }
 
             if (quantityKids > 0) {
-                document.getElementById('quantity-display').textContent = `${quantityAdults} adultos + ${quantityKids} niños`;
+                document.getElementById('quantity-display').textContent = `${quantityAdults} adulto${quantityAdults > 1 ? 's' : ''} + ${quantityKids} niño${quantityKids > 1 ? 's' : ''}`;
             } else {
                 document.getElementById('quantity-display').textContent = quantityAdults;
+            }
+
+            // Mostrar desglose claro debajo del total
+            let breakdownEl = document.getElementById('ticket-breakdown');
+            if (!breakdownEl) {
+                breakdownEl = document.createElement('div');
+                breakdownEl.id = 'ticket-breakdown';
+                breakdownEl.className = 'mt-3 text-center text-sm';
+                document.getElementById('total-amount').parentElement.appendChild(breakdownEl);
+            }
+            if (quantityKids > 0) {
+                breakdownEl.innerHTML = `
+                    <div class="bg-gray-800 rounded-lg p-3 mt-2 text-left space-y-1">
+                        <div class="flex justify-between">
+                            <span class="text-gray-300">👤 ${quantityAdults} Adulto${quantityAdults > 1 ? 's' : ''}:</span>
+                            <span class="font-bold text-white">$${(quantityAdults * effectivePriceAdult).toLocaleString()}</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-blue-300">👶 ${quantityKids} Niño${quantityKids > 1 ? 's' : ''} (menores 8 años):</span>
+                            <span class="font-bold text-white">$${(quantityKids * effectivePriceKids).toLocaleString()}</span>
+                        </div>
+                        <div class="border-t border-gray-600 pt-1 flex justify-between">
+                            <span class="text-yellow-300 font-bold">📋 Total entradas: ${quantityAdults + quantityKids}</span>
+                            <span class="font-bold text-yellow-300">$${total.toLocaleString()}</span>
+                        </div>
+                    </div>`;
+            } else {
+                breakdownEl.innerHTML = '';
             }
         }
 
@@ -940,7 +968,9 @@
         document.getElementById('ticket-quantity-kids').addEventListener('input', () => { updateTotal(); regenerateStep1Names(); });
 
         // ★ GESTIÓN DE NOMBRES EN PASO 1 (antes del pago)
-        function generateStep1Names(total) {
+        // Ahora diferencia visualmente adultos de niños
+        function generateStep1Names(adults, kids) {
+            const total = adults + kids;
             const section = document.getElementById('step1-names-section');
             const container = document.getElementById('step1-names-list');
             if (total <= 0) {
@@ -955,14 +985,38 @@
             container.querySelectorAll('input').forEach(inp => currentValues.push(inp.value));
             section.classList.remove('hidden');
             container.innerHTML = '';
+
+            // Agregar separador de adultos si hay ambos tipos
+            if (adults > 0 && kids > 0) {
+                const adultHeader = document.createElement('p');
+                adultHeader.className = 'text-sm font-bold text-gray-400 uppercase tracking-wide mb-1';
+                adultHeader.textContent = '👤 Adultos';
+                container.appendChild(adultHeader);
+            }
+
             for (let i = 1; i <= total; i++) {
+                const isKid = i > adults;
+                const kidIndex = i - adults;
+                const label = isKid ? `👶 Niño/a ${kidIndex} (menor 8 años)` : `👤 Adulto ${i}`;
+                const borderColor = isKid ? 'border-blue-600 hover:border-blue-400' : 'border-gray-600 hover:border-purple-400';
+                const badgeColor = isKid ? 'bg-blue-600' : 'bg-purple-600';
+                const badgeIcon = isKid ? '👶' : i;
+
+                // Agregar separador al inicio de los niños
+                if (isKid && kidIndex === 1 && adults > 0) {
+                    const kidHeader = document.createElement('p');
+                    kidHeader.className = 'text-sm font-bold text-blue-400 uppercase tracking-wide mt-3 mb-1';
+                    kidHeader.textContent = '👶 Niños (menores de 8 años)';
+                    container.appendChild(kidHeader);
+                }
+
                 const div = document.createElement('div');
-                div.className = 'flex items-center gap-3 bg-gray-700/50 p-2.5 rounded-lg border-2 border-gray-600 hover:border-purple-400 transition';
+                div.className = `flex items-center gap-3 p-2.5 rounded-lg border-2 transition ${isKid ? 'bg-blue-900/20 border-blue-600 hover:border-blue-400' : 'bg-gray-700/50 border-gray-600 hover:border-purple-400'}`;
                 div.innerHTML = `
-                    <div class="flex-shrink-0 w-9 h-9 bg-purple-600 rounded-lg flex items-center justify-center font-bold text-sm">${i}</div>
+                    <div class="flex-shrink-0 w-9 h-9 ${badgeColor} rounded-lg flex items-center justify-center font-bold text-sm">${badgeIcon}</div>
                     <input type="text" id="step1-name-${i}"
                         class="flex-1 bg-transparent border-0 focus:outline-none text-white p-2 text-base"
-                        placeholder="Nombre completo del invitado ${i}">
+                        placeholder="${label}">
                 `;
                 container.appendChild(div);
                 const input = div.querySelector('input');
@@ -986,7 +1040,7 @@
         function regenerateStep1Names() {
             const adults = parseInt(document.getElementById('ticket-quantity').value) || 1;
             const kids = parseInt(document.getElementById('ticket-quantity-kids').value) || 0;
-            generateStep1Names(adults + kids);
+            generateStep1Names(adults, kids);
         }
 
         // Generar nombres iniciales al cargar
@@ -1184,8 +1238,9 @@
             
             console.log(`💰 Orden final: ${previousPurchasesCount} previas + ${quantity} nuevas = ${accumulatedTotal} total → Precio: $${effectivePriceAdult}`);
 
-            // Recolectar nombres del Paso 1
+            // Recolectar nombres del Paso 1 (diferenciando adultos y niños)
             const attendeeNamesStep1 = [];
+            const kidNamesStep1 = [];
             const inlineError = document.getElementById('names-inline-error');
             inlineError.classList.add('hidden');
             // Limpiar resaltados anteriores
@@ -1196,20 +1251,20 @@
             for (let i = 1; i <= quantity; i++) {
                 const input = document.getElementById(`step1-name-${i}`);
                 const val = input ? input.value.trim() : '';
+                const isKid = i > quantityAdults;
+                const label = isKid ? `niño/a ${i - quantityAdults}` : `invitado ${i}`;
                 if (val.length < 3) {
-                    // Resaltar el input que falla
                     if (input) {
                         input.parentElement.classList.add('border-red-500');
-                        // Scroll al input dentro del contenedor
                         input.scrollIntoView({ behavior: 'smooth', block: 'center' });
                         setTimeout(() => input.focus(), 400);
                     }
-                    // Mostrar error inline justo debajo del botón (visible sin mover la pantalla)
-                    inlineError.textContent = `❌ Falta el nombre del invitado ${i} — ingresá al menos 3 letras.`;
+                    inlineError.textContent = `❌ Falta el nombre del ${label} — ingresá al menos 3 letras.`;
                     inlineError.classList.remove('hidden');
                     return;
                 }
                 attendeeNamesStep1.push(val);
+                if (isKid) kidNamesStep1.push(val);
             }
 
             if (!artistName || !artistEmail || !artistPhone || quantity < 1) {
@@ -1256,9 +1311,10 @@
                     totalAmount,
                     status: 'pending',
                     paymentProof: null,
-                    paymentMethod: 'transfer', // 'transfer' o 'mercadopago'
-                    mercadoPagoId: null, // Para integración futura
+                    paymentMethod: 'transfer',
+                    mercadoPagoId: null,
                     attendeeNames: attendeeNamesStep1,
+                    kidNames: kidNamesStep1,
                     ticketIds: [],
                     createdAt: serverTimestamp(),
                     approvedAt: null,

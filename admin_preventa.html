@@ -408,7 +408,10 @@
                             </div>
                             <div>
                                 <p class="text-sm text-gray-400">Cantidad</p>
-                                <p class="font-semibold text-xl">${order.quantity} entradas</p>
+                                <p class="font-semibold text-xl">
+                                    ${order.quantity} entradas
+                                    ${order.quantityKids > 0 ? `<span class="text-sm text-blue-400 ml-2">(${order.quantityAdults || order.quantity - order.quantityKids} adultos + ${order.quantityKids} niños 👶)</span>` : ''}
+                                </p>
                             </div>
                             <div>
                                 <p class="text-sm text-gray-400">Total</p>
@@ -515,9 +518,23 @@
             pendingApproveOrderId = orderId;
 
             // Mostrar datos de la orden en el modal
+            const kidsInfo = order.quantityKids > 0 
+                ? `<span class="text-blue-300 text-xs">(${order.quantityAdults || order.quantity - order.quantityKids} adultos + ${order.quantityKids} niños 👶)</span>` 
+                : '';
+            const kidNamesInfo = (order.kidNames && order.kidNames.length > 0)
+                ? `<p class="mt-1">👶 <strong>Nombres niños:</strong> <span class="text-blue-300">${order.kidNames.join(', ')}</span></p>`
+                : '';
+            const attendeeList = (order.attendeeNames && order.attendeeNames.length > 0)
+                ? `<p class="mt-1 text-xs text-gray-400">📋 Invitados: ${order.attendeeNames.map((n, i) => {
+                    const isKid = order.kidNames && order.kidNames.includes(n);
+                    return isKid ? `<span class="text-blue-300">👶 ${n}</span>` : `👤 ${n}`;
+                  }).join(', ')}</p>`
+                : '';
             document.getElementById('approve-order-info').innerHTML = `
                 <p>👤 <strong>Artista:</strong> ${order.artistName}</p>
-                <p>👥 <strong>Invitados:</strong> ${order.quantity} entradas</p>
+                <p>👥 <strong>Invitados:</strong> ${order.quantity} entradas ${kidsInfo}</p>
+                ${kidNamesInfo}
+                ${attendeeList}
                 <p>💰 <strong>Monto:</strong> $${parseInt(order.totalAmount).toLocaleString()}</p>
                 <p>📱 <strong>Tel:</strong> ${order.artistPhone || 'sin teléfono'}</p>
             `;
@@ -617,9 +634,12 @@
                         const ticketId = `${eventId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
                         const ticketNumber = maxNumber + i + 1;
                         const ticketRef = doc(db, `events/${eventId}/tickets`, ticketId);
+                        const isKid = order.kidNames && order.kidNames.includes(names[i]);
                         batch.set(ticketRef, {
                             id: ticketId,
                             name: names[i],
+                            isKid: isKid,
+                            ticketType: isKid ? 'niño' : 'adulto',
                             showName: eventName || eventData.name || 'VYT-MUSIC',
                             showLocation: eventData.location || 'Por confirmar',
                             showAddress: eventData.address || '',
