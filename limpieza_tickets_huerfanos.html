@@ -130,13 +130,66 @@
                 const selector = document.getElementById('eventSelector');
                 selector.innerHTML = '<option value="">Selecciona un evento...</option>';
                 
+                const eventos = [];
                 eventsSnap.forEach(doc => {
                     const event = doc.data();
+                    
+                    // Intentar TODOS los posibles campos de nombre
+                    const nombre = event.nombre_evento || 
+                                   event.nombre || 
+                                   event.name || 
+                                   event.eventName || 
+                                   event.title || 
+                                   `Evento ${doc.id.substring(0, 8)}`;
+                    
+                    // Info adicional para contexto
+                    const generacion = event.generacion || event.generation || '';
+                    const fecha = event.fecha || event.date || '';
+                    
+                    // Formatear fecha si existe
+                    let fechaStr = '';
+                    if (fecha) {
+                        try {
+                            const d = fecha.seconds ? new Date(fecha.seconds * 1000) : new Date(fecha);
+                            fechaStr = d.toLocaleDateString('es-ES');
+                        } catch (e) {
+                            fechaStr = '';
+                        }
+                    }
+                    
+                    // Texto descriptivo completo
+                    let displayText = nombre;
+                    if (generacion) displayText += ` - ${generacion}`;
+                    if (fechaStr) displayText += ` (${fechaStr})`;
+                    
+                    eventos.push({
+                        id: doc.id,
+                        texto: displayText,
+                        fecha: fecha
+                    });
+                });
+                
+                // Ordenar por fecha (más recientes primero)
+                eventos.sort((a, b) => {
+                    if (!a.fecha) return 1;
+                    if (!b.fecha) return -1;
+                    const dateA = a.fecha.seconds ? a.fecha.seconds : new Date(a.fecha).getTime() / 1000;
+                    const dateB = b.fecha.seconds ? b.fecha.seconds : new Date(b.fecha).getTime() / 1000;
+                    return dateB - dateA;
+                });
+                
+                // Agregar al selector
+                eventos.forEach(evento => {
                     const option = document.createElement('option');
-                    option.value = doc.id;
-                    option.textContent = event.nombre_evento || event.nombre || doc.id;
+                    option.value = evento.id;
+                    option.textContent = evento.texto;
                     selector.appendChild(option);
                 });
+                
+                if (eventos.length === 0) {
+                    selector.innerHTML = '<option value="">No hay eventos disponibles</option>';
+                }
+                
             } catch (error) {
                 console.error('Error cargando eventos:', error);
                 alert('Error al cargar eventos: ' + error.message);
