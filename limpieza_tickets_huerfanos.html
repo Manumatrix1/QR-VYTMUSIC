@@ -121,7 +121,6 @@
         
         let currentEventId = null;
         let orphanTickets = [];
-        let validOrders = new Set();
 
         // Cargar eventos
         async function loadEvents() {
@@ -208,39 +207,35 @@
             try {
                 console.log('🔍 Analizando tickets del evento:', currentEventId);
                 
-                // 1. Cargar TODAS las órdenes aprobadas
-                const ordersSnap = await getDocs(collection(window.db, `ticket_orders_${currentEventId}`));
-                validOrders.clear();
-                const ordersByPrefix = {};
-                
-                ordersSnap.forEach(doc => {
-                    const order = doc.data();
-                    // Solo considerar órdenes completadas
-                    if (order.estado_pago === 'approved' || 
-                        (order.comprobante_url && order.comprobante_url !== '')) {
-                        validOrders.add(doc.id);
-                        const prefix = order.prefix || order.grupo || order.codigo_grupo;
-                        if (prefix) {
-                            if (!ordersByPrefix[prefix]) {
-                                ordersByPrefix[prefix] = [];
-                            }
-                            ordersByPrefix[prefix].push({
-                                id: doc.id,
-                                cantidad: order.cantidad || 0,
-                                estado: order.estado_pago,
-                                fecha: order.timestamp || order.createdAt
-                            });
-                        }
-                    }
+                // 1. Cargar artistas para tener contexto
+                const artistsSnap = await getDocs(collection(window.db, `events/${currentEventId}/artists`));
+                const artistsMap = {};
+                artistsSnap.forEach(doc => {
+                    const artist = doc.data();
+                    artistsMap[doc.id] = artist.nombre || artist.name || doc.id;
                 });
+                console.log('✅ Artistas cargados:', Object.keys(artistsMap).length);
 
-                console.log('✅ Órdenes válidas encontradas:', validOrders.size);
-                console.log('📦 Órdenes por prefix:', ordersByPrefix);
+                // 2. Cargar TODAS las órdenes para estadísticas
+                let totalOrders = 0;
+                try {
+                    const ordersSnap = await getDocs(collection(window.db, `ticket_orders_${currentEventId}`));
+                    totalOrders = ordersSnap.size;
+                } catch (e) {
+                    console.log('ℹ️ No hay colección de órdenes');
+                }
 
-                // 2. Cargar TODOS los tickets
+                // 3. Cargar TODOS los tickets
                 const ticketsSnap = await getDocs(collection(window.db, `events/${currentEventId}/tickets`));
                 const tickets = [];
                 const ticketsByPrefix = {};
+                
+                // LOG COMPLETO: Ver qué campos tienen los tickets
+                if (ticketsSnap.size > 0) {
+                    const firstTicket = ticketsSnap.docs[0].data();
+                    console.log('📋 ESTRUCTURA de un ticket:', firstTicket);
+                    console.log('📋 Campos disponibles:', Object.keys(firstTicket));
+                }
                 
                 ticketsSnap.forEach(doc => {
                     const ticket = doc.data();
@@ -249,10 +244,10 @@
                     tickets.push({
                         id: doc.id,
                         prefix: prefix,
-                        orderId: ticket.orderId || ticket.order_id,
                         artistId: ticket.artistId,
                         artistName: ticket.artistName,
                         timestamp: ticket.timestamp || ticket.createdAt,
+                        buyerName: ticket.buyerName || ticket.nombre_comprador || ticket.comprador || ticket.name,
                         ...ticket
                     });
                     
@@ -261,7 +256,6 @@
                     }
                     ticketsByPrefix[prefix].push({
                         id: doc.id,
-                        orderId: ticket.orderId || ticket.order_id,
                         data: ticket
                     });
                 });
@@ -269,29 +263,43 @@
                 console.log('📊 Total tickets:', tickets.length);
                 console.log('📦 Tickets por prefix:', ticketsByPrefix);
 
-                // 3. Identificar tickets huérfanos (tickets SIN orden válida)
+                // 3. Detectar tickets DUPLICADOS (mismo timestamp + comprador + artista)
                 orphanTickets = [];
                 const validTickets = [];
+                const seenTickets = new Map(); // Clave: timestamp_buyer_artist → primer ticket visto
                 
                 tickets.forEach(ticket => {
-                    const hasValidOrder = ticket.orderId && validOrders.has(ticket.orderId);
+                    // Crear clave única basada en datos del ticket
+                    const timestamp = ticket.timestamp?.seconds || ticket.timestamp || ticket.createdAt?.seconds || 0;
+                    const buyer = (ticket.buyerName || ticket.nombre_comprador || ticket.comprador || 'unknown').toLowerCase().trim();
+                    const artistId = ticket.artistId || ticket.artista_id || 'unknown';
+                    const artistName = (ticket.artistName || ticket.artist_name || 'unknown').toLowerCase().trim();
                     
-                    if (!hasValidOrder) {
+                    // Clave para detectar duplicados
+                    const key = `${timestamp}_${buyer}_${artistName}`;
+                    
+                    // Si ya vimos un ticket con esta misma combinación, es un duplicado
+                    if (seenTickets.has(key)) {
+                        const original = seenTickets.get(key);
                         orphanTickets.push(ticket);
-                        console.warn(`⚠️ Ticket huérfano: ${ticket.id} (prefix: ${ticket.prefix}, orderId: ${ticket.orderId || 'SIN ORDEN'})`);
+                        console.warn(`⚠️ Ticket DUPLICADO detectado:`);
+                        console.warn(`   Original: ${original.id} | Fecha: ${new Date(original.timestamp?.seconds * 1000 || 0).toLocaleString()}`);
+                        console.warn(`   Duplicado: ${ticket.id} | Artista: ${artistName} | Comprador: ${buyer}`);
                     } else {
+                        // Primer ticket con esta combinación - es válido
+                        seenTickets.set(key, ticket);
                         validTickets.push(ticket);
                     }
                 });
 
-                console.log('✅ Tickets válidos:', validTickets.length);
-                console.log('❌ Tickets huérfanos:', orphanTickets.length);
+                console.log('✅ Tickets válidos (únicos):', validTickets.length);
+                console.log('❌ Tickets duplicados:', orphanTickets.length);
 
                 // 4. Actualizar estadísticas
                 document.getElementById('stat-total').textContent = tickets.length;
                 document.getElementById('stat-valid').textContent = validTickets.length;
                 document.getElementById('stat-orphan').textContent = orphanTickets.length;
-                document.getElementById('stat-orders').textContent = validOrders.size;
+                document.getElementById('stat-orders').textContent = totalOrders;
                 document.getElementById('statsContainer').classList.remove('hidden');
 
                 // 5. Agrupar por artista
@@ -310,12 +318,14 @@
                     
                     artistGroups[artistName].total++;
                     
-                    const isValid = ticket.orderId && validOrders.has(ticket.orderId);
-                    if (isValid) {
-                        artistGroups[artistName].valid++;
-                    } else {
+                    // Verificar si este ticket está en la lista de duplicados
+                    const isDuplicate = orphanTickets.some(ot => ot.id === ticket.id);
+                    
+                    if (isDuplicate) {
                         artistGroups[artistName].orphan++;
                         artistGroups[artistName].orphanTickets.push(ticket);
+                    } else {
+                        artistGroups[artistName].valid++;
                     }
                 });
 
