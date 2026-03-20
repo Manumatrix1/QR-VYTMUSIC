@@ -76,7 +76,7 @@
 
     <script type="module">
         import { db } from './firebase_config.js';
-        import { collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { collection, query, where, getDocs, getDocsFromServer } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         const state = { 
             allTicketsData: []
@@ -282,11 +282,18 @@
             try {
                 const ticketsCollectionRef = collection(db, `events/${eventId}/tickets`);
                 
-                // 🔧 CAMBIO CRÍTICO: Cargar TODAS las entradas en vez de filtrar en Firebase
-                // Esto permite comparar sin acentos en JavaScript
+                // 🔧 CRÍTICO: Usar getDocsFromServer para SIEMPRE leer del servidor (no del caché)
+                // Esto soluciona el problema en móvil donde enableIndexedDbPersistence devuelve
+                // el caché vacío (primera visita) en lugar de esperar la respuesta del servidor.
                 const q = query(ticketsCollectionRef);
-                
-                const querySnapshot = await getDocs(q);
+                let querySnapshot;
+                try {
+                    querySnapshot = await getDocsFromServer(q);
+                } catch (serverErr) {
+                    // Si falla el servidor (sin internet), caer a getDocs normal (con caché)
+                    console.warn('⚠️ Server fetch fallido, usando caché:', serverErr.message);
+                    querySnapshot = await getDocs(q);
+                }
                 let allTickets = querySnapshot.docs.map(doc => doc.data()).sort((a,b) => (a.name || '').localeCompare(b.name || ''));
                 
                 // ✅ MODO artistId: filtrar por artistId del artista
@@ -299,16 +306,21 @@
                 else if (artistPrefixes && artistPrefixes.length > 0) {
                     console.log(`🔍 Buscando entradas con prefixes:`, artistPrefixes);
                     
-                    // Normalizar todos los prefixes a buscar
+                    // Múltiples estrategias de matching para máxima compatibilidad en móvil
                     const normalizedPrefixes = artistPrefixes.map(p => normalizeText(p));
+                    const lowerPrefixes = artistPrefixes.map(p => p.toLowerCase().trim());
                     
                     allTickets = allTickets.filter(ticket => {
-                        const normalizedPrefix = normalizeText(ticket.prefix);
-                        const matches = normalizedPrefixes.includes(normalizedPrefix);
-                        if (matches) {
-                            console.log(`✅ Coincidencia: "${ticket.prefix}" está en los prefixes solicitados`);
-                        }
-                        return matches;
+                        const p = ticket.prefix || '';
+                        // Estrategia 1: normalización completa (quita tildes, lowercase)
+                        if (normalizedPrefixes.includes(normalizeText(p))) return true;
+                        // Estrategia 2: solo lowercase sin normalize() (fallback para browsers sin soporte)
+                        if (lowerPrefixes.includes(p.toLowerCase().trim())) return true;
+                        // Estrategia 3: comparar también por artistName (entradas sin prefix)
+                        const n = ticket.artistName || '';
+                        if (n && normalizedPrefixes.includes(normalizeText(n))) return true;
+                        if (n && lowerPrefixes.includes(n.toLowerCase().trim())) return true;
+                        return false;
                     });
                     
                     // Usar artistName del ticket si existe, si no usar el prefix como fallback
