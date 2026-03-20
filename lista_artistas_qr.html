@@ -39,8 +39,9 @@
         </header>
 
         <main>
-            <div class="mb-8">
-                <button id="share-summary-btn" class="w-full px-4 py-3 bg-teal-600 text-white font-bold rounded-lg hover:bg-teal-700">Compartir Reporte de Totales (Para Organizador)</button>
+            <div class="mb-8 flex flex-col sm:flex-row gap-3">
+                <button id="share-summary-btn" class="flex-1 px-4 py-3 bg-teal-600 text-white font-bold rounded-lg hover:bg-teal-700">Compartir Reporte de Totales (Para Organizador)</button>
+                <button id="repair-orphan-btn" class="px-4 py-3 bg-orange-600 text-white font-bold rounded-lg hover:bg-orange-700 hidden">🔧 Reparar Entradas Sin Artista</button>
             </div>
             <section id="artists-list-section">
                 <h2 class="text-2xl font-bold mb-4">O selecciona un Artista/Grupo para ver sus QR</h2>
@@ -53,7 +54,7 @@
 
     <script type="module">
         import { db } from './firebase_config.js';
-        import { collection, query, getDocs, writeBatch, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { collection, query, getDocs, writeBatch, where, doc, updateDoc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         const urlParams = new URLSearchParams(window.location.search);
         const eventId = urlParams.get('eventId');
@@ -98,7 +99,15 @@
                 return;
             }
             
-            // 🔄 NUEVA LÓGICA: Agrupar por PERSONA (artistName o prefix como fallback)
+            // � Mostrar botón de reparación si hay tickets huérfanos (sin prefix ni artistName)
+            const orphanCount = tickets.filter(t => !t.prefix && !t.artistName).length;
+            if (orphanCount > 0) {
+                const repairBtn = document.getElementById('repair-orphan-btn');
+                repairBtn.classList.remove('hidden');
+                repairBtn.textContent = `🔧 Reparar ${orphanCount} Entradas Sin Artista`;
+            }
+
+            // �🔄 NUEVA LÓGICA: Agrupar por PERSONA (artistName o prefix como fallback)
             const personData = tickets.reduce((acc, ticket) => {
                 // ✅ ANTES: se ignoraban tickets sin artistName — ahora usamos prefix como fallback
                 const rawName = ticket.artistName || ticket.prefix || 'Sin artista';
@@ -265,6 +274,71 @@
             const baseUrl = 'https://vyt-music.web.app';
             const shareableLink = `${baseUrl}/reporte_entradas_publico.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`;
             showShareModal(shareableLink, 'Enlace de Reporte de Entradas');
+        });
+
+        // 🔧 REPARAR TICKETS SIN ARTISTA (prefix y artistName vacíos)
+        document.getElementById('repair-orphan-btn').addEventListener('click', async () => {
+            if (!confirm('⚠️ Esto buscará las entradas sin artista asignado y las reparará usando el número de orden. ¿Continuar?')) return;
+            
+            try {
+                const allTicketsSnap = await getDocs(query(collection(db, `events/${eventId}/tickets`)));
+                const orphanDocs = allTicketsSnap.docs.filter(d => {
+                    const t = d.data();
+                    return !t.prefix && !t.artistName;
+                });
+                
+                if (orphanDocs.length === 0) {
+                    alert('✅ No hay entradas sin artista. Todo está en orden.');
+                    return;
+                }
+                
+                // Agrupar por orderId para hacer una sola consulta por orden
+                const orderMap = {};
+                for (const d of orphanDocs) {
+                    const t = d.data();
+                    if (t.orderId) {
+                        if (!orderMap[t.orderId]) orderMap[t.orderId] = [];
+                        orderMap[t.orderId].push({ docRef: d.ref, data: t });
+                    }
+                }
+                
+                const noOrderIds = orphanDocs.filter(d => !d.data().orderId);
+                let repaired = 0;
+                let skipped = noOrderIds.length;
+                
+                const batch = writeBatch(db);
+                
+                for (const [orderId, tickets] of Object.entries(orderMap)) {
+                    let orderSnap;
+                    try {
+                        orderSnap = await getDoc(doc(db, `ticket_orders_${eventId}`, orderId));
+                    } catch(e) { continue; }
+                    
+                    if (!orderSnap.exists()) { skipped += tickets.length; continue; }
+                    
+                    const order = orderSnap.data();
+                    const prefix = `PREV_${orderId.substring(0, 8).toUpperCase()}`;
+                    const artistName = order.artistName || '';
+                    const artistId = order.artistId || '';
+                    
+                    for (const { docRef } of tickets) {
+                        batch.update(docRef, { prefix, artistName, artistId });
+                        repaired++;
+                    }
+                }
+                
+                await batch.commit();
+                
+                const msg = skipped > 0
+                    ? `✅ Se repararon ${repaired} entradas.\n⚠️ ${skipped} entradas no tenían orderId y no pudieron repararse automáticamente.`
+                    : `✅ Se repararon ${repaired} entradas correctamente.`;
+                alert(msg);
+                loadArtistsWithTickets(); // Recargar la lista
+                
+            } catch (err) {
+                console.error('Error reparando tickets:', err);
+                alert('❌ Error: ' + err.message);
+            }
         });
 
         loadArtistsWithTickets();

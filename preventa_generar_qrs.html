@@ -94,7 +94,7 @@
 
     <script type="module">
         import { db, auth, storage } from './firebase_config.js';
-        import { getFirestore, collection, addDoc, doc, getDoc, updateDoc, writeBatch, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, doc, getDoc, getDocs, updateDoc, writeBatch, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { getStorage, ref as storageRef, uploadString, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
 
         // Get params
@@ -214,23 +214,59 @@
                 const ticketIds = [];
                 const batch = writeBatch(db);
 
+                // ✅ Cargar datos del evento (lugar, dirección, nombre)
+                let eventData = {};
+                try {
+                    const evSnap = await getDoc(doc(db, 'events', eventId));
+                    if (evSnap.exists()) eventData = evSnap.data();
+                } catch(e) {}
+
+                // ✅ Obtener máximo número de ticket para numeración correlativa
+                let maxNumber = 0;
+                try {
+                    const ticketsSnap = await getDocs(collection(db, `events/${eventId}/tickets`));
+                    ticketsSnap.forEach(d => {
+                        const n = d.data().ticketNumber || 0;
+                        if (n > maxNumber) maxNumber = n;
+                    });
+                } catch(e) {}
+
+                // ✅ Prefix para identificar este grupo de tickets
+                const prefix = `PREV_${orderId.substring(0, 8).toUpperCase()}`;
+                const artistName = orderData.artistName || '';
+                const artistId = orderData.artistId || '';
+
                 for (let i = 0; i < names.length; i++) {
                     const name = names[i].trim();
+                    const ticketNumber = maxNumber + i + 1;
                     
                     // Actualizar progreso
                     updateProgress(i + 1, names.length, `Generando entrada para ${name}...`);
 
-                    // Crear ticket en Firestore
+                    // Crear ticket en Firestore con TODOS los campos necesarios
                     const ticketRef = doc(collection(db, `events/${eventId}/tickets`));
                     const ticketData = {
+                        id: ticketRef.id,
                         name: name,
                         price: ticketPrice,
+                        prefix: prefix,
+                        artistName: artistName,
+                        artistId: artistId,
+                        showName: eventData.name || eventName || 'VYT-MUSIC',
+                        showLocation: eventData.location || 'Por confirmar',
+                        showAddress: eventData.address || '',
+                        seatLocation: 'General',
+                        ticketNumber: ticketNumber,
+                        ticketNumberFormatted: ticketNumber.toString().padStart(4, '0'),
+                        used: false,
+                        paymentStatus: 'Paga',
                         scanned: false,
                         scanTimestamp: null,
                         createdAt: serverTimestamp(),
-                        createdBy: orderData.artistEmail,
+                        createdBy: orderData.artistEmail || 'preventa',
                         source: 'preventa',
-                        orderId: orderId
+                        orderId: orderId,
+                        eventId: eventId
                     };
 
                     batch.set(ticketRef, ticketData);
