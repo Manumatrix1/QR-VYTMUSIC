@@ -785,6 +785,11 @@
             return { cls: 'ok', label: '🟢 ' + timeStr + star, custom };
         }
 
+        // Normalizar texto: sin acentos, minúsculas, sin espacios extra
+        function normName(s) {
+            return (s || '').normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+        }
+
         function renderArtistsSummary() {
             const container = document.getElementById('artists-summary-list');
             if (!container) return;
@@ -793,15 +798,23 @@
                 return;
             }
             container.innerHTML = allArtists.map(artist => {
-                // Tickets ya generados para este artista
-                const myTickets = allTickets.filter(t => t.artistId === artist.id);
+                const normArtist = normName(artist.name);
+
+                // Tickets ya generados: por artistId O por artistName (normalizado)
+                // Esto incluye tanto tickets de preventa como los generados manualmente con artista asignado
+                const myTickets = allTickets.filter(t =>
+                    t.artistId === artist.id ||
+                    (t.artistName && normName(t.artistName) === normArtist)
+                );
                 const ticketCount = myTickets.length;
 
-                // Órdenes pendientes (aún no generaron tickets): normalizar nombre
-                const norm = s => (s || '').toLowerCase().trim();
+                // Prefijos únicos de esos tickets (para el link del visor)
+                const myPrefixes = [...new Set(myTickets.map(t => t.prefix).filter(Boolean))];
+
+                // Órdenes pendientes de pago
                 const pendingOrders = allOrders.filter(o =>
                     o.status === 'payment_uploaded' &&
-                    (norm(o.artistName) === norm(artist.name))
+                    normName(o.artistName) === normArtist
                 );
                 const pendingCount = pendingOrders.reduce((s, o) => s + (o.quantity || 0), 0);
 
@@ -811,6 +824,17 @@
                 if (ticketCount) ticketHtml += `<span class="text-green-400">✅ ${ticketCount} entrada${ticketCount > 1 ? 's' : ''} generada${ticketCount > 1 ? 's' : ''}</span>`;
                 if (pendingCount) ticketHtml += `${ticketCount ? ' · ' : ''}<span class="text-yellow-400">⏳ ${pendingCount} pago pendiente${pendingCount > 1 ? 's' : ''}</span>`;
                 if (!ticketCount && !pendingCount) ticketHtml = '<span class="text-gray-500">Sin entradas anticipadas</span>';
+
+                // Botón para enviar/mostrar link de TODAS las entradas del artista
+                const visorLink = myPrefixes.length > 0
+                    ? `https://vyt-music.web.app/visor_qr_compartido.html?eventId=${eventId}&artists=${encodeURIComponent(myPrefixes.join(','))}`
+                    : null;
+                const btnEnviar = ticketCount > 0 && visorLink
+                    ? `<button onclick="copiarLinkArtista('${artist.id}', '${artist.name.replace(/'/g, "\\'")}', '${artist.phone || ''}')"
+                             class="ml-1 px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded-lg flex-shrink-0"
+                             title="Copiar/enviar link con todas las entradas">📲</button>`
+                    : '';
+
                 return `
                     <div class="flex items-center gap-3 p-3 bg-gray-700/40 rounded-lg">
                         <img src="${photoUrl}" alt="${artist.name}" class="w-10 h-10 rounded-full object-cover border-2 border-sky-600 flex-shrink-0">
@@ -818,6 +842,7 @@
                             <p class="font-semibold text-sm truncate">${artist.name}</p>
                             <p class="text-xs mt-0.5">${ticketHtml}</p>
                         </div>
+                        ${btnEnviar}
                         <button onclick="openArtistDeadlineModal('${artist.id}')"
                                 class="dl-chip dl-chip-${dlInfo.cls}${dlInfo.custom ? ' dl-chip-custom' : ''} flex-shrink-0"
                                 title="${dlInfo.custom ? 'Deadline propio ★ (clic para editar)' : 'Deadline global del evento (clic para asignar uno propio)'}">
@@ -827,6 +852,35 @@
                 `;
             }).join('');
         }
+
+        // Copiar/enviar link de TODAS las entradas de un artista
+        window.copiarLinkArtista = function(artistId, artistName, phone) {
+            const normArtist = normName(artistName);
+            const artistTickets = allTickets.filter(t =>
+                t.artistId === artistId ||
+                (t.artistName && normName(t.artistName) === normArtist)
+            );
+            const prefixes = [...new Set(artistTickets.map(t => t.prefix).filter(Boolean))];
+
+            if (prefixes.length === 0) {
+                alert('No hay entradas con link disponible para este artista.');
+                return;
+            }
+
+            const link = `https://vyt-music.web.app/visor_qr_compartido.html?eventId=${eventId}&artists=${encodeURIComponent(prefixes.join(','))}`;
+
+            // Si tiene teléfono, abrir WhatsApp
+            if (phone) {
+                let cleanPhone = phone.replace(/\D/g, '');
+                if (!cleanPhone.startsWith('54') && cleanPhone.length >= 10) cleanPhone = '54' + cleanPhone;
+                const msg = `🎟️ *¡Tus entradas QR están listas!*\n\nHola ${artistName}, acá podés ver y descargar todas tus entradas:\n${link}\n\n🎤 VYT-MUSIC`;
+                window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`, '_blank');
+            } else {
+                // Sin teléfono: mostrar link para copiar
+                navigator.clipboard.writeText(link).catch(() => {});
+                alert(`🔗 Link de entradas de ${artistName}:\n\n${link}\n\n(Copiado al portapapeles del navegador)`);
+            }
+        };
 
         window.openArtistDeadlineModal = function(artistId) {
             deadlineArtistIdAP = artistId;

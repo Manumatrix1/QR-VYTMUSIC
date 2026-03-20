@@ -107,6 +107,14 @@
                                  <label for="ticket-seat-location-input" class="block mb-1 font-semibold text-gray-300">Ubicación General (ej: Mesa 5)</label>
                                  <input type="text" id="ticket-seat-location-input" placeholder="Mesa 5" class="w-full p-3 rounded-md border border-gray-600 bg-gray-900 text-white">
                              </div>
+                             <!-- ✅ SELECTOR DE ARTISTA: vincula las entradas al perfil del artista en el evento -->
+                             <div class="p-3 bg-purple-900/40 border border-purple-600 rounded-lg">
+                                 <label for="artist-selector" class="block mb-1 font-semibold text-purple-200">🎤 Vincular al artista del evento <span class="text-xs text-gray-400">(recomendado)</span></label>
+                                 <select id="artist-selector" class="w-full p-3 rounded-md border border-purple-600 bg-gray-900 text-white">
+                                     <option value="">-- Sin artista específico --</option>
+                                 </select>
+                                 <p class="text-xs text-purple-300 mt-1">Al seleccionar el artista, las entradas aparecerán en el panel de preventa vinculadas a su perfil.</p>
+                             </div>
                         </div>
                     </div>
                     <hr class="border-gray-700">
@@ -425,6 +433,11 @@
                 const ticketsCol = collection(db, `events/${eventId}/tickets`);
                 const priceTiers = getPriceTiers();
 
+                // ✅ Obtener artista seleccionado (para vincular las entradas)
+                const artistSelect = document.getElementById('artist-selector');
+                const selectedArtistId = artistSelect.value || '';
+                const selectedArtistName = artistSelect.options[artistSelect.selectedIndex]?.dataset?.name || '';
+
                 // Obtener contador para numeración
                 const counterRef = doc(db, `events/${eventId}/config`, 'ticketCounter');
                 let startNum = 1;
@@ -453,8 +466,15 @@
                         used: false,
                         ticketNumber: ticketNum,
                         ticketNumberFormatted: ticketNum.toString().padStart(4, '0'),
-                        generatedAt: new Date().toISOString() 
+                        generatedAt: new Date().toISOString(),
+                        createdBy: 'manual',
+                        eventId: eventId
                     };
+                    // ✅ Agregar artistId y artistName si se seleccionó un artista
+                    if (selectedArtistId) {
+                        ticketData.artistId = selectedArtistId;
+                        ticketData.artistName = selectedArtistName;
+                    }
                     batch.set(doc(ticketsCol, ticketId), ticketData);
                     generatedTicketsData.push(ticketData);
                 });
@@ -583,8 +603,28 @@
             hidePrefixWarning();
         });
 
-        // ÔÜí INICIALIZAR CARGA DE PREFIJOS EXISTENTES
+        // ✅ INICIALIZAR CARGA DE PREFIJOS EXISTENTES
         loadExistingPrefixes();
+
+        // ✅ CARGAR ARTISTAS DEL EVENTO EN EL SELECTOR
+        async function loadEventArtists() {
+            try {
+                const artistsSnap = await getDocs(collection(db, `events/${eventId}/artists`));
+                const select = document.getElementById('artist-selector');
+                artistsSnap.forEach(d => {
+                    const a = d.data();
+                    const opt = document.createElement('option');
+                    opt.value = d.id;
+                    opt.textContent = a.name || a.artistName || d.id;
+                    opt.dataset.name = a.name || a.artistName || '';
+                    select.appendChild(opt);
+                });
+                if (artistsSnap.size > 0) {
+                    console.log(`✅ ${artistsSnap.size} artistas cargados en el selector`);
+                }
+            } catch(e) { console.warn('Error cargando artistas:', e); }
+        }
+        loadEventArtists();
 
         // 🔄 AUTO-COMPLETAR DATOS SI VIENE DESDE "AGREGAR MÁS"
         async function prefillDataFromUrl() {
