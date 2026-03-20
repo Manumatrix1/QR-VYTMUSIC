@@ -307,10 +307,22 @@
                 
                 ui.generatedTicketsGrid.appendChild(cardWrapper);
                 
-                new QRCode(document.getElementById(`qrcode-${ticket.id}`), { text: `https://vyt-music.web.app/escaner_qr_final.html?ticket=${ticket.id}&eventId=${eventId}`, width: 256, height: 256, correctLevel: QRCode.CorrectLevel.H });
-                try {
-                    JsBarcode(document.getElementById(`barcode-${ticket.id}`), ticket.id, { format: "CODE128", lineColor: "#000", width: 2, height: 30, displayValue: true, fontSize: 14, textMargin: 2, background: "transparent", margin: 10 });
-                } catch (e) { console.error("Error al generar código de barras:", e); }
+                // Usar requestAnimationFrame para asegurar que el DOM esté listo
+                const ticketIdForQR = ticket.id;
+                requestAnimationFrame(() => {
+                    try {
+                        const qrEl = document.getElementById(`qrcode-${ticketIdForQR}`);
+                        if (qrEl && typeof QRCode !== 'undefined') {
+                            new QRCode(qrEl, { text: `https://vyt-music.web.app/escaner_qr_final.html?ticket=${ticketIdForQR}&eventId=${eventId}`, width: 256, height: 256, correctLevel: QRCode.CorrectLevel.H });
+                        }
+                    } catch (e) { console.error('Error al generar QR:', e); }
+                    try {
+                        const barEl = document.getElementById(`barcode-${ticketIdForQR}`);
+                        // Sanitizar el id para barcode: reemplazar caracteres no ASCII
+                        const barcodeText = ticketIdForQR.replace(/[^\x00-\x7F]/g, '_');
+                        if (barEl) JsBarcode(barEl, barcodeText, { format: "CODE128", lineColor: "#000", width: 2, height: 30, displayValue: true, fontSize: 14, textMargin: 2, background: "transparent", margin: 10 });
+                    } catch (e) { console.error('Error al generar código de barras:', e); }
+                });
 
                 cardWrapper.querySelector('.download-btn').addEventListener('click', () => {
                     const elementToPrint = cardWrapper;
@@ -486,12 +498,30 @@
 
                 ui.formContainer.classList.add('hidden');
                 ui.generatedTicketsContainer.classList.remove('hidden');
-                renderGeneratedTickets();
+                try {
+                    renderGeneratedTickets();
+                } catch (renderError) {
+                    console.error('Error al renderizar comprobantes:', renderError);
+                    // Si falla el render, igual mostramos los tickets generados en texto simple
+                    ui.generatedTicketsGrid.innerHTML = generatedTicketsData.map(t =>
+                        `<div class="bg-gray-800 p-4 rounded-lg text-center">
+                            <p class="text-sky-400 font-bold text-xl">${t.name}</p>
+                            <p class="text-gray-300 text-sm mt-1">${t.showName} - ${t.showLocation}</p>
+                            <p class="text-green-400 text-xs mt-2">✅ Entrada guardada (ID: ${t.id})</p>
+                        </div>`
+                    ).join('');
+                }
                 
                 console.log(`✅ ${people.length} entradas generadas exitosamente`);
                 
             } catch (error) {
                 setLoading(false);
+                // Si ya se mostraron los tickets (se guardo en Firebase antes del error de render),
+                // dejar la pantalla como está. Si no, volver al formulario.
+                if (generatedTicketsData.length === 0) {
+                    ui.formContainer.classList.remove('hidden');
+                    ui.generatedTicketsContainer.classList.add('hidden');
+                }
                 console.error('❌ Error al generar entradas:', error);
                 alert(`❌ Error al generar entradas:\n\n${error.message}\n\nRevisa la consola para más detalles.`);
             }
