@@ -98,50 +98,74 @@
                 return;
             }
             
-            // 🔄 NUEVA LÓGICA: Agrupar por PERSONA (nombre normalizado) en lugar de por prefix individual
+            // 🔄 NUEVA LÓGICA: Agrupar por PERSONA (artistName o prefix como fallback)
             const personData = tickets.reduce((acc, ticket) => {
-                if (!ticket.artistName) return acc; // Skip tickets sin nombre
+                // ✅ ANTES: se ignoraban tickets sin artistName — ahora usamos prefix como fallback
+                const rawName = ticket.artistName || ticket.prefix || 'Sin artista';
+                const artistId = ticket.artistId || null;
+
+                // ✅ Clave de agrupación: si tiene artistId lo usamos para agrupar sin importar el nombre
+                // Si no, normalizamos el nombre
+                const groupKey = artistId || (rawName).toLowerCase().trim();
                 
-                // Normalizar el nombre para agrupar correctamente (lowercase, sin espacios extra)
-                const normalizedName = (ticket.artistName || '').toLowerCase().trim();
-                
-                if (!acc[normalizedName]) {
-                    acc[normalizedName] = { 
+                if (!acc[groupKey]) {
+                    acc[groupKey] = { 
                         count: 0, 
-                        displayName: ticket.artistName, // Mantener el nombre original con mayúsculas
-                        prefixes: [], // TODOS los prefixes de esta persona
-                        email: ticket.email || '',
-                        phone: ticket.phone || ''
+                        displayName: rawName.trim(),
+                        prefixes: [],
+                        artistId: artistId,
+                        hasPrev: false  // tiene tickets de preventa (prefix PREV_)
                     };
                 }
                 
-                acc[normalizedName].count++;
+                acc[groupKey].count++;
                 
-                // Agregar prefix si no está ya en el array
-                if (ticket.prefix && !acc[normalizedName].prefixes.includes(ticket.prefix)) {
-                    acc[normalizedName].prefixes.push(ticket.prefix);
+                // Actualizar displayName si llega uno con artistName explícito
+                if (ticket.artistName && acc[groupKey].displayName === ticket.prefix) {
+                    acc[groupKey].displayName = ticket.artistName;
                 }
                 
-                // Actualizar email/phone si no los teníamos
-                if (ticket.email && !acc[normalizedName].email) acc[normalizedName].email = ticket.email;
-                if (ticket.phone && !acc[normalizedName].phone) acc[normalizedName].phone = ticket.phone;
+                // Agregar prefix si no está ya en el array
+                if (ticket.prefix && !acc[groupKey].prefixes.includes(ticket.prefix)) {
+                    acc[groupKey].prefixes.push(ticket.prefix);
+                }
+
+                // Marcar si tiene preventa
+                if (ticket.prefix && ticket.prefix.startsWith('PREV_')) {
+                    acc[groupKey].hasPrev = true;
+                }
                 
                 return acc;
             }, {});
             
-            const artistNames = Object.keys(personData).sort();
+            const artistNames = Object.keys(personData).sort((a, b) => {
+                const na = personData[a].displayName.toLowerCase();
+                const nb = personData[b].displayName.toLowerCase();
+                return na.localeCompare(nb);
+            });
             ui.artistsListDiv.innerHTML = '';
             
-            artistNames.forEach(normalizedName => {
-                const { count, displayName, prefixes, email, phone } = personData[normalizedName];
-                const primaryPrefix = prefixes[0]; // Usar el primer prefix como principal
+            artistNames.forEach(groupKey => {
+                const { count, displayName, prefixes, hasPrev } = personData[groupKey];
+                const primaryPrefix = prefixes[0] || ''; // Usar el primer prefix como principal
+                
+                // Badge de tipo de entrada
+                const typeBadge = hasPrev 
+                    ? `<span class="text-xs text-blue-300">🎟️ Preventa</span>` 
+                    : `<span class="text-xs text-gray-500">Código: ${primaryPrefix}</span>`;
                 
                 const card = document.createElement('div');
                 card.className = 'artist-card';
+                
+                // Link de ver QRs: si tiene artistId usar ese, si no usar prefix
+                const qrHref = prefixes.length > 1
+                    ? `visor_qr_compartido.html?eventId=${eventId}&artists=${prefixes.map(p => encodeURIComponent(p)).join(',')}`
+                    : `visor_qr_compartido.html?eventId=${eventId}&artist=${encodeURIComponent(primaryPrefix)}`;
+
                 card.innerHTML = `
-                    <a href="visor_qr_compartido.html?eventId=${eventId}&artist=${encodeURIComponent(primaryPrefix)}" class="flex-grow">
+                    <a href="${qrHref}" class="flex-grow">
                         <h3 class="text-xl font-bold text-sky-400">${displayName}</h3>
-                        ${prefixes.length > 1 ? `<p class="text-xs text-amber-400">🔗 ${prefixes.length} compras agrupadas</p>` : `<p class="text-xs text-gray-500">Código: ${primaryPrefix}</p>`}
+                        ${prefixes.length > 1 ? `<p class="text-xs text-amber-400">🔗 ${prefixes.length} compras agrupadas</p>` : typeBadge}
                         <p class="text-sm text-gray-400">${count} entrada(s) total</p>
                     </a>
                     <div class="flex space-x-1">
