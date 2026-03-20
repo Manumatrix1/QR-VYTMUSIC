@@ -1,7 +1,7 @@
 // firebase_config.js
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-import { getAuth } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+import { initializeAuth, browserLocalPersistence, inMemoryPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 import { initializeFirestore, memoryLocalCache } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import { getStorage } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
 
@@ -16,8 +16,12 @@ export const firebaseConfig = {
 };
 
 export const app = initializeApp(firebaseConfig);
-export const auth = getAuth(app);
-// Usar memoryLocalCache en lugar de IndexedDbPersistence para evitar
-// conflictos con "Tracking Prevention" en Edge/Safari móvil
+// initializeAuth con array de persistencia: intenta localStorage primero,
+// si Edge/Safari lo bloquea con "Tracking Prevention", cae silenciosamente a memoria.
+// Con getAuth(app) el SDK usaba localStorage por defecto y fallaba ruidosamente (8+ errores).
+export const auth = initializeAuth(app, {
+    persistence: [browserLocalPersistence, inMemoryPersistence]
+});
+// memoryLocalCache: Firestore nunca usa IndexedDB (soluciona Tracking Prevention en móvil)
 export const db = initializeFirestore(app, { localCache: memoryLocalCache() });
 export const storage = getStorage(app);
