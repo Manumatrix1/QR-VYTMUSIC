@@ -314,34 +314,28 @@
             const pending = allOrders.filter(o => o.status === 'payment_uploaded').length;
             const approved = allOrders.filter(o => o.status === 'approved' || o.status === 'tickets_generated').length;
             
-            // Sumar tickets de órdenes aprobadas
-            const ticketsFromOrders = allOrders
-                .filter(o => o.status !== 'rejected')
-                .reduce((sum, o) => sum + (o.quantity || 0), 0);
-            
-            // Sumar dinero de órdenes aprobadas
+            // Sumar dinero de órdenes aprobadas/generadas
             const moneyFromOrders = allOrders
                 .filter(o => o.status === 'approved' || o.status === 'tickets_generated')
                 .reduce((sum, o) => sum + (o.totalAmount || 0), 0);
 
-            // Cargar entradas generadas manualmente (sin orden vinculada)
-            let manualTicketsCount = 0;
+            // ✅ Contar tickets REALES en Firestore (no las quantities de las órdenes)
+            // Esto evita contar órdenes pendientes que todavía no se aprobaron
+            let totalTickets = 0;
             let manualTicketsMoney = 0;
             try {
                 const ticketsSnap = await getDocs(collection(db, `events/${eventId}/tickets`));
+                totalTickets = ticketsSnap.size;
                 ticketsSnap.forEach(doc => {
                     const ticket = doc.data();
-                    // Contar tickets que NO tienen orderId (generados manualmente)
                     if (!ticket.orderId) {
-                        manualTicketsCount++;
                         manualTicketsMoney += (ticket.price || 0);
                     }
                 });
             } catch(e) {
-                console.warn('Error cargando tickets manuales:', e);
+                console.warn('Error cargando tickets:', e);
             }
 
-            const totalTickets = ticketsFromOrders + manualTicketsCount;
             const totalMoney = moneyFromOrders + manualTicketsMoney;
 
             document.getElementById('stat-pending').textContent = pending;
@@ -440,10 +434,16 @@
                         ` : ''}
 
                         ${order.status === 'approved' ? `
-                            <div class="mt-4">
+                            <div class="mt-4 p-4 bg-yellow-900/30 border border-yellow-500 rounded-lg">
+                                <p class="text-yellow-300 text-sm font-semibold mb-3">⚠️ Pago aprobado pero los QRs aún no fueron generados.</p>
+                                ${order.attendeeNames && order.attendeeNames.length > 0 ? `
+                                <button onclick="regenerarQRs('${order.id}')" class="block w-full px-6 py-3 bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg transition-all mb-2">
+                                    🔄 Generar QRs Ahora (${order.attendeeNames.length} nombres ya cargados)
+                                </button>
+                                ` : ''}
                                 <a href="preventa_generar_qrs.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}&orderId=${order.id}" 
-                                   class="inline-block px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white font-semibold rounded-lg transition-all">
-                                    🎟️ Cargar Nombres y Generar QRs
+                                   class="block text-center px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white font-semibold rounded-lg transition-all">
+                                    📝 ${order.attendeeNames && order.attendeeNames.length > 0 ? 'Editar Nombres y Generar QRs' : 'Cargar Nombres y Generar QRs'}
                                 </a>
                             </div>
                         ` : ''}
@@ -581,14 +581,7 @@
             try {
                 const adminEmail = auth.currentUser?.email || 'admin';
 
-                // Marcar como aprobada
-                await updateDoc(doc(db, `ticket_orders_${eventId}`, orderId), {
-                    status: 'approved',
-                    approvedAt: serverTimestamp(),
-                    approvedBy: adminEmail
-                });
-
-                // Generar tickets automáticamente con los nombres ya cargados
+                // Generar tickets PRIMERO, luego marcar como aprobada
                 const names = order.attendeeNames || [];
                 let ticketIds = [];
 
@@ -612,7 +605,7 @@
                     const prefix = `PREV_${orderId.substring(0, 8)}`.toUpperCase();
 
                     for (let i = 0; i < names.length; i++) {
-                        const ticketId = `${eventId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                        const ticketId = `PREV_${orderId.substring(0, 8)}_${i}_${Math.random().toString(36).substr(2, 6)}`.toUpperCase();
                         const ticketNumber = maxNumber + i + 1;
                         const ticketRef = doc(db, `events/${eventId}/tickets`, ticketId);
                         const isKid = order.kidNames && order.kidNames.includes(names[i]);
@@ -641,15 +634,18 @@
                         });
                         ticketIds.push(ticketId);
                     }
-                    await batch.commit();
 
-                    // Actualizar orden a tickets_generated
-                    await updateDoc(doc(db, `ticket_orders_${eventId}`, orderId), {
-                        status: 'tickets_generated',
-                        ticketIds: ticketIds,
-                        generatedAt: serverTimestamp()
-                    });
+                    // ✅ PRIMERO generar los tickets, DESPUÉS marcar como aprobada
+                    await batch.commit();
                 }
+
+                // Marcar como aprobada/generada DESPUÉS de que los tickets existen en Firestore
+                await updateDoc(doc(db, `ticket_orders_${eventId}`, orderId), {
+                    status: names.length > 0 ? 'tickets_generated' : 'approved',
+                    approvedAt: serverTimestamp(),
+                    approvedBy: adminEmail,
+                    ...(names.length > 0 ? { ticketIds, generatedAt: serverTimestamp() } : {})
+                });
 
                 // ── Enviar WA DESPUÉS de generar los tickets (para que el link ya funcione) ──
                 if (order.artistPhone) {
@@ -680,6 +676,86 @@
                 btn.textContent = '✅ Aprobar y Generar QRs';
             }
         });
+
+        // Reenviar link de entradas
+        window.reenviarEntradas = async function(orderId, artistPhone, artistName) {
+
+        // 🔄 REGENERAR QRs para órdenes aprobadas pero sin tickets generados
+        window.regenerarQRs = async function(orderId) {
+            const order = allOrders.find(o => o.id === orderId);
+            if (!order) return alert('Orden no encontrada');
+            const names = order.attendeeNames || [];
+            if (names.length === 0) return alert('Esta orden no tiene nombres cargados. Usá "Cargar Nombres" para ingresar los invitados.');
+            if (!confirm(`¿Generar ${names.length} QR para la orden de "${order.artistName}"? (Nombres ya cargados: ${names.slice(0,3).join(', ')}${names.length > 3 ? '...' : ''})`)) return;
+
+            const btn = document.querySelector(`[onclick="regenerarQRs('${orderId}')"]`);
+            if (btn) { btn.disabled = true; btn.textContent = '⏳ Generando...'; }
+
+            try {
+                const ticketsSnap = await getDocs(collection(db, `events/${eventId}/tickets`));
+
+                // Verificar si ya hay tickets de esta orden (evitar duplicados)
+                const existingTickets = ticketsSnap.docs.filter(d => d.data().orderId === orderId);
+                if (existingTickets.length > 0) {
+                    if (!confirm(`Ya existen ${existingTickets.length} tickets para esta orden. ¿Actualizar la orden para marcarla como generada sin crear duplicados?`)) return;
+                    await updateDoc(doc(db, `ticket_orders_${eventId}`, orderId), {
+                        status: 'tickets_generated',
+                        ticketIds: existingTickets.map(d => d.id),
+                        generatedAt: serverTimestamp()
+                    });
+                    loadOrders();
+                    return;
+                }
+
+                let maxNumber = 0;
+                ticketsSnap.forEach(d => {
+                    const n = d.data().ticketNumber || 0;
+                    if (n > maxNumber) maxNumber = n;
+                });
+
+                let eventData = {};
+                try {
+                    const evSnap = await getDoc(doc(db, 'events', eventId));
+                    if (evSnap.exists()) eventData = evSnap.data();
+                } catch(e) {}
+
+                const batch = writeBatch(db);
+                const prefix = `PREV_${orderId.substring(0, 8)}`.toUpperCase();
+                const ticketIds = [];
+
+                for (let i = 0; i < names.length; i++) {
+                    const ticketId = `PREV_${orderId.substring(0, 8)}_${i}_${Math.random().toString(36).substr(2, 6)}`.toUpperCase();
+                    const ticketRef = doc(db, `events/${eventId}/tickets`, ticketId);
+                    const isKid = order.kidNames && order.kidNames.includes(names[i]);
+                    batch.set(ticketRef, {
+                        id: ticketId, name: names[i], isKid, ticketType: isKid ? 'niño' : 'adulto',
+                        showName: eventName || eventData.name || 'VYT-MUSIC',
+                        showLocation: eventData.location || 'Por confirmar',
+                        showAddress: eventData.address || '',
+                        artistPhotoURL: '', artistName: order.artistName || '', artistId: order.artistId || '',
+                        seatLocation: 'General', prefix,
+                        ticketNumber: maxNumber + i + 1,
+                        ticketNumberFormatted: (maxNumber + i + 1).toString().padStart(4, '0'),
+                        used: false, paymentStatus: 'Paga', isDoorSale: false,
+                        createdAt: serverTimestamp(), createdBy: 'preventa',
+                        orderId, eventId
+                    });
+                    ticketIds.push(ticketId);
+                }
+
+                await batch.commit();
+                await updateDoc(doc(db, `ticket_orders_${eventId}`, orderId), {
+                    status: 'tickets_generated', ticketIds, generatedAt: serverTimestamp()
+                });
+
+                alert(`✅ ${ticketIds.length} QRs generados para "${order.artistName}".`);
+                loadOrders();
+            } catch(err) {
+                console.error('Error regenerando QRs:', err);
+                alert('❌ Error: ' + err.message);
+                if (btn) { btn.disabled = false; btn.textContent = '🔄 Generar QRs Ahora'; }
+            }
+        };
 
         // Reenviar link de entradas
         window.reenviarEntradas = async function(orderId, artistPhone, artistName) {
