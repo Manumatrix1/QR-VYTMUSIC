@@ -146,16 +146,37 @@
                 
                 return acc;
             }, {});
-            
-            const artistNames = Object.keys(personData).sort((a, b) => {
-                const na = personData[a].displayName.toLowerCase();
-                const nb = personData[b].displayName.toLowerCase();
+
+            // 🔀 Consolidar grupos con el mismo displayName (ej: "Dario" con artistId Y "Dario" sin artistId)
+            const mergedData = {};
+            for (const [key, data] of Object.entries(personData)) {
+                const mergeKey = data.displayName.toLowerCase().trim();
+                if (mergedData[mergeKey]) {
+                    // Unir al grupo existente
+                    mergedData[mergeKey].count += data.count;
+                    for (const p of data.prefixes) {
+                        if (!mergedData[mergeKey].prefixes.includes(p)) {
+                            mergedData[mergeKey].prefixes.push(p);
+                        }
+                    }
+                    mergedData[mergeKey].hasPrev = mergedData[mergeKey].hasPrev || data.hasPrev;
+                    if (!mergedData[mergeKey].artistId && data.artistId) {
+                        mergedData[mergeKey].artistId = data.artistId;
+                    }
+                } else {
+                    mergedData[mergeKey] = { ...data };
+                }
+            }
+
+            const artistNames = Object.keys(mergedData).sort((a, b) => {
+                const na = mergedData[a].displayName.toLowerCase();
+                const nb = mergedData[b].displayName.toLowerCase();
                 return na.localeCompare(nb);
             });
             ui.artistsListDiv.innerHTML = '';
             
             artistNames.forEach(groupKey => {
-                const { count, displayName, prefixes, hasPrev } = personData[groupKey];
+                const { count, displayName, prefixes, hasPrev } = mergedData[groupKey];
                 const primaryPrefix = prefixes[0] || ''; // Usar el primer prefix como principal
                 
                 // Badge de tipo de entrada
