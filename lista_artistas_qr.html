@@ -122,6 +122,7 @@
                         count: 0, 
                         displayName: rawName.trim(),
                         prefixes: [],
+                        prefixCounts: {},
                         artistId: artistId,
                         hasPrev: false  // tiene tickets de preventa (prefix PREV_)
                     };
@@ -137,6 +138,11 @@
                 // Agregar prefix si no está ya en el array
                 if (ticket.prefix && !acc[groupKey].prefixes.includes(ticket.prefix)) {
                     acc[groupKey].prefixes.push(ticket.prefix);
+                }
+                
+                // Contar tickets por prefix
+                if (ticket.prefix) {
+                    acc[groupKey].prefixCounts[ticket.prefix] = (acc[groupKey].prefixCounts[ticket.prefix] || 0) + 1;
                 }
 
                 // Marcar si tiene preventa
@@ -159,6 +165,10 @@
                             mergedData[mergeKey].prefixes.push(p);
                         }
                     }
+                    // Unir conteos por prefix
+                    for (const [p, cnt] of Object.entries(data.prefixCounts || {})) {
+                        mergedData[mergeKey].prefixCounts[p] = (mergedData[mergeKey].prefixCounts[p] || 0) + cnt;
+                    }
                     mergedData[mergeKey].hasPrev = mergedData[mergeKey].hasPrev || data.hasPrev;
                     if (!mergedData[mergeKey].artistId && data.artistId) {
                         mergedData[mergeKey].artistId = data.artistId;
@@ -176,7 +186,7 @@
             ui.artistsListDiv.innerHTML = '';
             
             artistNames.forEach(groupKey => {
-                const { count, displayName, prefixes, hasPrev } = mergedData[groupKey];
+                const { count, displayName, prefixes, prefixCounts, hasPrev } = mergedData[groupKey];
                 const primaryPrefix = prefixes[0] || ''; // Usar el primer prefix como principal
                 
                 // Badge de tipo de entrada
@@ -192,11 +202,19 @@
                     ? `visor_qr_compartido.html?eventId=${eventId}&artists=${prefixes.map(p => encodeURIComponent(p)).join(',')}`
                     : `visor_qr_compartido.html?eventId=${eventId}&artist=${encodeURIComponent(primaryPrefix)}`;
 
+                // Desglose de entradas por compra
+                let countDisplay;
+                if (prefixes.length > 1 && prefixCounts) {
+                    const breakdown = prefixes.map(p => prefixCounts[p] || '?').join(' + ');
+                    countDisplay = `<p class="text-xs text-amber-400">🔗 ${prefixes.length} compras agrupadas</p><p class="text-sm text-gray-300">${breakdown} = <strong>${count}</strong> entrada(s)</p>`;
+                } else {
+                    countDisplay = `${typeBadge}<p class="text-sm text-gray-400">${count} entrada(s) total</p>`;
+                }
+
                 card.innerHTML = `
                     <a href="${qrHref}" class="flex-grow">
                         <h3 class="text-xl font-bold text-sky-400">${displayName}</h3>
-                        ${prefixes.length > 1 ? `<p class="text-xs text-amber-400">🔗 ${prefixes.length} compras agrupadas</p>` : typeBadge}
-                        <p class="text-sm text-gray-400">${count} entrada(s) total</p>
+                        ${countDisplay}
                     </a>
                     <div class="flex space-x-1">
                         <button data-prefixes='${JSON.stringify(prefixes)}' data-artist-name="${displayName}" class="view-detailed-btn px-2 py-1.5 bg-green-600 text-white font-medium rounded text-xs hover:bg-green-700">👥 Ver Invitados</button>
