@@ -87,6 +87,13 @@
     <header class="bg-gradient-to-r from-purple-900 via-indigo-900 to-blue-900 border-b border-white/10 px-4 py-3 sticky top-0 z-50 shadow-2xl">
         <div class="flex items-center gap-3 flex-wrap">
             <!-- Logo y título -->
+            <!-- Botón volver -->
+            <button onclick="history.back()" title="Volver" 
+                    class="bg-white/10 hover:bg-white/20 text-white px-3 py-2 rounded-lg text-sm transition-all flex items-center gap-1 mr-1">
+                <i class="fas fa-arrow-left"></i>
+                <span class="hidden sm:inline text-xs">Volver</span>
+            </button>
+
             <div class="flex items-center gap-2 mr-2">
                 <span class="text-2xl">🎭</span>
                 <div>
@@ -97,10 +104,10 @@
 
             <!-- Selector de evento + botón agregar -->
             <div class="flex items-center gap-1">
-                <select id="eventSelector" class="bg-white/10 border border-white/20 text-white rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-400">
+                <select id="eventSelector" class="bg-white border border-gray-300 text-gray-900 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-400">
                     <option value="">⏳ Cargando eventos...</option>
                 </select>
-                <button onclick="window.addSelectedEvent()" title="Agregar artistas de esta gala al tablero SIN borrar lo que ya hay" 
+                <button onclick="window.addSelectedGeneration()" title="Agregar artistas de esta generación al tablero SIN borrar lo que ya hay" 
                         class="bg-blue-600 hover:bg-blue-500 text-white px-3 py-2 rounded-lg text-sm transition-all flex items-center gap-1">
                     <i class="fas fa-plus-circle"></i>
                     <span class="hidden sm:inline text-xs">Agregar</span>
@@ -112,13 +119,16 @@
 
             <!-- Filtro generación -->
             <input type="text" id="filterGen" placeholder="🔍 Buscar artista..." 
-                   class="bg-white/10 border border-white/20 text-white placeholder-white/50 rounded-lg px-3 py-2 text-sm w-40 focus:ring-2 focus:ring-purple-400">
+                   class="bg-white border border-gray-300 text-gray-900 placeholder-gray-400 rounded-lg px-3 py-2 text-sm w-40 focus:ring-2 focus:ring-purple-400">
 
             <!-- Stats rápidos -->
             <div class="flex items-center gap-2 ml-auto">
-                <span class="text-white/60 text-sm" id="statsLabel">— artistas</span>
+                <span class="text-white text-sm font-semibold" id="statsLabel">— artistas</span>
                 <button onclick="addColumn()" class="bg-purple-600 hover:bg-purple-500 text-white font-semibold px-3 py-2 rounded-lg text-sm transition-all flex items-center gap-1">
                     <i class="fas fa-plus"></i> <span class="hidden sm:inline">Grupo</span>
+                </button>
+                <button onclick="window.exportarGrupos()" class="bg-blue-600 hover:bg-blue-500 text-white font-semibold px-3 py-2 rounded-lg text-sm transition-all flex items-center gap-1" title="Descargar grupos para WhatsApp">
+                    <i class="fas fa-download"></i> <span class="hidden sm:inline">Descargar</span>
                 </button>
                 <button onclick="window.saveState(true)" class="bg-green-600 hover:bg-green-500 text-white font-semibold px-3 py-2 rounded-lg text-sm transition-all flex items-center gap-1">
                     <i class="fas fa-save"></i> <span class="hidden sm:inline">Guardar</span>
@@ -156,7 +166,7 @@
                 <!-- Buscador pool -->
                 <div class="p-2 border-b border-indigo-700">
                     <input type="text" id="poolSearch" placeholder="Buscar..." 
-                           class="w-full bg-indigo-950 border border-indigo-600 text-white text-xs rounded-lg px-2 py-1.5 placeholder-indigo-400">
+                           class="w-full bg-white border border-gray-300 text-gray-900 text-xs rounded-lg px-2 py-1.5 placeholder-gray-400">
                 </div>
                 <!-- Drop zone pool -->
                 <div id="pool-drop" class="drop-zone p-2 space-y-2 overflow-y-auto" style="max-height: calc(100vh - 180px);">
@@ -217,6 +227,59 @@
         </div>
     </div>
 
+    <!-- MODAL: Selector de galas para Generación 13 -->
+    <div id="modalGen13" class="hidden fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+        <div class="bg-gray-900 border border-gray-700 rounded-2xl p-6 w-full max-w-lg shadow-2xl">
+            <h3 class="text-white font-bold text-lg mb-2">🎭 Generación 13 - Seleccionar galas</h3>
+            <p class="text-gray-400 text-sm mb-4">Marcá las galas que pertenecen a Generación 13:</p>
+            
+            <!-- Lista de galas con checkboxes -->
+            <div id="gen13EventsList" class="space-y-2 mb-4 max-h-96 overflow-y-auto">
+                <!-- Se llena dinámicamente -->
+            </div>
+            
+            <div class="flex gap-3">
+                <button onclick="confirmGen13Selection()" class="flex-1 bg-purple-600 hover:bg-purple-500 text-white font-bold py-3 rounded-xl transition-all">
+                    ✅ Cargar seleccionados
+                </button>
+                <button onclick="document.getElementById('modalGen13').classList.add('hidden')" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 rounded-xl transition-all">
+                    Cancelar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: Confirmar nombres similares (uno por uno) -->
+    <div id="modalSimilar" class="hidden fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4">
+        <div class="bg-gray-900 border-2 border-yellow-500 rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+            <div class="text-center mb-4">
+                <span class="text-4xl">🔍</span>
+                <h3 class="text-white font-bold text-lg mt-2">¿Son la misma persona?</h3>
+            </div>
+            <div class="bg-gray-800 rounded-xl p-4 mb-5 text-center">
+                <p class="text-yellow-300 font-bold text-xl mb-1" id="similarName1">—</p>
+                <p class="text-gray-400 text-sm mb-1">¿es la misma persona que...?</p>
+                <p class="text-yellow-300 font-bold text-xl" id="similarName2">—</p>
+            </div>
+            <div class="flex gap-3">
+                <button onclick="window.responderSimilar(true)" 
+                        class="flex-1 bg-green-600 hover:bg-green-500 text-white font-bold py-3 rounded-xl transition-all text-lg">
+                    ✅ Sí, son la misma
+                </button>
+                <button onclick="window.responderSimilar(false)" 
+                        class="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 rounded-xl transition-all text-lg">
+                    ❌ No, son distintas
+                </button>
+            </div>
+            <p class="text-gray-500 text-xs text-center mt-3" id="similarCounter">— de —</p>
+        </div>
+    </div>
+                    Cancelar
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Firebase SDK -->
     <script type="module">
         import { app, db } from './firebase_config.js';
@@ -225,13 +288,13 @@
         // ═══════════════════════════════════════════
         // ESTADO GLOBAL
         // ═══════════════════════════════════════════
-        let allArtists = [];          // Todos los artistas (de todos los eventos cargados)
+        let allArtists = [];          // Todos los artistas (de todas las generaciones cargadas)
         let artistStatus = {};        // { artistId: 'canto' | 'ausente' | 'noprog' }
         let columnAssignments = {};   // { artistId: columnId }
         let columns = [];             // [{ id, name, color }]
         let allEvents = [];
-        let currentEventId = null;
-        let loadedEventIds = [];      // IDs de todos los eventos/galas cargados
+        let allGenerations = [];      // Lista de generaciones disponibles
+        let loadedGenerations = [];   // Generaciones ya cargadas en el tablero
         let selectedColor = 'purple';
         let sortableInstances = {};
 
@@ -248,134 +311,552 @@
         };
 
         // ═══════════════════════════════════════════
-        // CARGA DE EVENTOS
+        // CARGA DE GENERACIONES
         // ═══════════════════════════════════════════
-        async function loadEvents() {
+        async function loadGenerations() {
             try {
+                console.log('🔍 Cargando eventos...');
+                // Cargar todos los eventos
                 const eventsSnap = await getDocs(query(collection(db, 'events'), orderBy('createdAt', 'desc')));
                 allEvents = eventsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+                console.log(`✅ ${allEvents.length} eventos encontrados:`, allEvents.map(e => e.name || e.id));
 
+                // Extraer generaciones del NOMBRE de las galas (no hay campo generacion en artistas)
+                const generationsSet = new Set();
+                
+                for (const event of allEvents) {
+                    const eventName = event.name || event.id;
+                    let generacion = null;
+                    
+                    // Detectar generación SOLO de Gen 12 y eventos con número explícito
+                    // Gen 13 se selecciona manualmente mediante el modal
+                    if (/generaci[oó]n\s*(\d+)/i.test(eventName) || /(\d+)g\s/i.test(eventName)) {
+                        const match = eventName.match(/generaci[oó]n\s*(\d+)/i) || eventName.match(/(\d+)g\s/i);
+                        const num = match[1];
+                        generacion = `Generación ${num}`;
+                        console.log(`  📌 Gen ${num} detectada: ${eventName}`);
+                    } 
+                    // Otros eventos → usar nombre completo
+                    else {
+                        generacion = eventName;
+                        console.log(`  📦 Evento individual: ${eventName}`);
+                    }
+                    
+                    if (generacion) {
+                        generationsSet.add(generacion);
+                        console.log(`  📌 ${eventName} → ${generacion}`);
+                    }
+                }
+
+                allGenerations = Array.from(generationsSet).sort();
+                console.log(`🎯 Generaciones únicas encontradas:`, allGenerations);
+
+                // ⭐ AGREGAR "Generación 13" MANUALMENTE (para selección manual)
+                if (!allGenerations.includes('Generación 13')) {
+                    allGenerations.unshift('Generación 13'); // Al principio
+                    console.log('✅ Generación 13 agregada manualmente');
+                }
+
+                // Poblar selector
                 const sel = document.getElementById('eventSelector');
-                sel.innerHTML = '<option value="">— Seleccionar evento —</option>';
-                allEvents.forEach(ev => {
+                sel.innerHTML = '<option value="">— Seleccionar generación —</option>';
+                
+                if (allGenerations.length === 0) {
+                    document.getElementById('loadingState').innerHTML = `
+                        <div class="text-center py-12">
+                            <p class="text-red-400 text-xl font-bold mb-2">⚠️ No se encontraron generaciones</p>
+                            <p class="text-white/50 text-sm">Asegurate de que los artistas tengan el campo "generacion" o "grupo" configurado</p>
+                        </div>`;
+                    showToast('No se encontraron generaciones', '⚠️');
+                    return;
+                }
+                
+                allGenerations.forEach(gen => {
                     const opt = document.createElement('option');
-                    opt.value = ev.id;
-                    opt.textContent = ev.name + (ev.date ? ` (${ev.date})` : '');
+                    opt.value = gen;
+                    opt.textContent = gen;
                     sel.appendChild(opt);
                 });
 
-                // Auto-seleccionar evento activo si existe
-                const activeEvent = allEvents.find(e => e.isActive);
-                if (activeEvent) {
-                    sel.value = activeEvent.id;
-                    await loadArtists(activeEvent.id);
-                } else {
-                    document.getElementById('loadingState').innerHTML = `
-                        <div class="text-center text-white/50">
-                            <div class="text-5xl mb-3">📂</div>
-                            <p>Seleccioná un evento para comenzar</p>
-                        </div>`;
-                }
-            } catch (err) {
-                console.error(err);
-                showToast('Error al cargar eventos', '❌');
+                document.getElementById('loadingState').innerHTML = `
+                    <div class="text-center py-12">
+                        <p class="text-purple-300 text-xl font-bold mb-2">🎭 Organizador de Certamen</p>
+                        <p class="text-white/50 mb-4">Generación 13 cargada - seleccioná las galas</p>
+                        <button onclick="showGen13Modal()" 
+                                class="bg-purple-600 hover:bg-purple-500 text-white font-bold px-6 py-3 rounded-xl text-lg transition-all shadow-lg">
+                            📋 Seleccionar Galas de Gen 13
+                        </button>
+                    </div>`;
+                
+                // Abrir modal automáticamente al cargar
+                setTimeout(() => showGen13Modal(), 500);
+                
+            } catch (error) {
+                console.error('❌ Error cargando generaciones:', error);
+                showToast('Error al cargar generaciones', '❌');
+                document.getElementById('loadingState').innerHTML = `
+                    <div class="text-center py-12">
+                        <p class="text-red-400 text-xl font-bold mb-2">❌ Error</p>
+                        <p class="text-white/50 text-sm">${error.message}</p>
+                    </div>`;
             }
         }
 
+        window.addSelectedGeneration = async function() {
+            const sel = document.getElementById('eventSelector');
+            const generacion = sel.value;
+            if (!generacion) return showToast('Selecciona una generación', '⚠️');
+            if (loadedGenerations.includes(generacion)) return showToast('Ya cargaste esa generación', 'ℹ️');
+            
+            // Si es Generación 13, abrir modal de selección manual
+            if (generacion === 'Generación 13') {
+                showGen13Modal();
+                sel.value = '';
+                return;
+            }
+            
+            await loadArtistsByGeneration(generacion, loadedGenerations.length > 0);
+            sel.value = '';
+        };
+
         // ═══════════════════════════════════════════
-        // CARGA DE ARTISTAS + PUNTAJES
+        // MODAL GEN 13: SELECCIÓN MANUAL DE GALAS
+        // ═══════════════════════════════════════════
+        async function showGen13Modal() {
+            const container = document.getElementById('gen13EventsList');
+            container.innerHTML = '<div class="text-center text-white py-4">⏳ Cargando eventos...</div>';
+            
+            document.getElementById('modalGen13').classList.remove('hidden');
+            
+            // Cargar selección previa (si existe)
+            const savedSelection = JSON.parse(localStorage.getItem('gen13_selected_events') || '[]');
+            
+            // Cargar info de artistas por evento (con votos)
+            const eventsWithCounts = [];
+            for (const event of allEvents) {
+                try {
+                    const artistasConVotos = new Set();
+                    
+                    // Contar artistas con votos de jurados
+                    const evalSnap = await getDocs(collection(db, `events/${event.id}/jury_evaluations`));
+                    evalSnap.docs.forEach(eDoc => {
+                        const aid = eDoc.data().artista_id || eDoc.data().artistId;
+                        if (aid) artistasConVotos.add(aid);
+                    });
+                    
+                    // Contar votos públicos también
+                    const votesSnap = await getDocs(collection(db, `events/${event.id}/votes`));
+                    votesSnap.docs.forEach(vDoc => {
+                        const aid = vDoc.data().artistId || vDoc.data().artista_id;
+                        if (aid) artistasConVotos.add(aid);
+                    });
+                    
+                    eventsWithCounts.push({
+                        ...event,
+                        artistCount: artistasConVotos.size
+                    });
+                } catch (e) {
+                    eventsWithCounts.push({ ...event, artistCount: 0 });
+                }
+            }
+            
+            // Ordenar por fecha descendente
+            eventsWithCounts.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+            
+            // Renderizar lista
+            container.innerHTML = '';
+            eventsWithCounts.forEach(event => {
+                const eventName = event.name || event.id;
+                const isSelected = savedSelection.includes(event.id);
+                
+                const item = document.createElement('label');
+                item.className = `flex items-start gap-3 p-3 rounded-lg cursor-pointer transition-all border-2 ${
+                    isSelected ? 'bg-purple-900/30 border-purple-500' : 'bg-gray-800 border-gray-700 hover:border-purple-500'
+                }`;
+                item.innerHTML = `
+                    <input type="checkbox" 
+                           value="${event.id}" 
+                           ${isSelected ? 'checked' : ''}
+                           class="mt-1 w-5 h-5 text-purple-600 bg-gray-700 border-gray-600 rounded focus:ring-purple-500">
+                    <div class="flex-1">
+                        <p class="text-white text-sm font-bold">${eventName}</p>
+                        <div class="flex items-center gap-2 mt-1">
+                            <span class="text-xs px-2 py-0.5 rounded-full ${
+                                event.artistCount > 0 ? 'bg-green-900 text-green-300' : 'bg-gray-700 text-gray-400'
+                            }">
+                                🎤 ${event.artistCount} artistas
+                            </span>
+                            <span class="text-gray-500 text-xs">ID: ${event.id}</span>
+                        </div>
+                    </div>
+                `;
+                container.appendChild(item);
+            });
+        }
+
+        window.confirmGen13Selection = async function() {
+            const checkboxes = document.querySelectorAll('#gen13EventsList input[type="checkbox"]:checked');
+            const selectedEventIds = Array.from(checkboxes).map(cb => cb.value);
+            
+            if (selectedEventIds.length === 0) {
+                showToast('Seleccioná al menos una gala', '⚠️');
+                return;
+            }
+            
+            // Guardar selección
+            localStorage.setItem('gen13_selected_events', JSON.stringify(selectedEventIds));
+            
+            // Cerrar modal
+            document.getElementById('modalGen13').classList.add('hidden');
+            
+            // Cargar artistas SOLO de las galas seleccionadas
+            await loadArtistsByGeneration('Generación 13', loadedGenerations.length > 0, selectedEventIds);
+            
+            // Detectar nombres similares después de cargar
+            setTimeout(() => detectSimilarNames(), 1000);
+        };
+
+        // ═══════════════════════════════════════════
+        // DETECCIÓN DE NOMBRES SIMILARES
+        // ═══════════════════════════════════════════
+        function levenshteinDistance(str1, str2) {
+            const m = str1.length, n = str2.length;
+            const dp = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0));
+            
+            for (let i = 0; i <= m; i++) dp[i][0] = i;
+            for (let j = 0; j <= n; j++) dp[0][j] = j;
+            
+            for (let i = 1; i <= m; i++) {
+                for (let j = 1; j <= n; j++) {
+                    if (str1[i-1] === str2[j-1]) {
+                        dp[i][j] = dp[i-1][j-1];
+                    } else {
+                        dp[i][j] = Math.min(dp[i-1][j], dp[i][j-1], dp[i-1][j-1]) + 1;
+                    }
+                }
+            }
+            return dp[m][n];
+        }
+
+        async function detectSimilarNames() {
+            const nombres = allArtists.map(a => ({
+                id: a.id,
+                name: a.name,
+                normalized: a.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim()
+            }));
+            
+            const similares = [];
+            for (let i = 0; i < nombres.length; i++) {
+                for (let j = i + 1; j < nombres.length; j++) {
+                    const n1 = nombres[i].normalized;
+                    const n2 = nombres[j].normalized;
+                    
+                    // Caso 1: Uno contiene al otro (Estefi / Estefania)
+                    const oneContainsOther = n1.includes(n2) || n2.includes(n1);
+                    
+                    // Caso 2: Levenshtein distance
+                    const dist = levenshteinDistance(n1, n2);
+                    const maxLen = Math.max(n1.length, n2.length);
+                    const similarity = 1 - (dist / maxLen);
+                    
+                    if ((similarity >= 0.60 || oneContainsOther) && nombres[i].name !== nombres[j].name) {
+                        similares.push({
+                            name1: nombres[i].name,
+                            name2: nombres[j].name,
+                            id1: nombres[i].id,
+                            id2: nombres[j].id
+                        });
+                    }
+                }
+            }
+            
+            if (similares.length === 0) {
+                console.log('✅ No se detectaron nombres similares');
+                return;
+            }
+            
+            // Preguntar uno por uno
+            console.log(`🔍 ${similares.length} posibles duplicados encontrados`);
+            window._similarQueue = similares;
+            window._similarIndex = 0;
+            mostrarSiguienteSimilar();
+        }
+
+        function mostrarSiguienteSimilar() {
+            const queue = window._similarQueue;
+            const idx = window._similarIndex;
+            
+            // Filtrar pares donde alguno ya fue fusionado (ya no existe en allArtists)
+            while (window._similarIndex < queue.length) {
+                const par = queue[window._similarIndex];
+                const a1 = allArtists.find(a => a.id === par.id1);
+                const a2 = allArtists.find(a => a.id === par.id2);
+                if (a1 && a2) break; // Ambos existen, mostrar este par
+                window._similarIndex++; // Alguno fue fusionado, saltear
+            }
+            
+            if (window._similarIndex >= queue.length) {
+                document.getElementById('modalSimilar').classList.add('hidden');
+                renderBoard();
+                saveState();
+                showToast('✅ Revisión de duplicados completada', '🔍');
+                return;
+            }
+            
+            const par = queue[window._similarIndex];
+            document.getElementById('similarName1').textContent = par.name1;
+            document.getElementById('similarName2').textContent = par.name2;
+            document.getElementById('similarCounter').textContent = 
+                `Par ${window._similarIndex + 1} de ${queue.length}`;
+            document.getElementById('modalSimilar').classList.remove('hidden');
+        }
+
+        window.responderSimilar = function(sonIguales) {
+            const par = window._similarQueue[window._similarIndex];
+            
+            if (sonIguales) {
+                // Fusionar: mantener el primero, agregar galas del segundo
+                const idx1 = allArtists.findIndex(a => a.id === par.id1);
+                const idx2 = allArtists.findIndex(a => a.id === par.id2);
+                
+                if (idx1 !== -1 && idx2 !== -1) {
+                    const a1 = allArtists[idx1];
+                    const a2 = allArtists[idx2];
+                    
+                    // Acumular eventIds únicos
+                    a2.eventIds.forEach(eid => {
+                        if (!a1.eventIds.includes(eid)) a1.eventIds.push(eid);
+                    });
+                    
+                    // Acumular votedEventIds únicos
+                    a2.votedEventIds.forEach(eid => {
+                        if (!a1.votedEventIds.includes(eid)) a1.votedEventIds.push(eid);
+                    });
+                    
+                    // Actualizar galas
+                    a1.galas = a1.votedEventIds.length;
+                    
+                    // Si el segundo tenía foto y el primero no, usar la del segundo
+                    if (!a1.photoURL && a2.photoURL) a1.photoURL = a2.photoURL;
+                    
+                    // Si el segundo estaba asignado a un grupo, moverlo al primero
+                    if (columnAssignments[a2.id] && !columnAssignments[a1.id]) {
+                        columnAssignments[a1.id] = columnAssignments[a2.id];
+                    }
+                    
+                    // Eliminar el segundo artista
+                    allArtists.splice(idx2, 1);
+                    delete columnAssignments[a2.id];
+                    delete artistStatus[a2.id];
+                    
+                    console.log(`✅ Fusionados: "${a2.name}" → "${a1.name}" (${a1.galas} galas)`);
+                    showToast(`✅ "${par.name1}" y "${par.name2}" fusionados`, '🔗');
+                }
+            } else {
+                console.log(`❌ No fusionados: "${par.name1}" ≠ "${par.name2}"`);
+            }
+            
+            window._similarIndex++;
+            mostrarSiguienteSimilar();
+        };
+
+        // ═══════════════════════════════════════════
+        // CARGA DE ARTISTAS POR GENERACIÓN
         // ═══════════════════════════════════════════
         // merge=false → reemplaza el tablero | merge=true → agrega al pool sin borrar nada
-        async function loadArtists(eventId, merge = false) {
-            currentEventId = eventId;
-
+        // selectedEventIds → (opcional) para Gen 13: IDs específicos de eventos a cargar
+        async function loadArtistsByGeneration(generacion, merge = false, selectedEventIds = null) {
             if (!merge) {
                 // Reset completo
                 allArtists = [];
                 artistStatus = {};
                 columnAssignments = {};
                 columns = [];
-                loadedEventIds = [];
+                loadedGenerations = [];
+                
+                // Limpiar localStorage viejo para evitar conflictos
+                localStorage.removeItem('organizador_session');
+                
                 document.getElementById('loadingState').classList.remove('hidden');
                 document.getElementById('board').classList.add('hidden');
                 document.getElementById('loadingState').innerHTML = `
                     <div class="text-center">
                         <div class="text-5xl mb-4 animate-bounce">🎵</div>
-                        <p class="text-white/60 text-lg">Cargando artistas...</p>
+                        <p class="text-white/60 text-lg">Cargando artistas de ${generacion}...</p>
                     </div>`;
             }
 
             try {
-                const eventName = allEvents.find(e => e.id === eventId)?.name || eventId;
+                const newArtists = [];
+                let eventsInGeneration = 0;
 
-                // Cargar artistas del evento (ID prefijado para evitar colisiones entre eventos)
-                const artistsSnap = await getDocs(collection(db, `events/${eventId}/artists`));
-                const newArtists = artistsSnap.docs
-                    .filter(d => !allArtists.some(a => a.id === `${eventId}_${d.id}`))
-                    .map(d => ({
-                        id: `${eventId}_${d.id}`,  // ID único cross-evento
-                        originalId: d.id,           // ID original en Firestore
-                        eventId,
-                        eventLabel: eventName,
-                        name: d.data().name || 'Sin nombre',
-                        photoURL: d.data().photoURL || null,
-                        generacion: d.data().generacion || d.data().grupo || '',
-                        galas: 0,
-                        avg: null
-                    }));
-
-                allArtists = [...allArtists, ...newArtists];
-
-                // Cargar puntajes de jurados
-                try {
-                    const evalSnap = await getDocs(collection(db, `events/${eventId}/jury_evaluations`));
-                    const scoresByOrigId = {};
-                    evalSnap.docs.forEach(eDoc => {
-                        const edata = eDoc.data();
-                        const aid = edata.artista_id || edata.artistId;
-                        const score = edata.promedio || edata.puntuacion_final || edata.totalScore;
-                        if (aid && score != null) {
-                            if (!scoresByOrigId[aid]) scoresByOrigId[aid] = [];
-                            scoresByOrigId[aid].push(Number(score));
+                // Buscar eventos que pertenezcan a esta generación
+                for (const event of allEvents) {
+                    const eventName = event.name || event.id;
+                    let shouldLoadThisEvent = false;
+                    
+                    // ⭐ CASO 1: Gen 13 con selección manual (selectedEventIds definido)
+                    if (selectedEventIds && selectedEventIds.length > 0) {
+                        shouldLoadThisEvent = selectedEventIds.includes(event.id);
+                        if (shouldLoadThisEvent) {
+                            console.log(`✅ Cargando gala seleccionada manualmente: ${eventName}`);
                         }
-                    });
-                    allArtists.forEach(a => {
-                        if (a.eventId !== eventId) return;
-                        const scores = scoresByOrigId[a.originalId];
-                        if (scores && scores.length > 0) {
-                            a.galas = scores.length;
-                            a.avg = (scores.reduce((s, v) => s + v, 0) / scores.length).toFixed(1);
+                    }
+                    // CASO 2: Detección automática (otras generaciones)
+                    else {
+                        let eventGeneracion = null;
+                        
+                        // Inferir generación del nombre (SOLO Gen 12 y eventos con número)
+                        if (/generaci[oó]n\s*(\d+)/i.test(eventName) || /(\d+)g\s/i.test(eventName)) {
+                            const match = eventName.match(/generaci[oó]n\s*(\d+)/i) || eventName.match(/(\d+)g\s/i);
+                            const num = match[1];
+                            eventGeneracion = `Generación ${num}`;
                         }
-                    });
-                } catch (_) { /* No hay evaluaciones */ }
+                        else {
+                            eventGeneracion = eventName;
+                        }
+                        
+                        shouldLoadThisEvent = (eventGeneracion === generacion);
+                    }
 
-                // Intentar jury_votes si no hay evaluaciones
-                if (newArtists.every(a => a.avg === null)) {
-                    try {
-                        const votesSnap = await getDocs(collection(db, `events/${eventId}/jury_votes`));
-                        const votesByOrigId = {};
-                        votesSnap.docs.forEach(vDoc => {
-                            const vdata = vDoc.data();
-                            const aid = vdata.artista_id || vdata.artistId;
-                            if (!votesByOrigId[aid]) votesByOrigId[aid] = [];
-                            const vscores = vdata.puntuaciones || vdata.scores;
-                            if (vscores) {
-                                const vals = Object.values(vscores).filter(v => typeof v === 'number');
-                                if (vals.length > 0) votesByOrigId[aid].push(vals.reduce((s, v) => s + v, 0) / vals.length);
-                            }
-                        });
-                        allArtists.forEach(a => {
-                            if (a.eventId !== eventId) return;
-                            const votes = votesByOrigId[a.originalId];
-                            if (votes && votes.length > 0) {
-                                a.galas = votes.length;
-                                a.avg = (votes.reduce((s, v) => s + v, 0) / votes.length).toFixed(1);
-                            }
-                        });
-                    } catch (_) { /* Sin votos */ }
+                    // Si este evento debe cargarse, procesar sus artistas
+                    if (shouldLoadThisEvent) {
+                        eventsInGeneration++;
+                        try {
+                            const artistsSnap = await getDocs(collection(db, `events/${event.id}/artists`));
+                            console.log(`📥 Escaneando ${artistsSnap.docs.length} artistas de "${eventName}"`);
+                            
+                            // Cargar votos para marcar si cantaron
+                            const artistasConVotos = new Set();
+                            
+                            // Verificar votos de jurados
+                            try {
+                                const evalSnap = await getDocs(collection(db, `events/${event.id}/jury_evaluations`));
+                                evalSnap.docs.forEach(eDoc => {
+                                    const aid = eDoc.data().artista_id || eDoc.data().artistId;
+                                    if (aid) artistasConVotos.add(aid);
+                                });
+                            } catch (_) { }
+                            
+                            // Verificar votos públicos
+                            try {
+                                const votesSnap = await getDocs(collection(db, `events/${event.id}/votes`));
+                                votesSnap.docs.forEach(vDoc => {
+                                    const aid = vDoc.data().artistId || vDoc.data().artista_id;
+                                    if (aid) artistasConVotos.add(aid);
+                                });
+                            } catch (_) { }
+                            
+                            console.log(`  ✅ ${artistasConVotos.size} artistas con votos en esta gala`);
+                            
+                            // CARGAR TODOS los artistas (con o sin votos)
+                            let artistasAgregados = 0;
+                            artistsSnap.docs.forEach(d => {
+                                const artistName = d.data().name || 'Sin nombre';
+                                const artistId = `${event.id}_${d.id}`;
+                                const hasVotes = artistasConVotos.has(d.id);
+                                
+                                newArtists.push({
+                                    id: artistId,
+                                    originalId: d.id,
+                                    eventId: event.id,
+                                    eventLabel: event.name || event.id,
+                                    name: artistName,
+                                    photoURL: d.data().photoURL || null,
+                                    generacion: generacion,
+                                    galas: hasVotes ? 1 : 0,  // Solo cuenta si tiene votos
+                                    hasVotes: hasVotes,
+                                    avg: null,
+                                    eventIds: [event.id],
+                                    votedEventIds: hasVotes ? [event.id] : []
+                                });
+                                artistasAgregados++;
+                                
+                                if (!hasVotes) {
+                                    console.log(`  ⏭️ ${artistName} sin votos aún en "${eventName}"`);
+                                }
+                            });
+                            console.log(`  ✅ ${artistasAgregados} artistas agregados (${artistasConVotos.size} con votos)`);
+                        } catch (e) {
+                            console.warn(`⚠️ Error cargando artistas de ${eventName}:`, e);
+                        }
+                    } // FIN: if (shouldLoadThisEvent)
                 }
 
-                if (!loadedEventIds.includes(eventId)) loadedEventIds.push(eventId);
+                console.log(`📊 Total artistas cargados (con duplicados): ${newArtists.length}`);
+                
+                // CONSOLIDACIÓN FINAL: filtrar duplicados y ACUMULAR información de galas
+                const artistasUnicos = [];
+                const artistMap = new Map(); // Para búsqueda rápida por nombre normalizado
+                
+                newArtists.forEach(artist => {
+                    // Normalización AGRESIVA: sin tildes, sin espacios extras, lowercase
+                    const normalizedName = artist.name
+                        .normalize("NFD")
+                        .replace(/[\u0300-\u036f]/g, "")  // Quitar tildes
+                        .toLowerCase()
+                        .replace(/\s+/g, " ")  // Múltiples espacios → un espacio
+                        .trim()
+                        .replace(/[^a-z0-9\s]/g, "");  // Quitar caracteres especiales
+                    
+                    if (artistMap.has(normalizedName)) {
+                        // YA EXISTE → Acumular información de galas
+                        const existing = artistMap.get(normalizedName);
+                        
+                        // Agregar evento si no está
+                        if (!existing.eventIds.includes(artist.eventId)) {
+                            existing.eventIds.push(artist.eventId);
+                        }
+                        
+                        // Agregar evento con votos si corresponde
+                        if (artist.hasVotes && !existing.votedEventIds.includes(artist.eventId)) {
+                            existing.votedEventIds.push(artist.eventId);
+                        }
+                        
+                        // El contador de galas = eventos donde tiene votos
+                        existing.galas = existing.votedEventIds.length;
+                        
+                        console.log(`  🔗 "${artist.name}" duplicado de "${existing.name}" → ${existing.galas} galas con votos de ${existing.eventIds.length} eventos`);
+                    } else {
+                        // NO EXISTE → Agregar nuevo
+                        artistMap.set(normalizedName, artist);
+                        artistasUnicos.push(artist);
+                    }
+                });
+                
+                console.log(`✅ Artistas únicos (sin duplicados): ${artistasUnicos.length}`);
+                console.log(`🔗 Duplicados eliminados: ${newArtists.length - artistasUnicos.length}`);
+                
+                // Estadísticas de galas
+                const por1Gala = artistasUnicos.filter(a => a.galas === 1).length;
+                const por2Galas = artistasUnicos.filter(a => a.galas === 2).length;
+                const por3oMas = artistasUnicos.filter(a => a.galas >= 3).length;
+                const sinVotos = artistasUnicos.filter(a => a.galas === 0).length;
+                
+                console.log(`📊 DISTRIBUCIÓN:`);
+                if (sinVotos > 0) console.log(`   • Sin votos aún: ${sinVotos} artistas ⏳`);
+                console.log(`   • 1 gala: ${por1Gala} artistas`);
+                console.log(`   • 2 galas: ${por2Galas} artistas`);
+                if (por3oMas > 0) console.log(`   • 3+ galas: ${por3oMas} artistas`);
+                
+                // Tabla detallada en consola
+                console.table(artistasUnicos.map(a => ({
+                    Nombre: a.name,
+                    Galas: a.galas,
+                    'Total eventos': a.eventIds.length,
+                    'Eventos con votos': a.votedEventIds.join(', ') || 'ninguno',
+                    Estado: a.galas === 0 ? '⏳ Sin votos' : '✅ Votado'
+                })));
+                
+                // Alerta si el número de artistas es diferente al esperado
+                if (generacion === 'Generación 13' && artistasUnicos.length !== 28) {
+                    console.warn(`⚠️ Se esperaban ~28 artistas en Gen 13, pero se cargaron ${artistasUnicos.length}`);
+                    showToast(`⚠️ ${artistasUnicos.length} artistas cargados (esperados: ~28)`, '⚠️');
+                }
+                
+                allArtists = [...allArtists, ...artistasUnicos];
+
+                if (!loadedGenerations.includes(generacion)) loadedGenerations.push(generacion);
 
                 if (!merge) {
                     loadSavedState();
@@ -384,10 +865,20 @@
                 }
 
                 renderBoard();
-                updateLoadedEventsDisplay();
+                updateLoadedGenerationsDisplay();
                 saveState();
                 document.getElementById('statsLabel').textContent = `${allArtists.length} artistas`;
-                if (merge) showToast(`${newArtists.length} artistas de "${eventName}" agregados al pool`, '✅');
+                
+                // Mensaje detallado
+                if (merge) {
+                    let msg = `${artistasUnicos.length} artistas de "${generacion}" agregados`;
+                    if (sinVotos > 0) msg += ` (${sinVotos} sin votos aún)`;
+                    showToast(msg, '✅');
+                } else {
+                    let msg = `✅ ${artistasUnicos.length} artistas`;
+                    if (sinVotos > 0) msg += ` (${sinVotos} sin votos, ${por1Gala + por2Galas + por3oMas} votados)`;
+                    showToast(msg, '📊');
+                }
 
             } catch (err) {
                 console.error(err);
@@ -403,15 +894,13 @@
             }
         }
 
-        function updateLoadedEventsDisplay() {
+        function updateLoadedGenerationsDisplay() {
             const container = document.getElementById('loadedEventsChips');
             container.innerHTML = '';
-            loadedEventIds.forEach(eid => {
-                const ev = allEvents.find(e => e.id === eid);
-                const name = ev ? (ev.name.length > 18 ? ev.name.slice(0, 18) + '…' : ev.name) : eid;
+            loadedGenerations.forEach(gen => {
                 const chip = document.createElement('span');
-                chip.className = 'bg-blue-800 text-blue-200 text-xs px-2 py-1 rounded-full flex items-center gap-1';
-                chip.innerHTML = `🎭 ${name}`;
+                chip.className = 'bg-purple-800 text-purple-200 text-xs px-2 py-1 rounded-full flex items-center gap-1';
+                chip.innerHTML = `🎭 ${gen}`;
                 container.appendChild(chip);
             });
         }
@@ -420,31 +909,29 @@
         // ESTADO: GUARDAR / CARGAR
         // ═══════════════════════════════════════════
         function saveState(showConfirm = false) {
-            const state = { columns, artistStatus, columnAssignments, allArtists, loadedEventIds };
+            const state = { columns, artistStatus, columnAssignments, allArtists, loadedGenerations };
             // Guardar siempre en sesión
             localStorage.setItem('organizador_session', JSON.stringify(state));
-            // Si sólo hay 1 evento, guardar también por evento
-            if (loadedEventIds.length === 1) {
-                localStorage.setItem(`organizador_${loadedEventIds[0]}`, JSON.stringify(state));
+            // Si sólo hay 1 generación, guardar también por generación
+            if (loadedGenerations.length === 1) {
+                localStorage.setItem(`organizador_gen_${loadedGenerations[0]}`, JSON.stringify(state));
             }
             if (showConfirm) showToast('Estado guardado', '💾');
         }
         window.saveState = saveState;
 
         function loadSavedState() {
-            // Intentar restaurar por evento si sólo hay uno
-            if (loadedEventIds.length === 1) {
-                const raw = localStorage.getItem(`organizador_${loadedEventIds[0]}`);
+            // Intentar restaurar por generación si sólo hay una
+            if (loadedGenerations.length === 1) {
+                const raw = localStorage.getItem(`organizador_gen_${loadedGenerations[0]}`);
                 if (raw) {
                     try {
                         const state = JSON.parse(raw);
                         columns = state.columns || [];
                         artistStatus = state.artistStatus || {};
                         columnAssignments = state.columnAssignments || {};
-                        // Restaurar artistas guardados (tienen ID prefijado)
-                        if (state.allArtists && state.allArtists.length > 0) {
-                            allArtists = state.allArtists;
-                        }
+                        // ❌ NO restaurar allArtists - los acabamos de cargar de Firebase con datos frescos
+                        console.log('✅ Estado restaurado: columnas y asignaciones (artistas frescos de Firebase)');
                         return;
                     } catch (_) {}
                 }
@@ -474,7 +961,8 @@
 
         function renderPool() {
             const pool = document.getElementById('pool-drop');
-            const poolArtists = getPoolArtists();
+            const poolArtists = getPoolArtists()
+                .sort((a, b) => (b.galas || 0) - (a.galas || 0)); // Con galas primero
             pool.innerHTML = '';
             poolArtists.forEach(a => {
                 pool.appendChild(createArtistCard(a));
@@ -567,30 +1055,30 @@
                 ? Array.from({ length: Math.min(galas, 5) }, (_, i) =>
                     `<span class="inline-block w-2 h-2 rounded-full ${i < galas ? 'bg-purple-400' : 'bg-gray-600'}"></span>`
                   ).join('')
-                : `<span class="text-gray-600 text-xs">sin eval.</span>`;
+                : `<span class="text-orange-400 text-xs">⏳ sin votos</span>`;
 
             const photoEl = artist.photoURL
-                ? `<img src="${artist.photoURL}" alt="${artist.name}" class="w-12 h-12 rounded-full object-cover border-2 ${galasColor} flex-shrink-0">`
-                : `<div class="w-12 h-12 rounded-full bg-gradient-to-br from-purple-600 to-indigo-700 flex items-center justify-center text-white font-bold text-lg flex-shrink-0 border-2 ${galasColor}">${initial}</div>`;
+                ? `<img src="${artist.photoURL}" alt="${artist.name}" class="w-14 h-14 rounded-full object-cover border-2 ${galasColor} mx-auto">`
+                : `<div class="w-14 h-14 rounded-full bg-gradient-to-br from-purple-600 to-indigo-700 flex items-center justify-center text-white font-bold text-xl mx-auto border-2 ${galasColor}">${initial}</div>`;
 
             card.innerHTML = `
-                <div class="flex items-start gap-2 mb-2">
+                <!-- Foto centrada -->
+                <div class="flex flex-col items-center mb-2">
                     ${photoEl}
-                    <div class="flex-1 min-w-0">
-                        <p class="text-white text-xs font-bold leading-tight truncate">${artist.name}</p>
-                        ${artist.generacion ? `<p class="text-gray-500 text-xs truncate">${artist.generacion}</p>` : ''}
-                        <!-- Galas evaluadas -->
-                        <div class="flex items-center gap-1 mt-1" title="Galas evaluadas: ${galas}">
-                            <span class="text-gray-500 text-xs">Galas:</span>
-                            <span class="text-purple-300 text-xs font-bold">${galas > 0 ? galas : '0'}</span>
-                            <span class="flex gap-0.5 items-center">${galasDots}</span>
-                        </div>
-                        <!-- Promedio -->
-                        ${artist.avg !== null ? `
-                        <div class="flex items-center gap-1 mt-0.5">
-                            <span class="text-gray-500 text-xs">Prom:</span>
-                            <span class="text-yellow-400 text-xs font-bold">⭐ ${avgDisplay}</span>
-                        </div>` : ''}
+                    <!-- Nombre debajo de la foto -->
+                    <p class="text-white text-sm font-black text-center leading-tight mt-1 w-full">${artist.name}</p>
+                    <!-- Promedio grande y destacado -->
+                    ${artist.avg !== null
+                        ? `<div class="mt-1 bg-yellow-100 border border-yellow-400 rounded-lg px-3 py-0.5">
+                               <span class="text-yellow-700 text-sm font-black">⭐ ${avgDisplay}</span>
+                           </div>`
+                        : `<div class="mt-1 text-gray-400 text-xs">sin promedio aún</div>`
+                    }
+                    <!-- Galas -->
+                    <div class="flex items-center gap-1 mt-1" title="Galas: ${galas}">
+                        <span class="text-gray-500 text-xs">Galas:</span>
+                        <span class="${galas >= 2 ? 'text-purple-600' : 'text-blue-600'} text-xs font-bold">${galas > 0 ? galas : '—'}</span>
+                        <span class="flex gap-0.5 items-center">${galasDots}</span>
                     </div>
                 </div>
                 <!-- Botones status -->
@@ -600,15 +1088,15 @@
                             title="Cantó">
                         ✅
                     </button>
-                    <button onclick="setStatus('${artist.id}', 'ausente', this)" 
-                            class="btn-status flex-1 text-xs py-1 rounded-lg border border-red-700 text-red-400 hover:bg-red-700 hover:text-white transition-all ${status === 'ausente' ? 'active-ausente' : ''}"
-                            title="Ausente">
-                        ❌
-                    </button>
                     <button onclick="setStatus('${artist.id}', 'noprog', this)" 
                             class="btn-status flex-1 text-xs py-1 rounded-lg border border-gray-600 text-gray-400 hover:bg-gray-600 hover:text-white transition-all ${status === 'noprog' ? 'active-noprog' : ''}"
                             title="No programado">
                         ⏱️
+                    </button>
+                    <button onclick="removeArtist('${artist.id}')" 
+                            class="flex-1 text-xs py-1 rounded-lg border border-red-800 text-red-500 hover:bg-red-800 hover:text-white transition-all"
+                            title="Dar de baja (se bajó del certamen)">
+                        🗑️
                     </button>
                 </div>
             `;
@@ -627,11 +1115,11 @@
                 <div class="bg-gradient-to-b ${colors.bg} border-2 ${colors.border} rounded-2xl overflow-hidden h-full">
                     <div class="p-3 border-b border-white/10 flex items-center justify-between gap-2">
                         <div class="flex-1 min-w-0">
-                            <h3 class="text-white font-bold text-sm truncate" id="col-title-${col.id}">${col.name}</h3>
-                            <p class="text-white/50 text-xs" id="col-count-${col.id}">${colArtistCount} artistas</p>
+                            <h3 class="text-gray-900 font-bold text-sm truncate" id="col-title-${col.id}">${col.name}</h3>
+                            <p class="text-gray-700 text-xs" id="col-count-${col.id}">${colArtistCount} artistas</p>
                         </div>
                         <div class="flex gap-1">
-                            <button onclick="renameColumn('${col.id}')" class="text-white/40 hover:text-white p-1 rounded transition-all" title="Renombrar">
+                            <button onclick="renameColumn('${col.id}')" class="text-gray-700 hover:text-gray-900 p-1 rounded transition-all" title="Renombrar">
                                 <i class="fas fa-pen text-xs"></i>
                             </button>
                             <button onclick="deleteColumn('${col.id}')" class="text-white/40 hover:text-red-400 p-1 rounded transition-all" title="Eliminar grupo">
@@ -664,7 +1152,7 @@
         // ═══════════════════════════════════════════
         window.setStatus = function(artistId, newStatus, btn) {
             artistStatus[artistId] = newStatus;
-            // Actualizar estilos de los 3 botones en esta tarjeta
+            // Actualizar estilos de los botones en esta tarjeta
             const card = btn.closest('.artist-card');
             card.querySelectorAll('.btn-status').forEach(b => {
                 b.classList.remove('active-canto', 'active-ausente', 'active-noprog');
@@ -672,6 +1160,24 @@
             const activeClass = { canto: 'active-canto', ausente: 'active-ausente', noprog: 'active-noprog' }[newStatus];
             btn.classList.add(activeClass);
             saveState();
+        };
+
+        window.removeArtist = function(artistId) {
+            const artist = allArtists.find(a => a.id === artistId);
+            const name = artist ? artist.name : artistId;
+            if (!confirm(`¿Dar de baja a "${name}" del certamen?\n\nEsto lo elimina de la lista. El cambio no se puede deshacer hasta recargar la página.`)) return;
+            // Eliminar del array global
+            allArtists = allArtists.filter(a => a.id !== artistId);
+            // Eliminar de asignaciones y estado
+            delete columnAssignments[artistId];
+            delete artistStatus[artistId];
+            // Eliminar la tarjeta del DOM
+            document.querySelectorAll(`.artist-card[data-artist-id="${artistId}"]`).forEach(c => c.remove());
+            // Actualizar contadores de todas las columnas
+            columns.forEach(col => updateColumnCount(col.id));
+            updatePoolCount();
+            saveState();
+            showToast(`"${name}" dado de baja`, '🗑️');
         };
 
         window.addColumn = function() {
@@ -734,6 +1240,76 @@
             showToast('Tablero limpiado', '🧹');
         };
 
+        // ═══════════════════════════════════════════
+        // EXPORTAR GRUPOS PARA WHATSAPP
+        // ═══════════════════════════════════════════
+        window.exportarGrupos = function() {
+            if (columns.length === 0) {
+                showToast('No hay grupos creados para exportar', '⚠️');
+                return;
+            }
+
+            let texto = `📋 GRUPOS - VYTMUSIC\n`;
+            texto += `Generaciones: ${loadedGenerations.join(', ')}\n`;
+            texto += `═══════════════════════════════════\n\n`;
+
+            columns.forEach((col, idx) => {
+                // Obtener artistas de este grupo
+                const artistasGrupo = allArtists.filter(a => columnAssignments[a.id] === col.id);
+                
+                texto += `📁 ${col.name.toUpperCase()}\n`;
+                texto += `${'─'.repeat(40)}\n`;
+                
+                if (artistasGrupo.length === 0) {
+                    texto += `   (Sin artistas asignados)\n`;
+                } else {
+                    artistasGrupo.forEach(artist => {
+                        const estado = artistStatus[artist.id];
+                        let emoji = '🎤';
+                        if (estado === 'ausente') emoji = '❌';
+                        else if (estado === 'noprog') emoji = '⏸️';
+                        
+                        texto += `   ${emoji} ${artist.name}`;
+                        if (artist.galas > 0) texto += ` (${artist.galas} ${artist.galas === 1 ? 'gala' : 'galas'})`;
+                        if (artist.avg) texto += ` - Prom: ${artist.avg}`;
+                        texto += `\n`;
+                    });
+                }
+                texto += `\n`;
+            });
+
+            // Artistas sin asignar
+            const sinAsignar = allArtists.filter(a => !columnAssignments[a.id]);
+            if (sinAsignar.length > 0) {
+                texto += `📦 SIN ASIGNAR (${sinAsignar.length})\n`;
+                texto += `${'─'.repeat(40)}\n`;
+                sinAsignar.forEach(a => {
+                    texto += `   🎤 ${a.name}`;
+                    if (a.galas > 0) texto += ` (${a.galas} ${a.galas === 1 ? 'gala' : 'galas'})`;
+                    texto += `\n`;
+                });
+            }
+
+            texto += `\n═══════════════════════════════════\n`;
+            texto += `📅 Generado: ${new Date().toLocaleString('es-ES')}\n`;
+            texto += `🎵 VYTMUSIC - Sistema de Gestión\n`;
+
+            // Copiar al portapapeles
+            navigator.clipboard.writeText(texto).then(() => {
+                showToast('✅ Grupos copiados al portapapeles', '📋');
+            }).catch(err => {
+                // Fallback: descargar como archivo
+                const blob = new Blob([texto], { type: 'text/plain;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `grupos_vytmusic_${new Date().toISOString().split('T')[0]}.txt`;
+                a.click();
+                URL.revokeObjectURL(url);
+                showToast('📥 Archivo descargado', '💾');
+            });
+        };
+
         window.selectColor = function(color) {
             selectedColor = color;
             document.querySelectorAll('.col-btn').forEach(btn => {
@@ -770,38 +1346,6 @@
             });
         });
 
-        document.getElementById('eventSelector').addEventListener('change', function() {
-            const eventId = this.value;
-            if (!eventId) return;
-            // Si ya hay artistas cargados, preguntar qué hacer
-            if (allArtists.length > 0 && !loadedEventIds.includes(eventId)) {
-                const replace = confirm(
-                    `¿Qué querés hacer?\n\n` +
-                    `• OK → Reemplazar el tablero con esta gala (se borra lo actual)\n` +
-                    `• Cancelar → Agregar los artistas de esta gala al pool SIN borrar nada`
-                );
-                if (replace) {
-                    loadArtists(eventId, false);
-                } else {
-                    loadArtists(eventId, true);
-                }
-            } else if (!loadedEventIds.includes(eventId)) {
-                loadArtists(eventId, false);
-            } else {
-                showToast('Esa gala ya está cargada', '⚠️');
-            }
-        });
-
-        // Botón azul "+" al lado del selector → agregar al pool sin borrar
-        window.addSelectedEvent = async function() {
-            const eventId = document.getElementById('eventSelector').value;
-            if (!eventId) { showToast('Seleccioná un evento primero', '⚠️'); return; }
-            if (loadedEventIds.includes(eventId)) {
-                showToast('Esa gala ya está en el tablero', '⚠️'); return;
-            }
-            await loadArtists(eventId, true);
-        };
-
         // Enter en modal columna
         document.getElementById('newColName').addEventListener('keydown', e => {
             if (e.key === 'Enter') confirmAddColumn();
@@ -830,7 +1374,7 @@
         // ═══════════════════════════════════════════
         // INICIALIZACIÓN
         // ═══════════════════════════════════════════
-        loadEvents();
+        loadGenerations();
 
         // Atajos de teclado
         document.addEventListener('keydown', e => {
