@@ -1,47 +1,68 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    // Fotos de audiciones: cualquiera puede subir imágenes hasta 5 MB
+    
+    // ✅ Helper: validar extensión del archivo
+    function validExtension(extensions) {
+      return request.resource.name.matches('.*\\.(' + extensions + ')$');
+    }
+    
+    // ✅ Helper: validar tamaño
+    function validSize(maxSizeMB) {
+      return request.resource.size < maxSizeMB * 1024 * 1024;
+    }
+    
+    // Fotos de audiciones: validación estricta
     match /audiciones_fotos/{fileName} {
       allow read: if true;
-      allow write: if request.resource.size < 10 * 1024 * 1024
-                   && (request.resource.contentType.matches('image/.*')
-                       || request.resource.contentType == 'application/octet-stream');
+      allow write: if validSize(5)
+                   && validExtension('jpg|jpeg|png|webp')
+                   && request.resource.contentType.matches('image/.*');
     }
-    // Videos de audiciones: cualquiera puede subir videos hasta 200 MB
+    
+    // Videos de audiciones: reducido a 100MB
     match /audiciones_videos/{fileName} {
       allow read: if true;
-      allow write: if request.resource.size < 200 * 1024 * 1024
+      allow write: if validSize(100)
+                   && validExtension('mp4|mov|avi|mkv|webm')
                    && request.resource.contentType.matches('video/.*');
     }
-    // Comprobantes de pago de preventa: artistas sin login pueden subir y leer
+    
+    // Comprobantes de pago: validación estricta
     match /payment_proofs/{eventId}/{fileName} {
       allow read: if true;
-      allow write: if request.resource.size < 10 * 1024 * 1024
+      allow write: if validSize(5)
+                   && validExtension('jpg|jpeg|png|pdf|webp')
                    && (request.resource.contentType.matches('image/.*')
                        || request.resource.contentType == 'application/pdf');
     }
-    // Comprobantes de inscripción: artistas sin login pueden subir imágenes/PDFs hasta 10 MB
+    
+    // Comprobantes de inscripción: validación mejorada
     match /inscripcion_comprobantes/{fileName} {
       allow read: if true;
-      allow write: if request.resource.size < 10 * 1024 * 1024;
+      allow write: if validSize(5)
+                   && validExtension('jpg|jpeg|png|pdf|webp')
+                   && (request.resource.contentType.matches('image/.*')
+                       || request.resource.contentType == 'application/pdf');
     }
-    // Pistas de audio: artistas sin login pueden subir y leer (mp3/wav/mpeg/ogg hasta 100 MB)
+    
+    // Pistas de audio: validación estricta y reducido a 50MB
     match /pistas/{eventId}/{artistId}/{fileName} {
       allow read: if true;
-      allow write: if request.resource.size < 100 * 1024 * 1024
-                   && (request.resource.contentType.matches('audio/.*')
-                       || request.resource.contentType.matches('video/mpeg')
-                       || request.resource.contentType == 'application/octet-stream');
+      allow write: if validSize(50)
+                   && validExtension('mp3|wav|m4a|ogg|aac')
+                   && request.resource.contentType.matches('audio/.*');
     }
-    // Pistas de organización: admins pueden subir música de fondo, intros, invitados especiales
+    
+    // Pistas de organización: acceso sin autenticación (integrantes de org con link)
     match /pistas_organizacion/{eventId}/{fileName} {
       allow read: if true;
-      allow write: if request.resource.size < 100 * 1024 * 1024
-                   && (request.resource.contentType.matches('audio/.*')
-                       || request.resource.contentType.matches('video/mpeg')
-                       || request.resource.contentType == 'application/octet-stream');
+      allow delete: if true;
+      allow create, update: if validSize(100)
+                   && validExtension('mp3|wav|m4a|ogg|aac|mpeg|mpga')
+                   && request.resource.contentType.matches('audio/.*');
     }
+    
     // Todo lo demás requiere autenticación
     match /{allPaths=**} {
       allow read, write: if request.auth != null;
