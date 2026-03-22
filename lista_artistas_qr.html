@@ -31,6 +31,19 @@
             </div>
         </div>
     </div>
+
+    <!-- Modal renombrar -->
+    <div id="rename-modal" class="modal-backdrop hidden">
+        <div class="modal-content">
+            <h3 class="text-xl font-bold mb-2">✏️ Renombrar grupo</h3>
+            <p class="text-sm text-gray-400 mb-4">Cambia el nombre de <strong id="rename-current-name" class="text-sky-300"></strong> y todos sus tickets quedarán bajo el nuevo nombre.</p>
+            <input type="text" id="rename-input" class="w-full p-3 rounded-md bg-gray-900 text-white border border-gray-600 mb-4" placeholder="Nuevo nombre (ej: Organizador)">
+            <div class="flex justify-end space-x-3">
+                <button id="rename-cancel-btn" class="px-4 py-2 bg-gray-600 text-white font-bold rounded-lg">Cancelar</button>
+                <button id="rename-confirm-btn" class="px-4 py-2 bg-amber-500 text-white font-bold rounded-lg">Guardar</button>
+            </div>
+        </div>
+    </div>
     <div class="container mx-auto max-w-4xl p-4 sm:p-6">
         <header class="text-center mb-8">
             <a id="back-to-panel-link" href="#" class="text-sky-400 hover:underline mb-4 inline-block">&larr; Volver al Panel del Evento</a>
@@ -79,8 +92,38 @@
             shareLinkDisplay: document.getElementById('share-link-display'),
             copyShareLinkBtn: document.getElementById('copy-share-link-btn'),
             closeShareModalBtn: document.getElementById('close-share-modal-btn'),
-            shareSummaryBtn: document.getElementById('share-summary-btn')
+            shareSummaryBtn: document.getElementById('share-summary-btn'),
+            renameModal: document.getElementById('rename-modal'),
+            renameInput: document.getElementById('rename-input'),
+            renameCurrentName: document.getElementById('rename-current-name'),
+            renameCancelBtn: document.getElementById('rename-cancel-btn'),
+            renameConfirmBtn: document.getElementById('rename-confirm-btn')
         };
+        let _renamePrefixes = [];
+
+        ui.renameCancelBtn.addEventListener('click', () => ui.renameModal.classList.add('hidden'));
+        ui.renameConfirmBtn.addEventListener('click', async () => {
+            const newName = ui.renameInput.value.trim();
+            if (!newName) { alert('Escribí el nuevo nombre'); return; }
+            ui.renameConfirmBtn.disabled = true;
+            ui.renameConfirmBtn.textContent = 'Guardando...';
+            try {
+                const batch = writeBatch(db);
+                for (const prefix of _renamePrefixes) {
+                    const snap = await getDocs(query(collection(db, `events/${eventId}/tickets`), where('prefix', '==', prefix)));
+                    snap.forEach(d => batch.update(d.ref, { artistName: newName }));
+                }
+                await batch.commit();
+                ui.renameModal.classList.add('hidden');
+                alert(`✅ Renombrado a "${newName}"`);
+                loadArtistsWithTickets();
+            } catch(e) {
+                alert('❌ Error: ' + e.message);
+            } finally {
+                ui.renameConfirmBtn.disabled = false;
+                ui.renameConfirmBtn.textContent = 'Guardar';
+            }
+        });
 
         function showShareModal(link, title) {
             ui.shareModalTitle.textContent = title;
@@ -227,6 +270,7 @@
                     <div class="flex space-x-1">
                         <button data-prefixes='${JSON.stringify(prefixes)}' data-artist-name="${displayName}" class="view-detailed-btn px-2 py-1.5 bg-green-600 text-white font-medium rounded text-xs hover:bg-green-700">👥 Ver Invitados</button>
                         <button data-prefix="${primaryPrefix}" data-artist-name="${displayName}" class="add-more-btn px-2 py-1.5 bg-blue-600 text-white font-medium rounded text-xs hover:bg-blue-700">+ Más</button>
+                        <button data-prefixes='${JSON.stringify(prefixes)}' data-artist-name="${displayName}" class="rename-artist-btn px-2 py-1.5 bg-amber-500 text-white font-medium rounded text-xs hover:bg-amber-600">✏️</button>
                         <button data-prefixes='${JSON.stringify(prefixes)}' data-artist-name="${displayName}" class="share-artist-btn px-2 py-1.5 bg-purple-600 text-white font-medium rounded text-xs hover:bg-purple-700">Compartir</button>
                         <button data-prefixes='${JSON.stringify(prefixes)}' data-artist-name="${displayName}" class="delete-artist-tickets-btn px-2 py-1.5 bg-red-600 text-white font-medium rounded text-xs hover:bg-red-700">Borrar</button>
                     </div>`;
@@ -237,6 +281,15 @@
         ui.artistsListDiv.addEventListener('click', async (e) => {
             const target = e.target;
             
+            if (target.classList.contains('rename-artist-btn')) {
+                _renamePrefixes = JSON.parse(target.dataset.prefixes);
+                ui.renameCurrentName.textContent = target.dataset.artistName;
+                ui.renameInput.value = target.dataset.artistName;
+                ui.renameModal.classList.remove('hidden');
+                setTimeout(() => { ui.renameInput.focus(); ui.renameInput.select(); }, 100);
+                return;
+            }
+
             if (target.classList.contains('view-detailed-btn')) {
                 // 🔄 NUEVO: Si tiene múltiples prefixes, ir al visor que muestra TODOS
                 const prefixesJSON = target.dataset.prefixes;
