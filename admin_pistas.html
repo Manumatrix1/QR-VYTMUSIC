@@ -1390,17 +1390,22 @@
                 const artistTracks = allTracksData.find(t => t.artistId === artist.id);
                 const artistName = artist.nombre || artist.name || 'Artista';
                 const artistPhoto = artist.foto_url || '';
+                const isLocked = artist._locked || false;
                 const tracksChips = artistTracks ? artistTracks.pistas.map(t => {
                     const safeArtist = artistName.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
                     const safeSong = (t.nombre_cancion||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
                     return `<button onclick="toggleTrack('pl_${artist.id}_${t.slot}','${t.archivo_url}','${safeArtist}','${safeSong}',${t.pitch_offset||0})" id="playBtn_pl_${artist.id}_${t.slot}" class="inline-flex items-center gap-1 bg-blue-900/70 hover:bg-blue-700 rounded px-2 py-0.5 text-xs text-blue-200 border border-blue-600 transition cursor-pointer"><i class="fas fa-play text-green-400 text-xs"></i> ${t.slot===1?'★':'♪'} ${t.nombre_cancion}</button>`;
                 }).join(' ') : '';
                 return `
-                    <div class="playlist-item bg-blue-900 rounded-lg p-3 flex items-center gap-2 border-2 border-blue-600 mb-2" data-artist-id="${artist.id}">
+                    <div class="playlist-item ${isLocked ? 'locked-item' : ''} bg-blue-900 rounded-lg p-3 flex items-center gap-2 border-2 ${isLocked ? 'border-green-500' : 'border-blue-600'} mb-2" data-artist-id="${artist.id}" data-locked="${isLocked}">
                         <div class="flex-shrink-0 bg-blue-700 rounded-lg w-10 h-10 flex items-center justify-center">
                             <span class="order-num text-white font-bold text-lg">${index+1}</span>
                         </div>
-                        <div class="drag-handle flex-shrink-0 cursor-move px-1">
+                        <!-- Botón lock ✓ -->
+                        <button onclick="togglePlaylistLock('${artist.id}',this)" class="lock-btn flex-shrink-0 w-9 h-9 rounded-full border-2 flex items-center justify-center transition-all ${isLocked ? 'bg-green-500 border-green-400 text-white' : 'bg-transparent border-gray-500 text-gray-500 hover:border-green-400 hover:text-green-400'}" title="${isLocked ? 'Posición fijada — clic para desbloquear' : 'Fijar posición'}">
+                            <i class="fas fa-check text-sm"></i>
+                        </button>
+                        <div class="drag-handle flex-shrink-0 cursor-move px-1 ${isLocked ? 'opacity-20 pointer-events-none' : ''}">
                             <i class="fas fa-grip-vertical text-gray-400 text-lg"></i>
                         </div>
                         <img src="${artistPhoto}" alt="${artistName}" class="w-10 h-10 rounded-full object-cover border-2 border-blue-400 flex-shrink-0" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(artistName)}&background=3b82f6&color=fff&size=40'">
@@ -1408,7 +1413,7 @@
                             <div class="text-white font-bold text-sm truncate">${artistName}</div>
                             <div class="flex flex-wrap gap-1 mt-1">${tracksChips}</div>
                         </div>
-                        <div class="flex flex-col gap-1 flex-shrink-0">
+                        <div class="flex flex-col gap-1 flex-shrink-0 ${isLocked ? 'opacity-20 pointer-events-none' : ''}">
                             <button onclick="movePlaylistItem('${artist.id}',-1)" class="bg-gray-700 hover:bg-blue-600 text-white w-7 h-7 rounded flex items-center justify-center" title="Subir"><i class="fas fa-chevron-up text-xs"></i></button>
                             <button onclick="movePlaylistItem('${artist.id}',1)" class="bg-gray-700 hover:bg-blue-600 text-white w-7 h-7 rounded flex items-center justify-center" title="Bajar"><i class="fas fa-chevron-down text-xs"></i></button>
                         </div>
@@ -1441,9 +1446,55 @@
                 dragClass: 'sortable-drag',
                 handle: '.drag-handle',
                 draggable: '.playlist-item',
+                filter: '.locked-item',
+                preventOnFilter: false,
+                onMove: function(evt) {
+                    // No mover items bloqueados
+                    if (evt.dragged.getAttribute('data-locked') === 'true') return false;
+                    // No mover sobre items bloqueados no aplica restricción especial
+                    return true;
+                },
                 onEnd: updateOrderNumbers
             });
         }
+
+        // Toggle lock de posición (solo visual + data-locked, sin guardar en Firebase)
+        window.togglePlaylistLock = function(artistId, btn) {
+            const item = btn.closest('.playlist-item');
+            const isLocked = item.getAttribute('data-locked') === 'true';
+            const newLocked = !isLocked;
+
+            item.setAttribute('data-locked', newLocked);
+
+            // Actualizar el objeto en memoria
+            const artistObj = allArtists.find(a => a.id === artistId);
+            if (artistObj) artistObj._locked = newLocked;
+
+            // Actualizar estilos del botón
+            if (newLocked) {
+                btn.classList.add('bg-green-500','border-green-400','text-white');
+                btn.classList.remove('bg-transparent','border-gray-500','text-gray-500','hover:border-green-400','hover:text-green-400');
+                btn.title = 'Posición fijada — clic para desbloquear';
+                item.classList.add('locked-item','border-green-500');
+                item.classList.remove('border-blue-600');
+                // Ocultar handle y flechas
+                const handle = item.querySelector('.drag-handle');
+                const arrows = item.querySelectorAll('.flex-col.gap-1.flex-shrink-0');
+                if (handle) { handle.classList.add('opacity-20','pointer-events-none'); }
+                arrows.forEach(el => el.classList.add('opacity-20','pointer-events-none'));
+            } else {
+                btn.classList.remove('bg-green-500','border-green-400','text-white');
+                btn.classList.add('bg-transparent','border-gray-500','text-gray-500','hover:border-green-400','hover:text-green-400');
+                btn.title = 'Fijar posición';
+                item.classList.remove('locked-item','border-green-500');
+                item.classList.add('border-blue-600');
+                // Mostrar handle y flechas
+                const handle = item.querySelector('.drag-handle');
+                const arrows = item.querySelectorAll('.flex-col.gap-1.flex-shrink-0');
+                if (handle) { handle.classList.remove('opacity-20','pointer-events-none'); }
+                arrows.forEach(el => el.classList.remove('opacity-20','pointer-events-none'));
+            }
+        };
 
         function updateOrderNumbers() {
             document.querySelectorAll('#playlistContainer .playlist-item[data-artist-id]').forEach((item, i) => {
