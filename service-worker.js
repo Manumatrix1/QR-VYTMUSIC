@@ -1,5 +1,5 @@
 // Service Worker para VYT MUSIC PWA - VERSIÓN PANEL SIMPLIFICADO
-const CACHE_NAME = 'vyt-music-simple-v11'; // 🔥 Actualizado 2026-03-14
+const CACHE_NAME = 'vyt-music-simple-v12'; // 🔥 Actualizado 2026-03-22
 const urlsToCache = [
   '/',
   '/index.html',
