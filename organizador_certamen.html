@@ -282,8 +282,9 @@
 
     <!-- Firebase SDK -->
     <script type="module">
-        import { app, db } from './firebase_config.js';
-        import { collection, getDocs, doc, updateDoc, query, orderBy, onSnapshot, getDoc } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+        import { app, db, storage } from './firebase_config.js';
+        import { collection, getDocs, doc, updateDoc, query, orderBy, onSnapshot, getDoc, deleteDoc, setDoc } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+        import { ref as storRef, deleteObject } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js';
 
         // ═══════════════════════════════════════════
         // ESTADO GLOBAL
@@ -431,29 +432,14 @@
             // Cargar selección previa (si existe)
             const savedSelection = JSON.parse(localStorage.getItem('gen13_selected_events') || '[]');
             
-            // Cargar info de artistas por evento (con votos)
+            // Cargar cantidad de artistas inscritos (no solo con votos)
             const eventsWithCounts = [];
             for (const event of allEvents) {
                 try {
-                    const artistasConVotos = new Set();
-                    
-                    // Contar artistas con votos de jurados
-                    const evalSnap = await getDocs(collection(db, `events/${event.id}/jury_evaluations`));
-                    evalSnap.docs.forEach(eDoc => {
-                        const aid = eDoc.data().artista_id || eDoc.data().artistId;
-                        if (aid) artistasConVotos.add(aid);
-                    });
-                    
-                    // Contar votos públicos también
-                    const votesSnap = await getDocs(collection(db, `events/${event.id}/votes`));
-                    votesSnap.docs.forEach(vDoc => {
-                        const aid = vDoc.data().artistId || vDoc.data().artista_id;
-                        if (aid) artistasConVotos.add(aid);
-                    });
-                    
+                    const artistsSnap = await getDocs(collection(db, `events/${event.id}/artists`));
                     eventsWithCounts.push({
                         ...event,
-                        artistCount: artistasConVotos.size
+                        artistCount: artistsSnap.size
                     });
                 } catch (e) {
                     eventsWithCounts.push({ ...event, artistCount: 0 });
@@ -859,7 +845,7 @@
                 if (!loadedGenerations.includes(generacion)) loadedGenerations.push(generacion);
 
                 if (!merge) {
-                    loadSavedState();
+                    await loadSavedState();
                     document.getElementById('loadingState').classList.add('hidden');
                     document.getElementById('board').classList.remove('hidden');
                 }
@@ -908,20 +894,54 @@
         // ═══════════════════════════════════════════
         // ESTADO: GUARDAR / CARGAR
         // ═══════════════════════════════════════════
+        async function guardarEnFirebase() {
+            if (loadedGenerations.length === 0) return;
+            const genKey = loadedGenerations[0].replace(/[^a-zA-Z0-9]/g, '_');
+            await setDoc(doc(db, 'organizador_estado', genKey), {
+                columns,
+                columnAssignments,
+                artistStatus,
+                loadedGenerations,
+                updatedAt: new Date().toISOString()
+            });
+        }
+
         function saveState(showConfirm = false) {
             const state = { columns, artistStatus, columnAssignments, allArtists, loadedGenerations };
-            // Guardar siempre en sesión
             localStorage.setItem('organizador_session', JSON.stringify(state));
-            // Si sólo hay 1 generación, guardar también por generación
             if (loadedGenerations.length === 1) {
                 localStorage.setItem(`organizador_gen_${loadedGenerations[0]}`, JSON.stringify(state));
             }
-            if (showConfirm) showToast('Estado guardado', '💾');
+            // Guardar en Firebase (silencioso en auto-save, con mensaje en manual)
+            if (showConfirm) {
+                guardarEnFirebase()
+                    .then(() => showToast('Guardado en la nube ☁️', '💾'))
+                    .catch(e => { console.error(e); showToast('Guardado local ✓ (error nube)', '⚠️'); });
+            } else {
+                guardarEnFirebase().catch(console.error);
+            }
         }
         window.saveState = saveState;
 
-        function loadSavedState() {
-            // Intentar restaurar por generación si sólo hay una
+        async function loadSavedState() {
+            // 1. Intentar restaurar desde Firebase primero
+            if (loadedGenerations.length >= 1) {
+                const genKey = loadedGenerations[0].replace(/[^a-zA-Z0-9]/g, '_');
+                try {
+                    const snap = await getDoc(doc(db, 'organizador_estado', genKey));
+                    if (snap.exists()) {
+                        const state = snap.data();
+                        columns = state.columns || [];
+                        artistStatus = state.artistStatus || {};
+                        columnAssignments = state.columnAssignments || {};
+                        console.log('✅ Estado restaurado desde Firebase ☁️');
+                        return;
+                    }
+                } catch(e) {
+                    console.warn('⚠️ No se pudo cargar desde Firebase, usando localStorage:', e);
+                }
+            }
+            // 2. Fallback: localStorage
             if (loadedGenerations.length === 1) {
                 const raw = localStorage.getItem(`organizador_gen_${loadedGenerations[0]}`);
                 if (raw) {
@@ -930,8 +950,7 @@
                         columns = state.columns || [];
                         artistStatus = state.artistStatus || {};
                         columnAssignments = state.columnAssignments || {};
-                        // ❌ NO restaurar allArtists - los acabamos de cargar de Firebase con datos frescos
-                        console.log('✅ Estado restaurado: columnas y asignaciones (artistas frescos de Firebase)');
+                        console.log('✅ Estado restaurado desde localStorage');
                         return;
                     } catch (_) {}
                 }
@@ -993,6 +1012,7 @@
                 sortableInstances[col.id] = new Sortable(dropZone, {
                     group: 'artists',
                     animation: 150,
+                    handle: '.drag-handle',
                     ghostClass: 'sortable-ghost',
                     chosenClass: 'sortable-chosen',
                     dragClass: 'sortable-drag',
@@ -1016,6 +1036,7 @@
             sortableInstances['pool'] = new Sortable(poolDrop, {
                 group: 'artists',
                 animation: 150,
+                handle: '.drag-handle',
                 ghostClass: 'sortable-ghost',
                 chosenClass: 'sortable-chosen',
                 onAdd(evt) {
@@ -1062,6 +1083,10 @@
                 : `<div class="w-14 h-14 rounded-full bg-gradient-to-br from-purple-600 to-indigo-700 flex items-center justify-center text-white font-bold text-xl mx-auto border-2 ${galasColor}">${initial}</div>`;
 
             card.innerHTML = `
+                <!-- Handle de arrastre -->
+                <div class="drag-handle flex items-center justify-center text-gray-600 hover:text-gray-300 cursor-grab active:cursor-grabbing pb-1 mb-1 border-b border-white/10" title="Arrastrá para mover">
+                    <i class="fas fa-grip-horizontal text-xs"></i>
+                </div>
                 <!-- Foto centrada -->
                 <div class="flex flex-col items-center mb-2">
                     ${photoEl}
@@ -1115,11 +1140,11 @@
                 <div class="bg-gradient-to-b ${colors.bg} border-2 ${colors.border} rounded-2xl overflow-hidden h-full">
                     <div class="p-3 border-b border-white/10 flex items-center justify-between gap-2">
                         <div class="flex-1 min-w-0">
-                            <h3 class="text-gray-900 font-bold text-sm truncate" id="col-title-${col.id}">${col.name}</h3>
-                            <p class="text-gray-700 text-xs" id="col-count-${col.id}">${colArtistCount} artistas</p>
+                            <h3 class="text-white font-bold text-sm truncate" id="col-title-${col.id}">${col.name}</h3>
+                            <p class="text-white/70 text-xs" id="col-count-${col.id}">${colArtistCount} artistas</p>
                         </div>
                         <div class="flex gap-1">
-                            <button onclick="renameColumn('${col.id}')" class="text-gray-700 hover:text-gray-900 p-1 rounded transition-all" title="Renombrar">
+                            <button onclick="renameColumn('${col.id}')" class="text-white/60 hover:text-white p-1 rounded transition-all" title="Renombrar">
                                 <i class="fas fa-pen text-xs"></i>
                             </button>
                             <button onclick="deleteColumn('${col.id}')" class="text-white/40 hover:text-red-400 p-1 rounded transition-all" title="Eliminar grupo">
@@ -1162,22 +1187,59 @@
             saveState();
         };
 
-        window.removeArtist = function(artistId) {
+        window.removeArtist = async function(artistId) {
             const artist = allArtists.find(a => a.id === artistId);
             const name = artist ? artist.name : artistId;
-            if (!confirm(`¿Dar de baja a "${name}" del certamen?\n\nEsto lo elimina de la lista. El cambio no se puede deshacer hasta recargar la página.`)) return;
-            // Eliminar del array global
+            const eventCount = artist ? (artist.eventIds || [artist.eventId]).length : 1;
+            if (!confirm(`⚠️ ¿ELIMINAR A "${name}" DEL CERTAMEN?\n\nSe borrará de ${eventCount} gala(s), incluyendo foto, datos y pistas de audio.\n\nEsta acción NO SE PUEDE DESHACER.`)) return;
+
+            // Eliminar del DOM y estado local inmediatamente
             allArtists = allArtists.filter(a => a.id !== artistId);
-            // Eliminar de asignaciones y estado
             delete columnAssignments[artistId];
             delete artistStatus[artistId];
-            // Eliminar la tarjeta del DOM
             document.querySelectorAll(`.artist-card[data-artist-id="${artistId}"]`).forEach(c => c.remove());
-            // Actualizar contadores de todas las columnas
             columns.forEach(col => updateColumnCount(col.id));
             updatePoolCount();
             saveState();
-            showToast(`"${name}" dado de baja`, '🗑️');
+            showToast(`Eliminando "${name}" de Firebase...`, '⏳');
+
+            if (!artist) return;
+
+            // Eliminar de Firebase en todos los eventos
+            const eventIds = artist.eventIds || [artist.eventId];
+            let deletedCount = 0;
+            for (const evId of eventIds) {
+                try {
+                    // Buscar por nombre (más robusto que por ID para artistas fusionados)
+                    const artistsSnap = await getDocs(collection(db, `events/${evId}/artists`));
+                    for (const adoc of artistsSnap.docs) {
+                        const n = adoc.data().name || '';
+                        if (n.toLowerCase().trim() === name.toLowerCase().trim()) {
+                            const docId = adoc.id;
+                            await deleteDoc(doc(db, `events/${evId}/artists`, docId));
+                            deletedCount++;
+                            // Intentar eliminar de artistas_{evId}
+                            try { await deleteDoc(doc(db, `artistas_${evId}`, docId)); } catch(_) {}
+                            // Intentar eliminar pistas + archivos de storage
+                            try {
+                                const pistasRef = doc(db, `pistas_${evId}`, docId);
+                                const pistasSnap = await getDoc(pistasRef);
+                                if (pistasSnap.exists()) {
+                                    for (const track of (pistasSnap.data().pistas || [])) {
+                                        if (track.storage_path) {
+                                            try { await deleteObject(storRef(storage, track.storage_path)); } catch(_) {}
+                                        }
+                                    }
+                                    await deleteDoc(pistasRef);
+                                }
+                            } catch(_) {}
+                        }
+                    }
+                } catch(e) {
+                    console.warn(`Error eliminando de evento ${evId}:`, e);
+                }
+            }
+            showToast(`"${name}" eliminado de ${deletedCount} gala(s)`, '🗑️');
         };
 
         window.addColumn = function() {

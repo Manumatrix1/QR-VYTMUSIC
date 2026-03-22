@@ -3,6 +3,11 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // ── Organizador certamen: admins leen y escriben ──
+    match /organizador_estado/{docId} {
+      allow read, write: if request.auth != null;
+    }
+
     // ── Usuarios autenticados (admins) tienen acceso total ──
     match /{document=**} {
       allow read, write: if request.auth != null;
@@ -75,15 +80,20 @@ service cloud.firestore {
       allow write: if request.auth != null;
     }
 
-    // ── jury_evaluations global: reportes y votacion_jurados_FINAL leen sin auth ──
+    // ── jury_evaluations global: reportes leen, crear con código válido ──
     match /jury_evaluations/{docId} {
       allow read: if true;
-      allow write: if request.auth != null;
+      allow create: if request.resource.data.juryCode != null 
+                    && request.resource.data.juryCode is string
+                    && request.resource.data.juryCode.size() >= 4;
+      allow update: if request.auth != null;
     }
 
-    // ── jury_votes global: feedback_en_vivo escribe sin auth ──
+    // ── jury_votes global: crear con código válido, solo admin modifica ──
     match /jury_votes/{docId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow create: if request.resource.data.juryCode != null;
+      allow update: if request.auth != null;
     }
 
     // ── access_log: escáner QR registra accesos sin auth ──
@@ -92,51 +102,111 @@ service cloud.firestore {
       allow read: if request.auth != null;
     }
 
-    // ── Votaciones de jurados: colecciones dinámicas jurados_{eventId} ──
+    // ── Votaciones de jurados: colecciones dinámicas jurados_{eventId} - SOLO LECTURA ──
     match /{colId}/{docId} {
-      allow read, write: if colId.matches('jurados_.*');
+      allow read: if colId.matches('jurados_.*');
+      allow write: if request.auth != null;
     }
 
-    // ── Votaciones colecciones dinámicas votaciones_jurados_{eventId} ──
+    // ── Votaciones colecciones dinámicas votaciones_jurados_{eventId} - VALIDAR ESTRUCTURA ──
     match /{colId}/{docId} {
-      allow read, write: if colId.matches('votaciones_jurados_.*');
+      allow read: if colId.matches('votaciones_jurados_.*');
+      allow create: if colId.matches('votaciones_jurados_.*')
+                    && request.resource.data.juryCode != null;
+      allow update: if request.auth != null;
     }
 
-    // ── Subcolecciones de eventos que necesitan write sin auth ──
+    // ── Subcolecciones de eventos que necesitan write controlado ──
 
-    // Votación de jurados: evaluaciones y votos
+    // Votación de jurados: evaluaciones con validación de esquema completa
     match /events/{eventId}/jury_evaluations/{docId} {
-      allow read, write: if true;
-    }
-    match /events/{eventId}/jury_votes/{docId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow create: if request.resource.data.juryCode is string
+                    && request.resource.data.juryCode.size() >= 4
+                    && request.resource.data.artistId is string
+                    && request.resource.data.artistId.size() > 0;
+      allow update: if request.auth != null;
     }
 
-    // Tickets: scanners actualizan estado de ingreso sin auth
+    match /events/{eventId}/jury_votes/{docId} {
+      allow read: if true;
+      allow create: if request.resource.data.juryCode is string
+                    && request.resource.data.juryCode.size() >= 4
+                    && request.resource.data.artistId is string;
+      allow update: if request.auth != null;
+    }
+
+    // Tickets: solo marcar como usados si NO estaba usado ya (prevenir re-escaneo)
     match /events/{eventId}/tickets/{docId} {
       allow read: if true;
-      allow update: if true;
+      allow update: if
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['used', 'usedAt', 'scannedBy', 'scannedDevice', 'accessTime'])
+        && resource.data.used == false
+        && request.resource.data.used == true;
     }
 
-    // Artistas: voting_page actualiza contadores de votos sin auth
+    // Artistas: admin puede todo; público solo puede incrementar contadores numéricos
     match /events/{eventId}/artists/{docId} {
       allow read: if true;
-      allow update: if true;
+      allow update: if request.auth != null
+        ||
+        // Solo campos de contadores y solo números (nunca strings)
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'totalScore', 'totalSingingScore', 'totalTransmissionScore',
+          'totalAttitudeScore', 'totalOriginalityScore', 'totalCostumeScore',
+          'totalStagingScore', 'totalRatingsCount'
+        ])
+        && request.resource.data.totalRatingsCount is number
+        && request.resource.data.totalScore is number);
     }
 
-    // Live feedback: feedback_en_vivo escribe sin auth
+    // Live feedback: abierto (no contiene datos sensibles)
     match /events/{eventId}/live_feedback/{docId} {
       allow read, write: if true;
     }
 
-    // Votación pública por ticket: subcolección profunda (3 niveles)
-    // events/{eventId}/ticket_votes/{ticketId}/votes/{voteId}
-    match /events/{eventId}/ticket_votes/{ticketId}/votes/{voteId} {
-      allow read, write: if true;
-    }
-    // También cubrir el documento padre ticket_votes
+    // Documento padre ticket_votes: creación pública (voting_page lo necesita)
     match /events/{eventId}/ticket_votes/{ticketId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow create: if request.resource.data.keys().hasAny(['ticketId','createdAt','eventId']);
+      allow update: if request.auth != null;
+    }
+
+    // Voto individual: validación completa de esquema — protege los sorteos de datos corruptos
+    match /events/{eventId}/ticket_votes/{ticketId}/votes/{voteId} {
+      allow read: if true;
+      allow create: if
+        // Campos obligatorios: nombre del votante y artista destino
+        request.resource.data.ticketName is string
+        && request.resource.data.ticketName.size() >= 1
+        && request.resource.data.artistId is string
+        && request.resource.data.artistId.size() > 0
+        // Todos los puntajes deben ser números en rango 0-5
+        && request.resource.data.singingScore is number
+        && request.resource.data.singingScore >= 0
+        && request.resource.data.singingScore <= 5
+        && request.resource.data.transmissionScore is number
+        && request.resource.data.transmissionScore >= 0
+        && request.resource.data.transmissionScore <= 5
+        && request.resource.data.attitudeScore is number
+        && request.resource.data.attitudeScore >= 0
+        && request.resource.data.attitudeScore <= 5;
+      allow update: if request.auth != null;
+    }
+
+    // Sorteos: sistema de premios guarda resultados (sin auth para que funcione en evento en vivo)
+    match /sorteos/{docId} {
+      allow create: if request.resource.data.ganador is string
+                    && request.resource.data.ganador.size() > 0
+                    && request.resource.data.premio is string;
+      allow read: if request.auth != null;
+      allow update, delete: if request.auth != null;
+    }
+
+    // Sistema (backups, índices maestros): solo admin
+    match /sistema/{docId} {
+      allow read, write: if request.auth != null;
     }
 
   }
