@@ -366,11 +366,10 @@
                 </button>
             </div>
             <div class="p-6">
-                <div class="bg-blue-900/30 rounded-lg p-4 mb-6 border border-blue-500/30">
+                <div class="bg-blue-900/30 rounded-lg p-4 mb-4 border border-blue-500/30">
                     <p class="text-blue-300 text-sm">
                         <i class="fas fa-info-circle"></i> 
-                        <strong>Arrastrá las pistas</strong> para ordenar la playlist de la gala. 
-                        Este orden se usará en el reproductor offline.
+                        Usá <strong>↑ ↓</strong> para cambiar el orden · Clic en una canción <i class="fas fa-play text-green-400 text-xs"></i> para escucharla · <strong>No canta</strong> la excluye sin borrar
                     </p>
                 </div>
                 
@@ -646,6 +645,7 @@
                         nombre: data.name || data.nombre || 'Sin nombre',
                         foto_url: data.photoURL || data.foto_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(data.name || data.nombre || 'A')}&background=4f46e5&color=fff&size=128`,
                         playOrder: data.playOrder,
+                        excluded_gala: data.excluded_gala || false,
                         _collectionPath: usedCollection
                     });
                 });
@@ -792,7 +792,11 @@
                         ${!isDJ ? `<button onclick="copyLink('${artist.id}', '${artist.nombre}')" 
                             class="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-semibold py-2 px-4 rounded-lg transition">
                             <i class="fas fa-link"></i> Copiar Link del Artista
-                        </button>` : ''}
+                        </button>
+                        ${hasTracks ? `<button onclick="removeArtistFromPistas('${artist.id}')"
+                            class="w-full mt-2 bg-red-900/50 hover:bg-red-800 text-red-300 hover:text-white font-semibold py-2 px-4 rounded-lg transition text-sm border border-red-800">
+                            <i class="fas fa-user-times"></i> Quitar del panel de pistas
+                        </button>` : ''}` : ''}
                     </div>
                 `;
             }).join('');
@@ -1119,6 +1123,33 @@
             }
         }
 
+        // Quitar a un artista de la lista de pistas (borra su doc + archivos en Storage)
+        window.removeArtistFromPistas = async function(artistId) {
+            const artistObj = allArtists.find(a => a.id === artistId);
+            const artistName = artistObj ? (artistObj.nombre || artistObj.name || 'este artista') : 'este artista';
+            if (!confirm(`¿Quitar a "${artistName}" del panel de pistas?\n\nSe eliminarán sus archivos de audio. Esta acción no se puede deshacer.`)) return;
+            try {
+                const { doc, getDoc, deleteDoc } = window.firestoreModules;
+                const { ref: storRef, deleteObject } = window.storageModules;
+                const trackRef = doc(window.db, `pistas_${eventId}`, artistId);
+                const trackSnap = await getDoc(trackRef);
+                if (trackSnap.exists()) {
+                    for (const track of (trackSnap.data().pistas || [])) {
+                        if (track.storage_path) {
+                            try { await deleteObject(storRef(window.storage, track.storage_path)); } catch(e) {}
+                        }
+                    }
+                    await deleteDoc(trackRef);
+                    displayMessage(`✅ ${artistName} quitado del panel de pistas`, 'success');
+                } else {
+                    displayMessage('No se encontraron pistas para este artista', 'warning');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                displayMessage('❌ Error: ' + error.message, 'error');
+            }
+        };
+
         // Descargar todas las pistas en ZIP
         window.downloadAllTracks = async function() {
             if (allTracksData.length === 0) {
@@ -1328,81 +1359,23 @@
         let sortableInstance = null;
 
         window.openPlaylistManager = function() {
-            const artistsWithTracks = allArtists.filter(artist => {
-                const tracks = allTracksData.filter(t => t.artistId === artist.id);
-                return tracks.length > 0;
-            });
-
+            const artistsWithTracks = allArtists.filter(a =>
+                allTracksData.some(t => t.artistId === a.id)
+            );
             if (artistsWithTracks.length === 0) {
                 displayMessage('No hay artistas con pistas subidas todavía', 'warning');
                 return;
             }
-
-            // Ordenar por playOrder si existe, sino por nombre
-            artistsWithTracks.sort((a, b) => {
-                if (a.playOrder !== undefined && b.playOrder !== undefined) {
-                    return a.playOrder - b.playOrder;
-                }
-                if (a.playOrder !== undefined) return -1;
-                if (b.playOrder !== undefined) return 1;
-                return (a.nombre || a.name).localeCompare(b.nombre || b.name);
-            });
-
-            const container = document.getElementById('playlistContainer');
-            container.innerHTML = artistsWithTracks.map((artist, index) => {
-                const tracks = allTracksData.filter(t => t.artistId === artist.id);
-                const trackCount = tracks.length;
-                const artistName = artist.nombre || artist.name;
-                const artistPhoto = artist.foto_url || artist.photoURL || '';
-                
-                return `
-                    <div class="playlist-item bg-blue-900 rounded-lg p-4 flex items-center gap-4 border-2 border-blue-600 hover:border-blue-400" 
-                         data-artist-id="${artist.id}">
-                        <div class="flex-shrink-0 bg-blue-700 rounded-lg px-4 py-3 text-center min-w-[60px]">
-                            <div class="text-white font-bold text-2xl">${index + 1}</div>
-                            <div class="text-gray-300 text-xs">Orden</div>
-                        </div>
-                        <div class="flex-shrink-0">
-                            <i class="fas fa-grip-vertical text-gray-400 text-2xl cursor-move"></i>
-                        </div>
-                        <img src="${artistPhoto}" 
-                             alt="${artistName}" 
-                             class="w-16 h-16 rounded-full object-cover border-2 border-blue-400"
-                             onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(artistName)}&background=3b82f6&color=fff&size=64'">
-                        <div class="flex-1">
-                            <h3 class="text-white font-bold text-lg">${artistName}</h3>
-                            <p class="text-gray-300 text-sm">
-                                <i class="fas fa-music"></i> ${trackCount} pista${trackCount > 1 ? 's' : ''}
-                            </p>
-                        </div>
-                        <div class="text-blue-300 font-bold text-2xl">
-                            <i class="fas fa-arrows-alt-v"></i>
-                        </div>
-                    </div>
-                `;
-            }).join('');
-
-            // Inicializar SortableJS
-            if (sortableInstance) {
-                sortableInstance.destroy();
-            }
-            sortableInstance = new Sortable(container, {
-                animation: 150,
-                ghostClass: 'sortable-ghost',
-                dragClass: 'sortable-drag',
-                handle: '.playlist-item',
-                onEnd: function() {
-                    // Actualizar los números de orden después de reordenar
-                    const items = container.querySelectorAll('.playlist-item');
-                    items.forEach((item, index) => {
-                        const orderBadge = item.querySelector('.flex-shrink-0.bg-blue-700 .text-2xl');
-                        if (orderBadge) {
-                            orderBadge.textContent = index + 1;
-                        }
-                    });
-                }
-            });
-
+            const included = artistsWithTracks
+                .filter(a => !a.excluded_gala)
+                .sort((a, b) => {
+                    if (a.playOrder != null && b.playOrder != null) return a.playOrder - b.playOrder;
+                    if (a.playOrder != null) return -1;
+                    if (b.playOrder != null) return 1;
+                    return (a.nombre||'').localeCompare(b.nombre||'');
+                });
+            const excluded = artistsWithTracks.filter(a => a.excluded_gala);
+            renderPlaylistItems(included, excluded);
             document.getElementById('playlistModal').classList.remove('hidden');
         };
 
@@ -1410,8 +1383,115 @@
             document.getElementById('playlistModal').classList.add('hidden');
         };
 
+        // ── helpers del gestor de playlist ──
+        function renderPlaylistItems(included, excluded) {
+            const container = document.getElementById('playlistContainer');
+            let html = included.map((artist, index) => {
+                const artistTracks = allTracksData.find(t => t.artistId === artist.id);
+                const artistName = artist.nombre || artist.name || 'Artista';
+                const artistPhoto = artist.foto_url || '';
+                const tracksChips = artistTracks ? artistTracks.pistas.map(t => {
+                    const safeArtist = artistName.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+                    const safeSong = (t.nombre_cancion||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+                    return `<button onclick="toggleTrack('pl_${artist.id}_${t.slot}','${t.archivo_url}','${safeArtist}','${safeSong}',${t.pitch_offset||0})" id="playBtn_pl_${artist.id}_${t.slot}" class="inline-flex items-center gap-1 bg-blue-900/70 hover:bg-blue-700 rounded px-2 py-0.5 text-xs text-blue-200 border border-blue-600 transition cursor-pointer"><i class="fas fa-play text-green-400 text-xs"></i> ${t.slot===1?'★':'♪'} ${t.nombre_cancion}</button>`;
+                }).join(' ') : '';
+                return `
+                    <div class="playlist-item bg-blue-900 rounded-lg p-3 flex items-center gap-2 border-2 border-blue-600 mb-2" data-artist-id="${artist.id}">
+                        <div class="flex-shrink-0 bg-blue-700 rounded-lg w-10 h-10 flex items-center justify-center">
+                            <span class="order-num text-white font-bold text-lg">${index+1}</span>
+                        </div>
+                        <div class="drag-handle flex-shrink-0 cursor-move px-1">
+                            <i class="fas fa-grip-vertical text-gray-400 text-lg"></i>
+                        </div>
+                        <img src="${artistPhoto}" alt="${artistName}" class="w-10 h-10 rounded-full object-cover border-2 border-blue-400 flex-shrink-0" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(artistName)}&background=3b82f6&color=fff&size=40'">
+                        <div class="flex-1 min-w-0">
+                            <div class="text-white font-bold text-sm truncate">${artistName}</div>
+                            <div class="flex flex-wrap gap-1 mt-1">${tracksChips}</div>
+                        </div>
+                        <div class="flex flex-col gap-1 flex-shrink-0">
+                            <button onclick="movePlaylistItem('${artist.id}',-1)" class="bg-gray-700 hover:bg-blue-600 text-white w-7 h-7 rounded flex items-center justify-center" title="Subir"><i class="fas fa-chevron-up text-xs"></i></button>
+                            <button onclick="movePlaylistItem('${artist.id}',1)" class="bg-gray-700 hover:bg-blue-600 text-white w-7 h-7 rounded flex items-center justify-center" title="Bajar"><i class="fas fa-chevron-down text-xs"></i></button>
+                        </div>
+                        <button onclick="setGalaExclusion('${artist.id}',true)" class="flex-shrink-0 bg-red-900 hover:bg-red-700 text-red-300 hover:text-white px-2 py-1 rounded text-xs font-semibold" title="No canta esta gala">
+                            <i class="fas fa-times"></i> No canta
+                        </button>
+                    </div>`;
+            }).join('');
+
+            if (excluded.length > 0) {
+                html += `<div class="mt-4 pt-3 border-t border-gray-600">
+                    <p class="text-gray-400 text-xs font-semibold mb-2"><i class="fas fa-times-circle text-red-400"></i> No cantan esta gala (${excluded.length})</p>
+                    ${excluded.map(artist => {
+                        const artistName = artist.nombre || artist.name || 'Artista';
+                        return `<div class="bg-gray-800 rounded-lg p-2 flex items-center gap-2 border border-gray-600 mb-1 opacity-60">
+                            <img src="${artist.foto_url||''}" alt="${artistName}" class="w-8 h-8 rounded-full object-cover border border-gray-500 flex-shrink-0" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(artistName)}&background=374151&color=fff&size=32'">
+                            <span class="text-gray-300 flex-1 text-sm font-semibold line-through">${artistName}</span>
+                            <button onclick="setGalaExclusion('${artist.id}',false)" class="bg-green-800 hover:bg-green-700 text-green-300 hover:text-white px-2 py-1 rounded text-xs font-semibold"><i class="fas fa-plus"></i> Reincluir</button>
+                        </div>`;
+                    }).join('')}
+                </div>`;
+            }
+
+            container.innerHTML = html || '<p class="text-gray-400 text-center py-4">No hay artistas en el orden</p>';
+
+            if (sortableInstance) sortableInstance.destroy();
+            sortableInstance = new Sortable(container, {
+                animation: 150,
+                ghostClass: 'sortable-ghost',
+                dragClass: 'sortable-drag',
+                handle: '.drag-handle',
+                draggable: '.playlist-item',
+                onEnd: updateOrderNumbers
+            });
+        }
+
+        function updateOrderNumbers() {
+            document.querySelectorAll('#playlistContainer .playlist-item[data-artist-id]').forEach((item, i) => {
+                const badge = item.querySelector('.order-num');
+                if (badge) badge.textContent = i + 1;
+            });
+        }
+
+        window.movePlaylistItem = function(artistId, direction) {
+            const container = document.getElementById('playlistContainer');
+            const items = Array.from(container.querySelectorAll('.playlist-item[data-artist-id]'));
+            const idx = items.findIndex(el => el.getAttribute('data-artist-id') === artistId);
+            if (idx === -1) return;
+            const newIdx = idx + direction;
+            if (newIdx < 0 || newIdx >= items.length) return;
+            if (direction === -1) {
+                container.insertBefore(items[idx], items[newIdx]);
+            } else {
+                container.insertBefore(items[newIdx], items[idx]);
+            }
+            updateOrderNumbers();
+        };
+
+        window.setGalaExclusion = async function(artistId, exclude) {
+            try {
+                const { doc, updateDoc } = window.firestoreModules;
+                const artistObj = allArtists.find(a => a.id === artistId);
+                if (!artistObj) return;
+                await updateDoc(doc(window.db, artistObj._collectionPath || `artistas_${eventId}`, artistId), { excluded_gala: exclude });
+                artistObj.excluded_gala = exclude;
+                const artistsWithTracks = allArtists.filter(a => allTracksData.some(t => t.artistId === a.id));
+                const included = artistsWithTracks
+                    .filter(a => !a.excluded_gala)
+                    .sort((a, b) => {
+                        if (a.playOrder != null && b.playOrder != null) return a.playOrder - b.playOrder;
+                        if (a.playOrder != null) return -1;
+                        if (b.playOrder != null) return 1;
+                        return (a.nombre||'').localeCompare(b.nombre||'');
+                    });
+                renderPlaylistItems(included, artistsWithTracks.filter(a => a.excluded_gala));
+            } catch(e) {
+                console.error('Error:', e);
+                displayMessage('Error al actualizar', 'error');
+            }
+        };
+
         window.savePlaylistOrder = async function() {
-            const items = document.querySelectorAll('.playlist-item');
+            const items = document.querySelectorAll('#playlistContainer .playlist-item[data-artist-id]');
             const updates = [];
 
             const btn = document.getElementById('savePlaylistBtn');
