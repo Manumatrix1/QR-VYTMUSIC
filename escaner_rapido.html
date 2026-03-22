@@ -59,6 +59,7 @@
             width: 100vw; height: 100vh; 
             position: fixed; top: 0; left: 0; 
         }
+        
         #qr-reader video {
             object-fit: cover !important;
             width: 100% !important;
@@ -231,7 +232,7 @@
         
         @media (max-width: 640px) {
             .counter-number { font-size: 2.5rem; }
-            .scan-frame { width: 75vw; height: 75vw; }
+            .scan-frame { width: 200px; height: 200px; }
             .feedback-icon { font-size: 4rem; }
             .feedback-name { font-size: 1.5rem; }
             .feedback-detail { font-size: 1rem; }
@@ -251,7 +252,6 @@
                 🟢 ONLINE
             </div>
         </div>
-        <div style="position: absolute; left: 50%; bottom: 2px; transform: translateX(-50%); font-size: 0.6rem; color: rgba(255,255,255,0.4);">v22-MAR-17</div>
     </div>
 
     <!-- Cámara -->
@@ -507,17 +507,14 @@
 
         // Procesar escaneo con MODO OFFLINE y validación asíncrona
         async function processTicket(rawText) {
-            // Los QR generados contienen una URL completa:
-            // https://vyt-music.web.app/escaner_qr_final.html?ticket=ID&eventId=X
-            // Extraer el parámetro "ticket" si existe, si no usar el texto directo
+            // Los QR contienen una URL: https://...?ticket=ID&eventId=X
+            // Extraer el parámetro "ticket" si existe
             let ticketId = rawText.trim();
             try {
                 const url = new URL(rawText);
                 const fromUrl = url.searchParams.get('ticket');
                 if (fromUrl) ticketId = fromUrl;
-            } catch (e) {
-                // No es URL — usar el texto tal cual (ID directo)
-            }
+            } catch (e) { /* no es URL, usar como está */ }
 
             const ticket = state.tickets.get(ticketId);
 
@@ -584,19 +581,43 @@
             try {
                 state.scanner = new Html5Qrcode("qr-reader");
                 
+                // 🎯🎯🎯 CONFIGURACIÓN ARQUITECTURA MERCADOPAGO 🎯🎯🎯
+                // Basada en: capture fps:30, ROI dinámico 60%, processing asíncrono
                 const config = {
-                    fps: 15,
+                    fps: 30, // 🎯 FPS ÓPTIMO (MercadoPago usa 30, más estable que 120)
                     qrbox: function(viewfinderWidth, viewfinderHeight) {
+                        // 🎯 ROI DINÁMICO - Centro prioritario 60% (igual que MP)
                         const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
-                        return { width: Math.floor(minEdge * 0.7), height: Math.floor(minEdge * 0.7) };
+                        const qrboxSize = Math.floor(minEdge * 0.6);  // 60% área central
+                        return { width: qrboxSize, height: qrboxSize };
                     },
                     aspectRatio: 1.0,
-                    disableFlip: false,
+                    disableFlip: false, // 🔄 Perspectiva correction básica
                     experimentalFeatures: {
-                        useBarCodeDetectorIfSupported: true
+                        useBarCodeDetectorIfSupported: true  // 🚀 Detect-then-decode strategy
                     },
+                    formatsToSupport: [
+                        Html5QrcodeSupportedFormats.QR_CODE,      // Principal
+                        Html5QrcodeSupportedFormats.CODE_128,     // Códigos de barras
+                        Html5QrcodeSupportedFormats.CODE_39,
+                        Html5QrcodeSupportedFormats.EAN_13,
+                        Html5QrcodeSupportedFormats.EAN_8,
+                        Html5QrcodeSupportedFormats.UPC_A,
+                        Html5QrcodeSupportedFormats.UPC_E,
+                        Html5QrcodeSupportedFormats.CODABAR       // Extra robustez
+                    ],
+                    rememberLastUsedCamera: true,
+                    showTorchButtonIfSupported: false,  // Custom torch control
+                    // 🎯 VIDEO CONSTRAINTS - Máxima compatibilidad
                     videoConstraints: {
-                        facingMode: "environment"
+                        facingMode: "environment",
+                        // Auto-ajustes continuos (similar a CameraX/AVFoundation)
+                        focusMode: { ideal: "continuous" },
+                        exposureMode: { ideal: "continuous" },
+                        whiteBalanceMode: { ideal: "continuous" },
+                        // Resolución óptima para QR
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 }
                     }
                 };
 
@@ -625,8 +646,13 @@
                             state.processingFrame = false;
                         });
                     },
-                    () => {
-                        // Silencio total — NotFoundException es normal (no hay QR en frame)
+                    (errorMessage) => {
+                        // 🔇 Errores silenciosos pero logueados
+                        if (errorMessage.includes('NotFoundException')) {
+                            // Normal - no hay QR en frame
+                        } else {
+                            console.warn('Scanner error:', errorMessage);
+                        }
                     }
                 );
                 
