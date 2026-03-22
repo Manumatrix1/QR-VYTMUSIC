@@ -254,6 +254,9 @@
         </div>
         <div style="position: absolute; left: 50%; bottom: 2px; transform: translateX(-50%); font-size: 0.6rem; color: rgba(255,255,255,0.4);">v22-MAR-B</div>
     </div>
+
+    <!-- Indicador de estado del scanner -->
+    <div id="scan-status" style="display:none; position:fixed; bottom:90px; left:0; right:0; text-align:center; background:rgba(0,0,0,0.8); color:#10b981; font-size:0.75rem; padding:6px; z-index:150; word-break:break-all;"></div>
     <div id="qr-reader"></div>
 
     <!-- Marco de escaneo -->
@@ -587,10 +590,21 @@
                     rememberLastUsedCamera: true
                 };
 
+                // Indicador visual de que el scanner está activo
+                const scanStatus = document.getElementById('scan-status');
+                if (scanStatus) scanStatus.style.display = 'block';
+                // Mostrar cuántos tickets están cargados
+                const ticketCount = state.tickets.size;
+                if (scanStatus) scanStatus.textContent = `📷 ESCANEANDO | ${ticketCount} tickets cargados`;
+
                 await state.scanner.start(
                     { facingMode: "environment" },
                     config,
                     (decodedText) => {
+                        // DEBUG: mostrar texto crudo brevemente
+                        const scanStatus = document.getElementById('scan-status');
+                        if (scanStatus) scanStatus.textContent = `✅ LEÍDO: ${decodedText.substring(0, 40)}...`;
+
                         // 🎯 ANTI-DUPLICACIÓN (MercadoPago usa cooldown 1500ms)
                         const now = Date.now();
                         if (now - state.lastScanTime < 1500) {
@@ -613,11 +627,10 @@
                         });
                     },
                     (errorMessage) => {
-                        // 🔇 Errores silenciosos pero logueados
-                        if (errorMessage.includes('NotFoundException')) {
-                            // Normal - no hay QR en frame
-                        } else {
-                            console.warn('Scanner error:', errorMessage);
+                        // Mostrar en status solo si no es el error normal de "no hay QR"
+                        if (!errorMessage.includes('NotFoundException') && !errorMessage.includes('No MultiFormat')) {
+                            const scanStatus = document.getElementById('scan-status');
+                            if (scanStatus) scanStatus.textContent = `⚠️ ERR: ${errorMessage.substring(0,50)}`;
                         }
                     }
                 );
