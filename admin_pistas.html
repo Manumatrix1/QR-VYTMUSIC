@@ -646,6 +646,7 @@
                         foto_url: data.photoURL || data.foto_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(data.name || data.nombre || 'A')}&background=4f46e5&color=fff&size=128`,
                         playOrder: data.playOrder,
                         excluded_gala: data.excluded_gala || false,
+                        oculto_panel_pistas: data.oculto_panel_pistas || false,
                         _collectionPath: usedCollection
                     });
                 });
@@ -722,13 +723,13 @@
         function displayArtists() {
             const container = document.getElementById('artistsContainer');
             
-            let filteredArtists = allArtists;
+            let filteredArtists = allArtists.filter(a => !a.oculto_panel_pistas);
             if (currentFilter === 'with-tracks') {
-                filteredArtists = allArtists.filter(artist => 
+                filteredArtists = filteredArtists.filter(artist => 
                     allTracksData.some(t => t.artistId === artist.id)
                 );
             } else if (currentFilter === 'without-tracks') {
-                filteredArtists = allArtists.filter(artist => 
+                filteredArtists = filteredArtists.filter(artist => 
                     !allTracksData.some(t => t.artistId === artist.id)
                 );
             }
@@ -804,6 +805,10 @@
                             class="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-semibold py-2 px-4 rounded-lg transition">
                             <i class="fas fa-link"></i> Copiar Link del Artista
                         </button>
+                        ${!hasTracks ? `<button onclick="removeNoTracksArtist('${artist.id}')"
+                            class="w-full mt-2 bg-gray-800 hover:bg-red-900/60 text-gray-400 hover:text-red-300 font-semibold py-2 px-4 rounded-lg transition text-sm border border-gray-700 hover:border-red-800">
+                            <i class="fas fa-eye-slash"></i> Quitar de la lista
+                        </button>` : ''}
                         ${hasTracks ? `<button onclick="removeArtistFromPistas('${artist.id}')"
                             class="w-full mt-2 bg-red-900/50 hover:bg-red-800 text-red-300 hover:text-white font-semibold py-2 px-4 rounded-lg transition text-sm border border-red-800">
                             <i class="fas fa-user-times"></i> Quitar del panel de pistas
@@ -1135,6 +1140,22 @@
         }
 
         // Quitar a un artista de la lista de pistas (borra su doc + archivos en Storage)
+        window.removeNoTracksArtist = async function(artistId) {
+            const artistObj = allArtists.find(a => a.id === artistId);
+            const artistName = artistObj ? (artistObj.nombre || 'este artista') : 'este artista';
+            if (!confirm(`¿Quitar a "${artistName}" de la lista de pistas?\n\nNo se eliminará su perfil ni datos. Solo desaparecerá de este panel.`)) return;
+            try {
+                const { doc, updateDoc } = window.firestoreModules;
+                await updateDoc(doc(window.db, artistObj._collectionPath || `artistas_${eventId}`, artistId), { oculto_panel_pistas: true });
+                artistObj.oculto_panel_pistas = true;
+                displayMessage(`✅ ${artistName} quitado de la lista`, 'success');
+                displayArtists();
+            } catch (error) {
+                console.error('Error:', error);
+                displayMessage('❌ Error: ' + error.message, 'error');
+            }
+        };
+
         window.removeArtistFromPistas = async function(artistId) {
             const artistObj = allArtists.find(a => a.id === artistId);
             const artistName = artistObj ? (artistObj.nombre || artistObj.name || 'este artista') : 'este artista';
