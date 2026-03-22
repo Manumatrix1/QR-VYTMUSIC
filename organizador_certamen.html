@@ -388,15 +388,11 @@
                 document.getElementById('loadingState').innerHTML = `
                     <div class="text-center py-12">
                         <p class="text-purple-300 text-xl font-bold mb-2">🎭 Organizador de Certamen</p>
-                        <p class="text-white/50 mb-4">Generación 13 cargada - seleccioná las galas</p>
-                        <button onclick="showGen13Modal()" 
-                                class="bg-purple-600 hover:bg-purple-500 text-white font-bold px-6 py-3 rounded-xl text-lg transition-all shadow-lg">
-                            📋 Seleccionar Galas de Gen 13
-                        </button>
+                        <p class="text-white/50 mb-4">Seleccioná las galas a cargar</p>
                     </div>`;
                 
-                // Abrir modal automáticamente al cargar
-                setTimeout(() => showGen13Modal(), 500);
+                // Abrir modal inmediatamente sin demora
+                showGen13Modal();
                 
             } catch (error) {
                 console.error('❌ Error cargando generaciones:', error);
@@ -431,37 +427,21 @@
         // ═══════════════════════════════════════════
         async function showGen13Modal() {
             const container = document.getElementById('gen13EventsList');
-            container.innerHTML = '<div class="text-center text-white py-4">⏳ Cargando eventos...</div>';
-            
             document.getElementById('modalGen13').classList.remove('hidden');
             
-            // Cargar selección previa (si existe)
+            // Cargar selección previa
             const savedSelection = JSON.parse(localStorage.getItem('gen13_selected_events') || '[]');
             
-            // Cargar cantidad de artistas inscritos (no solo con votos)
-            const eventsWithCounts = [];
-            for (const event of allEvents) {
-                try {
-                    const artistsSnap = await getDocs(collection(db, `events/${event.id}/artists`));
-                    eventsWithCounts.push({
-                        ...event,
-                        artistCount: artistsSnap.size
-                    });
-                } catch (e) {
-                    eventsWithCounts.push({ ...event, artistCount: 0 });
-                }
-            }
+            // Ordenar eventos por fecha descendente
+            const eventsSorted = [...allEvents].sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
             
-            // Ordenar por fecha descendente
-            eventsWithCounts.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-            
-            // Renderizar lista
+            // Renderizar inmediatamente con conteo pendiente
             container.innerHTML = '';
-            eventsWithCounts.forEach(event => {
+            eventsSorted.forEach(event => {
                 const eventName = event.name || event.id;
                 const isSelected = savedSelection.includes(event.id);
-                
                 const item = document.createElement('label');
+                item.id = `gen13-item-${event.id}`;
                 item.className = `flex items-start gap-3 p-3 rounded-lg cursor-pointer transition-all border-2 ${
                     isSelected ? 'bg-purple-900/30 border-purple-500' : 'bg-gray-800 border-gray-700 hover:border-purple-500'
                 }`;
@@ -473,10 +453,8 @@
                     <div class="flex-1">
                         <p class="text-white text-sm font-bold">${eventName}</p>
                         <div class="flex items-center gap-2 mt-1">
-                            <span class="text-xs px-2 py-0.5 rounded-full ${
-                                event.artistCount > 0 ? 'bg-green-900 text-green-300' : 'bg-gray-700 text-gray-400'
-                            }">
-                                🎤 ${event.artistCount} artistas
+                            <span id="count-${event.id}" class="text-xs px-2 py-0.5 rounded-full bg-gray-700 text-gray-400">
+                                🎤 ...
                             </span>
                             <span class="text-gray-500 text-xs">ID: ${event.id}</span>
                         </div>
@@ -484,6 +462,21 @@
                 `;
                 container.appendChild(item);
             });
+
+            // Cargar conteos en background sin bloquear el modal
+            for (const event of eventsSorted) {
+                getDocs(collection(db, `events/${event.id}/artists`))
+                    .then(snap => {
+                        const el = document.getElementById(`count-${event.id}`);
+                        if (!el) return;
+                        const count = snap.size;
+                        el.className = `text-xs px-2 py-0.5 rounded-full ${
+                            count > 0 ? 'bg-green-900 text-green-300' : 'bg-gray-700 text-gray-400'
+                        }`;
+                        el.textContent = `🎤 ${count} artistas`;
+                    })
+                    .catch(() => {});
+            }
         }
 
         window.confirmGen13Selection = async function() {
