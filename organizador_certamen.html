@@ -12,6 +12,12 @@
         body { background: #0f172a; font-family: 'Inter', system-ui, sans-serif; }
 
         /* Columnas del kanban */
+        .col-header-drag {
+            cursor: grab;
+        }
+        .col-header-drag:active { cursor: grabbing; }
+        .kanban-col.sortable-col-ghost { opacity: 0.4; border: 2px dashed #818cf8 !important; }
+        .kanban-col.sortable-col-chosen { box-shadow: 0 8px 40px rgba(129,140,248,0.4); }
         .kanban-col {
             min-width: 220px;
             max-width: 260px;
@@ -1050,6 +1056,26 @@
                     saveState();
                 }
             });
+
+            // SortableJS en contenedor de columnas (para reordenar columnas completas)
+            if (sortableInstances['columns']) sortableInstances['columns'].destroy();
+            sortableInstances['columns'] = new Sortable(container, {
+                animation: 200,
+                handle: '.col-header-drag',
+                ghostClass: 'sortable-col-ghost',
+                chosenClass: 'sortable-col-chosen',
+                filter: '.pool-col',
+                onEnd() {
+                    // Sincronizar el orden del array `columns` con el DOM
+                    const newOrder = [];
+                    container.querySelectorAll('.kanban-col[data-col-id]').forEach(el => {
+                        const col = columns.find(c => c.id === el.dataset.colId);
+                        if (col) newOrder.push(col);
+                    });
+                    columns = newOrder;
+                    saveState();
+                }
+            });
         }
 
         function createArtistCard(artist) {
@@ -1138,7 +1164,7 @@
 
             div.innerHTML = `
                 <div class="bg-gradient-to-b ${colors.bg} border-2 ${colors.border} rounded-2xl overflow-hidden h-full">
-                    <div class="p-3 border-b border-white/10 flex items-center justify-between gap-2">
+                    <div class="p-3 border-b border-white/10 flex items-center justify-between gap-2 col-header-drag" title="Arrastrá para mover la columna">
                         <div class="flex-1 min-w-0">
                             <h3 class="text-white font-bold text-sm truncate" id="col-title-${col.id}">${col.name}</h3>
                             <p class="text-white/70 text-xs" id="col-count-${col.id}">${colArtistCount} artistas</p>
