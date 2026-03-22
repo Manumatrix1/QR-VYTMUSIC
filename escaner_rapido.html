@@ -62,19 +62,24 @@
         }
         /* Divs internos que genera Html5Qrcode */
         #qr-reader__scan_region {
-            width: 100% !important;
-            height: 100% !important;
-            position: relative;
+            width: 100vw !important;
+            height: 100vh !important;
+            position: fixed !important;
+            top: 0 !important; left: 0 !important;
+            overflow: hidden !important;
         }
-        /* Ocultar la barra de controles que genera Html5Qrcode (botones propios de la librería) */
-        #qr-reader__dashboard {
+        /* Ocultar la barra de controles que genera Html5Qrcode */
+        #qr-reader__dashboard,
+        #qr-reader__header_message,
+        #qr-reader__status_span {
             display: none !important;
         }
-        #qr-reader video {
+        #qr-reader video,
+        #qr-reader canvas {
             object-fit: cover !important;
-            width: 100% !important;
-            height: 100% !important;
-            position: absolute !important;
+            width: 100vw !important;
+            height: 100vh !important;
+            position: fixed !important;
             top: 0 !important; left: 0 !important;
         }
         
@@ -587,31 +592,22 @@
                 // 🎯🎯🎯 CONFIGURACIÓN ARQUITECTURA MERCADOPAGO 🎯🎯🎯
                 // Basada en: capture fps:30, ROI dinámico 60%, processing asíncrono
                 const config = {
-                    fps: 15, // 15fps reduce CPU a la mitad, BarcodeDetector es rápido
-                    qrbox: function(viewfinderWidth, viewfinderHeight) {
-                        // 🎯 ROI DINÁMICO - Centro prioritario 60% (igual que MP)
-                        const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
-                        const qrboxSize = Math.floor(minEdge * 0.6);  // 60% área central
-                        return { width: qrboxSize, height: qrboxSize };
-                    },
-                    aspectRatio: 1.0,
-                    disableFlip: false, // 🔄 Perspectiva correction básica
+                    fps: 15,
+                    // Sin qrbox: el video llena el contenedor completo (fullscreen real)
+                    disableFlip: false,
                     experimentalFeatures: {
-                        useBarCodeDetectorIfSupported: true  // 🚀 Detect-then-decode strategy
+                        useBarCodeDetectorIfSupported: true
                     },
                     formatsToSupport: [
-                        Html5QrcodeSupportedFormats.QR_CODE  // Solo QR — los tickets son QR
+                        Html5QrcodeSupportedFormats.QR_CODE
                     ],
                     rememberLastUsedCamera: true,
-                    showTorchButtonIfSupported: false,  // Custom torch control
-                    // 🎯 VIDEO CONSTRAINTS - Resolución reducida = decodificación más rápida
+                    showTorchButtonIfSupported: false,
                     videoConstraints: {
                         facingMode: "environment",
-                        // Auto-ajustes continuos (similar a CameraX/AVFoundation)
                         focusMode: { ideal: "continuous" },
                         exposureMode: { ideal: "continuous" },
                         whiteBalanceMode: { ideal: "continuous" },
-                        // 1280x720 es suficiente para QR y procesa mucho más rápido
                         width: { ideal: 1280, min: 640 },
                         height: { ideal: 720 }
                     }
@@ -647,22 +643,27 @@
                     }
                 );
                 
-                // Forzar fullscreen después de que Html5Qrcode inyecte sus estilos inline
-                setTimeout(() => {
-                    const qrEl = document.getElementById('qr-reader');
-                    if (qrEl) {
-                        qrEl.style.setProperty('width', '100vw', 'important');
-                        qrEl.style.setProperty('height', '100vh', 'important');
-                        qrEl.style.setProperty('position', 'fixed', 'important');
-                        qrEl.style.setProperty('top', '0', 'important');
-                        qrEl.style.setProperty('left', '0', 'important');
-                        const region = document.getElementById('qr-reader__scan_region');
-                        if (region) {
-                            region.style.setProperty('width', '100%', 'important');
-                            region.style.setProperty('height', '100%', 'important');
+                // MutationObserver: elimina inline styles que Html5Qrcode inyecta
+                // para garantizar que el video llene la pantalla completa
+                const qrEl = document.getElementById('qr-reader');
+                const fsObserver = new MutationObserver(() => {
+                    ['#qr-reader', '#qr-reader__scan_region'].forEach(sel => {
+                        const el = document.querySelector(sel);
+                        if (el) {
+                            el.style.removeProperty('width');
+                            el.style.removeProperty('height');
+                            el.style.removeProperty('padding-bottom');
                         }
+                    });
+                    const vid = document.querySelector('#qr-reader video');
+                    if (vid) {
+                        vid.style.removeProperty('width');
+                        vid.style.removeProperty('height');
                     }
-                }, 300);
+                });
+                if (qrEl) {
+                    fsObserver.observe(qrEl, { attributes: true, attributeFilter: ['style'], subtree: true });
+                }
 
                 // 🔦 DETECTAR Y ACTIVAR LINTERNA
                 try {
