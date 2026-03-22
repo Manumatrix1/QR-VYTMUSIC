@@ -1,5 +1,5 @@
 // Service Worker para VYT MUSIC PWA - VERSIÓN PANEL SIMPLIFICADO
-const CACHE_NAME = 'vyt-music-simple-v17'; // 🔥 Actualizado 2026-03-22
+const CACHE_NAME = 'vyt-music-simple-v18'; // 🔥 Actualizado 2026-03-22
 const urlsToCache = [
   '/',
   '/index.html',
@@ -10,7 +10,9 @@ const urlsToCache = [
 // URLs que NO deben ser cacheadas (para funcionalidad en tiempo real)
 const noCacheUrls = [
   '/firebase_config.js',
-  '/test_camara_directo.html'
+  '/test_camara_directo.html',
+  '/escaner_rapido.html',
+  '/escaner_qr_final.html'
 ];
 
 // Instalación del Service Worker
