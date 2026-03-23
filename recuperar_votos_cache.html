@@ -205,9 +205,13 @@
             `jurado_${EVENT_ID}`,
         ];
 
+        // Almacén global de claves encontradas (para evitar problemas de escape en onclick)
+        window._keyStore = {};
+
         // ─── ESCANEO DE localStorage ─────────────────────────────────────
         window.scanLocalStorage = function() {
             log('Escaneando localStorage...');
+            window._keyStore = {};
             const results = document.getElementById('scan-results');
             results.innerHTML = '';
 
@@ -216,13 +220,7 @@
             document.getElementById('storage-icon').textContent = totalKeys > 0 ? '✅' : '❌';
 
             if (totalKeys === 0) {
-                results.innerHTML = `<div class="card error border p-4 text-center">
-                    <p class="text-2xl mb-2">❌</p>
-                    <p class="font-bold text-red-300">localStorage vacío</p>
-                    <p class="text-sm text-gray-300 mt-2">No hay ningún dato guardado en este navegador/dispositivo.<br>
-                    Los votos podrían no haberse guardado localmente, o el navegador se limpió.<br>
-                    Usa el formulario de <strong>ingreso manual</strong> de abajo.</p>
-                </div>`;
+                results.innerHTML = '<div class="card error border p-4 text-center"><p class="text-2xl mb-2">❌</p><p class="font-bold text-red-300">localStorage vacío</p><p class="text-sm text-gray-300 mt-2">No hay ningún dato guardado en este navegador/dispositivo.</p></div>';
                 document.getElementById('storage-icon').textContent = '❌';
                 document.getElementById('votes-icon').textContent = '❌';
                 document.getElementById('votes-found').textContent = '0';
@@ -231,6 +229,7 @@
 
             let allFoundVotes = [];
             let relevantFound = 0;
+            let storeIdx = 0;
 
             for (let i = 0; i < localStorage.length; i++) {
                 const key = localStorage.key(i);
@@ -257,8 +256,6 @@
                         str.includes('juror') || str.includes('jurado') ||
                         str.includes(EVENT_ID.toLowerCase())) {
                         hasVoteData = true;
-
-                        // Intentar extraer votos del array
                         const candidates = Array.isArray(parsed) ? parsed : [parsed];
                         candidates.forEach(item => {
                             if (item && (item.scores || item.score || item.average)) {
@@ -273,47 +270,61 @@
 
                 if (keyIsRelevant || hasVoteData) {
                     relevantFound++;
+                    // Guardar en store con índice numérico (evita todo problema de escape)
+                    const idx = storeIdx++;
+                    window._keyStore[idx] = key;
+
                     const sizeKb = (raw.length / 1024).toFixed(1);
                     const cardClass = hasVoteData ? 'found border' : 'card warning border';
-                    const safeKey = key.replace(/`/g, '\\`').replace(/\\/g, '\\\\');
-                    const safeRaw = raw.replace(/\\/g, '\\\\').replace(/`/g, '\\`');
-                    
-                    results.innerHTML += `
-                    <div class="${cardClass} p-4 rounded-lg">
-                        <div class="flex justify-between items-start mb-2 flex-wrap gap-2">
-                            <span class="font-mono font-bold text-yellow-300 break-all">${key}</span>
-                            <div class="flex gap-2 flex-wrap">
-                                <span class="badge ${hasVoteData ? 'badge-green' : 'badge-yellow'}">${hasVoteData ? '🗳️ VOTOS' : '📦 DATOS'}</span>
-                                <span class="badge" style="background:#374151;color:#d1d5db">${sizeKb} KB</span>
-                            </div>
-                        </div>
-                        ${votesInKey.length > 0 ? `<p class="text-green-300 text-sm mb-2 font-bold">✅ ${votesInKey.length} voto(s) detectado(s)</p>` : ''}
-                        <div class="flex gap-2 mb-3 flex-wrap">
-                            <button onclick="copiarClave('${safeKey}')" class="btn btn-orange" style="padding:8px 16px;font-size:13px">📋 COPIAR CONTENIDO</button>
-                            <button onclick="enviarClavePorWA('${safeKey}')" class="btn" style="background:#25d366;color:white;padding:8px 16px;font-size:13px">💬 Enviar por WhatsApp</button>
-                        </div>
-                        <details>
-                            <summary class="cursor-pointer text-sm text-gray-400 hover:text-white">Ver contenido →</summary>
-                            <pre class="mt-2 bg-gray-900 p-2 rounded text-gray-300 max-h-40 overflow-y-auto">${isJson ? JSON.stringify(parsed, null, 2) : raw}</pre>
-                        </details>
-                    </div>`;
-                    
-                    log(`Clave encontrada: "${key}" · ${sizeKb}KB · ${hasVoteData ? votesInKey.length + ' votos' : 'revisar manualmente'}`, hasVoteData ? 'ok' : 'warn');
+                    const preContent = isJson
+                        ? JSON.stringify(parsed, null, 2).replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                        : raw.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+                    const card = document.createElement('div');
+                    card.className = cardClass + ' p-4 rounded-lg';
+                    card.innerHTML = [
+                        '<div class="flex justify-between items-start mb-2 flex-wrap gap-2">',
+                        '  <span class="font-mono font-bold text-yellow-300 break-all">' + key + '</span>',
+                        '  <div class="flex gap-2 flex-wrap">',
+                        '    <span class="badge ' + (hasVoteData ? 'badge-green' : 'badge-yellow') + '">' + (hasVoteData ? '🗳️ VOTOS' : '📦 DATOS') + '</span>',
+                        '    <span class="badge" style="background:#374151;color:#d1d5db">' + sizeKb + ' KB</span>',
+                        '  </div>',
+                        '</div>',
+                        votesInKey.length > 0 ? '<p class="text-green-300 text-sm mb-2 font-bold">✅ ' + votesInKey.length + ' voto(s) detectado(s)</p>' : '',
+                        '<div class="flex gap-2 mb-3 flex-wrap">',
+                        '  <button class="btn btn-orange btn-copy-key" data-idx="' + idx + '" style="padding:8px 16px;font-size:13px">📋 COPIAR CONTENIDO</button>',
+                        '  <button class="btn btn-wa-key" data-idx="' + idx + '" style="background:#25d366;color:white;padding:8px 16px;font-size:13px">💬 Enviar por WhatsApp</button>',
+                        '</div>',
+                        '<details>',
+                        '  <summary class="cursor-pointer text-sm text-gray-400 hover:text-white">Ver contenido →</summary>',
+                        '  <pre class="mt-2 bg-gray-900 p-2 rounded text-gray-300 max-h-40 overflow-y-auto">' + preContent + '</pre>',
+                        '</details>'
+                    ].join('');
+
+                    // Eventos en los botones (sin inline onclick)
+                    card.querySelector('.btn-copy-key').addEventListener('click', function() {
+                        copiarClave(window._keyStore[this.dataset.idx]);
+                    });
+                    card.querySelector('.btn-wa-key').addEventListener('click', function() {
+                        enviarClavePorWA(window._keyStore[this.dataset.idx]);
+                    });
+
+                    results.appendChild(card);
+                    log('Clave encontrada: "' + key + '" · ' + sizeKb + 'KB · ' + (hasVoteData ? votesInKey.length + ' votos' : 'revisar manualmente'), hasVoteData ? 'ok' : 'warn');
                 }
             }
 
             // También mostrar artists_cache si existe
-            const artCache = localStorage.getItem(`artists_cache_${EVENT_ID}`);
+            const artCache = localStorage.getItem('artists_cache_' + EVENT_ID);
             if (artCache) {
                 try {
                     const artData = JSON.parse(artCache);
                     const artCount = artData.artists ? artData.artists.length : (Array.isArray(artData) ? artData.length : 1);
-                    results.innerHTML += `<div class="card p-4 rounded-lg border border-blue-500">
-                        <span class="font-mono font-bold text-blue-300">artists_cache_${EVENT_ID}</span>
-                        <span class="badge badge-green ml-2">✅ CACHÉ ARTISTAS · ${artCount} artistas</span>
-                        <p class="text-sm text-blue-200 mt-1">✅ Los datos de artistas están en caché. El jurado sí usó esta página con este evento.</p>
-                    </div>`;
-                    log(`Caché de artistas encontrada: ${artCount} artistas`, 'ok');
+                    const artDiv = document.createElement('div');
+                    artDiv.className = 'card p-4 rounded-lg border border-blue-500';
+                    artDiv.innerHTML = '<span class="font-mono font-bold text-blue-300">artists_cache_' + EVENT_ID + '</span> <span class="badge badge-green ml-2">✅ CACHÉ ARTISTAS · ' + artCount + ' artistas</span><p class="text-sm text-blue-200 mt-1">✅ El jurado sí usó esta página con este evento.</p>';
+                    results.appendChild(artDiv);
+                    log('Caché de artistas encontrada: ' + artCount + ' artistas', 'ok');
                 } catch(e) {}
             }
 
@@ -322,14 +333,12 @@
 
             // Botón para copiar TODO el localStorage relevante
             if (relevantFound > 0) {
-                results.innerHTML += `
-                <div class="card p-4 rounded-lg border border-purple-500 mt-4">
-                    <p class="font-bold text-purple-300 mb-3">📤 ¿No ves botón de votos arriba? Copiá TODO y mandámelo:</p>
-                    <div class="flex gap-3 flex-wrap">
-                        <button onclick="copiarTodoLocalStorage()" class="btn btn-blue">📋 COPIAR TODO EL CACHÉ</button>
-                        <button onclick="enviarTodoWA()" class="btn" style="background:#25d366;color:white">💬 ENVIAR TODO POR WHATSAPP</button>
-                    </div>
-                </div>`;
+                const todoDiv = document.createElement('div');
+                todoDiv.className = 'card p-4 rounded-lg border border-purple-500 mt-4';
+                todoDiv.innerHTML = '<p class="font-bold text-purple-300 mb-3">📤 ¿No ves botón de votos arriba? Copiá TODO y mandámelo:</p><div class="flex gap-3 flex-wrap"><button id="btn-copiar-todo" class="btn btn-blue">📋 COPIAR TODO EL CACHÉ</button><button id="btn-wa-todo" class="btn" style="background:#25d366;color:white">💬 ENVIAR TODO POR WHATSAPP</button></div>';
+                todoDiv.querySelector('#btn-copiar-todo').addEventListener('click', copiarTodoLocalStorage);
+                todoDiv.querySelector('#btn-wa-todo').addEventListener('click', enviarTodoWA);
+                results.appendChild(todoDiv);
             }
 
             if (allFoundVotes.length > 0) {
