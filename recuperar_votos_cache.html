@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🔍 RECUPERAR VOTOS DE CACHÉ - GALA 1 GRUPO B</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background: #0f172a; color: #f1f5f9; }
+        .card { background: #1e293b; border-radius: 12px; border: 1px solid #334155; }
+        .found { background: #14532d; border-color: #16a34a; }
+        .warning { background: #713f12; border-color: #d97706; }
+        .error { background: #7f1d1d; border-color: #dc2626; }
+        pre { white-space: pre-wrap; word-break: break-all; font-size: 12px; font-family: monospace; }
+        .badge { padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: bold; }
+        .badge-green { background: #16a34a; color: white; }
+        .badge-red { background: #dc2626; color: white; }
+        .badge-yellow { background: #d97706; color: white; }
+        .btn { padding: 12px 24px; border-radius: 8px; font-weight: bold; cursor: pointer; border: none; font-size: 15px; transition: all 0.2s; }
+        .btn:hover { opacity: 0.85; transform: translateY(-1px); }
+        .btn-green { background: #16a34a; color: white; }
+        .btn-blue { background: #2563eb; color: white; }
+        .btn-orange { background: #d97706; color: white; }
+        .btn-red { background: #dc2626; color: white; }
+        .step { counter-increment: step; }
+        .step::before { content: counter(step); background: #3b82f6; color: white; border-radius: 50%; width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; font-weight: bold; margin-right: 10px; font-size: 14px; }
+        body { counter-reset: step; }
+        .pulse { animation: pulse 2s infinite; }
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.6} }
+    </style>
+</head>
+<body class="min-h-screen p-4">
+    <div class="max-w-4xl mx-auto">
+
+        <!-- HEADER -->
+        <div class="text-center mb-8">
+            <div class="text-6xl mb-4">🔍</div>
+            <h1 class="text-4xl font-bold mb-2 text-yellow-400">RECUPERAR VOTOS DE CACHÉ</h1>
+            <p class="text-xl text-gray-300">Gala 1 Grupo B · VYT-MUSIC</p>
+            <div class="mt-4 p-4 card warning border-2">
+                <p class="font-bold text-yellow-300">⚠️ INSTRUCCIÓN CRÍTICA</p>
+                <p class="text-yellow-100 mt-1">Esta página debe abrirse en el <strong>MISMO TELÉFONO/PC</strong> donde votó el jurado.<br>
+                Envíale este link: <code class="bg-gray-900 px-2 py-1 rounded text-green-300">https://vytmusic.netlify.app/recuperar_votos_cache.html?eventId=WvnaxCEqzahWvndRe1S9</code></p>
+            </div>
+        </div>
+
+        <!-- ESTADO DE DISPOSITIVO -->
+        <div class="card p-6 mb-6">
+            <h2 class="text-xl font-bold mb-4">📱 Estado del Dispositivo</h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="text-center p-4 rounded-lg bg-gray-800">
+                    <div class="text-2xl mb-1" id="device-icon">⏳</div>
+                    <div class="text-sm text-gray-400">Dispositivo</div>
+                    <div class="font-bold" id="device-info">Detectando...</div>
+                </div>
+                <div class="text-center p-4 rounded-lg bg-gray-800">
+                    <div class="text-2xl mb-1" id="storage-icon">⏳</div>
+                    <div class="text-sm text-gray-400">Claves en localStorage</div>
+                    <div class="font-bold text-2xl" id="storage-count">-</div>
+                </div>
+                <div class="text-center p-4 rounded-lg bg-gray-800">
+                    <div class="text-2xl mb-1" id="votes-icon">⏳</div>
+                    <div class="text-sm text-gray-400">Votos encontrados</div>
+                    <div class="font-bold text-2xl" id="votes-found">-</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- RESULTADOS DEL ESCANEO -->
+        <div class="card p-6 mb-6">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold">🔎 Escaneo de localStorage</h2>
+                <button onclick="scanLocalStorage()" class="btn btn-blue">🔄 ESCANEAR AHORA</button>
+            </div>
+            <div id="scan-results" class="space-y-3">
+                <div class="text-center text-gray-400 py-8">
+                    <div class="text-4xl mb-2">📭</div>
+                    <p>Presiona "ESCANEAR AHORA" para buscar votos guardados localmente</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- VOTOS RECUPERADOS -->
+        <div id="recovery-section" style="display:none" class="card p-6 mb-6 found border-2">
+            <h2 class="text-xl font-bold mb-4 text-green-300">✅ VOTOS RECUPERADOS</h2>
+            <div id="recovered-votes-list" class="space-y-2 mb-6"></div>
+            <div class="flex gap-4 flex-wrap">
+                <button onclick="pushToFirebase()" class="btn btn-green text-lg">
+                    🚀 GUARDAR EN FIREBASE
+                </button>
+                <button onclick="exportarJSON()" class="btn btn-blue">
+                    📋 COPIAR COMO JSON
+                </button>
+            </div>
+            <div id="push-status" class="mt-4 p-3 rounded-lg" style="display:none"></div>
+        </div>
+
+        <!-- SECCIÓN INGRESO MANUAL SI NO HAY CACHÉ -->
+        <div class="card p-6 mb-6">
+            <h2 class="text-xl font-bold mb-2 text-blue-300">✏️ Ingreso Manual de Puntuaciones</h2>
+            <p class="text-gray-400 mb-4">Si no hay caché, el jurado puede ingresar sus puntuaciones aquí y se guardarán directamente en Firebase.</p>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div>
+                    <label class="block text-sm text-gray-400 mb-1">Jurado:</label>
+                    <select id="manual-juror" class="w-full p-2 rounded bg-gray-800 border border-gray-600 text-white">
+                        <option value="">-- Seleccionar jurado --</option>
+                        <option value="cecilia_lorentz|Cecilia Lorenz">Cecilia Lorenz</option>
+                        <option value="luciano_martinez|Luciano Martinez">Luciano Martinez</option>
+                        <option value="marta_flores|Marta Flores">Marta Flores</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm text-gray-400 mb-1">Artista:</label>
+                    <select id="manual-artist" class="w-full p-2 rounded bg-gray-800 border border-gray-600 text-white">
+                        <option value="">-- Cargando artistas... --</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4" id="manual-scores-grid">
+                <!-- Se llena dinámicamente -->
+            </div>
+
+            <div class="text-center p-3 rounded-lg bg-gray-800 mb-4">
+                <span class="text-gray-400">Promedio: </span>
+                <span id="manual-avg" class="text-3xl font-bold text-yellow-400">-</span>
+                <span class="text-gray-400"> / 100</span>
+            </div>
+
+            <button onclick="guardarManual()" class="btn btn-orange w-full">
+                💾 GUARDAR PUNTUACIÓN MANUAL EN FIREBASE
+            </button>
+            <div id="manual-status" class="mt-3 p-3 rounded-lg text-center" style="display:none"></div>
+        </div>
+
+        <!-- LOG DE OPERACIONES -->
+        <div class="card p-6">
+            <div class="flex justify-between items-center mb-3">
+                <h3 class="font-bold">📝 Log de Operaciones</h3>
+                <button onclick="document.getElementById('op-log').innerHTML=''" class="text-xs text-gray-400 hover:text-white">Limpiar</button>
+            </div>
+            <div id="op-log" class="bg-gray-900 p-3 rounded-lg text-xs font-mono max-h-48 overflow-y-auto text-green-300">
+                <div>[SISTEMA] Herramienta de recuperación iniciada · Evento: WvnaxCEqzahWvndRe1S9</div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Firebase -->
+    <script type="module">
+        import { db } from './firebase_config.js';
+        import { collection, doc, setDoc, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        const EVENT_ID = 'WvnaxCEqzahWvndRe1S9';
+
+        // Categorías del sistema
+        const CATEGORIAS = [
+            { key: 'tecnica_vocal',             label: 'Técnica Vocal' },
+            { key: 'melodia_interpretacion',    label: 'Melodía e Interpretación' },
+            { key: 'gestualidad_expresion',     label: 'Gestualidad y Expresión' },
+            { key: 'diccion_articulacion',      label: 'Dicción y Articulación' },
+            { key: 'dinamica_espacio',          label: 'Dinámica y Uso del Espacio' },
+            { key: 'repertorio_seleccion',      label: 'Repertorio y Selección' },
+            { key: 'presencia_escenica',        label: 'Presencia Escénica' },
+            { key: 'originalidad_creatividad',  label: 'Originalidad y Creatividad' },
+            { key: 'vestuario_presentacion',    label: 'Vestuario y Presentación' },
+            { key: 'puntualidad_profesionalismo', label: 'Puntualidad y Profesionalismo' }
+        ];
+
+        function log(msg, type = 'info') {
+            const colors = { info: '#86efac', warn: '#fde68a', error: '#fca5a5', ok: '#6ee7b7' };
+            const el = document.getElementById('op-log');
+            const timestamp = new Date().toLocaleTimeString('es-AR');
+            el.innerHTML += `<div style="color:${colors[type]||'#86efac'}">[${timestamp}] ${msg}</div>`;
+            el.scrollTop = el.scrollHeight;
+        }
+
+        // ─── DETECCIÓN DE DISPOSITIVO ───────────────────────────────────
+        function detectDevice() {
+            const ua = navigator.userAgent;
+            document.getElementById('device-icon').textContent = /Mobile|Android|iPhone/i.test(ua) ? '📱' : '💻';
+            document.getElementById('device-info').textContent = /iPhone/i.test(ua) ? 'iPhone' :
+                /Android/i.test(ua) ? 'Android' : 'PC/Mac';
+        }
+        detectDevice();
+
+        // ─── CLAVES CONOCIDAS DEL SISTEMA ──────────────────────────────
+        const KNOWN_VOTE_KEYS = [
+            'pending_votes_queue',
+            'jury_votes_queue',
+            'voteQueue',
+            'localVotes',
+            'local_votes',
+        ];
+
+        // ─── ESCANEO DE localStorage ─────────────────────────────────────
+        window.scanLocalStorage = function() {
+            log('Escaneando localStorage...');
+            const results = document.getElementById('scan-results');
+            results.innerHTML = '';
+
+            const totalKeys = localStorage.length;
+            document.getElementById('storage-count').textContent = totalKeys;
+            document.getElementById('storage-icon').textContent = totalKeys > 0 ? '✅' : '❌';
+
+            if (totalKeys === 0) {
+                results.innerHTML = `<div class="card error border p-4 text-center">
+                    <p class="text-2xl mb-2">❌</p>
+                    <p class="font-bold text-red-300">localStorage vacío</p>
+                    <p class="text-sm text-gray-300 mt-2">No hay ningún dato guardado en este navegador/dispositivo.<br>
+                    Los votos podrían no haberse guardado localmente, o el navegador se limpió.<br>
+                    Usa el formulario de <strong>ingreso manual</strong> de abajo.</p>
+                </div>`;
+                document.getElementById('storage-icon').textContent = '❌';
+                document.getElementById('votes-icon').textContent = '❌';
+                document.getElementById('votes-found').textContent = '0';
+                return;
+            }
+
+            let allFoundVotes = [];
+            let relevantFound = 0;
+
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                const raw = localStorage.getItem(key);
+                let parsed = null;
+                let isJson = false;
+
+                try { parsed = JSON.parse(raw); isJson = true; } catch(e) {}
+
+                // Detectar si es relevante para votos
+                const keyIsRelevant = KNOWN_VOTE_KEYS.includes(key) ||
+                    key.includes('vote') || key.includes('voto') || key.includes('jury') ||
+                    key.includes('jurado') || key.includes('pending') || key.includes('queue') ||
+                    key.includes(`_${EVENT_ID}`);
+
+                // Detectar si tiene data de votos
+                let hasVoteData = false;
+                let votesInKey = [];
+
+                if (isJson) {
+                    const str = JSON.stringify(parsed).toLowerCase();
+                    if (str.includes('score') || str.includes('scores') || str.includes('puntaj') ||
+                        str.includes('juror') || str.includes('jurado') ||
+                        str.includes(EVENT_ID.toLowerCase())) {
+                        hasVoteData = true;
+
+                        // Intentar extraer votos del array
+                        const candidates = Array.isArray(parsed) ? parsed : [parsed];
+                        candidates.forEach(item => {
+                            if (item && (item.scores || item.score || item.average)) {
+                                if (!item.eventId || item.eventId === EVENT_ID) {
+                                    votesInKey.push(item);
+                                    allFoundVotes.push(item);
+                                }
+                            }
+                        });
+                    }
+                }
+
+                if (keyIsRelevant || hasVoteData) {
+                    relevantFound++;
+                    const sizeKb = (raw.length / 1024).toFixed(1);
+                    const cardClass = hasVoteData ? 'found border' : 'card warning border';
+                    
+                    results.innerHTML += `
+                    <div class="${cardClass} p-4 rounded-lg">
+                        <div class="flex justify-between items-start mb-2">
+                            <span class="font-mono font-bold text-yellow-300">${key}</span>
+                            <div class="flex gap-2">
+                                <span class="badge ${hasVoteData ? 'badge-green' : 'badge-yellow'}">${hasVoteData ? '🗳️ VOTOS' : '📦 RELEVANTE'}</span>
+                                <span class="badge" style="background:#374151;color:#d1d5db">${sizeKb} KB · ${raw.length} chars</span>
+                            </div>
+                        </div>
+                        ${votesInKey.length > 0 ? `<p class="text-green-300 text-sm mb-2 font-bold">✅ ${votesInKey.length} voto(s) encontrado(s) en esta clave</p>` : ''}
+                        <details>
+                            <summary class="cursor-pointer text-sm text-gray-400 hover:text-white">Ver contenido →</summary>
+                            <pre class="mt-2 bg-gray-900 p-2 rounded text-gray-300 max-h-40 overflow-y-auto">${isJson ? JSON.stringify(parsed, null, 2) : raw}</pre>
+                        </details>
+                    </div>`;
+                    
+                    log(`Clave encontrada: "${key}" · ${sizeKb}KB · ${hasVoteData ? votesInKey.length + ' votos' : 'sin votos directos'}`, hasVoteData ? 'ok' : 'warn');
+                }
+            }
+
+            // También mostrar artists_cache si existe
+            const artCache = localStorage.getItem(`artists_cache_${EVENT_ID}`);
+            if (artCache) {
+                try {
+                    const artData = JSON.parse(artCache);
+                    const artCount = artData.artists ? artData.artists.length : (Array.isArray(artData) ? artData.length : 1);
+                    results.innerHTML += `<div class="card p-4 rounded-lg border border-blue-500">
+                        <span class="font-mono font-bold text-blue-300">artists_cache_${EVENT_ID}</span>
+                        <span class="badge badge-green ml-2">✅ CACHÉ ARTISTAS · ${artCount} artistas</span>
+                        <p class="text-sm text-blue-200 mt-1">✅ Los datos de artistas están en caché. El jurado sí usó esta página con este evento.</p>
+                    </div>`;
+                    log(`Caché de artistas encontrada: ${artCount} artistas`, 'ok');
+                } catch(e) {}
+            }
+
+            document.getElementById('votes-found').textContent = allFoundVotes.length;
+            document.getElementById('votes-icon').textContent = allFoundVotes.length > 0 ? '✅' : (relevantFound > 0 ? '⚠️' : '❌');
+
+            if (allFoundVotes.length > 0) {
+                mostrarVotosRecuperados(allFoundVotes);
+                log(`✅ TOTAL: ${allFoundVotes.length} votos recuperados del caché`, 'ok');
+            } else if (relevantFound === 0) {
+                results.innerHTML += `<div class="card error border p-4 text-center mt-4">
+                    <p class="text-xl mb-2">❌ Sin datos de votos en este dispositivo</p>
+                    <p class="text-sm text-gray-300">Este no es el dispositivo donde se votó, o el caché fue limpiado.<br>
+                    Usa el <strong>Ingreso Manual</strong> de abajo si el jurado recuerda sus puntuaciones.</p>
+                </div>`;
+                log('Sin votos en caché. Usar ingreso manual.', 'warn');
+            }
+        };
+
+        let votosParaGuardar = [];
+
+        function mostrarVotosRecuperados(votos) {
+            votosParaGuardar = votos;
+            const section = document.getElementById('recovery-section');
+            const list = document.getElementById('recovered-votes-list');
+            section.style.display = 'block';
+
+            list.innerHTML = votos.map((v, i) => {
+                const juror = v.jurorName || v.jurorId || '?';
+                const artist = v.artistName || '?';
+                const score = v.score || v.average || '?';
+                return `<div class="flex justify-between items-center p-3 rounded-lg bg-gray-800 border border-green-700">
+                    <div>
+                        <span class="font-bold text-green-300">${artist}</span>
+                        <span class="text-gray-400 text-sm ml-2">→ ${juror}</span>
+                    </div>
+                    <span class="text-yellow-300 font-bold text-xl">${score}</span>
+                </div>`;
+            }).join('');
+
+            log(`Lista de ${votos.length} votos lista para guardar.`, 'ok');
+        }
+
+        // ─── PUSH A FIREBASE ────────────────────────────────────────────
+        window.pushToFirebase = async function() {
+            if (!votosParaGuardar.length) {
+                alert('No hay votos para guardar.');
+                return;
+            }
+
+            const statusEl = document.getElementById('push-status');
+            statusEl.style.display = 'block';
+            statusEl.className = 'mt-4 p-3 rounded-lg bg-yellow-900 text-yellow-200';
+            statusEl.textContent = '⏳ Guardando en Firebase...';
+
+            let ok = 0, fail = 0;
+
+            for (const vote of votosParaGuardar) {
+                try {
+                    const jurorId   = vote.jurorId   || vote.jurorName?.toLowerCase().replace(/\s+/g,'_') || 'desconocido';
+                    const artistId  = vote.artistId  || vote.globalArtistId || `artista_${Date.now()}`;
+                    const docId     = `${jurorId}_${artistId}`;
+
+                    const voteData = {
+                        ...vote,
+                        eventId: EVENT_ID,
+                        recoveredFromCache: true,
+                        recoveryTimestamp: new Date().toISOString()
+                    };
+
+                    await setDoc(doc(db, `events/${EVENT_ID}/jury_evaluations`, docId), voteData);
+                    ok++;
+                    log(`✅ Guardado: ${vote.artistName} · jurado: ${vote.jurorName || jurorId}`, 'ok');
+                } catch(e) {
+                    fail++;
+                    log(`❌ Error guardando ${vote.artistName}: ${e.message}`, 'error');
+                }
+            }
+
+            statusEl.className = `mt-4 p-3 rounded-lg ${fail === 0 ? 'bg-green-900 text-green-200' : 'bg-orange-900 text-orange-200'}`;
+            statusEl.textContent = `${fail === 0 ? '✅' : '⚠️'} Guardados: ${ok} · Errores: ${fail}`;
+            log(`PUSH completado: ${ok} guardados, ${fail} errores`, fail === 0 ? 'ok' : 'warn');
+        };
+
+        window.exportarJSON = function() {
+            const data = JSON.stringify(votosParaGuardar, null, 2);
+            navigator.clipboard.writeText(data).then(() => {
+                alert('✅ JSON copiado al portapapeles!\n\nPuedes pegarlo en un mensaje o email para enviar los datos manualmente.');
+            }).catch(() => {
+                prompt('Copia este JSON:', data);
+            });
+        };
+
+        // ─── CARGA DE ARTISTAS PARA FORMULARIO MANUAL ──────────────────
+        async function loadArtistas() {
+            const select = document.getElementById('manual-artist');
+            select.innerHTML = '<option value="">-- Cargando... --</option>';
+            try {
+                const snap = await getDocs(collection(db, `events/${EVENT_ID}/artists`));
+                select.innerHTML = '<option value="">-- Seleccionar artista --</option>';
+                snap.forEach(d => {
+                    const data = d.data();
+                    const name = data.name || data.nombre || '?';
+                    select.innerHTML += `<option value="${d.id}|${name}">${name}</option>`;
+                });
+                log(`${snap.size} artistas cargados para formulario manual`, 'ok');
+            } catch(e) {
+                select.innerHTML = '<option value="">Error cargando artistas</option>';
+                log('Error cargando artistas: ' + e.message, 'error');
+            }
+        }
+        loadArtistas();
+
+        // ─── FORMULARIO MANUAL ─────────────────────────────────────────
+        function buildManualForm() {
+            const grid = document.getElementById('manual-scores-grid');
+            grid.innerHTML = CATEGORIAS.map(c => `
+                <div class="p-3 rounded-lg bg-gray-800">
+                    <label class="block text-xs text-gray-400 mb-1">${c.label}</label>
+                    <input type="number" id="cat_${c.key}" min="25" max="100" value="70"
+                           class="w-full p-2 rounded bg-gray-700 border border-gray-600 text-white text-center text-lg font-bold"
+                           oninput="recalcManualAvg()">
+                </div>
+            `).join('');
+        }
+        buildManualForm();
+
+        window.recalcManualAvg = function() {
+            const vals = CATEGORIAS.map(c => {
+                const v = parseInt(document.getElementById(`cat_${c.key}`)?.value || '70');
+                return isNaN(v) ? 70 : Math.min(100, Math.max(25, v));
+            });
+            const avg = (vals.reduce((a,b) => a+b, 0) / vals.length).toFixed(1);
+            document.getElementById('manual-avg').textContent = avg;
+        };
+        window.recalcManualAvg();
+
+        window.guardarManual = async function() {
+            const jurorVal  = document.getElementById('manual-juror').value;
+            const artistVal = document.getElementById('manual-artist').value;
+
+            if (!jurorVal || !artistVal) {
+                alert('Selecciona jurado y artista.'); return;
+            }
+
+            const [jurorId, jurorName]   = jurorVal.split('|');
+            const [artistId, artistName] = artistVal.split('|');
+
+            const scores = {};
+            CATEGORIAS.forEach(c => {
+                const v = parseInt(document.getElementById(`cat_${c.key}`)?.value || '70');
+                scores[c.key] = isNaN(v) ? 70 : Math.min(100, Math.max(25, v));
+            });
+            const average = parseFloat((Object.values(scores).reduce((a,b)=>a+b,0) / CATEGORIAS.length).toFixed(1));
+
+            const docId = `${jurorId}_${artistId}`;
+            const voteData = {
+                artistId, artistName,
+                globalArtistId: artistId,
+                jurorId, jurorName,
+                jurorType: 'individual',
+                jurorTypeLabel: 'Jurado Individual',
+                isAnonymous: false,
+                scores,
+                score: average,
+                average,
+                eventId: EVENT_ID,
+                timestamp: new Date().toISOString(),
+                manualEntry: true,
+                manualEntryTimestamp: new Date().toISOString()
+            };
+
+            const statusEl = document.getElementById('manual-status');
+            statusEl.style.display = 'block';
+            statusEl.className = 'mt-3 p-3 rounded-lg bg-yellow-900 text-yellow-200 text-center';
+            statusEl.textContent = '⏳ Guardando...';
+
+            try {
+                await setDoc(doc(db, `events/${EVENT_ID}/jury_evaluations`, docId), voteData);
+                statusEl.className = 'mt-3 p-3 rounded-lg bg-green-900 text-green-200 text-center';
+                statusEl.textContent = `✅ Guardado: ${artistName} · ${jurorName} · Puntaje: ${average}`;
+                log(`✅ Manual guardado: ${artistName} por ${jurorName} = ${average}`, 'ok');
+
+                // Reset selección artista
+                document.getElementById('manual-artist').value = '';
+            } catch(e) {
+                statusEl.className = 'mt-3 p-3 rounded-lg bg-red-900 text-red-200 text-center';
+                statusEl.textContent = `❌ Error: ${e.message}`;
+                log('Error guardando manual: ' + e.message, 'error');
+            }
+        };
+
+        // Escanear automáticamente al cargar
+        window.addEventListener('load', () => {
+            setTimeout(scanLocalStorage, 500);
+        });
+    </script>
+</body>
+</html>
