@@ -199,6 +199,10 @@
             'voteQueue',
             'localVotes',
             'local_votes',
+            'organizador-session',
+            `organizador_${EVENT_ID}`,
+            `scores_${EVENT_ID}`,
+            `jurado_${EVENT_ID}`,
         ];
 
         // ─── ESCANEO DE localStorage ─────────────────────────────────────
@@ -240,7 +244,8 @@
                 const keyIsRelevant = KNOWN_VOTE_KEYS.includes(key) ||
                     key.includes('vote') || key.includes('voto') || key.includes('jury') ||
                     key.includes('jurado') || key.includes('pending') || key.includes('queue') ||
-                    key.includes(`_${EVENT_ID}`);
+                    key.includes('organizador') || key.includes('session') ||
+                    key.includes(EVENT_ID);
 
                 // Detectar si tiene data de votos
                 let hasVoteData = false;
@@ -270,24 +275,30 @@
                     relevantFound++;
                     const sizeKb = (raw.length / 1024).toFixed(1);
                     const cardClass = hasVoteData ? 'found border' : 'card warning border';
+                    const safeKey = key.replace(/`/g, '\\`').replace(/\\/g, '\\\\');
+                    const safeRaw = raw.replace(/\\/g, '\\\\').replace(/`/g, '\\`');
                     
                     results.innerHTML += `
                     <div class="${cardClass} p-4 rounded-lg">
-                        <div class="flex justify-between items-start mb-2">
-                            <span class="font-mono font-bold text-yellow-300">${key}</span>
-                            <div class="flex gap-2">
-                                <span class="badge ${hasVoteData ? 'badge-green' : 'badge-yellow'}">${hasVoteData ? '🗳️ VOTOS' : '📦 RELEVANTE'}</span>
-                                <span class="badge" style="background:#374151;color:#d1d5db">${sizeKb} KB · ${raw.length} chars</span>
+                        <div class="flex justify-between items-start mb-2 flex-wrap gap-2">
+                            <span class="font-mono font-bold text-yellow-300 break-all">${key}</span>
+                            <div class="flex gap-2 flex-wrap">
+                                <span class="badge ${hasVoteData ? 'badge-green' : 'badge-yellow'}">${hasVoteData ? '🗳️ VOTOS' : '📦 DATOS'}</span>
+                                <span class="badge" style="background:#374151;color:#d1d5db">${sizeKb} KB</span>
                             </div>
                         </div>
-                        ${votesInKey.length > 0 ? `<p class="text-green-300 text-sm mb-2 font-bold">✅ ${votesInKey.length} voto(s) encontrado(s) en esta clave</p>` : ''}
+                        ${votesInKey.length > 0 ? `<p class="text-green-300 text-sm mb-2 font-bold">✅ ${votesInKey.length} voto(s) detectado(s)</p>` : ''}
+                        <div class="flex gap-2 mb-3 flex-wrap">
+                            <button onclick="copiarClave('${safeKey}')" class="btn btn-orange" style="padding:8px 16px;font-size:13px">📋 COPIAR CONTENIDO</button>
+                            <button onclick="enviarClavePorWA('${safeKey}')" class="btn" style="background:#25d366;color:white;padding:8px 16px;font-size:13px">💬 Enviar por WhatsApp</button>
+                        </div>
                         <details>
                             <summary class="cursor-pointer text-sm text-gray-400 hover:text-white">Ver contenido →</summary>
                             <pre class="mt-2 bg-gray-900 p-2 rounded text-gray-300 max-h-40 overflow-y-auto">${isJson ? JSON.stringify(parsed, null, 2) : raw}</pre>
                         </details>
                     </div>`;
                     
-                    log(`Clave encontrada: "${key}" · ${sizeKb}KB · ${hasVoteData ? votesInKey.length + ' votos' : 'sin votos directos'}`, hasVoteData ? 'ok' : 'warn');
+                    log(`Clave encontrada: "${key}" · ${sizeKb}KB · ${hasVoteData ? votesInKey.length + ' votos' : 'revisar manualmente'}`, hasVoteData ? 'ok' : 'warn');
                 }
             }
 
@@ -308,6 +319,18 @@
 
             document.getElementById('votes-found').textContent = allFoundVotes.length;
             document.getElementById('votes-icon').textContent = allFoundVotes.length > 0 ? '✅' : (relevantFound > 0 ? '⚠️' : '❌');
+
+            // Botón para copiar TODO el localStorage relevante
+            if (relevantFound > 0) {
+                results.innerHTML += `
+                <div class="card p-4 rounded-lg border border-purple-500 mt-4">
+                    <p class="font-bold text-purple-300 mb-3">📤 ¿No ves botón de votos arriba? Copiá TODO y mandámelo:</p>
+                    <div class="flex gap-3 flex-wrap">
+                        <button onclick="copiarTodoLocalStorage()" class="btn btn-blue">📋 COPIAR TODO EL CACHÉ</button>
+                        <button onclick="enviarTodoWA()" class="btn" style="background:#25d366;color:white">💬 ENVIAR TODO POR WHATSAPP</button>
+                    </div>
+                </div>`;
+            }
 
             if (allFoundVotes.length > 0) {
                 mostrarVotosRecuperados(allFoundVotes);
@@ -389,6 +412,59 @@
                 statusEl.textContent = `✅ ¡Guardados: ${ok} votos en Firebase!`;
             }
             log(`PUSH completado: ${ok} guardados, ${fail} errores`, fail === 0 ? 'ok' : 'warn');
+        };
+
+        // ─── COPIAR / ENVIAR CLAVES INDIVIDUALES ────────────────────────
+        window.copiarClave = function(key) {
+            const raw = localStorage.getItem(key);
+            if (!raw) { alert('Clave no encontrada.'); return; }
+            const texto = `🔑 CLAVE: ${key}\n📅 ${new Date().toLocaleString('es-AR')}\n\n${raw}`;
+            navigator.clipboard.writeText(texto).then(() => {
+                alert(`✅ ¡Copiado!\nPegalo en un mensaje de WhatsApp y mandámelo.`);
+            }).catch(() => {
+                prompt(`Copia este texto y envialo al admin:`, texto);
+            });
+        };
+
+        window.enviarClavePorWA = function(key) {
+            const raw = localStorage.getItem(key);
+            if (!raw) { alert('Clave no encontrada.'); return; }
+            const texto = `🎤 DATOS CACHÉ GALA 1 GRUPO B\n🔑 Clave: ${key}\n📅 ${new Date().toLocaleString('es-AR')}\n\n${raw.substring(0, 1500)}${raw.length > 1500 ? '\n...(más datos, usar COPIAR TODO)' : ''}`;
+            window.open(`https://wa.me/?text=${encodeURIComponent(texto)}`, '_blank');
+        };
+
+        // ─── COPIAR / ENVIAR TODO EL CACHÉ RELEVANTE ────────────────────
+        window.copiarTodoLocalStorage = function() {
+            let todo = `🎤 CACHÉ COMPLETO - GALA 1 GRUPO B\n📅 ${new Date().toLocaleString('es-AR')}\nEvento: WvnaxCEqzahWvndRe1S9\n${'─'.repeat(40)}\n\n`;
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                const raw = localStorage.getItem(key);
+                if (key.includes('organizador') || key.includes(EVENT_ID) || key.includes('vote') ||
+                    key.includes('jury') || key.includes('session') || key.includes('pending')) {
+                    todo += `🔑 ${key}\n${raw}\n\n${'─'.repeat(40)}\n\n`;
+                }
+            }
+            navigator.clipboard.writeText(todo).then(() => {
+                alert(`✅ ¡Todo copiado!\nPegalo en un mensaje y mandámelo para que yo lo procese.`);
+            }).catch(() => {
+                prompt('Copia y enviá al admin:', todo);
+            });
+        };
+
+        window.enviarTodoWA = function() {
+            let todo = `🎤 CACHÉ GALA 1 GRUPO B\n📅 ${new Date().toLocaleString('es-AR')}\n\n`;
+            let largo = 0;
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                const raw = localStorage.getItem(key);
+                if (key.includes('organizador') || key.includes(EVENT_ID) || key.includes('vote') ||
+                    key.includes('jury') || key.includes('session') || key.includes('pending')) {
+                    const parte = `🔑 ${key}\n${raw.substring(0, 400)}\n\n`;
+                    if (largo + parte.length < 3500) { todo += parte; largo += parte.length; }
+                }
+            }
+            todo += `\n⚠️ Enviado automáticamente desde recuperar_votos_cache`;
+            window.open(`https://wa.me/?text=${encodeURIComponent(todo)}`, '_blank');
         };
 
         window.exportarJSON = function() {
