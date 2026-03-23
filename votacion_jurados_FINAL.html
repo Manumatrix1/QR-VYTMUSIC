@@ -630,7 +630,8 @@
         };
         
         // ✅ Imports de Firebase - Usar configuración centralizada
-        import { db } from './firebase_config.js';
+        import { db, auth } from './firebase_config.js';
+        import { signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { collection, getDocs, getDoc, query, orderBy, doc, setDoc, updateDoc, deleteDoc, limit, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         
         console.log('✅ Firebase SDK v11.6.1 cargado desde firebase_config.js centralizado');
@@ -1932,6 +1933,14 @@ Formato de respuesta:
                 };
                 
                 console.log('✅ Login exitoso:', currentJuror);
+
+                // ✅ AUTENTICACIÓN ANÓNIMA FIREBASE - necesaria para poder escribir votos
+                try {
+                    await signInAnonymously(auth);
+                    console.log('✅ Autenticado en Firebase (anónimo) - listo para guardar votos');
+                } catch (authError) {
+                    console.warn('⚠️ Auth anónima falló, continuando:', authError.message);
+                }
                 
                 // Mostrar información del jurado
                 const displayText = `${currentJuror.displayName} (${currentJuror.typeLabel})`;
@@ -3114,17 +3123,36 @@ Formato de respuesta:
                         await setDoc(doc(db, `events/${eventId}/jury_evaluations`, docId), voteData);
                         console.log('✅ Voto guardado exitosamente en jury_evaluations:', docId);
                         saveSuccess = true;
+                        mostrarVotoGuardadoBanner(artist.name, average);
                     } catch (firebaseError) {
-                        // 🆕 SI FIREBASE FALLA (timeout, error, etc), USAR COLA OFFLINE
-                        console.warn('⚠️ Firebase no disponible, guardando en cola local...', firebaseError.code);
-                        try {
-                            window.voteQueue.addVoteToQueue(voteData);
-                            console.log('✅ Voto guardado en cola offline después de fallo Firebase');
-                            saveSuccess = true;
-                            usedOfflineQueue = true;
-                        } catch (queueError) {
-                            console.error('❌ Error guardando en cola:', queueError);
-                            throw queueError;
+                        console.error('❌ ERROR FIREBASE al guardar voto:', firebaseError.code, firebaseError.message);
+                        // Si es error de permisos, intentar re-autenticar y reintentar una vez
+                        if (firebaseError.code === 'permission-denied' || firebaseError.code === 'PERMISSION_DENIED') {
+                            console.warn('🔒 Error de permisos - reintentando con signInAnonymously...');
+                            try {
+                                await signInAnonymously(auth);
+                                await setDoc(doc(db, `events/${eventId}/jury_evaluations`, docId), voteData);
+                                console.log('✅ Voto guardado exitosamente tras re-auth:', docId);
+                                saveSuccess = true;
+                                mostrarVotoGuardadoBanner(artist.name, average);
+                            } catch (retryError) {
+                                console.error('❌ Fallo tras re-auth:', retryError.message);
+                                window.voteQueue.addVoteToQueue(voteData);
+                                saveSuccess = true;
+                                usedOfflineQueue = true;
+                                showTemporaryMessage('⚠️ GUARDADO LOCAL (sin internet - se sincronizará)', 4000);
+                            }
+                        } else {
+                            // Otro error (red, timeout) - guardar en cola
+                            console.warn('⚠️ Firebase no disponible, guardando en cola local...', firebaseError.code);
+                            try {
+                                window.voteQueue.addVoteToQueue(voteData);
+                                saveSuccess = true;
+                                usedOfflineQueue = true;
+                            } catch (queueError) {
+                                console.error('❌ Error guardando en cola:', queueError);
+                                throw queueError;
+                            }
                         }
                     }
                 }
@@ -3200,6 +3228,7 @@ Formato de respuesta:
                 }
                 
                 // Si llegamos aquí, el voto se guardó exitosamente
+                actualizarContadorVotosGuardados();
                 return true;
 
             } catch (error) {
@@ -3214,6 +3243,56 @@ Formato de respuesta:
                 throw error;
             }
         };
+
+        // ✅ BANNER GRANDE DE VOTO GUARDADO
+        let _votosGuardadosCount = 0;
+        function mostrarVotoGuardadoBanner(nombreArtista, promedio) {
+            _votosGuardadosCount++;
+            const total = artists.length || '?';
+
+            // Banner flotante grande centrado
+            const banner = document.createElement('div');
+            banner.style.cssText = `
+                position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
+                z-index:99999; background:linear-gradient(135deg,#16a34a,#15803d);
+                color:white; padding:32px 40px; border-radius:20px;
+                font-size:22px; font-weight:bold; text-align:center;
+                box-shadow:0 8px 40px rgba(0,0,0,0.6);
+                border:3px solid #4ade80;
+                max-width:90vw;`;
+            banner.innerHTML = `
+                <div style="font-size:48px;margin-bottom:8px">✅</div>
+                <div style="font-size:24px;margin-bottom:4px">VOTO GUARDADO EN FIREBASE</div>
+                <div style="font-size:18px;color:#bbf7d0;margin-bottom:12px">${nombreArtista} · ${promedio.toFixed(1)} pts</div>
+                <div style="font-size:15px;background:rgba(0,0,0,0.3);padding:6px 16px;border-radius:30px">
+                    ${_votosGuardadosCount} / ${total} artistas votados en esta sesión
+                </div>`;
+            document.body.appendChild(banner);
+            setTimeout(() => {
+                banner.style.transition = 'opacity 0.4s';
+                banner.style.opacity = '0';
+                setTimeout(() => banner.remove(), 400);
+            }, 2000);
+
+            // También update del contador fijo arriba
+            actualizarContadorVotosGuardados();
+        }
+
+        function actualizarContadorVotosGuardados() {
+            let contador = document.getElementById('firebase-saved-counter');
+            if (!contador) {
+                contador = document.createElement('div');
+                contador.id = 'firebase-saved-counter';
+                contador.style.cssText = `
+                    position:fixed; bottom:16px; left:50%; transform:translateX(-50%);
+                    z-index:9999; background:#15803d; color:white;
+                    padding:10px 24px; border-radius:30px; font-weight:bold;
+                    font-size:14px; box-shadow:0 4px 15px rgba(0,0,0,0.4);
+                    border:2px solid #4ade80; white-space:nowrap;`;
+                document.body.appendChild(contador);
+            }
+            contador.textContent = `✅ ${_votosGuardadosCount} votos guardados en Firebase`;
+        }
 
         function updateStats() {
             const total = artists.length;
