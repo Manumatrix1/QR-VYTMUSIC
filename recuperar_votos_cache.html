@@ -39,8 +39,9 @@
             <p class="text-xl text-gray-300">Gala 1 Grupo B · VYT-MUSIC</p>
             <div class="mt-4 p-4 card warning border-2">
                 <p class="font-bold text-yellow-300">⚠️ INSTRUCCIÓN CRÍTICA</p>
-                <p class="text-yellow-100 mt-1">Esta página debe abrirse en el <strong>MISMO TELÉFONO/PC</strong> donde votó el jurado.<br>
-                Envíale este link: <code class="bg-gray-900 px-2 py-1 rounded text-green-300">https://vytmusic.netlify.app/recuperar_votos_cache.html?eventId=WvnaxCEqzahWvndRe1S9</code></p>
+                <p class="text-yellow-100 mt-1">Abrí este link en el <strong>MISMO TELÉFONO/PC/TABLET</strong> donde votaste.<br>
+                Link: <code class="bg-gray-900 px-2 py-1 rounded text-green-300">https://vytmusic.netlify.app/recuperar_votos_cache.html?eventId=WvnaxCEqzahWvndRe1S9</code></p>
+                <p class="text-yellow-200 text-sm mt-2">📲 Si encontrás votos → tocá <strong>💬 ENVIAR AL ADMIN (WhatsApp)</strong> y mandalo directo.</p>
             </div>
         </div>
 
@@ -88,8 +89,14 @@
                 <button onclick="pushToFirebase()" class="btn btn-green text-lg">
                     🚀 GUARDAR EN FIREBASE
                 </button>
-                <button onclick="exportarJSON()" class="btn btn-blue">
-                    📋 COPIAR COMO JSON
+                <button onclick="enviarWhatsApp()" class="btn text-lg" style="background:#25d366;color:white">
+                    💬 ENVIAR AL ADMIN (WhatsApp)
+                </button>
+                <button onclick="copiarTextoLegible()" class="btn btn-orange">
+                    📋 COPIAR TEXTO LEGIBLE
+                </button>
+                <button onclick="exportarJSON()" class="btn" style="background:#6b7280;color:white;font-size:13px">
+                    🔧 Copiar JSON técnico
                 </button>
             </div>
             <div id="push-status" class="mt-4 p-3 rounded-lg" style="display:none"></div>
@@ -376,16 +383,54 @@
             }
 
             statusEl.className = `mt-4 p-3 rounded-lg ${fail === 0 ? 'bg-green-900 text-green-200' : 'bg-orange-900 text-orange-200'}`;
-            statusEl.textContent = `${fail === 0 ? '✅' : '⚠️'} Guardados: ${ok} · Errores: ${fail}`;
+            if (fail > 0) {
+                statusEl.innerHTML = `⚠️ Guardados: ${ok} · Errores: ${fail}<br><span class="text-sm">Si hay error de permisos, usá el botón 💬 <strong>ENVIAR AL ADMIN</strong> en su lugar.</span>`;
+            } else {
+                statusEl.textContent = `✅ ¡Guardados: ${ok} votos en Firebase!`;
+            }
             log(`PUSH completado: ${ok} guardados, ${fail} errores`, fail === 0 ? 'ok' : 'warn');
         };
 
         window.exportarJSON = function() {
             const data = JSON.stringify(votosParaGuardar, null, 2);
             navigator.clipboard.writeText(data).then(() => {
-                alert('✅ JSON copiado al portapapeles!\n\nPuedes pegarlo en un mensaje o email para enviar los datos manualmente.');
+                alert('✅ JSON copiado al portapapeles!');
             }).catch(() => {
                 prompt('Copia este JSON:', data);
+            });
+        };
+
+        function formatearVotosTexto(votos) {
+            const jurados = {};
+            votos.forEach(v => {
+                const j = v.jurorName || v.jurorId || 'Desconocido';
+                if (!jurados[j]) jurados[j] = [];
+                const score = v.score || v.average || '?';
+                jurados[j].push(`  • ${v.artistName || '?'}: ${score}`);
+            });
+            let texto = `🎤 VOTOS RECUPERADOS - GALA 1 GRUPO B\n`;
+            texto += `📅 ${new Date().toLocaleDateString('es-AR')} ${new Date().toLocaleTimeString('es-AR')}\n\n`;
+            Object.entries(jurados).forEach(([j, lines]) => {
+                texto += `👤 ${j}:\n${lines.join('\n')}\n\n`;
+            });
+            texto += `⚠️ Enviado desde caché del dispositivo. El admin debe ingresarlo en Firebase.`;
+            return texto;
+        }
+
+        window.enviarWhatsApp = function() {
+            if (!votosParaGuardar.length) { alert('No hay votos para enviar.'); return; }
+            const texto = formatearVotosTexto(votosParaGuardar);
+            const encoded = encodeURIComponent(texto);
+            window.open(`https://wa.me/?text=${encoded}`, '_blank');
+        };
+
+        window.copiarTextoLegible = function() {
+            if (!votosParaGuardar.length) { alert('No hay votos.'); return; }
+            const texto = formatearVotosTexto(votosParaGuardar);
+            navigator.clipboard.writeText(texto).then(() => {
+                alert('✅ ¡Texto copiado! Pegalo en un mensaje de WhatsApp para enviarlo al admin.');
+            }).catch(() => {
+                prompt('Copia este texto y envialo al admin:', texto);
             });
         };
 
