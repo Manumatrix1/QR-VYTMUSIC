@@ -6,23 +6,25 @@
     <title>Escáner de Entradas - VYT MUSIC</title>
     <script src="https://unpkg.com/html5-qrcode@2.3.4/html5-qrcode.min.js"></script>
     
-    <!-- Firebase v9 SDK -->
-    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
-    
-    <script>
-        // Configuración Firebase
-        const firebaseConfig = {
-            apiKey: "AIzaSyC_2Ukoxf_ry7QfKtou1Cz6nY-qTVw4qTU", 
-            authDomain: "vyt-music.firebaseapp.com",
-            projectId: "vyt-music", 
-            storageBucket: "vyt-music.firebasestorage.app", 
-            messagingSenderId: "574981837817", 
-            appId: "1:574981837817:web:a29933a22bbfd51a086328"
-        };
+    <!-- ✅ Firebase v11.6.1 Modular SDK -->
+    <script type="module">
+        // Importar Firebase desde configuración centralizada
+        import { db } from './firebase_config.js';
+        import { 
+            collection, 
+            doc, 
+            getDocs, 
+            updateDoc, 
+            addDoc,
+            query,
+            where
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         
-        // Inicializar Firebase
-        firebase.initializeApp(firebaseConfig);
+        // Exponer para uso en el código del escáner
+        window.firebaseDB = db;
+        window.firestoreModules = { collection, doc, getDocs, updateDoc, addDoc, query, where };
+        
+        console.log('✅ Firebase SDK v11.6.1 cargado desde firebase_config.js');
     </script>
     <style>
         * {
@@ -849,8 +851,10 @@
 
             async initFirebase() {
                 try {
-                    this.db = firebase.firestore();
-                    console.log('✅ Firebase conectado');
+                    // ✅ Usar instancia centralizada desde firebase_config.js
+                    this.db = window.firebaseDB;
+                    this.fsModules = window.firestoreModules;
+                    console.log('✅ Firebase v11.6.1 conectado correctamente');
                 } catch (error) {
                     console.error('❌ Error Firebase:', error);
                 }
@@ -949,15 +953,13 @@
                     this.artists = []; // Limpiar artistas
                     
                     if (this.isOnline && this.db) {
-                        // Cargar artistas desde Firebase
+                        // ✅ Cargar artistas desde Firebase con API modular
                         console.log('🎤 Consultando artistas:', `events/${this.eventId}/artists`);
                         
                         try {
-                            const artistsSnapshot = await this.db
-                                .collection('events')
-                                .doc(this.eventId)
-                                .collection('artists')
-                                .get();
+                            const { collection, getDocs } = this.fsModules;
+                            const artistsRef = collection(this.db, `events/${this.eventId}/artists`);
+                            const artistsSnapshot = await getDocs(artistsRef);
 
                             console.log(`🎭 Encontrados ${artistsSnapshot.size} artistas en Firebase`);
 
@@ -978,14 +980,12 @@
                             this.artists = [];
                         }
                         
-                        // Cargar desde Firebase - ESTRUCTURA REAL DEL SISTEMA
+                        // ✅ Cargar tickets desde Firebase - API modular
                         console.log('🔍 Consultando tickets reales:', `events/${this.eventId}/tickets`);
                         
-                        const ticketsSnapshot = await this.db
-                            .collection('events')
-                            .doc(this.eventId)
-                            .collection('tickets')
-                            .get();
+                        const { collection, getDocs } = this.fsModules;
+                        const ticketsRef = collection(this.db, `events/${this.eventId}/tickets`);
+                        const ticketsSnapshot = await getDocs(ticketsRef);
 
                         console.log(`📊 Encontrados ${ticketsSnapshot.size} tickets en Firebase`);
 
@@ -1230,30 +1230,57 @@
                 this.playBeepSound();
                 
                 try {
-                    // ✅ EXTRAER TICKET ID de URLs o usar el código directo
+                    // ✅ EXTRAER TICKET ID y EVENT ID de URLs o usar el código directo
                     let ticketId = decodedText;
+                    let qrEventId = null;
                     
-                    // Si es una URL, extraer el parámetro ticket
+                    // Si es una URL, extraer ticket y eventId
                     if (decodedText.includes('escaner_qr_final.html') || decodedText.includes('?ticket=')) {
                         const urlParams = new URLSearchParams(decodedText.split('?')[1]);
                         const extractedId = urlParams.get('ticket');
+                        const extractedEventId = urlParams.get('eventId');
+                        
                         if (extractedId) {
                             ticketId = extractedId;
                             console.log('🔑 ID extraído de URL:', ticketId);
                             this.addDebugLog(`🔑 ID extraído: ${ticketId}`, 'success');
+                        }
+                        
+                        if (extractedEventId) {
+                            qrEventId = extractedEventId;
+                            console.log('🎯 EventId del QR:', qrEventId);
                         }
                     } else if (decodedText.includes('http')) {
                         // Intentar extraer de cualquier URL con parámetro ticket
                         try {
                             const url = new URL(decodedText);
                             const extractedId = url.searchParams.get('ticket');
+                            const extractedEventId = url.searchParams.get('eventId');
+                            
                             if (extractedId) {
                                 ticketId = extractedId;
                                 console.log('🔑 ID extraído de URL completa:', ticketId);
                             }
+                            
+                            if (extractedEventId) {
+                                qrEventId = extractedEventId;
+                                console.log('🎯 EventId del QR:', qrEventId);
+                            }
                         } catch (e) {
                             console.log('⚠️ URL inválida, usando código directo');
                         }
+                    }
+                    
+                    // ✅ VALIDAR que el QR pertenece a ESTE evento
+                    if (qrEventId && qrEventId !== this.eventId) {
+                        this.playErrorSound();
+                        this.addDebugLog(`🚫 QR de OTRO EVENTO: ${qrEventId} (actual: ${this.eventId})`, 'error');
+                        this.showScanResult(
+                            `❌ QR de OTRO EVENTO (${qrEventId})\\n NO VÁLIDO PARA ESTE EVENTO`, 
+                            'error'
+                        );
+                        console.error(`🚫 EventId mismatch: QR=${qrEventId}, Actual=${this.eventId}`);
+                        return;
                     }
                     
                     console.log('🎯 Buscando ticketId:', ticketId);
@@ -1488,27 +1515,26 @@
                 entry.status = 'entered';
                 entry.accessTime = accessTime;
 
-                // Intentar guardar en Firebase - ESTRUCTURA REAL
+                // ✅ Guardar en Firebase usando API modular
                 if (this.isOnline && this.db) {
                     try {
                         console.log('💾 Guardando acceso en estructura real:', `events/${this.eventId}/tickets/${entry.id}`);
                         
+                        const { doc, updateDoc, collection, addDoc } = this.fsModules;
+                        
                         // Actualizar el ticket en la estructura real
-                        await this.db
-                            .collection('events')
-                            .doc(this.eventId)
-                            .collection('tickets')
-                            .doc(entry.id)
-                            .update({
-                                used: true,
-                                usedAt: accessTime,
-                                accessTime: accessTime,
-                                scannedBy: this.assistantName,
-                                scannedDevice: navigator.userAgent.includes('Mobile') ? 'mobile' : 'desktop'
-                            });
+                        const ticketRef = doc(this.db, `events/${this.eventId}/tickets/${entry.id}`);
+                        await updateDoc(ticketRef, {
+                            used: true,
+                            usedAt: accessTime,
+                            accessTime: accessTime,
+                            scannedBy: this.assistantName,
+                            scannedDevice: navigator.userAgent.includes('Mobile') ? 'mobile' : 'desktop'
+                        });
                         
                         // Registrar en log de accesos global
-                        await this.db.collection('access_log').add({
+                        const accessLogRef = collection(this.db, 'access_log');
+                        await addDoc(accessLogRef, {
                             ticketId: entry.id,
                             guestName: entry.guestName,
                             artistName: entry.artistName,
@@ -1519,7 +1545,7 @@
                             device: navigator.userAgent.includes('Mobile') ? 'mobile' : 'desktop'
                         });
 
-                        console.log('✅ Acceso registrado correctamente en Firebase');
+                        console.log('✅ Acceso registrado correctamente en Firebase con SDK v11.6.1');
                     } catch (error) {
                         console.error('❌ Error guardando en Firebase:', error);
                         // Guardar localmente para sincronizar después

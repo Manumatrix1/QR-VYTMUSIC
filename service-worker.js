@@ -1,9 +1,8 @@
 // Service Worker para VYT MUSIC PWA - VERSIÓN PANEL SIMPLIFICADO
-const CACHE_NAME = 'vyt-music-simple-v21'; // 🔥 Actualizado 2026-03-22
+const CACHE_NAME = 'vyt-music-simple-v22'; // 🔥 Actualizado 2026-03-27
 const urlsToCache = [
   '/',
   '/index.html',
-  '/eventos.html',
   '/manifest.json'
 ];
 
@@ -36,7 +35,6 @@ self.addEventListener('fetch', (event) => {
   
   // No cachear URLs específicas
   if (noCacheUrls.some(noCache => url.pathname.includes(noCache))) {
-    console.log('🚫 No caching:', url.pathname);
     event.respondWith(fetch(event.request));
     return;
   }
@@ -50,7 +48,7 @@ self.addEventListener('fetch', (event) => {
   // Estrategia de cache: Network First para páginas principales
   if (url.pathname.includes('.html')) {
     event.respondWith(
-      fetch(event.request)
+      fetch(event.request, { cache: 'no-store' })
         .then((response) => {
           // Si hay respuesta de red, actualizar cache
           if (response.ok) {

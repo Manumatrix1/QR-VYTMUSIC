@@ -3,9 +3,12 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ── Organizador certamen: admins leen y escriben ──
+    // ── Organizador certamen: acceso sin login (uso interno) ──
     match /organizador_estado/{docId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if true;
+    }
+    match /organizador_guardados/{docId} {
+      allow read, write: if true;
     }
 
     // ── Usuarios autenticados (admins) tienen acceso total ──
@@ -28,6 +31,11 @@ service cloud.firestore {
     match /events/{eventId}/jury_evaluations/{docId} {
       allow read: if true;
       allow write: if request.auth != null; // signInAnonymously satisface esta condición
+    }
+
+    // ── Artistas de eventos: el organizador puede reasignarlos sin login ──
+    match /events/{eventId}/artists/{docId} {
+      allow read, write: if true;
     }
 
     // ── Subcolecciones de eventos: tickets públicos (para ver_entradas.html) ──
@@ -58,16 +66,25 @@ service cloud.firestore {
                        .hasOnly(['estadoPago','comprobante_url','comprobante_fecha']);
     }
 
+    // ── Captura de leads de email desde la landing ──
+    match /leads_email/{docId} {
+      allow create: if request.resource.data.keys().hasAll(['email','fuente','fecha'])
+                    && request.resource.data.email is string
+                    && request.resource.data.email.size() >= 5
+                    && request.resource.data.email.size() <= 120;
+      allow read, update, delete: if request.auth != null;
+    }
+
     // ── Preventa de entradas: artistas sin login pueden crear y actualizar su orden ──
     // Colecciones dinámicas ticket_orders_{eventId}
     match /{colId}/{docId} {
       allow create, update, read: if colId.matches('ticket_orders_.*');
     }
 
-    // ── Pistas de audio: artistas sin login pueden subir y actualizar su pista ──
+    // ── Pistas de audio: artistas sin login pueden subir, actualizar y eliminar su pista ──
     // Colecciones dinámicas pistas_{eventId}
     match /{colId}/{docId} {
-      allow create, update, read: if colId.matches('pistas_.*');
+      allow create, update, read, delete: if colId.matches('pistas_.*');
     }
 
     // ── Artistas (colecciones raíz legacy): portal_pistas y subida_pistas las leen sin auth ──
@@ -108,6 +125,14 @@ service cloud.firestore {
       allow read: if request.auth != null;
     }
 
+    // ── admin_notifications: solo el backend escribe, el front solo marca como leída ──
+    match /admin_notifications/{docId} {
+      allow read: if request.auth != null;
+      allow create: if false; // solo Firebase Admin SDK (Cloud Functions) puede crear
+      allow update: if request.auth != null
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read', 'readAt']);
+    }
+
     // ── Votaciones de jurados: colecciones dinámicas jurados_{eventId} - SOLO LECTURA ──
     match /{colId}/{docId} {
       allow read: if colId.matches('jurados_.*');
@@ -119,7 +144,10 @@ service cloud.firestore {
       allow read: if colId.matches('votaciones_jurados_.*');
       allow create: if colId.matches('votaciones_jurados_.*')
                     && request.resource.data.juryCode != null;
-      allow update: if request.auth != null;
+      // Jurados pueden actualizar su voto con código válido (no requiere auth admin)
+      allow update: if request.auth != null
+                    || (colId.matches('votaciones_jurados_.*')
+                        && request.resource.data.juryCode != null);
     }
 
     // ── Subcolecciones de eventos que necesitan write controlado ──
@@ -131,7 +159,10 @@ service cloud.firestore {
                     && request.resource.data.juryCode.size() >= 4
                     && request.resource.data.artistId is string
                     && request.resource.data.artistId.size() > 0;
-      allow update: if request.auth != null;
+      // Jurados pueden actualizar su propia evaluación (código válido como alternativa a auth)
+      allow update: if request.auth != null
+                    || (request.resource.data.juryCode is string
+                        && request.resource.data.juryCode.size() >= 4);
     }
 
     match /events/{eventId}/jury_votes/{docId} {
@@ -139,7 +170,10 @@ service cloud.firestore {
       allow create: if request.resource.data.juryCode is string
                     && request.resource.data.juryCode.size() >= 4
                     && request.resource.data.artistId is string;
-      allow update: if request.auth != null;
+      // Jurados pueden actualizar su voto (código válido como alternativa a auth)
+      allow update: if request.auth != null
+                    || (request.resource.data.juryCode is string
+                        && request.resource.data.juryCode.size() >= 4);
     }
 
     // Tickets: solo marcar como usados si NO estaba usado ya (prevenir re-escaneo)
@@ -182,7 +216,8 @@ service cloud.firestore {
     // Voto individual: validación completa de esquema — protege los sorteos de datos corruptos
     match /events/{eventId}/ticket_votes/{ticketId}/votes/{voteId} {
       allow read: if true;
-      allow create: if
+      // Público puede votar y actualizar su voto (re-votación) con datos válidos
+      allow create, update: if
         // Campos obligatorios: nombre del votante y artista destino
         request.resource.data.ticketName is string
         && request.resource.data.ticketName.size() >= 1
@@ -198,7 +233,6 @@ service cloud.firestore {
         && request.resource.data.attitudeScore is number
         && request.resource.data.attitudeScore >= 0
         && request.resource.data.attitudeScore <= 5;
-      allow update: if request.auth != null;
     }
 
     // Sorteos: sistema de premios guarda resultados (sin auth para que funcione en evento en vivo)

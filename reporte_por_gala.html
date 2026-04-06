@@ -817,20 +817,31 @@
             container.innerHTML = '';
 
             // Ordenar artistas por puntaje para mostrar análisis
-            const sortedArtists = [...galaData.artists].sort((a, b) => b.publicScore - a.publicScore);
+            // Ordenar por más votados (cantidad de votos del público) primero
+            const sortedArtists = [...galaData.artists].sort((a, b) => {
+                const cntDiff = (b.totalRatingsCount || 0) - (a.totalRatingsCount || 0);
+                if (cntDiff !== 0) return cntDiff;
+                return (b.publicScore || 0) - (a.publicScore || 0);
+            });
 
             sortedArtists.forEach((artist, index) => {
-                if (artist.totalRatingsCount === 0) return; // Skip si no tiene votos
+                if (!artist.totalRatingsCount || artist.totalRatingsCount === 0) return;
 
-                // Calcular promedios por categoría
+                // Calcular promedios por categoría (cada campo es suma acumulada / cantidad votos)
                 const categories = [
-                    { name: 'Canto', icon: '🎤', score: (artist.totalSingingScore / artist.totalRatingsCount), color: 'bg-blue-500' },
-                    { name: 'Transmisión', icon: '📡', score: (artist.totalTransmissionScore / artist.totalRatingsCount), color: 'bg-green-500' },
-                    { name: 'Actitud', icon: '😊', score: (artist.totalAttitudeScore / artist.totalRatingsCount), color: 'bg-yellow-500' },
-                    { name: 'Originalidad', icon: '💡', score: (artist.totalOriginalityScore / artist.totalRatingsCount), color: 'bg-purple-500' },
-                    { name: 'Vestuario', icon: '👗', score: (artist.totalCostumeScore / artist.totalRatingsCount), color: 'bg-pink-500' },
-                    { name: 'Puesta en Escena', icon: '🎭', score: (artist.totalStagingScore / artist.totalRatingsCount), color: 'bg-orange-500' }
+                    { name: 'Canto', icon: '🎤', score: (artist.totalSingingScore || 0) / artist.totalRatingsCount, color: 'bg-blue-500' },
+                    { name: 'Transmisión', icon: '📡', score: (artist.totalTransmissionScore || 0) / artist.totalRatingsCount, color: 'bg-green-500' },
+                    { name: 'Actitud', icon: '😊', score: (artist.totalAttitudeScore || 0) / artist.totalRatingsCount, color: 'bg-yellow-500' },
+                    { name: 'Originalidad', icon: '💡', score: (artist.totalOriginalityScore || 0) / artist.totalRatingsCount, color: 'bg-purple-500' },
+                    { name: 'Vestuario', icon: '👗', score: (artist.totalCostumeScore || 0) / artist.totalRatingsCount, color: 'bg-pink-500' },
+                    { name: 'Puesta en Escena', icon: '🎭', score: (artist.totalStagingScore || 0) / artist.totalRatingsCount, color: 'bg-orange-500' }
                 ];
+
+                // Promedio general del público (promedio de las 6 categorías)
+                const validCats = categories.filter(c => !isNaN(c.score));
+                const overallPublicAvg = validCats.length > 0
+                    ? validCats.reduce((s, c) => s + c.score, 0) / validCats.length
+                    : 0;
 
                 // Encontrar la mejor y peor categoría
                 const bestCategory = categories.reduce((prev, curr) => (curr.score > prev.score) ? curr : prev);
@@ -842,26 +853,29 @@
                     <div class="flex items-center justify-between mb-4">
                         <div>
                             <h4 class="text-lg font-bold text-white">${artist.name}</h4>
-                            <p class="text-sm text-gray-400">${artist.totalRatingsCount} personas calificaron • Posición: #${index + 1}</p>
+                            <p class="text-sm text-gray-400">${artist.totalRatingsCount} votos públicos • Posición: #${index + 1}</p>
                         </div>
                         <div class="text-right">
-                            <p class="text-xl font-bold text-green-400">${artist.publicScore} pts</p>
+                            <p class="text-xl font-bold text-green-400">${overallPublicAvg.toFixed(1)}/10</p>
+                            <p class="text-xs text-gray-400">Promedio Público</p>
                         </div>
                     </div>
                     
                     <!-- BARRAS DE PROGRESO POR CATEGORÍA -->
                     <div class="space-y-2 mb-4">
-                        ${categories.map(cat => `
+                        ${categories.map(cat => {
+                            const pct = Math.min((cat.score / 10) * 100, 100);
+                            return `
                             <div class="flex items-center justify-between">
                                 <span class="text-sm text-gray-300 w-28">${cat.icon} ${cat.name}</span>
                                 <div class="flex-1 mx-3">
                                     <div class="w-full bg-gray-700 rounded-full h-2">
-                                        <div class="${cat.color} h-2 rounded-full transition-all" style="width: ${(cat.score / 10) * 100}%"></div>
+                                        <div class="${cat.color} h-2 rounded-full transition-all" style="width: ${pct}%"></div>
                                     </div>
                                 </div>
                                 <span class="text-sm font-bold text-white w-12 text-right">${cat.score.toFixed(1)}/10</span>
-                            </div>
-                        `).join('')}
+                            </div>`;
+                        }).join('')}
                     </div>
                     
                     <!-- OBSERVACIONES AUTOMÁTICAS -->
@@ -941,7 +955,7 @@
                     <div class="text-4xl mb-3">${icons[i]}</div>
                     <h3 class="text-lg font-bold mb-2 text-white">${positions[i]}</h3>
                     <p class="text-lg font-semibold mb-2">${artist.name}</p>
-                    <p class="text-sm opacity-90 mb-3">Puntaje: ${artist.publicScore} pts</p>
+                <p class="text-sm opacity-90 mb-3">${artist.totalRatingsCount || 0} votos públicos</p>
                     <p class="text-xs opacity-80 mb-3">${artist.publicCount} personas votaron</p>
                     
                     <!-- FORTALEZAS DEL ARTISTA -->
@@ -962,7 +976,12 @@
         }
 
         function updateRanking() {
-            const sortedArtists = [...galaData.artists].sort((a, b) => b.finalScore - a.finalScore);
+            // Ordenar por más votados por el público primero
+            const sortedArtists = [...galaData.artists].sort((a, b) => {
+                const cntDiff = (b.totalRatingsCount || 0) - (a.totalRatingsCount || 0);
+                if (cntDiff !== 0) return cntDiff;
+                return (b.publicScore || 0) - (a.publicScore || 0);
+            });
             const rankingContainer = document.getElementById('ranking-container');
             rankingContainer.innerHTML = '';
 
@@ -987,7 +1006,7 @@
                                 ${rankBadge}
                                 <div>
                                     <h4 class="text-lg font-bold text-white">${artist.name}</h4>
-                                    <p class="text-sm text-gray-400">Puntaje Total: ${artist.publicScore} pts</p>
+                                    <p class="text-sm text-gray-400">${artist.totalRatingsCount || 0} votos públicos</p>
                                 </div>
                             </div>
                             <div class="text-right">
@@ -1049,8 +1068,10 @@
 
             console.log('🎭 Artistas con evaluaciones de jurados:', artistsWithJuryVotes.map(a => a.name));
 
-            // Ordenar artistas por promedio de evaluaciones de jurados (descendente)
+            // Ordenar por más votados por el público primero; si hay empate, por promedio jurado
             const sortedArtists = artistsWithJuryVotes.sort((a, b) => {
+                const publicDiff = (b.totalRatingsCount || 0) - (a.totalRatingsCount || 0);
+                if (publicDiff !== 0) return publicDiff;
                 const avgA = calculateArtistJuryAverage(a.id);
                 const avgB = calculateArtistJuryAverage(b.id);
                 return avgB - avgA;
@@ -1198,10 +1219,10 @@
                 const publicVotes = artistVotes.filter(vote => !vote.isSecretVote);
                 publicVotes.forEach(vote => {
                     if (vote.scores && vote.scores[criteriaId] !== undefined) {
-                        const score = vote.scores[criteriaId];
-                        // ✅ LOS DATOS YA ESTÁN EN ESCALA 1-10, USAR DIRECTAMENTE
+                        // Los scores de jurado se guardan en escala 0-100; convertir a 0-10
+                        const raw = vote.scores[criteriaId];
+                        const score = raw > 10 ? raw / 10 : raw;
                         scores.push(score);
-                        console.log(`📊 ${criteriaId}: ${score}/10 (público)`);
                     }
                 });
                 

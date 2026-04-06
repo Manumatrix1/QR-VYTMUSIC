@@ -11,6 +11,54 @@ admin.initializeApp();
 const db = admin.firestore();
 
 // ==========================================
+// FUNCIÓN: Notificar nueva audición — crea admin_notifications en Firestore
+// Se dispara automáticamente cuando se crea un doc en /audiciones
+// ==========================================
+exports.notificarNuevaAudicion = functions.firestore
+  .document('audiciones/{docId}')
+  .onCreate(async (snap, context) => {
+    const data = snap.data();
+    const docId = context.params.docId;
+
+    const nombre   = data.nombre   || 'Sin nombre';
+    const telefono = data.telefono || data.whatsapp || '—';
+    const provincia = data.provincia || '';
+    const ciudad   = data.localidad || data.ciudad || '';
+    const video    = data.video_url || data.video_subido || data.videoURL || '';
+    const docLink  = `${APP_URL}/admin_audiciones.html?id=${docId}`;
+
+    const locationStr = provincia ? `${provincia}${ciudad ? ' · ' + ciudad : ''}` : '';
+    const waMsg =
+      `🎤 *Nueva audición — VYT MUSIC*\n\n` +
+      `👤 *${nombre}*\n` +
+      (locationStr ? `🗺️ ${locationStr}\n` : '') +
+      `📱 ${telefono}\n` +
+      (video ? `\n🎬 Video:\n${video}\n` : '') +
+      `\n🔗 Ver inscripción:\n${docLink}`;
+
+    try {
+      await db.collection('admin_notifications').add({
+        type: 'nueva_inscripcion',
+        docId: docId,
+        nombre: nombre,
+        telefono: telefono,
+        location: locationStr,
+        message: `🎤 Nueva audición: ${nombre}${locationStr ? ' de ' + locationStr : ''}`,
+        whatsappLink: `https://wa.me/5493413632329?text=${encodeURIComponent(waMsg)}`,
+        adminLink: docLink,
+        read: false,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        autoOpenWhatsApp: false
+      });
+      console.log(`✅ admin_notifications creado para nueva audición: ${nombre}`);
+    } catch (e) {
+      console.error(`❌ Error creando notificación para ${nombre}:`, e.message);
+    }
+
+    return null;
+  });
+
+// ==========================================
 // FUNCIÓN: Crear Pago en Mercado Pago
 // ==========================================
 exports.createPaymentV2 = functions.https.onRequest(async (req, res) => {
@@ -238,38 +286,11 @@ Respondé siempre en español, de forma corta (máximo 3 oraciones).`;
   res.status(200).json({ respuesta });
 });
 
-// ==========================================
-// FUNCIÓN: Notificación automática WA al admin (CallMeBot)
-// ==========================================
-exports.onAudicionCreada = functions.firestore
-  .document('audiciones/{docId}')
-  .onCreate(async (snap) => {
-    const d = snap.data();
-    const CALLMEBOT_PHONE  = process.env.CALLMEBOT_PHONE;
-    const CALLMEBOT_APIKEY = process.env.CALLMEBOT_APIKEY;
-    if (!CALLMEBOT_PHONE || !CALLMEBOT_APIKEY ||
-        CALLMEBOT_APIKEY === 'PEGAR_AQUI_TU_CLAVE_CALLMEBOT') {
-      console.log('CallMeBot no configurado, omitiendo notificación.');
-      return null;
-    }
-    const nombre = d.nombre || 'Artista';
-    const ciudad = d.ciudad  ? ` de ${d.ciudad}` : '';
-    const tel    = d.telefono || 's/n';
-    const video  = (d.video_url || d.video_subido) ? ' 🎬 Con video.' : '';
-    const text   = encodeURIComponent(
-      `🎤 VYT MUSIC - Nueva audición!\n👤 ${nombre}${ciudad}\n📱 ${tel}${video}\n\nRevisá el panel: https://vyt-music.web.app/admin_audiciones.html`
-    );
-    try {
-      await fetch(`https://api.callmebot.com/whatsapp.php?phone=${CALLMEBOT_PHONE}&text=${text}&apikey=${CALLMEBOT_APIKEY}`);
-      console.log('Notificación CallMeBot enviada.');
-    } catch(e) {
-      console.warn('CallMeBot error:', e.message);
-    }
-    return null;
-  });
+// onAudicionCreada fue unificado con notificarNuevaAudicion (ver arriba)
 
 // ==========================================
-// FUNCIÓN: Avisar pago al admin vía WhatsApp (CallMeBot)
+// FUNCIÓN: Avisar comprobante de pago al admin — crea admin_notifications
+// Llamado desde preventa_artistas.html cuando el artista sube su comprobante
 // ==========================================
 exports.avisarPagoAdmin = functions.https.onRequest(async (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
@@ -278,33 +299,49 @@ exports.avisarPagoAdmin = functions.https.onRequest(async (req, res) => {
   if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
   if (req.method !== 'POST') { res.status(405).json({ error: 'Method not allowed' }); return; }
 
-  const { artistName, guestCount, amount, orderId, eventId } = req.body || {};
+  const { artistName, artistPhone, guestCount, amount, orderId, eventId, eventName } = req.body || {};
 
-  const CALLMEBOT_PHONE  = process.env.CALLMEBOT_PHONE;
-  const CALLMEBOT_APIKEY = process.env.CALLMEBOT_APIKEY;
-  if (!CALLMEBOT_PHONE || !CALLMEBOT_APIKEY ||
-      CALLMEBOT_APIKEY === 'PEGAR_AQUI_TU_CLAVE_CALLMEBOT') {
-    console.log('CallMeBot no configurado, omitiendo notificación preventa.');
-    res.status(200).json({ skipped: true });
+  if (!eventId || !orderId) {
+    res.status(400).json({ error: 'Faltan eventId u orderId' });
     return;
   }
 
-  const adminLink = `https://vyt-music.web.app/admin_preventa.html?eventId=${eventId || ''}`;
-  const text = encodeURIComponent(
-    `🏟️ *Nuevo pago realizado*\n\n` +
-    `Artista: ${artistName || 'Artista'}\n` +
-    `Invitados: ${guestCount || 0}\n` +
-    `Monto: $${parseInt(amount || 0).toLocaleString()}\n\n` +
-    `Revisar pago:\n${adminLink}`
-  );
-  try {
-    await fetch(`https://api.callmebot.com/whatsapp.php?phone=${CALLMEBOT_PHONE}&text=${text}&apikey=${CALLMEBOT_APIKEY}`);
-    console.log('Notificación preventa enviada al admin.');
-  } catch(e) {
-    console.warn('CallMeBot error (preventa):', e.message);
-  }
+  const adminLink = `https://vyt-music.web.app/admin_preventa.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName || '')}`;
+  const amountFmt = parseInt(amount || 0).toLocaleString('es-AR');
+  const waMsg =
+    `🎟️ *NUEVO COMPROBANTE DE PAGO*\n\n` +
+    `✅ El artista subió su comprobante\n\n` +
+    `👤 ${artistName || 'Artista'}\n` +
+    (artistPhone ? `📱 ${artistPhone}\n` : '') +
+    `🎫 ${guestCount || 0} entradas\n` +
+    `💰 $${amountFmt}\n` +
+    `📦 Orden: ${String(orderId).substring(0, 8).toUpperCase()}\n\n` +
+    `📋 Aprobar pago:\n${adminLink}`;
 
-  res.status(200).json({ success: true });
+  try {
+    await db.collection('admin_notifications').add({
+      type: 'comprobante_subido',
+      eventId: eventId,
+      eventName: eventName || '',
+      orderId: orderId,
+      clientName: artistName || 'Artista',
+      clientPhone: artistPhone || 'N/A',
+      quantity: guestCount || 0,
+      amount: parseInt(amount || 0),
+      message: `🎟️ Comprobante de pago: ${artistName || 'Artista'} — ${guestCount || 0} entradas — $${amountFmt}`,
+      whatsappLink: `https://wa.me/5493413632329?text=${encodeURIComponent(waMsg)}`,
+      adminLink: adminLink,
+      whatsappMessage: waMsg,
+      read: false,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      autoOpenWhatsApp: false
+    });
+    console.log(`✅ admin_notifications creado para comprobante: ${artistName}`);
+    res.status(200).json({ success: true });
+  } catch (e) {
+    console.error('❌ Error creando notificación de pago:', e.message);
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ==========================================

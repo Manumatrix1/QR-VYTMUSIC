@@ -268,6 +268,26 @@
                     oninput="filterArtists()">
             </div>
             
+            <!-- Pregunta de duplicados (uno a la vez) -->
+            <div id="duplicates-banner" style="display:none;" class="mb-4 p-4 bg-yellow-900 border-2 border-yellow-500 rounded-xl">
+                <div class="flex items-start gap-3">
+                    <span class="text-2xl">⚠️</span>
+                    <div class="flex-1">
+                        <p class="font-bold text-yellow-300 mb-3" id="duplicates-question"></p>
+                        <div class="flex gap-3">
+                            <button onclick="respondDuplicate(true)" 
+                                class="bg-green-600 hover:bg-green-500 text-white font-bold px-5 py-2 rounded-lg">
+                                ✅ Sí, son la misma persona
+                            </button>
+                            <button onclick="respondDuplicate(false)" 
+                                class="bg-gray-600 hover:bg-gray-500 text-white font-bold px-5 py-2 rounded-lg">
+                                ❌ No, son distintos
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Grid de Artistas -->
             <div id="artists-grid" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
                 <div class="col-span-full text-center text-gray-400 py-8">
@@ -1047,6 +1067,9 @@
             
             console.log(`✅ ${allArtistsData.length} artistas cargados, ${totalParticipations} participaciones totales`);
             
+            // Detectar posibles duplicados por nombre similar
+            detectPossibleDuplicates(allArtistsData);
+
             // Renderizar grid
             renderArtistsGrid(allArtistsData);
         }
@@ -1112,6 +1135,77 @@
             });
         }
         
+        // Detectar nombres similares (posibles duplicados)
+        let _duplicatePairs = [];
+        let _duplicateIndex = 0;
+
+        function detectPossibleDuplicates(artists) {
+            const names = artists.map(a => ({ name: a.name, norm: a.name.toLowerCase().replace(/[^a-záéíóúñ]/gi, '') }));
+            _duplicatePairs = [];
+            _duplicateIndex = 0;
+
+            // Cargar pares ya descartados
+            const dismissed = JSON.parse(localStorage.getItem('dismissed_duplicates') || '[]');
+
+            for (let i = 0; i < names.length; i++) {
+                for (let j = i + 1; j < names.length; j++) {
+                    if (areSimilar(names[i].norm, names[j].norm)) {
+                        const key = [names[i].name, names[j].name].sort().join('|');
+                        if (!dismissed.includes(key)) {
+                            _duplicatePairs.push([names[i].name, names[j].name]);
+                        }
+                    }
+                }
+            }
+
+            showNextDuplicateQuestion();
+        }
+
+        function showNextDuplicateQuestion() {
+            const banner = document.getElementById('duplicates-banner');
+            if (_duplicateIndex >= _duplicatePairs.length) {
+                banner.style.display = 'none';
+                return;
+            }
+            const [a, b] = _duplicatePairs[_duplicateIndex];
+            document.getElementById('duplicates-question').innerHTML =
+                `¿<strong>${a}</strong> y <strong>${b}</strong> son la misma persona?`;
+            banner.style.display = 'block';
+        }
+
+        window.respondDuplicate = function(isSame) {
+            const [a, b] = _duplicatePairs[_duplicateIndex];
+            if (isSame) {
+                // Ir a fusionar con los nombres pre-cargados en URL
+                window.location.href = `fusionar_artistas_duplicados.html?name1=${encodeURIComponent(a)}&name2=${encodeURIComponent(b)}`;
+                return;
+            }
+            // Guardar "no" para no volver a preguntar
+            const dismissed = JSON.parse(localStorage.getItem('dismissed_duplicates') || '[]');
+            dismissed.push([a, b].sort().join('|'));
+            localStorage.setItem('dismissed_duplicates', JSON.stringify(dismissed));
+            _duplicateIndex++;
+            showNextDuplicateQuestion();
+        };
+
+        // Similaridad: uno contiene al otro, o distancia de edición corta
+        function areSimilar(a, b) {
+            if (a === b) return false; // ya están fusionados
+            if (a.length < 3 || b.length < 3) return false;
+            if (a.includes(b) || b.includes(a)) return true; // "estefi" ⊂ "estefania"
+            if (levenshtein(a, b) <= 2) return true;
+            return false;
+        }
+
+        function levenshtein(a, b) {
+            const m = a.length, n = b.length;
+            const dp = Array.from({length: m+1}, (_, i) => Array.from({length: n+1}, (_, j) => i === 0 ? j : j === 0 ? i : 0));
+            for (let i = 1; i <= m; i++)
+                for (let j = 1; j <= n; j++)
+                    dp[i][j] = a[i-1] === b[j-1] ? dp[i-1][j-1] : 1 + Math.min(dp[i-1][j], dp[i][j-1], dp[i-1][j-1]);
+            return dp[m][n];
+        }
+
         function getScoreColorClass(score) {
             if (score >= 90) return 'text-green-400';
             if (score >= 80) return 'text-blue-400';

@@ -1949,6 +1949,10 @@ Formato de respuesta:
                 document.getElementById('auth-section').style.display = 'none';
                 document.getElementById('main-content').style.display = 'block';
                 
+                // Limpiar candaditos de sesiones anteriores — siempre empezar desbloqueados
+                localStorage.removeItem('score_locks');
+                window.scoreLocks = {};
+                
                 // Cargar votos anteriores del usuario
                 await loadUserPreviousVotes();
                 
@@ -2485,7 +2489,7 @@ Formato de respuesta:
                                                            class="lock-checkbox" 
                                                            onchange="toggleScoreLock('${artist.id}', '${criteria.id}')"
                                                            title="Bloquear puntuación">
-                                                    <label for="lock-${artist.id}-${criteria.id}" class="text-sm cursor-pointer">🔒</label>
+                                                    <label id="lock-label-${artist.id}-${criteria.id}" for="lock-${artist.id}-${criteria.id}" class="text-sm cursor-pointer">🔓</label>
                                                 </div>
                                                 <span id="list-${artist.id}-${criteria.id}-display" class="text-2xl font-bold text-blue-300">${currentValue}</span>
                                                 <input type="number" 
@@ -2810,10 +2814,13 @@ Formato de respuesta:
             // Alternar estado de bloqueo
             window.scoreLocks[lockKey] = checkbox.checked;
             
+            const lockLabel = document.getElementById(`lock-label-${artistId}-${criteriaId}`);
+            
             if (checkbox.checked) {
                 // BLOQUEAR puntuación
                 slider.disabled = true;
                 slider.classList.add('slider-locked');
+                if (lockLabel) lockLabel.textContent = '🔒';
                 console.log(`🔒 Puntuación bloqueada: ${lockKey}`);
                 
                 // Feedback táctil en móviles
@@ -2824,6 +2831,7 @@ Formato de respuesta:
                 // DESBLOQUEAR puntuación
                 slider.disabled = false;
                 slider.classList.remove('slider-locked');
+                if (lockLabel) lockLabel.textContent = '🔓';
                 console.log(`🔓 Puntuación desbloqueada: ${lockKey}`);
                 
                 if (navigator.vibrate) {
@@ -4446,7 +4454,7 @@ Formato de respuesta:
             const attempts = [
                 () => setDoc(doc(db, `events/${eventId}/jury_evaluations`, `${currentJuror.id}_${artistId}`), voteData),
                 () => setDoc(doc(db, `events/${eventId}/jury_votes`, `${currentJuror.id}_${artistId}`), voteData),
-                () => setDoc(doc(db, `events/${eventId}/votes`, `${currentJuror.id}_${artistId}_${Date.now()}`), voteData)
+                () => setDoc(doc(db, `events/${eventId}/votes`, `${currentJuror.id}_${artistId}`), voteData)
             ];
 
             for (let i = 0; i < attempts.length && !success; i++) {
@@ -4495,8 +4503,8 @@ Formato de respuesta:
                     timestamp: new Date().toISOString()
                 };
 
-                // Usar colección jury_evaluations en lugar de jury_votes
-                await setDoc(doc(db, 'jury_evaluations', `${currentJuror.id}_${artistId}_partial`), voteData);
+                // Usar colección jury_evaluations del evento (no la colección raíz)
+                await setDoc(doc(db, `events/${eventId}/jury_evaluations`, `${currentJuror.id}_${artistId}_partial`), voteData);
                 
                 console.log('💾 Votación parcial guardada exitosamente');
                 alert(`💾 Votación parcial guardada para ${artist.name}\nCriterios completados: ${Object.keys(artistVotes).length}/${CRITERIA.length}\n\n✨ Puedes continuar después desde donde lo dejaste`);

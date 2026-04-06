@@ -118,12 +118,40 @@
                     🧹 Eliminar Todos los Votos de Prueba
                 </button>
             </div>
+
+            <!-- Reiniciar puntuaciones de un artista -->
+            <div class="mt-6 border-t border-red-700 pt-6">
+                <h3 class="text-xl font-bold text-red-200 mb-2">🔄 Reiniciar Puntuaciones de un Artista</h3>
+                <p class="text-red-300 text-sm mb-4">Elimina TODAS las evaluaciones de jurado de un artista en un evento específico.</p>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    <div>
+                        <label class="block text-sm text-gray-300 mb-1">ID del Evento</label>
+                        <input id="reset-event-id" type="text" value="WvnaxCEqzahWvndRe1S9"
+                               class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
+                               placeholder="ID del evento">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-gray-300 mb-1">Nombre del Artista</label>
+                        <input id="reset-artist-name" type="text" value="LEANDRO"
+                               class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
+                               placeholder="Nombre del artista">
+                    </div>
+                </div>
+                <button onclick="resetArtistScores()"
+                        class="py-3 px-6 bg-orange-700 text-white font-bold rounded-lg hover:bg-orange-800">
+                    🔍 Buscar y Eliminar Puntuaciones
+                </button>
+            </div>
         </section>
     </div>
 
     <script type="module">
-        import { db } from './firebase_config.js';
+        import { db, auth } from './firebase_config.js';
         import { collection, getDocs, doc, deleteDoc, query, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+
+        // Autenticar antes de cualquier operación Firestore
+        await signInAnonymously(auth).catch(() => {});
 
         // Variables globales
         let allVotes = [];
@@ -436,6 +464,65 @@
                 container.innerHTML = '';
             }, 5000);
         }
+
+        // Reiniciar puntuaciones de un artista específico
+        window.resetArtistScores = async function() {
+            const targetEventId = document.getElementById('reset-event-id').value.trim();
+            const targetArtistRaw = document.getElementById('reset-artist-name').value.trim();
+            const targetArtistLower = targetArtistRaw.toLowerCase();
+
+            if (!targetEventId || !targetArtistLower) {
+                showMessage('Ingresá el ID del evento y el nombre del artista', 'error');
+                return;
+            }
+
+            try {
+                showMessage('Buscando puntuaciones...', 'info');
+                const toDelete = [];
+
+                // Buscar en jury_evaluations
+                const evalSnap = await getDocs(collection(db, 'jury_evaluations'));
+                evalSnap.docs.forEach(d => {
+                    const data = d.data();
+                    const name = (data.artistName || '').toLowerCase();
+                    const evId = data.eventId || data.galaId || '';
+                    if (evId === targetEventId && name.includes(targetArtistLower)) {
+                        toDelete.push({ id: d.id, col: 'jury_evaluations' });
+                    }
+                });
+
+                // Buscar en jury_votes
+                try {
+                    const jurySnap = await getDocs(collection(db, 'jury_votes'));
+                    jurySnap.docs.forEach(d => {
+                        const data = d.data();
+                        const name = (data.artistName || '').toLowerCase();
+                        const evId = data.eventId || data.galaId || '';
+                        if (evId === targetEventId && name.includes(targetArtistLower)) {
+                            toDelete.push({ id: d.id, col: 'jury_votes' });
+                        }
+                    });
+                } catch(e) {}
+
+                if (toDelete.length === 0) {
+                    showMessage(`No se encontraron puntuaciones de "${targetArtistRaw}" en ese evento`, 'info');
+                    return;
+                }
+
+                const confirmed = confirm(`Se encontraron ${toDelete.length} evaluaciones de "${targetArtistRaw.toUpperCase()}".\n\n¿Eliminar todas?\n\nEsta acción no se puede deshacer.`);
+                if (!confirmed) return;
+
+                showMessage('Eliminando puntuaciones...', 'info');
+                await Promise.all(toDelete.map(item => deleteDoc(doc(db, item.col, item.id))));
+
+                showMessage(`✅ ${toDelete.length} evaluaciones de "${targetArtistRaw.toUpperCase()}" eliminadas exitosamente`, 'success');
+                await loadVotes();
+
+            } catch (error) {
+                console.error('Error reseteando puntuaciones:', error);
+                showMessage('Error: ' + error.message, 'error');
+            }
+        };
 
         // Event listeners
         document.getElementById('vote-type-filter').addEventListener('change', applyFilters);

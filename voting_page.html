@@ -854,7 +854,7 @@
     <script type="module">
         import { db, auth } from './firebase_config.js';
         import { signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { collection, onSnapshot, doc, updateDoc, increment, getDoc, setDoc, getDocs, query, orderBy, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { collection, onSnapshot, doc, updateDoc, increment, getDoc, setDoc, getDocs, query, orderBy, where, runTransaction } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         
         // 🔥 VERSION TRACKER - Para confirmar que se cargó la versión correcta
         console.log('%c🔥 VOTING PAGE CARGADA 🔥', 'background: red; color: white; font-size: 20px; padding: 10px;');
@@ -949,43 +949,89 @@
             }
         }
 
-        // 🌐 Enviar voto a Firebase
+        // 🌐 Enviar voto a Firebase con TRANSACCIÓN ATÓMICA
         async function submitVoteToFirebase(voteData) {
-            const { artistId, scores, ticketId, ticketName, isNewVote, diffs, totalDiff } = voteData;
+            const { artistId, scores, ticketId, ticketName, isNewVote } = voteData;
             
+            const artistRef = doc(db, `events/${activeEventId}/artists`, artistId);
             const voteRef = doc(db, `events/${activeEventId}/ticket_votes/${ticketId}/votes`, artistId);
             
-            // ✅ VALIDAR que no exista ya el voto (prevenir duplicados)
-            // Nota: handleVote ya verifica para calcular diffs, pero esto es una doble validación de seguridad
-            const existingVote = await getDoc(voteRef);
-            if (existingVote.exists() && isNewVote) {
-                console.warn('⚠️ Voto duplicado detectado, actualizando en lugar de crear nuevo');
-                // Continuar con la actualización pero marcar como no nuevo
+            try {
+                // ✅ TRANSACCIÓN ATÓMICA - Previene race conditions y votos duplicados
+                await runTransaction(db, async (transaction) => {
+                    // 1. Verificar si ya votó
+                    const existingVote = await transaction.get(voteRef);
+                    
+                    if (existingVote.exists() && isNewVote) {
+                        throw new Error('DUPLICATE_VOTE');
+                    }
+                    
+                    // 2. Calcular diferencias de puntajes
+                    const oldScores = existingVote.exists() ? existingVote.data() : null;
+                    const diffs = {
+                        singing: scores.singing - (oldScores?.singingScore || 0),
+                        transmission: scores.transmission - (oldScores?.transmissionScore || 0),
+                        attitude: scores.attitude - (oldScores?.attitudeScore || 0),
+                        originality: scores.originality - (oldScores?.originalityScore || 0),
+                        costume: scores.costume - (oldScores?.costumeScore || 0),
+                        staging: scores.staging - (oldScores?.stagingScore || 0)
+                    };
+                    const totalDiff = Object.values(diffs).reduce((a, b) => a + b, 0);
+                    
+                    // 3. Leer datos actuales del artista
+                    const artistSnap = await transaction.get(artistRef);
+                    if (!artistSnap.exists()) {
+                        throw new Error('ARTIST_NOT_FOUND');
+                    }
+                    
+                    const artistData = artistSnap.data();
+                    
+                    // 4. Actualizar contadores atómicamente
+                    transaction.update(artistRef, {
+                        totalSingingScore: (artistData.totalSingingScore || 0) + diffs.singing,
+                        totalTransmissionScore: (artistData.totalTransmissionScore || 0) + diffs.transmission,
+                        totalAttitudeScore: (artistData.totalAttitudeScore || 0) + diffs.attitude,
+                        totalOriginalityScore: (artistData.totalOriginalityScore || 0) + diffs.originality,
+                        totalCostumeScore: (artistData.totalCostumeScore || 0) + diffs.costume,
+                        totalStagingScore: (artistData.totalStagingScore || 0) + diffs.staging,
+                        totalScore: (artistData.totalScore || 0) + totalDiff,
+                        totalRatingsCount: (artistData.totalRatingsCount || 0) + (isNewVote ? 1 : 0)
+                    });
+                    
+                    // 5. Guardar voto
+                    transaction.set(voteRef, {
+                        artistId,
+                        ticketName,
+                        singingScore: scores.singing,
+                        transmissionScore: scores.transmission,
+                        attitudeScore: scores.attitude,
+                        originalityScore: scores.originality,
+                        costumeScore: scores.costume,
+                        stagingScore: scores.staging,
+                        votedAt: new Date().toISOString(),
+                        updatedAt: new Date().toISOString()
+                    });
+                });
+                
+                console.log('✅ Voto guardado con transacción atómica - race conditions prevenidos');
+                return { success: true };
+                
+            } catch (error) {
+                if (error.message === 'DUPLICATE_VOTE') {
+                    console.warn('⚠️ Voto duplicado detectado y bloqueado');
+                    displayMessage('⚠️ Ya votaste por este artista', 'warning', 3000);
+                    return { success: false, reason: 'duplicate' };
+                }
+                
+                if (error.message === 'ARTIST_NOT_FOUND') {
+                    console.error('❌ Artista no encontrado');
+                    displayMessage('❌ Error: Artista no encontrado', 'error', 3000);
+                    return { success: false, reason: 'not_found' };
+                }
+                
+                console.error('❌ Error en transacción de voto:', error);
+                throw error;
             }
-            
-            await updateDoc(doc(db, `events/${activeEventId}/artists`, artistId), {
-                totalSingingScore: increment(diffs.singing),
-                totalTransmissionScore: increment(diffs.transmission),
-                totalAttitudeScore: increment(diffs.attitude),
-                totalOriginalityScore: increment(diffs.originality),
-                totalCostumeScore: increment(diffs.costume),
-                totalStagingScore: increment(diffs.staging),
-                totalScore: increment(totalDiff),
-                totalRatingsCount: increment(isNewVote && !existingVote.exists() ? 1 : 0)
-            });
-
-            await setDoc(voteRef, {
-                artistId,
-                ticketName,
-                singingScore: scores.singing,
-                transmissionScore: scores.transmission,
-                attitudeScore: scores.attitude,
-                originalityScore: scores.originality,
-                costumeScore: scores.costume,
-                stagingScore: scores.staging,
-                votedAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString()
-            });
         }
 
         // 🌐 Monitorear estado de conexión

@@ -1358,24 +1358,14 @@
                 return;
             }
 
-            // ── WA al admin ANTES de los await (síncrono, así el browser no lo bloquea) ──
+            // ── Datos del pedido ──
             const _artistName = document.getElementById('artist-name').value.trim();
+            const _artistPhone = document.getElementById('artist-phone')?.value?.trim() || '';
             const _qAdults = parseInt(document.getElementById('ticket-quantity').value) || 0;
             const _qKids   = parseInt(document.getElementById('ticket-quantity-kids').value) || 0;
-            const _total = ((_qAdults + _qKids) * currentPrice).toLocaleString();
-            const _adminLink = `https://vyt-music.web.app/admin_preventa.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`;
-            const _waMsg = `🎟️ *NUEVO COMPROBANTE DE PAGO*\n\n✅ Cliente subió comprobante\n\nDatos:\n👤 ${_artistName}\n🎫 ${_qAdults + _qKids} entradas\n💰 $${_total}\n\n📸 Revisar comprobante y aprobar:\n${_adminLink}`;
-            
-            // Abrir WhatsApp (se abre en nueva pestaña para que veas el mensaje)
-            const whatsappWindow = window.open(`https://wa.me/543413632329?text=${encodeURIComponent(_waMsg)}`, '_blank');
-            
-            // Mostrar mensaje claro al usuario
-            if (whatsappWindow) {
-                displayMessage('📱 Se abrió WhatsApp para notificar a la organización. Por favor enviá el mensaje.', 'success');
-            } else {
-                displayMessage('⚠️ Bloqueador de ventanas detectado. Habilitá las ventanas emergentes y volvé a intentar.', 'error');
-                return;
-            }
+            const _guestCount = _qAdults + _qKids;
+            const _totalNum = _guestCount * currentPrice;
+            const _total = _totalNum.toLocaleString();
 
             try {
                 displayMessage('⏳ Subiendo comprobante...', 'info');
@@ -1393,6 +1383,27 @@
                     status: 'payment_uploaded',
                     paymentUploadedAt: serverTimestamp()
                 });
+
+                // ── Notificar al admin automáticamente (sin depender del artista) ──
+                // 1. Backend crea admin_notifications en Firestore → se ve en admin_preventa en tiempo real
+                fetch('https://us-central1-vyt-music.cloudfunctions.net/avisarPagoAdmin', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        artistName: _artistName,
+                        artistPhone: _artistPhone,
+                        guestCount: _guestCount,
+                        amount: _totalNum,
+                        orderId: currentOrderId,
+                        eventId: eventId,
+                        eventName: eventName
+                    })
+                }).catch(e => console.warn('avisarPagoAdmin:', e.message)); // fire-and-forget
+
+                // 2. WA de respaldo (se abre en nueva pestaña; el artista puede enviarlo o no)
+                const _adminLink = `https://vyt-music.web.app/admin_preventa.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`;
+                const _waMsg = `🎟️ *NUEVO COMPROBANTE DE PAGO*\n\n✅ ${_artistName} subió comprobante\n\n🎫 ${_guestCount} entradas\n💰 $${_total}\n\n📸 Revisar y aprobar:\n${_adminLink}`;
+                window.open(`https://wa.me/5493413632329?text=${encodeURIComponent(_waMsg)}`, '_blank');
 
                 displayMessage('✅ ¡Comprobante enviado! La organización fue notificada. Esta página se actualizará cuando aprueben tu pago.', 'success');
 

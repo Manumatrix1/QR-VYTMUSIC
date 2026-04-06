@@ -2,7 +2,7 @@
 
 ## 🎯 Arquitectura del Sistema
 
-Sistema web de gestión de eventos musicales con votación multi-canal (público + jurados). Arquitectura cliente-solo con Firebase como backend, desplegado en Netlify. **No hay servidor Node.js** - todos los archivos son HTML estáticos con JavaScript modular.
+Sistema web de gestión de eventos musicales con votación multi-canal (público + jurados). Arquitectura cliente-solo con Firebase como backend, desplegado en **Firebase Hosting** (`vyt-music.web.app`). **No hay servidor Node.js** - todos los archivos son HTML estáticos con JavaScript modular.
 
 ### Flujo de Navegación Principal
 ```
@@ -134,10 +134,10 @@ const isAssistant = params.get('assistant') === 'true';
 
 ## 🚀 Deploy
 
-Netlify auto-deploy desde `main` branch. Domain: `vytmusic.netlify.app`
+Firebase Hosting — deploy manual vía CLI: `firebase deploy --only hosting`. Domain: `vyt-music.web.app`
 
 Enlaces públicos pattern:
 ```javascript
-const publicLink = `https://vytmusic.netlify.app/voting_page.html?eventId=${eventId}`;
-const juryLink = `https://vytmusic.netlify.app/votacion_jurados_FINAL.html?eventId=${eventId}`;
+const publicLink = `https://vyt-music.web.app/voting_page.html?eventId=${eventId}`;
+const juryLink = `https://vyt-music.web.app/votacion_jurados_FINAL.html?eventId=${eventId}`;
 ```

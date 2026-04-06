@@ -125,6 +125,22 @@
                 </div>
             </div>
 
+            <!-- Votación del Público -->
+            <div class="card p-6 mb-6" id="public-voting-card" style="display:none;">
+                <h3 class="text-2xl font-bold mb-4 text-center">👥 Votación del Público</h3>
+                <div class="grid grid-cols-2 gap-4 text-center">
+                    <div class="bg-white bg-opacity-20 p-4 rounded-lg">
+                        <div class="text-4xl font-bold" id="public-vote-count">0</div>
+                        <div class="text-sm opacity-75 mt-1">Votos recibidos</div>
+                    </div>
+                    <div class="bg-white bg-opacity-20 p-4 rounded-lg">
+                        <div class="text-4xl font-bold" id="public-vote-avg">0</div>
+                        <div class="text-sm opacity-75 mt-1">Puntaje promedio</div>
+                    </div>
+                </div>
+                <div class="mt-4 grid grid-cols-2 md:grid-cols-3 gap-3" id="public-vote-details"></div>
+            </div>
+
             <!-- Evaluaciones del Jurado -->
             <div class="card p-6 mb-6">
                 <h3 class="text-2xl font-bold mb-4 text-center">🎯 Evaluaciones Detalladas</h3>
@@ -232,16 +248,19 @@
                     artistData.eventName = 'Tu evento';
                 }
                 
-                // Cargar evaluaciones
-                await loadEvaluationsForArtist(eventId, artistId);
-                
-                if (allEvaluations.length === 0) {
-                    showError('Aún no tienes evaluaciones del jurado disponibles. ¡Vuelve pronto!');
+                // Cargar evaluaciones del jurado y votos públicos en paralelo
+                const [_, publicData] = await Promise.all([
+                    loadEvaluationsForArtist(eventId, artistId),
+                    loadPublicVotes(eventId, artistId)
+                ]);
+
+                if (allEvaluations.length === 0 && !publicData) {
+                    showError('Aún no tienes evaluaciones disponibles. ¡Vuelve pronto!');
                     return;
                 }
                 
                 // Mostrar reporte
-                displayReport();
+                displayReport(publicData);
                 
             } catch (error) {
                 console.error('❌ Error cargando reporte:', error);
@@ -278,8 +297,33 @@
             console.log('✅ Evaluaciones del jurado cargadas:', allEvaluations.length);
         }
 
+        // Cargar votos del público desde el documento del artista
+        async function loadPublicVotes(eventId, artistId) {
+            try {
+                const artistDoc = await getDoc(doc(db, `events/${eventId}/artists`, artistId));
+                if (!artistDoc.exists()) return null;
+                const d = artistDoc.data();
+                const count = d.totalRatingsCount || 0;
+                if (count === 0) return null;
+                return {
+                    count,
+                    totalScore: d.totalScore || 0,
+                    avg: count > 0 ? (d.totalScore / count) : 0,
+                    singing: d.totalSingingScore,
+                    transmission: d.totalTransmissionScore,
+                    attitude: d.totalAttitudeScore,
+                    originality: d.totalOriginalityScore,
+                    costume: d.totalCostumeScore,
+                    staging: d.totalStagingScore
+                };
+            } catch (e) {
+                console.warn('⚠️ Error cargando votos públicos:', e.message);
+                return null;
+            }
+        }
+
         // Mostrar reporte
-        function displayReport() {
+        function displayReport(publicData) {
             // Información básica
             document.getElementById('artist-name').textContent = artistData.name;
             document.getElementById('event-info').textContent = `${artistData.eventName} | ${new Date().toLocaleDateString()}`;
@@ -303,6 +347,29 @@
             
             // Mostrar resumen de comentarios
             displayCommentsSummary();
+
+            // Mostrar votos del público si hay datos
+            if (publicData) {
+                document.getElementById('public-vote-count').textContent = publicData.count;
+                document.getElementById('public-vote-avg').textContent = publicData.avg.toFixed(1);
+                const labels = {
+                    singing: '🎤 Canto', transmission: '💫 Transmisión',
+                    attitude: '🔥 Actitud', originality: '✨ Originalidad',
+                    costume: '👗 Vestuario', staging: '🎭 Puesta en escena'
+                };
+                const details = document.getElementById('public-vote-details');
+                details.innerHTML = '';
+                Object.entries(labels).forEach(([key, label]) => {
+                    const val = publicData[key];
+                    if (val == null) return;
+                    const avg = publicData.count > 0 ? (val / publicData.count).toFixed(1) : '--';
+                    details.innerHTML += `<div class="bg-white bg-opacity-20 p-3 rounded-lg text-center">
+                        <div class="font-bold text-lg">${avg}</div>
+                        <div class="text-xs opacity-80">${label}</div>
+                    </div>`;
+                });
+                document.getElementById('public-voting-card').style.display = 'block';
+            }
             
             // Mostrar el reporte
             document.getElementById('loading-section').style.display = 'none';

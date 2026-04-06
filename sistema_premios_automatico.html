@@ -5,24 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>🎁 Sistema de Premios VYT-MUSIC</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Firebase v8 SDK -->
-    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
-    <script>
-        // Configuración Firebase
-        const firebaseConfig = {
-            apiKey: "AIzaSyC_2Ukoxf_ry7QfKtou1Cz6nY-qTVw4qTU", 
-            authDomain: "vyt-music.firebaseapp.com",
-            projectId: "vyt-music", 
-            storageBucket: "vyt-music.firebasestorage.app", 
-            messagingSenderId: "574981837817", 
-            appId: "1:574981837817:web:a29933a22bbfd51a086328"
-        };
-        
-        // Inicializar Firebase
-        firebase.initializeApp(firebaseConfig);
-        const db = firebase.firestore();
-    </script>
+    <!-- Firebase SDK v11.6.1 - Centralizado -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
         body { font-family: 'Inter', sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
@@ -186,7 +169,34 @@
         </div>
     </div>
 
-    <script>
+    <script type="module">
+        // === Firebase SDK v11.6.1 - Importación Centralizada ===
+        import { db as fireDb } from './firebase_config.js';
+        import { collection, doc as docRef, getDocs, getDoc, addDoc, setDoc, query, limit } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // === Capa de Compatibilidad: db.collection().doc().collection().get() ===
+        function makeCollRef(path) {
+            return {
+                doc:        (id)   => makeDocRef([...path, id]),
+                collection: (name) => makeCollRef([...path, name]),
+                limit:      (n)    => makeQueryRef(path, [limit(n)]),
+                get:        ()     => getDocs(collection(fireDb, ...path)),
+                add:        (data) => addDoc(collection(fireDb, ...path), data)
+            };
+        }
+        function makeDocRef(path) {
+            return {
+                collection: (name)       => makeCollRef([...path, name]),
+                get:        ()           => getDoc(docRef(fireDb, ...path)),
+                set:        (data, opts) => setDoc(docRef(fireDb, ...path), data, opts || {})
+            };
+        }
+        function makeQueryRef(path, constraints) {
+            return { get: () => getDocs(query(collection(fireDb, ...path), ...constraints)) };
+        }
+        const db = { collection: (name) => makeCollRef([name]) };
+        // ======================================================================
+
         // Variables globales
         let galas = [];
         let votosData = {};

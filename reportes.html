@@ -58,9 +58,15 @@
                         <div id="gala-reports-access" class="bg-gradient-to-br from-blue-600 to-blue-800 p-4 rounded-lg text-center">
                             <div class="text-3xl mb-2">📊</div>
                             <h4 class="text-lg font-bold mb-1">Por Gala Individual</h4>
-                            <p class="text-xs opacity-90 mb-3">Análisis detallado de cada gala</p>
-                            <div id="gala-links-container" class="space-y-1">
-                                <!-- Enlaces dinámicos -->
+                            <p class="text-xs opacity-90 mb-3">Seleccioná una o más galas para ver su reporte</p>
+                            <div id="gala-links-container" class="space-y-1 text-left">
+                                <!-- Checkboxes dinámicos -->
+                            </div>
+                            <div id="gala-selection-actions" class="hidden mt-3 pt-3 border-t border-blue-400">
+                                <p class="text-xs text-blue-200 mb-2"><span id="selected-galas-count">0</span> gala(s) seleccionada(s)</p>
+                                <button onclick="openSelectedGalasReport()" class="w-full px-3 py-2 bg-white text-blue-800 font-bold rounded-lg hover:bg-blue-50 text-sm transition-colors">
+                                    📊 Ver Reporte de Seleccionadas
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -414,26 +420,111 @@
             document.getElementById('export-general-report-btn').addEventListener('click', exportGeneralReportToCSV);
         }
 
+        function detectGeneration(name = '', date = '', generation = '') {
+            if (generation) return generation;
+            const n = name.toLowerCase().replace(/[-_()\s]+/g, ' ').trim();
+            const year = date ? parseInt(date.substring(0, 4)) : 0;
+
+            // ── Gen 12: verificar PRIMERO (marcadores más específicos) ──
+            if (/\b12g\b|\bg12\b/.test(n)) return 'Generación 12';
+            if (n.includes('gen 12') || n.includes('generacion 12') || n.includes('generación 12')) return 'Generación 12';
+
+            // ── Gen 13: galas con número de grupo (g1/g2/g3 grupo) ──
+            if (/\bg[123] grupo\b/.test(n)) return 'Generación 13';
+            if (n.includes('si lo crees') || n.includes('crees lo creas')) return 'Generación 13';
+
+            // ── VYT-MUSIC genérico: usar año como desempate ──
+            if (n.includes('vyt music') || n.includes('vytmusic') || n.includes('vyt-music')) {
+                return year >= 2026 ? 'Generación 13' : 'Generación 12';
+            }
+
+            // ── Fase sin VYT → Gen 12 ──
+            if (n.includes('fase') || n.includes('phase')) return 'Generación 12';
+
+            return 'Otros';
+        }
+
+        const GEN_COLORS = {
+            'Generación 13': { bg: 'bg-purple-700', hover: 'hover:bg-purple-800', header: 'bg-purple-900', badge: 'bg-purple-500' },
+            'Generación 12': { bg: 'bg-sky-700', hover: 'hover:bg-sky-800', header: 'bg-sky-900', badge: 'bg-sky-500' },
+            'Otros':         { bg: 'bg-gray-600', hover: 'hover:bg-gray-700', header: 'bg-gray-800', badge: 'bg-gray-500' },
+        };
+        const GEN_ORDER = ['Generación 13', 'Generación 12', 'Otros'];
+
+        function updateGalaSelectionUI() {
+            const checked = document.querySelectorAll('.gala-multi-check:checked');
+            const actionsDiv = document.getElementById('gala-selection-actions');
+            const countSpan = document.getElementById('selected-galas-count');
+            if (countSpan) countSpan.textContent = checked.length;
+            if (actionsDiv) actionsDiv.classList.toggle('hidden', checked.length === 0);
+        }
+
+        window.openSelectedGalasReport = function() {
+            const checked = document.querySelectorAll('.gala-multi-check:checked');
+            const ids = Array.from(checked).map(cb => cb.value);
+            if (ids.length === 0) return;
+            if (ids.length === 1) {
+                const name = checked[0].dataset.name;
+                window.open(`reporte_por_gala.html?eventId=${ids[0]}&eventName=${encodeURIComponent(name)}`, '_blank');
+            } else {
+                window.open(`reporte_certamen_completo.html?preselect=${ids.join(',')}`, '_blank');
+            }
+        };
+
         async function loadGalaLinks() {
             try {
-                const eventsQuery = query(collection(db, 'events'));
-                const eventsSnapshot = await getDocs(eventsQuery);
+                const eventsSnapshot = await getDocs(collection(db, 'events'));
                 const galaLinksContainer = document.getElementById('gala-links-container');
-                
+
                 if (eventsSnapshot.empty) {
                     galaLinksContainer.innerHTML = '<p class="text-gray-400 text-sm">No hay galas registradas aún</p>';
                     return;
                 }
 
-                galaLinksContainer.innerHTML = '';
-                eventsSnapshot.docs.forEach(doc => {
-                    const eventData = doc.data();
-                    const link = document.createElement('a');
-                    link.href = `reporte_por_gala.html?eventId=${doc.id}&eventName=${encodeURIComponent(eventData.name)}`;
-                    link.className = 'block w-full px-4 py-2 bg-sky-600 text-white rounded-lg hover:bg-sky-700 transition-colors text-sm';
-                    link.innerHTML = `📊 ${eventData.name} <span class="text-xs opacity-75">(${eventData.date || 'Sin fecha'})</span>`;
-                    galaLinksContainer.appendChild(link);
+                // Agrupar por generación
+                const groups = {};
+                eventsSnapshot.docs.forEach(docSnap => {
+                    const d = docSnap.data();
+                    const date = d.date || '';
+                    const gen = detectGeneration(d.name, date, d.generation);
+                    if (!groups[gen]) groups[gen] = [];
+                    groups[gen].push({ id: docSnap.id, name: d.name, date });
                 });
+
+                // Ordenar eventos dentro de cada grupo por fecha desc
+                Object.values(groups).forEach(arr => arr.sort((a, b) => b.date.localeCompare(a.date)));
+
+                galaLinksContainer.innerHTML = '';
+
+                GEN_ORDER.forEach(gen => {
+                    if (!groups[gen] || groups[gen].length === 0) return;
+                    const colors = GEN_COLORS[gen] || GEN_COLORS['Otros'];
+                    const groupId = 'gen-group-' + gen.replace(/\s+/g, '-');
+
+                    const wrapper = document.createElement('div');
+                    wrapper.className = 'rounded-lg overflow-hidden mb-2';
+                    wrapper.innerHTML = `
+                        <button onclick="document.getElementById('${groupId}').classList.toggle('hidden')"
+                            class="w-full flex justify-between items-center px-3 py-2 ${colors.header} text-white font-bold text-sm rounded-lg">
+                            <span>📁 ${gen} <span class="ml-1 text-xs px-2 py-0.5 rounded-full ${colors.badge}">${groups[gen].length}</span></span>
+                            <span class="text-xs opacity-70">▼</span>
+                        </button>
+                        <div id="${groupId}" class="space-y-1 mt-1">
+                            ${groups[gen].map(ev => `
+                                <label class="flex items-center gap-2 w-full px-3 py-2 ${colors.bg} ${colors.hover} text-white rounded-lg transition-colors text-sm cursor-pointer">
+                                    <input type="checkbox" class="gala-multi-check w-4 h-4 flex-shrink-0 accent-white"
+                                        value="${ev.id}" data-name="${ev.name.replace(/"/g, '&quot;')}">
+                                    <span>📊 ${ev.name} <span class="text-xs opacity-75">${ev.date ? '(' + ev.date + ')' : ''}</span></span>
+                                </label>
+                            `).join('')}
+                        </div>
+                    `;
+                    galaLinksContainer.appendChild(wrapper);
+                });
+
+                // Escuchar cambios en los checkboxes
+                galaLinksContainer.addEventListener('change', updateGalaSelectionUI);
+
             } catch (error) {
                 console.error('Error cargando enlaces de galas:', error);
                 document.getElementById('gala-links-container').innerHTML = '<p class="text-red-400 text-sm">Error cargando galas</p>';
@@ -514,7 +605,6 @@
             
             container.innerHTML = '';
 
-            // Filtrar eventos por grupo
             let eventsToShow = allEventsData;
             if (selectedGroup !== 'all') {
                 eventsToShow = allEventsData.filter(event => event.groupId === selectedGroup);
@@ -525,29 +615,84 @@
                 return;
             }
 
+            // Agrupar por generación
+            const groups = {};
             eventsToShow.forEach(event => {
-                const checkboxDiv = document.createElement('div');
-                checkboxDiv.className = 'flex items-center space-x-3 p-3 bg-gray-800 rounded-lg hover:bg-gray-700 transition-colors';
-                
-                const checkbox = document.createElement('input');
-                checkbox.type = 'checkbox';
-                checkbox.id = `econ-event-${event.id}`;
-                checkbox.value = event.id;
-                checkbox.className = 'w-4 h-4 text-green-600 bg-gray-900 border-gray-600 rounded focus:ring-green-500';
-                checkbox.addEventListener('change', updateEconomicGalasSelection);
+                const gen = detectGeneration(event.name, event.date || '', event.generation);
+                if (!groups[gen]) groups[gen] = [];
+                groups[gen].push(event);
+            });
+            Object.values(groups).forEach(arr => arr.sort((a, b) => (b.date || '').localeCompare(a.date || '')));
 
-                const label = document.createElement('label');
-                label.htmlFor = checkbox.id;
-                label.className = 'flex-1 text-sm font-medium text-gray-300 cursor-pointer';
-                label.innerHTML = `
-                    <span class="text-green-400">🎭 ${event.name}</span>
-                    <br>
-                    <span class="text-xs text-gray-400">📅 ${event.date || 'Sin fecha'} • 🆔 ${event.id.substring(0, 8)}...</span>
+            const genColors = {
+                'Generación 13': { header: 'bg-purple-900 border border-purple-600', check: 'text-purple-400', badge: 'bg-purple-600' },
+                'Generación 12': { header: 'bg-sky-900 border border-sky-600',    check: 'text-sky-400',    badge: 'bg-sky-600'    },
+                'Otros':         { header: 'bg-gray-700 border border-gray-500',  check: 'text-gray-300',  badge: 'bg-gray-500'   },
+            };
+
+            GEN_ORDER.forEach(gen => {
+                if (!groups[gen] || groups[gen].length === 0) return;
+                const colors = genColors[gen] || genColors['Otros'];
+                const groupId = 'econ-gen-' + gen.replace(/\s+/g, '-');
+
+                // Cabecera del grupo con checkbox "seleccionar todos"
+                const header = document.createElement('div');
+                header.className = `flex items-center justify-between px-3 py-2 rounded-lg ${colors.header} cursor-pointer mb-1 select-none`;
+                header.innerHTML = `
+                    <div class="flex items-center gap-2">
+                        <input type="checkbox" id="check-all-${groupId}" 
+                            class="w-4 h-4 cursor-pointer" 
+                            title="Seleccionar todas las galas de ${gen}"
+                            onclick="event.stopPropagation()">
+                        <span class="font-bold text-white text-sm">📁 ${gen}</span>
+                        <span class="text-xs px-2 py-0.5 rounded-full ${colors.badge} text-white">${groups[gen].length}</span>
+                    </div>
+                    <span class="text-xs text-gray-400 toggle-arrow">▼</span>
                 `;
+                header.addEventListener('click', () => {
+                    const body = document.getElementById(groupId);
+                    body.classList.toggle('hidden');
+                    header.querySelector('.toggle-arrow').textContent = body.classList.contains('hidden') ? '▶' : '▼';
+                });
+                container.appendChild(header);
 
-                checkboxDiv.appendChild(checkbox);
-                checkboxDiv.appendChild(label);
-                container.appendChild(checkboxDiv);
+                // Cuerpo con checkboxes individuales
+                const body = document.createElement('div');
+                body.id = groupId;
+                body.className = 'space-y-1 mb-3 pl-2';
+
+                groups[gen].forEach(event => {
+                    const checkboxDiv = document.createElement('div');
+                    checkboxDiv.className = 'flex items-center space-x-3 p-3 bg-gray-800 rounded-lg hover:bg-gray-700 transition-colors';
+                    
+                    const checkbox = document.createElement('input');
+                    checkbox.type = 'checkbox';
+                    checkbox.id = `econ-event-${event.id}`;
+                    checkbox.value = event.id;
+                    checkbox.className = 'w-4 h-4 bg-gray-900 border-gray-600 rounded focus:ring-green-500';
+                    checkbox.addEventListener('change', updateEconomicGalasSelection);
+
+                    const label = document.createElement('label');
+                    label.htmlFor = checkbox.id;
+                    label.className = 'flex-1 text-sm font-medium text-gray-300 cursor-pointer';
+                    label.innerHTML = `
+                        <span class="${colors.check}">🎭 ${event.name}</span><br>
+                        <span class="text-xs text-gray-400">📅 ${event.date || 'Sin fecha'} • 🆔 ${event.id.substring(0, 8)}...</span>
+                    `;
+
+                    checkboxDiv.appendChild(checkbox);
+                    checkboxDiv.appendChild(label);
+                    body.appendChild(checkboxDiv);
+                });
+
+                container.appendChild(body);
+
+                // Lógica "seleccionar todas" del grupo
+                document.getElementById(`check-all-${groupId}`)?.addEventListener('change', function(e) {
+                    e.stopPropagation();
+                    body.querySelectorAll('input[type="checkbox"]').forEach(cb => { cb.checked = this.checked; });
+                    updateEconomicGalasSelection();
+                });
             });
         }
 
@@ -603,7 +748,8 @@
                 // Procesar cada gala seleccionada
                 for (const eventId of economicSelectedEvents) {
                     const eventData = allEventsData.find(e => e.id === eventId);
-                    
+                    if (!eventData) { console.warn('Evento no encontrado:', eventId); continue; }
+
                     // Obtener tickets de esta gala
                     const ticketsSnapshot = await getDocs(collection(db, `events/${eventId}/tickets`));
                     const tickets = ticketsSnapshot.docs.map(doc => doc.data());

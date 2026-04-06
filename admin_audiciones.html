@@ -7,12 +7,14 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
         body { font-family: 'Inter', sans-serif; background: #111827; color: #f9fafb; }
         .hidden { display: none !important; }
         .card { background: #1f2937; border: 1px solid #374151; border-radius: 0.75rem; }
         .card-row { background: #1f2937; border: 1px solid #374151; border-radius: 0.5rem; transition: border-color 0.2s; cursor: pointer; }
         .card-row:hover { border-color: #38bdf8; }
+        .card-row.selected { border-color: #0ea5e9; background: #0c2233; }
         .badge-pendiente  { background:#92400e; color:#fde68a; }
         .badge-contactado { background:#1e3a5f; color:#93c5fd; }
         .badge-aceptado   { background:#064e3b; color:#6ee7b7; }
@@ -22,6 +24,9 @@
         .filter-input { background:#111827; border:1px solid #374151; color:#f9fafb; }
         .filter-input:focus { outline:none; border-color:#38bdf8; }
         .stat-box { background:#1f2937; border:1px solid #374151; }
+        .row-check { accent-color: #0ea5e9; width:18px; height:18px; cursor:pointer; flex-shrink:0; }
+        .prog-dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+        .prog-line { width:10px; height:2px; background:#374151; flex-shrink:0; margin-top:-1px; }
     </style>
 </head>
 <body>
@@ -39,16 +44,7 @@
                 <img src="imagenes/logo-movimiento.png" alt="VYT" class="h-7 w-7 rounded-full object-cover">
                 <h1 class="font-bold text-sky-400 text-lg">Panel de Audiciones</h1>
             </div>
-            <div class="flex items-center gap-2">
-                <a href="editor_inscripcion.html"
-                   class="px-4 py-2 bg-indigo-700 hover:bg-indigo-600 text-white font-semibold rounded-lg text-sm transition-colors">
-                    <i class="fas fa-edit mr-1"></i> Editar página
-                </a>
-                <a href="inscripcion.html" target="_blank"
-                   class="px-4 py-2 bg-sky-700 hover:bg-sky-600 text-white font-semibold rounded-lg text-sm transition-colors">
-                    <i class="fas fa-external-link-alt mr-1"></i> Ver página pública
-                </a>
-            </div>
+
         </div>
     </nav>
 
@@ -104,9 +100,32 @@
             <!-- Buscador -->
             <input type="text" id="search-input" placeholder="🔍 Buscar por nombre o ciudad..."
                    class="filter-input rounded-lg px-4 py-2 text-sm w-full sm:w-64">
-            <!-- Borrar todo -->
-            <button onclick="borrarTodosVisibles()" class="shrink-0 px-4 py-2 bg-red-900 hover:bg-red-800 text-red-300 font-semibold rounded-lg text-sm transition-colors flex items-center gap-2">
-                <i class="fas fa-trash-alt"></i> Borrar visibles
+            <!-- Acciones masivas -->
+            <div class="flex gap-2 shrink-0">
+                <button onclick="selectAll()"
+                        class="px-3 py-2 bg-sky-900 hover:bg-sky-800 text-sky-300 font-semibold rounded-lg text-sm transition-colors flex items-center gap-1">
+                    <i class="far fa-check-square"></i> Sel. todos
+                </button>
+                <button onclick="borrarTodosVisibles()" class="px-4 py-2 bg-red-900 hover:bg-red-800 text-red-300 font-semibold rounded-lg text-sm transition-colors flex items-center gap-2">
+                    <i class="fas fa-trash-alt"></i> Borrar visibles
+                </button>
+            </div>
+        </div>
+
+        <!-- BARRA SELECCIÓN MASIVA -->
+        <div id="bulk-bar" class="hidden card p-3 flex flex-wrap items-center gap-3 border-sky-700/60">
+            <span class="text-sky-300 font-semibold text-sm"><span id="bulk-count">0</span> seleccionados</span>
+            <button id="btn-download-photos" onclick="descargarFotosSeleccionadas()"
+                    class="px-4 py-2 bg-indigo-700 hover:bg-indigo-600 text-white font-semibold rounded-lg text-sm transition-colors flex items-center gap-2">
+                <i class="fas fa-download"></i> Descargar fotos
+            </button>
+            <button onclick="abrirDifusionWA()"
+                    class="px-4 py-2 bg-green-800 hover:bg-green-700 text-white font-semibold rounded-lg text-sm transition-colors flex items-center gap-2">
+                <i class="fab fa-whatsapp"></i> Difusión WA
+            </button>
+            <button onclick="clearSelection()"
+                    class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 font-semibold rounded-lg text-sm transition-colors">
+                Limpiar selección
             </button>
         </div>
 
@@ -182,20 +201,78 @@
                 </button>
             </div>
 
-            <details class="border border-gray-700 rounded-lg overflow-hidden">
-                <summary class="px-4 py-2 text-xs text-gray-400 cursor-pointer hover:text-gray-300">Cambiar estado manualmente (sin enviar WA)...</summary>
-                <div class="flex flex-wrap gap-2 p-3">
+            <div class="border border-gray-700 rounded-lg p-3">
+                <p class="text-xs text-gray-400 mb-2">Cambiar estado manualmente:</p>
+                <div class="flex flex-wrap gap-2">
                     <button onclick="setEstado('pendiente')"  class="estado-btn px-3 py-1.5 rounded-lg text-xs font-semibold bg-yellow-900 text-yellow-300 hover:bg-yellow-800 transition-colors">⏳ Pendiente</button>
                     <button onclick="setEstado('contactado')" class="estado-btn px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-900 text-blue-300 hover:bg-blue-800 transition-colors">📞 Contactado</button>
                     <button onclick="setEstado('aceptado')"   class="estado-btn px-3 py-1.5 rounded-lg text-xs font-semibold bg-green-900 text-green-300 hover:bg-green-800 transition-colors">✅ Aceptado</button>
                     <button onclick="setEstado('rechazado')"  class="estado-btn px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-900 text-red-300 hover:bg-red-800 transition-colors">❌ Rechazado</button>
                 </div>
-            </details>
+            </div>
 
             <a id="modal-whatsapp" href="#" target="_blank" rel="noopener noreferrer"
                class="flex items-center justify-center gap-2 w-full py-2.5 bg-gray-700 hover:bg-gray-600 rounded-xl text-gray-300 font-semibold text-sm transition-colors">
                 <i class="fab fa-whatsapp text-green-400 text-lg"></i> Escribirle directamente por WhatsApp...
             </a>
+
+            <!-- NOTAS INTERNAS -->
+            <div class="border-t border-gray-700 pt-4 mt-2">
+                <p class="text-xs font-semibold text-gray-400 uppercase mb-2">📝 Notas internas</p>
+                <textarea id="modal-notas" rows="3"
+                          placeholder="Escribí notas privadas sobre este artista (solo las ve el equipo)..."
+                          class="w-full bg-gray-900/60 border border-gray-600 text-gray-200 rounded-xl px-3 py-2 text-sm resize-none focus:outline-none focus:border-sky-500 transition-colors"></textarea>
+                <button onclick="guardarNota()"
+                        class="mt-2 px-4 py-2 bg-indigo-800 hover:bg-indigo-700 rounded-lg text-white font-semibold text-xs transition-colors flex items-center gap-2">
+                    <i class="fas fa-save"></i> Guardar nota
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════
+     MODAL DIFUSIÓN WHATSAPP
+═══════════════════════════════════════════════ -->
+<div id="modal-difusion" class="fixed inset-0 bg-black bg-opacity-85 hidden z-50 p-4 items-start justify-center overflow-y-auto">
+    <div class="bg-gray-900 rounded-2xl w-full max-w-lg shadow-2xl border border-gray-700 my-6">
+        <div class="flex items-center justify-between px-5 py-4 border-b border-gray-700">
+            <h2 class="text-lg font-bold text-white"><i class="fab fa-whatsapp text-green-400 mr-2"></i>Difusión WhatsApp</h2>
+            <button onclick="cerrarDifusionWA()" class="text-gray-400 hover:text-white text-2xl leading-none">&times;</button>
+        </div>
+        <div class="p-5 space-y-4">
+            <div>
+                <label class="block text-xs font-bold text-gray-400 uppercase mb-2">Mensaje a enviar</label>
+                <p class="text-xs text-gray-500 mb-2">Usá <code class="bg-gray-800 px-1 rounded">{nombre}</code> para personalizar con el nombre de cada artista.</p>
+                <textarea id="wa-difusion-msg" rows="5"
+                    class="w-full bg-gray-800 border border-gray-600 text-gray-200 rounded-xl px-3 py-2 text-sm resize-none focus:outline-none focus:border-green-500"
+                    placeholder="Hola {nombre}! Te escribimos de VYT MUSIC 🎤..."
+                ></textarea>
+            </div>
+            <div>
+                <div class="flex items-center justify-between mb-2">
+                    <label class="text-xs font-bold text-gray-400 uppercase">Contactos seleccionados</label>
+                    <button onclick="copiarNumerosWA()" class="text-xs px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 font-semibold rounded-lg transition-colors">
+                        <i class="fas fa-copy mr-1"></i> Copiar números
+                    </button>
+                </div>
+                <div id="wa-difusion-lista" class="space-y-1 max-h-48 overflow-y-auto bg-gray-800 rounded-xl p-3">
+                    <!-- se llena por JS -->
+                </div>
+            </div>
+            <div class="bg-yellow-950 border border-yellow-800 rounded-xl p-3 text-xs text-yellow-300">
+                <p class="font-bold mb-1">⚠️ Cómo funciona</p>
+                <p>WhatsApp no permite envíos automáticos masivos. El botón abre WA uno por uno. Para difusión real: <strong>copiá los números</strong> y desde tu celular creá una <em>Lista de difusión</em> en WhatsApp y pegá el mensaje.</p>
+            </div>
+            <div class="flex gap-3">
+                <button onclick="enviarSiguienteWA()" id="btn-enviar-wa"
+                    class="flex-1 py-3 bg-green-700 hover:bg-green-600 text-white font-bold rounded-xl text-sm transition-colors flex items-center justify-center gap-2">
+                    <i class="fab fa-whatsapp"></i> <span id="btn-enviar-wa-label">Enviar uno a uno</span>
+                </button>
+                <button onclick="cerrarDifusionWA()" class="px-4 py-3 bg-gray-700 hover:bg-gray-600 text-gray-300 font-bold rounded-xl text-sm">
+                    Cerrar
+                </button>
+            </div>
         </div>
     </div>
 </div>
@@ -203,7 +280,7 @@
 
 <script type="module">
     import { db, auth } from './firebase_config.js';
-    import { collection, onSnapshot, doc, updateDoc, getDoc, orderBy, query, deleteDoc, writeBatch, serverTimestamp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+    import { collection, onSnapshot, doc, updateDoc, getDoc, orderBy, query, where, limit, deleteDoc, writeBatch, serverTimestamp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
     import { onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
 
     // ── Auth guard ──
@@ -269,6 +346,116 @@
     let currentSearch = '';
     let selectedDocId = null;
     let currentAudicion = null;
+    let selectedIds = new Set();
+
+    // ── Multi-select ──
+    window.toggleSelect = function(id) {
+        if (selectedIds.has(id)) selectedIds.delete(id);
+        else selectedIds.add(id);
+        updateBulkBar();
+        // Actualizar clase visual de la fila
+        const row = document.querySelector(`.row-check[data-id="${id}"]`)?.closest('.card-row');
+        if (row) row.classList.toggle('selected', selectedIds.has(id));
+    };
+
+    window.selectAll = function() {
+        const checkboxes = document.querySelectorAll('.row-check');
+        const allChecked = checkboxes.length > 0 && [...checkboxes].every(c => c.checked);
+        selectedIds.clear();
+        checkboxes.forEach(c => {
+            c.checked = !allChecked;
+            if (!allChecked) selectedIds.add(c.dataset.id);
+            const row = c.closest('.card-row');
+            if (row) row.classList.toggle('selected', !allChecked);
+        });
+        updateBulkBar();
+    };
+
+    window.clearSelection = function() {
+        selectedIds.clear();
+        document.querySelectorAll('.row-check').forEach(c => {
+            c.checked = false;
+            c.closest('.card-row')?.classList.remove('selected');
+        });
+        updateBulkBar();
+    };
+
+    function updateBulkBar() {
+        const count = selectedIds.size;
+        const bar   = document.getElementById('bulk-bar');
+        const el    = document.getElementById('bulk-count');
+        if (count > 0) {
+            bar.classList.remove('hidden');
+            if (el) el.textContent = count;
+        } else {
+            bar.classList.add('hidden');
+        }
+    }
+
+    window.descargarFotosSeleccionadas = async function() {
+        const selected = allData.filter(a => selectedIds.has(a._id) && a.foto_url);
+        if (selected.length === 0) {
+            alert('Ninguno de los seleccionados tiene foto disponible.');
+            return;
+        }
+        const btn = document.getElementById('btn-download-photos');
+        const origHTML = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = `<i class="fas fa-spinner fa-spin mr-1"></i> Descargando ${selected.length} fotos...`;
+
+        const zip = new JSZip();
+        let ok = 0;
+        for (const a of selected) {
+            try {
+                const res = await fetch(a.foto_url);
+                if (!res.ok) throw new Error(res.status);
+                const blob = await res.blob();
+                const rawExt = a.foto_url.split('?')[0].split('.').pop().toLowerCase();
+                const ext = /^(jpg|jpeg|png|webp|heic|heif|gif)$/.test(rawExt) ? rawExt : 'jpg';
+                const safeName = (a.nombre || 'artista').replace(/[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ\s]/g, '').trim().replace(/\s+/g, '_');
+                zip.file(`${safeName}_${a._id.slice(0,6)}.${ext}`, blob);
+                ok++;
+            } catch(e) {
+                console.warn('No se pudo descargar foto de', a.nombre, e.message);
+            }
+        }
+        if (ok === 0) {
+            alert('No se pudieron descargar las fotos. ¿El CORS de Storage está configurado? Intentá descargarlas una por una desde el detalle de cada artista.');
+            btn.disabled = false;
+            btn.innerHTML = origHTML;
+            return;
+        }
+        const blob = await zip.generateAsync({ type: 'blob' });
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement('a');
+        a.href     = url;
+        a.download = `fotos_audiciones_${new Date().toISOString().slice(0,10)}.zip`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        btn.innerHTML = `<i class="fas fa-check mr-1"></i> ¡${ok} descargadas!`;
+        setTimeout(() => { btn.innerHTML = origHTML; btn.disabled = false; }, 3000);
+    };
+
+    // ── Guardar nota interna ──
+    window.guardarNota = async function() {
+        if (!selectedDocId) return;
+        const notas = document.getElementById('modal-notas')?.value.trim() ?? '';
+        const btn = document.querySelector('[onclick="guardarNota()"]');
+        const orig = btn.innerHTML;
+        btn.disabled = true;
+        try {
+            await updateDoc(doc(db, 'audiciones', selectedDocId), { notas, notasFecha: serverTimestamp() });
+            btn.innerHTML = '<i class="fas fa-check mr-1"></i> Guardado';
+            btn.classList.add('bg-green-800');
+            setTimeout(() => { btn.innerHTML = orig; btn.classList.remove('bg-green-800'); btn.disabled = false; }, 2000);
+        } catch(e) {
+            alert('Error al guardar nota: ' + e.message);
+            btn.innerHTML = orig;
+            btn.disabled = false;
+        }
+    };
 
     // ── Site config (link de pago, mensajes WA) ──
     let siteConfig = {};
@@ -301,6 +488,26 @@
     }
 
     // ── Render ──
+    function miniProgress(a) {
+        const dot = (on, red) => `<div class="prog-dot" style="background:${on ? (red ? '#ef4444' : '#22c55e') : '#374151'};"></div>`;
+        const line = `<div class="prog-line"></div>`;
+        const s1 = dot(true);
+        const s2 = dot(a.estado !== 'pendiente');
+        const s3 = dot(a.estado === 'aceptado' || a.estado === 'rechazado', a.estado === 'rechazado');
+        const s4 = dot(!!a.estadoPago);
+        const s5 = dot(a.estadoPago === 'pagado');
+        return `<div class="flex items-center gap-0.5" title="${progressLabel(a)}">${s1}${line}${s2}${line}${s3}${line}${s4}${line}${s5}</div>
+                <span class="text-[10px] text-gray-500 ml-1">${progressLabel(a)}</span>`;
+    }
+    function progressLabel(a) {
+        if (a.estadoPago === 'pagado')   return '🎭 Todo listo';
+        if (a.estadoPago === 'enviado')  return '💰 Comprobante recibido';
+        if (a.estado === 'aceptado')     return '💳 Pago pendiente';
+        if (a.estado === 'rechazado')    return '❌ No pasó';
+        if (a.estado === 'contactado')   return '📞 Contactado';
+        return '⏳ En revisión';
+    }
+
     function renderList() {
         const container  = document.getElementById('audiciones-list');
         const emptyState = document.getElementById('empty-state');
@@ -322,28 +529,43 @@
         emptyState.classList.add('hidden');
 
         container.innerHTML = filtered.map(a => `
-            <div class="card-row p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div class="flex items-center gap-3" onclick="openModal('${a._id}')" style="cursor:pointer;flex:1">
-                    <div class="w-10 h-10 rounded-full bg-sky-800 flex items-center justify-center font-bold text-sky-200 shrink-0">
-                        ${(a.nombre || '?')[0].toUpperCase()}
+            <div class="card-row p-3 sm:p-4 flex items-start gap-2 sm:gap-3 ${selectedIds.has(a._id) ? 'selected' : ''}">
+                <!-- Checkbox -->
+                <input type="checkbox" class="row-check" data-id="${a._id}"
+                       ${selectedIds.has(a._id) ? 'checked' : ''}
+                       onclick="event.stopPropagation(); toggleSelect('${a._id}')"
+                       style="margin-top:4px">
+                <!-- Avatar (foto o letra) -->
+                ${a.foto_url
+                    ? `<img src="${escHtml(a.foto_url)}" class="w-10 h-10 rounded-full object-cover shrink-0 border border-gray-600 cursor-pointer" onclick="openModal('${a._id}')" onerror="this.outerHTML='<div class=\\'w-10 h-10 rounded-full bg-sky-800 flex items-center justify-center font-bold text-sky-200 shrink-0 cursor-pointer\\' onclick=\\'openModal(\\\\u0022${a._id}\\\\u0022)\\'>${(a.nombre||'?')[0].toUpperCase()}</div>'">`
+                    : `<div class="w-10 h-10 rounded-full bg-sky-800 flex items-center justify-center font-bold text-sky-200 shrink-0 cursor-pointer" onclick="openModal('${a._id}')">${(a.nombre || '?')[0].toUpperCase()}</div>`
+                }
+                <!-- Info (toda en una columna, mobile-friendly) -->
+                <div class="flex-1 min-w-0">
+                    <!-- Fila 1: nombre + estado + papelera -->
+                    <div class="flex items-center gap-1.5">
+                        <span class="font-semibold text-white text-sm flex-1 min-w-0 truncate cursor-pointer" onclick="openModal('${a._id}')">${escHtml(a.nombre || '—')}</span>
+                        <span class="text-xs px-2 py-0.5 rounded font-semibold badge-${a.estado} shrink-0 cursor-pointer" onclick="openModal('${a._id}')">${estadoLabel(a.estado)}</span>
+                        <button onclick="event.stopPropagation(); borrarUno('${a._id}', '${escHtml(a.nombre || '')}')"
+                            class="shrink-0 px-2 py-1 bg-red-900/60 hover:bg-red-700 text-red-300 hover:text-white text-xs rounded-lg border border-red-800 transition-colors" title="Eliminar">
+                            <i class="fas fa-trash-alt"></i>
+                        </button>
                     </div>
-                    <div>
-                        <div class="font-semibold text-white text-sm">${escHtml(a.nombre || '—')}</div>
-                        <div class="text-xs text-gray-400">${escHtml(a.provincia || a.ciudad || '—')}${a.provincia && a.ciudad ? ` · ${escHtml(a.ciudad)}` : ''} ${a.edad ? `· ${a.edad} años` : ''}</div>
+                    <!-- Fila 2: ciudad + edad + teléfono -->
+                    <div class="text-xs text-gray-400 truncate mt-0.5 cursor-pointer" onclick="openModal('${a._id}')">
+                        ${escHtml(a.provincia || a.ciudad || '—')}${a.provincia && a.ciudad ? ` · ${escHtml(a.ciudad)}` : ''} ${a.edad ? `· ${a.edad} años` : ''}
+                        <span class="hidden sm:inline text-gray-500"> · ${escHtml(a.telefono || '—')}</span>
                     </div>
-                </div>
-                <div class="flex flex-wrap items-center gap-3">
-                    <span class="font-mono text-sm text-gray-300" onclick="openModal('${a._id}')" style="cursor:pointer">${escHtml(a.telefono || '—')}</span>
-                    ${a.video_url ? `<a href="${escHtml(a.video_url)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" class="text-xs bg-red-900/50 text-red-300 px-2 py-1 rounded border border-red-800 hover:bg-red-800 transition-colors"><i class="fab fa-youtube mr-1"></i>Video</a>` : ''}
-                    <span class="text-xs px-2 py-1 rounded font-semibold badge-${a.estado}" onclick="openModal('${a._id}')" style="cursor:pointer">${estadoLabel(a.estado)}</span>
-                    ${a.estadoPago === 'pagado'  ? `<span class="text-xs px-2 py-1 rounded font-semibold bg-green-900 text-green-300 border border-green-700">✅ Pagado</span>` : ''}
-                    ${a.estadoPago === 'enviado' ? `<span class="text-xs px-2 py-1 rounded font-semibold bg-amber-900 text-amber-300 border border-amber-700">💰 Comprobante</span>` : ''}
-                    ${a.comprobante_url ? `<a href="${escHtml(a.comprobante_url)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" class="text-xs bg-sky-900/60 hover:bg-sky-800 text-sky-300 px-2 py-1 rounded border border-sky-700 transition-colors" title="Ver comprobante de pago"><i class="fas fa-file-image mr-1"></i>Ver pago</a>` : ''}
-                    <span class="text-xs text-gray-500" onclick="openModal('${a._id}')" style="cursor:pointer">${formatDate(a.fecha)}</span>
-                    <button onclick="event.stopPropagation(); borrarUno('${a._id}', '${escHtml(a.nombre || '')}')" 
-                        class="px-2 py-1 bg-red-900/60 hover:bg-red-700 text-red-300 hover:text-white text-xs rounded-lg border border-red-800 transition-colors" title="Eliminar">
-                        <i class="fas fa-trash-alt"></i>
-                    </button>
+                    <!-- Fila 3: progreso + badges extra -->
+                    <div class="flex flex-wrap items-center gap-1.5 mt-1.5">
+                        ${miniProgress(a)}
+                        ${a.video_url ? `<a href="${escHtml(a.video_url)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" class="text-xs bg-red-900/50 text-red-300 px-2 py-0.5 rounded border border-red-800 hover:bg-red-800 transition-colors" title="Ver video link"><i class="fab fa-youtube mr-1"></i>Link</a>` : ''}
+                        ${a.video_subido ? `<span onclick="openModal('${a._id}')" class="text-xs bg-purple-900/50 text-purple-300 px-2 py-0.5 rounded border border-purple-800 cursor-pointer" title="Video subido directo"><i class="fas fa-video mr-1"></i>Video</span>` : ''}
+                        ${a.estadoPago === 'pagado'  ? `<span class="text-xs px-2 py-0.5 rounded font-semibold bg-green-900 text-green-300 border border-green-700">✅ Pagado</span>` : `<button onclick="event.stopPropagation(); marcarPagado('${a._id}', '${escHtml(a.nombre||'')}') " class="text-xs px-2 py-0.5 rounded font-semibold bg-gray-800 text-amber-400 border border-amber-800 hover:bg-amber-900 transition-colors" title="Marcar como pagado">💵 Pagado?</button>`}
+                        ${a.estadoPago === 'enviado' ? `<span class="text-xs px-2 py-0.5 rounded font-semibold bg-amber-900 text-amber-300 border border-amber-700">💰 Comprobante</span>` : ''}
+                        ${a.notas ? `<span class="text-xs text-indigo-400" title="${escHtml(a.notas)}"><i class="fas fa-sticky-note"></i></span>` : ''}
+                        <span class="text-xs text-gray-500 hidden md:inline cursor-pointer" onclick="openModal('${a._id}')">${formatDate(a.fecha)}</span>
+                    </div>
                 </div>
             </div>
         `).join('');
@@ -385,7 +607,18 @@
         // WhatsApp link directo (texto libre)
         const waMsg  = encodeURIComponent(`Hola ${a.nombre || ''}! Te contactamos de VYT MUSIC por tu audición web 🎤`);
         const phone  = (a.telefono || '').replace(/\D/g, '');
-        document.getElementById('modal-whatsapp').href = `https://wa.me/${phone}?text=${waMsg}`;
+        const waEl   = document.getElementById('modal-whatsapp');
+        waEl.href    = `https://wa.me/${phone}?text=${waMsg}`;
+        // Marcar como contactado sin bloquear el link (fire-and-forget para no romper popup en móvil)
+        waEl.onclick = function() {
+            const estadoActual = currentAudicion?.estado;
+            const estadosFijos = ['aceptado', 'rechazado'];
+            if (selectedDocId && !estadosFijos.includes(estadoActual) && currentAudicion?.estadoPago !== 'pagado') {
+                updateDoc(doc(db, 'audiciones', selectedDocId), { estado: 'contactado' })
+                    .catch(e => console.warn('Error al marcar contactado:', e));
+            }
+            // No preventDefault — el link abre normalmente
+        };
 
         // ── Sección de pago ──
         const pagoSection  = document.getElementById('modal-pago-section');
@@ -419,6 +652,10 @@
         }
 
         document.getElementById('detail-modal').classList.remove('hidden');
+
+        // Cargar notas internas
+        const notasEl = document.getElementById('modal-notas');
+        if (notasEl) notasEl.value = a.notas || '';
     };
 
     window.closeModal = function() {
@@ -582,6 +819,68 @@
     };
 
     // ── Confirmar pago de inscripción ──
+    // ── Marcar pagado directamente (transferencia directa) ──
+    window.marcarPagado = async function(id, nombre) {
+        if (!confirm(`¿Marcar a ${nombre} como pagado?\n\nUsá esto cuando el artista pagó por transferencia directa.`)) return;
+        try {
+            await updateDoc(doc(db, 'audiciones', id), { estadoPago: 'pagado', estado: 'aceptado' });
+        } catch(e) { alert('Error: ' + e.message); }
+    };
+
+    // ── Difusión WhatsApp ──
+    let waContactos = [];
+    let waIdx = 0;
+
+    window.abrirDifusionWA = function() {
+        const seleccionados = allData.filter(d => selectedIds.has(d._id));
+        if (seleccionados.length === 0) { alert('Seleccioná al menos un artista primero.'); return; }
+        waContactos = seleccionados.map(d => ({ nombre: d.nombre || '', telefono: (d.telefono || '').replace(/\D/g,'') }));
+        waIdx = 0;
+        const lista = document.getElementById('wa-difusion-lista');
+        lista.innerHTML = waContactos.map(c => `
+            <div class="flex items-center gap-2 py-0.5">
+                <span class="text-green-400 text-xs font-mono w-28 shrink-0">${c.telefono || '<span class="text-red-400">sin número</span>'}</span>
+                <span class="text-gray-300 text-sm truncate">${escHtml(c.nombre)}</span>
+            </div>
+        `).join('');
+        document.getElementById('btn-enviar-wa-label').textContent = `Enviar (1 de ${waContactos.length})`;
+        if (!document.getElementById('wa-difusion-msg').value.trim()) {
+            document.getElementById('wa-difusion-msg').value = `Hola {nombre}! 🎤 Te escribimos de VYT MUSIC.\n\nQueríamos avisarte que...`;
+        }
+        const m = document.getElementById('modal-difusion');
+        m.classList.remove('hidden');
+        m.classList.add('flex');
+    };
+
+    window.cerrarDifusionWA = function() {
+        const m = document.getElementById('modal-difusion');
+        m.classList.add('hidden');
+        m.classList.remove('flex');
+        waIdx = 0;
+    };
+
+    window.enviarSiguienteWA = function() {
+        const template = document.getElementById('wa-difusion-msg').value.trim();
+        if (!template) { alert('Escribí un mensaje primero.'); return; }
+        const total = waContactos.length;
+        if (waIdx >= total) { document.getElementById('btn-enviar-wa-label').textContent = '✅ Todos abiertos'; return; }
+        const c = waContactos[waIdx];
+        if (!c.telefono) { waIdx++; window.enviarSiguienteWA(); return; }
+        const msg = template.replace(/\{nombre\}/gi, c.nombre);
+        window.open(`https://wa.me/${c.telefono}?text=${encodeURIComponent(msg)}`, '_blank');
+        waIdx++;
+        const label = document.getElementById('btn-enviar-wa-label');
+        label.textContent = waIdx < total ? `Enviar (${waIdx + 1} de ${total})` : '✅ Todos abiertos';
+    };
+
+    window.copiarNumerosWA = function() {
+        const numeros = waContactos.filter(c => c.telefono).map(c => c.telefono).join('\n');
+        if (!numeros) { alert('Ninguno tiene número de teléfono cargado.'); return; }
+        navigator.clipboard.writeText(numeros).then(() => {
+            alert(`✅ ${waContactos.filter(c=>c.telefono).length} número(s) copiados al portapapeles.\n\nPasate al celular, abrí WhatsApp → Nueva lista de difusión → Pegá los números.`);
+        }).catch(() => { prompt('Copiá los números:', numeros); });
+    };
+
     window.confirmarPagoInscripcion = async function() {
         if (!selectedDocId || !currentAudicion) return;
         const a     = currentAudicion;
@@ -616,7 +915,15 @@
         if (a.video_url)
             return `<div class="mt-3"><span class="text-gray-500 text-xs block mb-1">🎬 Video:</span><a href="${escHtml(a.video_url)}" target="_blank" rel="noopener noreferrer" class="text-sky-400 text-sm break-all hover:underline">${escHtml(a.video_url)}</a></div>`;
         if (a.video_subido)
-            return `<div class="mt-3"><span class="text-gray-500 text-xs block mb-1">📱 Video subido:</span><video controls preload="metadata" class="w-full rounded-lg mt-1 max-h-52" src="${escHtml(a.video_subido)}"></video><p class="text-xs text-gray-500 mt-1">💡 El video solo se carga cuando le des play</p></div>`;
+            return `<div class="mt-3">
+                <span class="text-gray-500 text-xs block mb-1">📱 Video subido por el artista:</span>
+                <a href="${escHtml(a.video_subido)}" target="_blank" rel="noopener noreferrer"
+                   class="flex items-center justify-center gap-3 w-full py-4 rounded-xl font-bold text-white text-base mt-1"
+                   style="background:linear-gradient(135deg,#7c3aed,#4f46e5);">
+                    <i class="fas fa-play-circle text-2xl"></i> Ver video del artista
+                </a>
+                <p class="text-xs text-gray-500 mt-1 text-center">Se abre en el reproductor del dispositivo — instantáneo ⚡</p>
+            </div>`;
         return '';
     }
 
@@ -675,6 +982,31 @@
                 <p class="text-xs text-gray-500 mt-2">Verificá las reglas de Firestore en la consola de Firebase.</p>
             </div>`;
     });
+
+    // ── Listener admin_notifications para nuevas inscripciones ──
+    // Detecta cuando otro panel (o funciones backend) registra una nueva audición
+    {
+        const notifQ = query(
+            collection(db, 'admin_notifications'),
+            where('type', '==', 'nueva_inscripcion'),
+            where('read', '==', false),
+            orderBy('createdAt', 'desc'),
+            limit(5)
+        );
+        let notifFirstLoad = true;
+        onSnapshot(notifQ, snap => {
+            if (notifFirstLoad) { notifFirstLoad = false; return; }
+            snap.docChanges().forEach(ch => {
+                if (ch.type === 'added') {
+                    const d = ch.doc.data();
+                    // Solo mostrar si el onSnapshot local no la alcanzó primero (caché vs servidor)
+                    notificarNuevoInscripto(d.nombre || 'Nuevo artista');
+                    // Marcar como leída para no repetir
+                    updateDoc(doc(db, 'admin_notifications', ch.doc.id), { read: true }).catch(() => {});
+                }
+            });
+        }, () => {/* silenciar errores de permisos */});
+    }
 </script>
 
 </body>

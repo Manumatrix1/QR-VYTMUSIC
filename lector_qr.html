@@ -1,0 +1,655 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>📷 Lector QR - VYTMUSIC</title>
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background: #000;
+            color: #fff;
+            overflow: hidden;
+            height: 100dvh;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+
+        /* ── Barra superior ── */
+        .top-bar {
+            position: fixed; top: 0; left: 0; right: 0; z-index: 200;
+            background: rgba(0, 0, 0, 0.88);
+            backdrop-filter: blur(12px);
+            border-bottom: 3px solid #0ea5e9;
+            padding: 14px 16px;
+            display: flex; align-items: center; justify-content: center;
+            gap: 12px;
+        }
+
+        .back-btn {
+            position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
+            background: rgba(59,130,246,0.25); color: #60a5fa;
+            padding: 9px 14px; border: 2px solid #3b82f6; border-radius: 8px;
+            font-size: 1.1rem; font-weight: 800; cursor: pointer;
+            text-decoration: none;
+        }
+
+        .counter-wrap { text-align: center; }
+        .counter-num {
+            font-size: 2.6rem; font-weight: 900; color: #0ea5e9;
+            text-shadow: 0 0 18px rgba(14,165,233,0.55);
+            line-height: 1;
+        }
+        .counter-lbl { font-size: 0.75rem; color: #9ca3af; text-transform: uppercase; margin-top: 3px; }
+
+        .status-badge {
+            position: absolute; right: 14px; top: 50%; transform: translateY(-50%);
+            padding: 8px 12px; border-radius: 8px; font-size: 0.8rem; font-weight: 700;
+            background: rgba(16,185,129,0.25); border: 2px solid #10b981; color: #10b981;
+        }
+
+        /* ── Línea de escaneo — pantalla completa ── */
+        /* Sin recuadro: toda la pantalla lee QR */
+        .scan-line-full {
+            position: fixed;
+            left: 0; right: 0; height: 2px;
+            background: linear-gradient(90deg, transparent 0%, #0ea5e9 30%, #38bdf8 50%, #0ea5e9 70%, transparent 100%);
+            z-index: 60;
+            pointer-events: none;
+            animation: scanLineFull 2.2s ease-in-out infinite;
+            opacity: 0.7;
+        }
+        @keyframes scanLineFull {
+            0%   { top: 8vh;  opacity: 0; }
+            8%   { opacity: .8; }
+            92%  { opacity: .8; }
+            100% { top: 92vh; opacity: 0; }
+        }
+
+        /* ── Texto de ayuda ── */
+        .scan-hint {
+            position: fixed;
+            bottom: 86px;
+            left: 50%; transform: translateX(-50%);
+            color: rgba(255,255,255,0.5); font-size: 0.78rem;
+            text-align: center; z-index: 70; white-space: nowrap;
+            pointer-events: none;
+        }
+
+        /* ── Resultado de escaneo — banner rápido (cámara siempre visible) ── */
+        .result-banner {
+            position: fixed; left: 0; right: 0; z-index: 500;
+            padding: 0 16px;
+            pointer-events: none;
+            /* Aparece debajo de la barra de debug */
+            top: 96px;
+        }
+        .result-inner {
+            border-radius: 16px;
+            padding: 18px 20px;
+            display: flex; align-items: center; gap: 16px;
+            animation: bannerPop .8s ease-out forwards;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+        }
+        .result-ok   { background: linear-gradient(135deg, #059669, #10b981); }
+        .result-warn { background: linear-gradient(135deg, #b45309, #f59e0b); }
+        .result-err  { background: linear-gradient(135deg, #b91c1c, #ef4444); }
+        @keyframes bannerPop {
+            0%   { opacity: 0; transform: scale(.92) translateY(-8px); }
+            15%  { opacity: 1; transform: scale(1.02) translateY(0); }
+            75%  { opacity: 1; transform: scale(1); }
+            100% { opacity: 0; transform: translateY(-8px); }
+        }
+        .result-icon { font-size: 2.8rem; line-height: 1; flex-shrink: 0; }
+        .result-text { flex: 1; }
+        .result-title { font-size: 1.5rem; font-weight: 900; line-height: 1.1; }
+        .result-name  { font-size: 1rem; opacity: .9; margin-top: 3px; }
+
+        /* ── Barra inferior ── */
+        .bottom-bar {
+            position: fixed; bottom: 0; left: 0; right: 0; z-index: 200;
+            background: rgba(0,0,0,0.88); backdrop-filter: blur(10px);
+            border-top: 2px solid #374151;
+            padding: 12px 16px;
+            display: flex; gap: 10px;
+        }
+        .btn {
+            flex: 1; padding: 17px; border: none; border-radius: 12px;
+            font-weight: 900; font-size: 0.95rem; cursor: pointer;
+            transition: all .2s; text-transform: uppercase;
+        }
+        .btn:active { transform: scale(.95); }
+        .btn-torch {
+            background: linear-gradient(135deg, #f59e0b, #d97706);
+            color: #fff;
+        }
+        .btn-torch.on {
+            background: linear-gradient(135deg, #fbbf24, #f59e0b);
+            box-shadow: 0 0 24px rgba(251,191,36,.7);
+        }
+        .btn-back {
+            background: linear-gradient(135deg, #6b7280, #4b5563);
+            color: #fff; flex: 2;
+        }
+
+        /* ── Indicador de escaneo activo ── */
+        .scan-dot {
+            position: fixed;
+            top: 14px; left: 50%; transform: translateX(-50%);
+            width: 8px; height: 8px; border-radius: 50%;
+            background: #0ea5e9;
+            z-index: 210;
+            pointer-events: none;
+            transition: opacity .1s;
+        }
+        .loading-overlay {
+            position: fixed; inset: 0; z-index: 999;
+            background: #000;
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            gap: 20px;
+        }
+        .loading-spinner {
+            width: 60px; height: 60px; border-radius: 50%;
+            border: 5px solid #1f2937;
+            border-top-color: #0ea5e9;
+            animation: spin .8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .loading-txt { color: #9ca3af; font-size: 1rem; }
+
+        /* ── Error de cámara ── */
+        .cam-error {
+            display: none;
+            position: fixed; inset: 0; z-index: 998;
+            background: #0f172a;
+            flex-direction: column; align-items: center; justify-content: center;
+            gap: 16px; padding: 40px; text-align: center;
+        }
+        .cam-error.show { display: flex; }
+        .cam-error h2 { font-size: 1.8rem; color: #ef4444; }
+        .cam-error p  { color: #9ca3af; font-size: 1rem; line-height: 1.6; }
+        .cam-error .btn-retry {
+            padding: 16px 32px; background: #0ea5e9; color: #fff;
+            border: none; border-radius: 12px; font-size: 1rem; font-weight: 800;
+            cursor: pointer; margin-top: 8px;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Indicador de escaneo activo -->
+    <div class="scan-dot" id="scan-dot"></div>
+
+    <!-- Overlay de carga -->
+    <div class="loading-overlay" id="loading-overlay">
+        <div class="loading-spinner"></div>
+        <div class="loading-txt" id="loading-txt">Iniciando cámara…</div>
+    </div>
+
+    <!-- Error de cámara -->
+    <div class="cam-error" id="cam-error">
+        <h2>📷 Sin acceso a la cámara</h2>
+        <p id="cam-error-msg">Permití el acceso a la cámara e intentá de nuevo.</p>
+        <button class="btn-retry" id="btn-retry">🔄 Reintentar</button>
+        <a id="back-on-error" href="#" style="color:#60a5fa; font-size:0.95rem; margin-top:8px;">← Volver al panel</a>
+    </div>
+
+    <!-- Barra superior -->
+    <div class="top-bar">
+        <a id="back-link" href="#" class="back-btn">← Volver</a>
+        <div class="counter-wrap">
+            <div class="counter-num" id="counter">0</div>
+            <div class="counter-lbl">✅ Ingresaron</div>
+        </div>
+        <div class="status-badge" id="status-badge">🟢 Online</div>
+    </div>
+
+    <!-- Cámara directa (video + canvas oculto para procesamiento) -->
+    <video id="qr-video" playsinline muted autoplay
+           style="position:fixed;top:0;left:0;width:100vw;height:100vh;object-fit:cover;z-index:1;background:#000;"></video>
+    <canvas id="qr-canvas" style="display:none;"></canvas>
+
+    <!-- Barra de debug (pequeña, discreta) -->
+    <div id="debug-bar" style="
+        position:fixed; bottom:72px; left:0; right:0; z-index:201;
+        color:rgba(255,255,255,0.35);
+        font-size:0.6rem; font-family:monospace;
+        padding:3px 8px; text-align:center;
+        pointer-events:none;
+    ">⏳</div>
+
+    <!-- Línea de escaneo pantalla completa -->
+    <div class="scan-line-full"></div>
+
+    <div class="scan-hint">Apuntá cualquier QR a la pantalla</div>
+
+    <!-- Barra inferior -->
+    <div class="bottom-bar">
+        <button class="btn btn-torch hidden" id="btn-torch">🔦 Linterna</button>
+        <a id="btn-back" href="#" class="btn btn-back" style="display:flex; align-items:center; justify-content:center; text-decoration:none;">
+            ← Ingreso Manual
+        </a>
+    </div>
+
+    <!-- jsQR: fallback ultrarrápido para iOS/Safari -->
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+
+    <script type="module">
+        import { db } from './firebase_config.js';
+        import {
+            collection, doc, updateDoc, onSnapshot
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // ── Parámetros URL ──────────────────────────────────────
+        const urlParams = new URLSearchParams(window.location.search);
+        const eventId   = urlParams.get('eventId');
+        const eventName = urlParams.get('eventName') || 'Evento';
+        const backUrl   = `ingreso_evento.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`;
+        const manualUrl = `ingreso_manual.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`;
+
+        if (!eventId) {
+            // Mostrar selector de evento en lugar de redirigir con error
+            document.getElementById('loading-overlay').style.display = 'none';
+            const selectorDiv = document.createElement('div');
+            selectorDiv.style.cssText = 'position:fixed;inset:0;background:#111827;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:2rem;z-index:9999;color:white;';
+            selectorDiv.innerHTML = `
+                <div style="max-width:400px;width:100%;text-align:center;">
+                    <div style="font-size:3rem;margin-bottom:1rem;">📷</div>
+                    <h1 style="font-size:1.5rem;font-weight:bold;margin-bottom:0.5rem;">Lector QR — VYT MUSIC</h1>
+                    <p style="color:#9ca3af;margin-bottom:2rem;font-size:0.9rem;">Ingresá el ID del evento para abrir el escáner</p>
+                    <input id="evt-input" type="text" placeholder="ID del evento (ej: gala1_gen13)"
+                        style="width:100%;padding:0.75rem 1rem;border-radius:0.75rem;border:2px solid #374151;background:#1f2937;color:white;font-size:1rem;margin-bottom:1rem;outline:none;"
+                        autocomplete="off" autocorrect="off" spellcheck="false">
+                    <button onclick="
+                        const val = document.getElementById('evt-input').value.trim();
+                        if (!val) { document.getElementById('evt-input').style.borderColor='#ef4444'; return; }
+                        window.location.href = 'lector_qr.html?eventId=' + encodeURIComponent(val);
+                    " style="width:100%;padding:0.875rem;border-radius:0.75rem;background:#10b981;color:white;font-weight:bold;font-size:1.1rem;border:none;cursor:pointer;">
+                        📷 Abrir escáner
+                    </button>
+                    <p style="color:#6b7280;font-size:0.75rem;margin-top:1.5rem;">
+                        Pedile a la organización el link completo con el ID de la gala.
+                    </p>
+                </div>`;
+            document.body.appendChild(selectorDiv);
+            throw new Error('eventId requerido'); // detiene el resto del script
+        }
+
+        document.getElementById('back-link').href     = backUrl;
+        document.getElementById('btn-back').href      = manualUrl;
+        document.getElementById('back-on-error').href = backUrl;
+
+        // ── Estado ──────────────────────────────────────────────
+        const state = {
+            tickets:      new Map(),
+            counter:      0,
+            stream:       null,
+            torchOn:      false,
+            isOnline:     navigator.onLine,
+            syncQueue:    [],
+            lastScanCode: '',
+            lastScanTs:   0,
+            scanning:     false,
+            animFrameId:  null,
+            unsubscribe:  null,
+        };
+
+        // ── UI refs ─────────────────────────────────────────────
+        const elCounter     = document.getElementById('counter');
+        const elBadge       = document.getElementById('status-badge');
+        const elBtnTorch    = document.getElementById('btn-torch');
+        const elLoading     = document.getElementById('loading-overlay');
+        const elLoadingTxt  = document.getElementById('loading-txt');
+        const elCamError    = document.getElementById('cam-error');
+        const elCamErrorMsg = document.getElementById('cam-error-msg');
+        const elDebug       = document.getElementById('debug-bar');
+        const video         = document.getElementById('qr-video');
+        const canvas        = document.getElementById('qr-canvas');
+        const ctx           = canvas.getContext('2d', { willReadFrequently: true });
+
+        function dbg(msg) { if (elDebug) elDebug.textContent = msg; }
+
+        // ── Conexión ────────────────────────────────────────────
+        function updateBadge() {
+            if (state.isOnline) {
+                elBadge.style.cssText = 'background:rgba(16,185,129,.25);border:2px solid #10b981;color:#10b981;';
+                elBadge.textContent = '🟢 Online';
+            } else {
+                elBadge.style.cssText = 'background:rgba(239,68,68,.25);border:2px solid #ef4444;color:#ef4444;';
+                elBadge.textContent = `🔴 Offline${state.syncQueue.length ? ` (${state.syncQueue.length})` : ''}`;
+            }
+        }
+        window.addEventListener('online',  () => { state.isOnline = true;  updateBadge(); flushQueue(); });
+        window.addEventListener('offline', () => { state.isOnline = false; updateBadge(); });
+
+        // ── Tickets en tiempo real ──────────────────────────────
+        async function loadTickets() {
+            const cached = localStorage.getItem(`tickets_${eventId}`);
+            if (cached) {
+                try { JSON.parse(cached).forEach(t => state.tickets.set(t.id, t)); } catch {}
+                refreshCounter();
+            }
+            const ref = collection(db, `events/${eventId}/tickets`);
+            state.unsubscribe = onSnapshot(ref,
+                snap => {
+                    snap.docChanges().forEach(change => {
+                        const d = change.doc.data();
+                        const t = { id: change.doc.id, name: d.name || 'Sin nombre',
+                                    ticketNumberFormatted: d.ticketNumberFormatted || null,
+                                    used: d.used || false, ...d };
+                        change.type !== 'removed' ? state.tickets.set(t.id, t) : state.tickets.delete(t.id);
+                    });
+                    refreshCounter();
+                    dbg(`✅ ${state.tickets.size} tickets cargados | método: ${barcodeDetector ? 'BarcodeDetector' : 'jsQR'}`);
+                    localStorage.setItem(`tickets_${eventId}`, JSON.stringify([...state.tickets.values()]));
+                },
+                () => { state.isOnline = false; updateBadge(); }
+            );
+        }
+
+        function refreshCounter() {
+            state.counter = [...state.tickets.values()].filter(t => t.used).length;
+            elCounter.textContent = state.counter;
+        }
+
+        // ── Cola offline ────────────────────────────────────────
+        async function flushQueue() {
+            if (!state.isOnline || !state.syncQueue.length) return;
+            const pending = [...state.syncQueue];
+            state.syncQueue = [];
+            for (const item of pending) {
+                try {
+                    await updateDoc(doc(db, `events/${eventId}/tickets`, item.ticketId), item.data);
+                } catch {
+                    state.syncQueue.push(item);
+                }
+            }
+            localStorage.setItem(`syncQueue_${eventId}`, JSON.stringify(state.syncQueue));
+            updateBadge();
+        }
+
+        // ── Audio / vibración ───────────────────────────────────
+        function beep(freq, dur) {
+            try {
+                const ctx2 = new (window.AudioContext || window.webkitAudioContext)();
+                const osc  = ctx2.createOscillator();
+                const gain = ctx2.createGain();
+                osc.connect(gain); gain.connect(ctx2.destination);
+                osc.frequency.value = freq; osc.type = 'sine';
+                gain.gain.setValueAtTime(.3, ctx2.currentTime);
+                gain.gain.exponentialRampToValueAtTime(.01, ctx2.currentTime + dur / 1000);
+                osc.start(ctx2.currentTime); osc.stop(ctx2.currentTime + dur / 1000);
+            } catch {}
+        }
+        function vibrate(p) { try { navigator.vibrate?.(p); } catch {} }
+
+        // ── Banner de resultado (no tapa la cámara, dura 0.8s) ──────────
+        function flash(type, name, detail) {
+            const cls   = { success:'result-ok', warning:'result-warn', error:'result-err' };
+            const icons = { success:'✅', warning:'⚠️', error:'❌' };
+            document.querySelectorAll('.result-banner').forEach(e => e.remove());
+            const wrap = document.createElement('div');
+            wrap.className = 'result-banner';
+            wrap.innerHTML = `<div class="result-inner ${cls[type]}">
+                <div class="result-icon">${icons[type]}</div>
+                <div class="result-text">
+                    <div class="result-title">${name}</div>
+                    <div class="result-name">${detail}</div>
+                </div>
+            </div>`;
+            document.body.appendChild(wrap);
+            if (type === 'success') { beep(820,80);  vibrate([40,20,80]); }
+            if (type === 'warning') { beep(500,120); vibrate([100,40,100]); }
+            if (type === 'error')   { beep(320,180); vibrate([180,60,180]); }
+            setTimeout(() => wrap.remove(), 800);
+        }
+
+        // ── Procesar código escaneado (QR o código de barras) ──────────
+        async function handleScan(rawText) {
+            if (!rawText) return;
+            const now = Date.now();
+            if (rawText === state.lastScanCode && now - state.lastScanTs < 2500) return;
+            state.lastScanCode = rawText;
+            state.lastScanTs   = now;
+
+            // Extraer ticketId: puede venir como URL (?ticket=ID) o como ID directo (cód. barras)
+            let ticketId = rawText.trim();
+            try {
+                const url = new URL(rawText);
+                const fromUrl = url.searchParams.get('ticket');
+                if (fromUrl) ticketId = fromUrl;
+            } catch {}
+
+            let ticket = state.tickets.get(ticketId);
+
+            // Fallback: el código de barras reemplaza tildes/especiales con '_'
+            // Si no encontró directamente, buscar normalizando IDs
+            if (!ticket) {
+                const norm = (s) => s.replace(/[^\x00-\x7F]/g, '_');
+                const normId = norm(ticketId);
+                for (const [id, t] of state.tickets) {
+                    if (norm(id) === normId) { ticket = t; ticketId = id; break; }
+                }
+            }
+
+            if (!ticket) { flash('error', '❌ NO ENCONTRADO', 'Este código no está en la lista'); return; }
+            if (ticket.used) { flash('warning', '⚠️ YA INGRESÓ', ticket.name); return; }
+
+            ticket.used   = true;
+            ticket.usedAt = new Date().toISOString();
+            state.tickets.set(ticketId, ticket);
+            refreshCounter();
+            localStorage.setItem(`tickets_${eventId}`, JSON.stringify([...state.tickets.values()]));
+
+            flash('success', '✅ INGRESADO',
+                ticket.name + (ticket.ticketNumberFormatted ? `  — Nº${ticket.ticketNumberFormatted}` : ''));
+
+            const payload = { used: true, usedAt: ticket.usedAt };
+            if (state.isOnline) {
+                try { await updateDoc(doc(db, `events/${eventId}/tickets`, ticketId), payload); }
+                catch { state.syncQueue.push({ ticketId, data: payload }); updateBadge(); }
+            } else {
+                state.syncQueue.push({ ticketId, data: payload });
+                localStorage.setItem(`syncQueue_${eventId}`, JSON.stringify(state.syncQueue));
+                updateBadge();
+            }
+        }
+
+        // ── Detección: BarcodeDetector (Android) + jsQR (iOS/fallback) ──
+        let barcodeDetector = null;
+        if ('BarcodeDetector' in window) {
+            try { barcodeDetector = new BarcodeDetector({ formats: ['qr_code', 'code_128'] }); } catch {}
+        }
+        const elScanDot = document.getElementById('scan-dot');
+        let frameCount = 0;
+        let isProcessing = false; // evita ejecuciones paralelas del loop
+
+        // ── Loop de escaneo ─────────────────────────────────────
+        function scheduleNext() {
+            setTimeout(() => {
+                if (state.scanning) state.animFrameId = requestAnimationFrame(scanLoop);
+            }, 80); // 12fps — suficiente para QR, no bloquea mobile
+        }
+
+        async function scanLoop() {
+            if (!state.scanning) return;
+            if (isProcessing) { scheduleNext(); return; } // no acumular llamadas
+            if (video.readyState < 2 || video.videoWidth === 0) { scheduleNext(); return; }
+
+            isProcessing = true;
+            frameCount++;
+
+            // Un solo tamaño — 480px es el mejor balance velocidad/detalle para jsQR en mobile
+            const scanW = 480;
+            const scanH = Math.round((video.videoHeight / video.videoWidth) * scanW) || 640;
+            if (canvas.width !== scanW || canvas.height !== scanH) {
+                canvas.width  = scanW;
+                canvas.height = scanH;
+            }
+            ctx.drawImage(video, 0, 0, scanW, scanH);
+
+            // Parpadeo dot
+            elScanDot.style.opacity = (frameCount % 2 === 0) ? '1' : '0.2';
+
+            try {
+                let raw = null;
+
+                if (barcodeDetector) {
+                    const results = await barcodeDetector.detect(canvas);
+                    if (results.length > 0) raw = results[0].rawValue;
+                }
+                if (!raw && window.jsQR) {
+                    const imgData = ctx.getImageData(0, 0, scanW, scanH);
+                    const code = window.jsQR(imgData.data, scanW, scanH, { inversionAttempts: 'attemptBoth' });
+                    if (code) raw = code.data;
+                }
+
+                if (raw) {
+                    dbg(`🔍 ${raw.substring(0, 55)}`);
+                    // Flash MP-style: border verde en video por 150ms
+                    video.style.outline = '6px solid #10b981';
+                    setTimeout(() => { video.style.outline = ''; }, 150);
+                    await handleScan(raw);
+                } else if (frameCount % 25 === 0) {
+                    const m = barcodeDetector ? 'BD+jsQR' : (window.jsQR ? 'jsQR' : '⚠️ sin librería');
+                    dbg(`frame ${frameCount} | ${state.tickets.size} tickets | ${m}`);
+                }
+            } catch(e) { dbg(`❌ ${e?.message}`); }
+
+            isProcessing = false;
+            scheduleNext();
+        }
+
+        // ── Iniciar cámara ──────────────────────────────────────
+        async function startCamera() {
+            elLoading.style.display = 'flex';
+            elLoadingTxt.textContent = 'Iniciando cámara…';
+            state.scanning = false;
+            if (state.animFrameId) cancelAnimationFrame(state.animFrameId);
+
+            // Detener stream anterior si existe
+            if (state.stream) {
+                state.stream.getTracks().forEach(t => t.stop());
+                state.stream = null;
+            }
+
+            // Constraints: forzar cámara TRASERA (exact, no ideal)
+            const constraints = {
+                video: {
+                    facingMode: { exact: 'environment' },
+                    width:  { ideal: 1280 },
+                    height: { ideal: 720 },
+                    frameRate: { ideal: 30 }
+                }
+            };
+
+            try {
+                state.stream = await navigator.mediaDevices.getUserMedia(constraints);
+            } catch {
+                // Si falla exact (algunos iOS no soportan exact), probar enumerando dispositivos
+                try {
+                    const devices = await navigator.mediaDevices.enumerateDevices();
+                    const videoDevices = devices.filter(d => d.kind === 'videoinput');
+                    // El último dispositivo de video suele ser la cámara trasera
+                    const rearDevice = videoDevices.find(d => /back|rear|environment/i.test(d.label))
+                                    || videoDevices[videoDevices.length - 1];
+                    const deviceId = rearDevice?.deviceId;
+                    state.stream = await navigator.mediaDevices.getUserMedia({
+                        video: deviceId
+                            ? { deviceId: { exact: deviceId }, width: { ideal: 1280 }, height: { ideal: 720 } }
+                            : { facingMode: 'environment' }
+                    });
+                } catch (err) {
+                    elLoading.style.display = 'none';
+                    elCamError.classList.add('show');
+                    const msg = err?.message || '';
+                    if (/permission|notallowed/i.test(msg))
+                        elCamErrorMsg.textContent = 'Permiso de cámara denegado. Habilitalo en Ajustes del navegador.';
+                    else if (/notfound|devicenotfound/i.test(msg))
+                        elCamErrorMsg.textContent = 'No se encontró ninguna cámara en este dispositivo.';
+                    else
+                        elCamErrorMsg.textContent = `Error: ${msg || 'desconocido'}. Intentá recargar la página.`;
+                    return;
+                }
+            }
+
+            video.srcObject = state.stream;
+
+            // Mostrar linterna: si el track la soporta O si es mobile (eventos son en lugares oscuros)
+            const track = state.stream.getVideoTracks()[0];
+            const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+            if (track) {
+                const caps = track.getCapabilities?.() || {};
+                if (caps.torch || isMobile) elBtnTorch.classList.remove('hidden');
+            }
+
+            // Toque en la pantalla: dispara autofoco puntual (útil al leer QR de otro celular)
+            video.addEventListener('click', async () => {
+                try {
+                    const t = state.stream?.getVideoTracks()[0];
+                    if (!t) return;
+                    await t.applyConstraints({ advanced: [{ focusMode: 'single-shot' }] });
+                    // volver a continuo después de 1 segundo
+                    setTimeout(() => {
+                        t.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(() => {});
+                    }, 1000);
+                } catch { /* el dispositivo no soporta control de foco — ignorar */ }
+            }, { once: false });
+
+            await new Promise(resolve => {
+                if (video.readyState >= 1) { video.play().then(resolve).catch(resolve); return; }
+                video.onloadedmetadata = () => { video.play().then(resolve).catch(resolve); };
+                setTimeout(resolve, 3000); // timeout de seguridad
+            });
+
+            elLoading.style.display = 'none';
+            state.scanning = true;
+            scanLoop();
+        }
+
+        // ── Linterna ────────────────────────────────────────────
+        elBtnTorch.addEventListener('click', async () => {
+            try {
+                const track = state.stream?.getVideoTracks()[0];
+                if (!track) return;
+                state.torchOn = !state.torchOn;
+                await track.applyConstraints({ advanced: [{ torch: state.torchOn }] });
+                elBtnTorch.classList.toggle('on', state.torchOn);
+                elBtnTorch.textContent = state.torchOn ? '🔦 Linterna ON' : '🔦 Linterna';
+            } catch {
+                elBtnTorch.classList.add('hidden');
+            }
+        });
+
+        // ── Reintentar ──────────────────────────────────────────
+        document.getElementById('btn-retry').addEventListener('click', () => {
+            elCamError.classList.remove('show');
+            startCamera();
+        });
+
+        // ── Limpieza ────────────────────────────────────────────
+        window.addEventListener('pagehide', () => {
+            state.scanning = false;
+            if (state.animFrameId) cancelAnimationFrame(state.animFrameId);
+            state.stream?.getTracks().forEach(t => t.stop());
+            state.unsubscribe?.();
+        });
+
+        // ── Cola pendiente del localStorage ─────────────────────
+        try {
+            const saved = localStorage.getItem(`syncQueue_${eventId}`);
+            if (saved) state.syncQueue = JSON.parse(saved);
+        } catch {}
+
+        // ── Arrancar ────────────────────────────────────────────
+        updateBadge();
+        await loadTickets();
+        await startCamera();
+        if (state.isOnline) flushQueue();
+
+    </script>
+</body>
+</html>

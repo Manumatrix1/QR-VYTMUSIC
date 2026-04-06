@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>📝 Ingreso Manual - VYTMUSIC</title>
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background: #0f172a;
+            color: #fff;
+            min-height: 100dvh;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+
+        /* ── Barra superior ── */
+        .top-bar {
+            position: sticky; top: 0; z-index: 100;
+            background: rgba(15,23,42,0.97);
+            backdrop-filter: blur(12px);
+            border-bottom: 3px solid #22c55e;
+            padding: 14px 16px;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .back-btn {
+            position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
+            background: rgba(59,130,246,0.2); color: #60a5fa;
+            padding: 9px 14px; border: 2px solid #3b82f6; border-radius: 8px;
+            font-size: 1.1rem; font-weight: 800; cursor: pointer;
+            text-decoration: none;
+        }
+        .counter-wrap { text-align: center; }
+        .counter-num {
+            font-size: 2.4rem; font-weight: 900; color: #22c55e;
+            text-shadow: 0 0 16px rgba(34,197,94,.5); line-height: 1;
+        }
+        .counter-lbl { font-size: 0.72rem; color: #9ca3af; text-transform: uppercase; margin-top: 3px; }
+        .status-badge {
+            position: absolute; right: 14px; top: 50%; transform: translateY(-50%);
+            padding: 7px 11px; border-radius: 8px; font-size: 0.78rem; font-weight: 700;
+            background: rgba(16,185,129,0.2); border: 2px solid #10b981; color: #10b981;
+        }
+
+        /* ── Búsqueda ── */
+        .search-section {
+            padding: 20px 16px 12px;
+        }
+        .search-title {
+            font-size: 1.1rem; font-weight: 800; color: #94a3b8;
+            text-transform: uppercase; letter-spacing: .05em;
+            margin-bottom: 14px; text-align: center;
+        }
+
+        .filter-row {
+            display: flex; gap: 8px; margin-bottom: 12px;
+        }
+        .filter-btn {
+            flex: 1; padding: 10px 8px; border: none; border-radius: 10px;
+            font-weight: 700; font-size: 0.85rem; cursor: pointer;
+            transition: all .2s;
+        }
+        .filter-btn.active-all    { background: #2563eb; color: #fff; }
+        .filter-btn.active-artist { background: #7c3aed; color: #fff; }
+        .filter-btn.inactive      { background: #1e293b; color: #94a3b8; border: 2px solid #334155; }
+
+        .search-wrap {
+            position: relative;
+        }
+        .search-icon {
+            position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
+            font-size: 1.2rem; pointer-events: none;
+        }
+        .search-input {
+            width: 100%; padding: 15px 15px 15px 44px;
+            border-radius: 12px; border: 2px solid #334155;
+            background: #1e293b; color: #fff;
+            font-size: 1.05rem;
+            transition: border-color .2s;
+        }
+        .search-input:focus { outline: none; border-color: #3b82f6; }
+        .search-input::placeholder { color: #64748b; }
+
+        /* ── Resultados ── */
+        .results-area {
+            padding: 0 16px 120px;
+        }
+
+        .result-card {
+            background: #1e293b; border-radius: 14px;
+            padding: 16px; margin-bottom: 10px;
+            cursor: pointer; transition: all .2s;
+            border: 2px solid transparent;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .result-card:active { transform: scale(.97); }
+        .result-card:hover  { background: #273449; border-color: #3b82f6; }
+        .result-card.used   {
+            background: #1a0a0a; border-color: #7f1d1d;
+            opacity: .65; cursor: not-allowed;
+        }
+
+        .result-top {
+            display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+        }
+        .ticket-num {
+            background: #fbbf24; color: #000;
+            padding: 3px 11px; border-radius: 6px;
+            font-weight: 900; font-size: 0.9rem; white-space: nowrap;
+        }
+        .result-name {
+            font-size: 1.15rem; font-weight: 800; flex: 1;
+        }
+        .artist-tag {
+            font-size: 0.8rem; color: #a78bfa; margin-top: 5px;
+        }
+        .result-id {
+            font-size: 0.72rem; color: #475569; font-family: monospace; margin-top: 4px;
+        }
+        .result-status {
+            margin-top: 8px; font-size: 0.85rem; font-weight: 700;
+        }
+        .status-ok    { color: #4ade80; }
+        .status-used  { color: #f87171; }
+
+        /* Grupo por artista */
+        .artist-group { margin-bottom: 18px; }
+        .artist-header {
+            background: rgba(124,58,237,.25);
+            border-left: 4px solid #7c3aed;
+            padding: 10px 14px; border-radius: 8px;
+            margin-bottom: 8px;
+        }
+        .artist-header-name { font-size: 1rem; font-weight: 900; color: #c4b5fd; }
+        .artist-header-sub  { font-size: 0.75rem; color: #8b5cf6; margin-top: 2px; }
+
+        /* Empty / hint */
+        .hint-box {
+            text-align: center; padding: 50px 20px; color: #475569;
+        }
+        .hint-box .hint-icon { font-size: 3.5rem; margin-bottom: 12px; }
+        .hint-box .hint-txt  { font-size: 1rem; }
+
+        /* ── Feedback flash ── */
+        .feedback-flash {
+            position: fixed; inset: 0; z-index: 500;
+            display: flex; align-items: center; justify-content: center;
+            animation: flashFade 1.1s ease-out forwards;
+            pointer-events: none;
+        }
+        .flash-success { background: rgba(16,185,129,.95); }
+        .flash-warning { background: rgba(245,158,11,.95); }
+        .flash-error   { background: rgba(239,68,68,.95); }
+        @keyframes flashFade {
+            0%   { opacity: 0; } 12%  { opacity: 1; }
+            88%  { opacity: 1; } 100% { opacity: 0; }
+        }
+        .feedback-content { text-align: center; max-width: 82%; }
+        .feedback-icon   { font-size: 4.5rem; margin-bottom: .8rem; animation: iconPop .3s ease-out; }
+        @keyframes iconPop { 0%{transform:scale(.5);} 70%{transform:scale(1.1);} 100%{transform:scale(1);} }
+        .feedback-name   { font-size: 1.8rem; font-weight: 900; margin-bottom: .4rem; }
+        .feedback-detail { font-size: 1.1rem; opacity: .9; }
+
+        /* ── Barra inferior fija ── */
+        .bottom-bar {
+            position: fixed; bottom: 0; left: 0; right: 0; z-index: 200;
+            background: rgba(15,23,42,.97); backdrop-filter: blur(10px);
+            border-top: 2px solid #1e293b;
+            padding: 12px 16px;
+            display: flex; gap: 10px;
+        }
+        .btn-bottom {
+            flex: 1; padding: 17px; border: none; border-radius: 12px;
+            font-weight: 900; font-size: 1rem; cursor: pointer;
+            transition: all .2s; text-transform: uppercase;
+            text-align: center; text-decoration: none;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .btn-bottom:active { transform: scale(.95); }
+        .btn-qr   { background: linear-gradient(135deg, #0ea5e9, #0284c7); color: #fff; }
+        .btn-back { background: #1e293b; color: #94a3b8; border: 2px solid #334155; flex: 1; }
+    </style>
+</head>
+<body>
+
+    <!-- Barra superior -->
+    <div class="top-bar">
+        <a id="back-link" href="#" class="back-btn">← Volver</a>
+        <div class="counter-wrap">
+            <div class="counter-num" id="counter">0</div>
+            <div class="counter-lbl">✅ Ingresaron</div>
+        </div>
+        <div class="status-badge" id="status-badge">🟢 Online</div>
+    </div>
+
+    <!-- Búsqueda -->
+    <div class="search-section">
+        <div class="search-title">📝 Ingreso Manual</div>
+
+        <div class="filter-row">
+            <button class="filter-btn active-all" id="filter-all">🔍 Todos</button>
+            <button class="filter-btn inactive"   id="filter-artist">🎤 Por Artista</button>
+        </div>
+
+        <div class="search-wrap">
+            <span class="search-icon">🔍</span>
+            <input type="text"
+                   class="search-input"
+                   id="search-input"
+                   placeholder="Nº entrada, nombre, artista, ID…"
+                   autocomplete="off"
+                   autocorrect="off"
+                   spellcheck="false">
+        </div>
+    </div>
+
+    <!-- Resultados -->
+    <div class="results-area" id="results-area">
+        <div class="hint-box">
+            <div class="hint-icon">🔍</div>
+            <div class="hint-txt">Escribí para buscar una entrada</div>
+        </div>
+    </div>
+
+    <!-- Barra inferior -->
+    <div class="bottom-bar">
+        <a id="btn-qr" href="#" class="btn-bottom btn-qr">📷 Escáner QR</a>
+        <a id="btn-back" href="#" class="btn-bottom btn-back">← Panel</a>
+    </div>
+
+    <script type="module">
+        import { db } from './firebase_config.js';
+        import {
+            collection, doc, updateDoc, onSnapshot
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // ── Parámetros URL ─────────────────────────────────────────────────────
+        const urlParams = new URLSearchParams(window.location.search);
+        const eventId   = urlParams.get('eventId');
+        const eventName = urlParams.get('eventName') || 'Evento';
+        const backUrl   = `ingreso_evento.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`;
+        const qrUrl     = `lector_qr.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`;
+
+        if (!eventId) {
+            alert('❌ No se especificó el evento');
+            window.location.href = 'eventos.html';
+        }
+
+        document.getElementById('back-link').href = backUrl;
+        document.getElementById('btn-back').href  = backUrl;
+        document.getElementById('btn-qr').href    = qrUrl;
+
+        // ── Estado ─────────────────────────────────────────────────────────────
+        const state = {
+            tickets:     new Map(),
+            counter:     0,
+            isOnline:    navigator.onLine,
+            syncQueue:   [],
+            searchMode:  'all', // 'all' | 'artist'
+            unsubscribe: null,
+        };
+
+        // ── UI refs ────────────────────────────────────────────────────────────
+        const elCounter     = document.getElementById('counter');
+        const elBadge       = document.getElementById('status-badge');
+        const elSearchInput = document.getElementById('search-input');
+        const elResults     = document.getElementById('results-area');
+        const elFilterAll   = document.getElementById('filter-all');
+        const elFilterArtist= document.getElementById('filter-artist');
+
+        // ── Conexión ───────────────────────────────────────────────────────────
+        function updateBadge() {
+            if (state.isOnline) {
+                elBadge.style.cssText = 'background:rgba(16,185,129,.2);border:2px solid #10b981;color:#10b981;';
+                elBadge.textContent = '🟢 Online';
+            } else {
+                const q = state.syncQueue.length;
+                elBadge.style.cssText = 'background:rgba(239,68,68,.2);border:2px solid #ef4444;color:#ef4444;';
+                elBadge.textContent = `🔴 Offline${q ? ` (${q})` : ''}`;
+            }
+        }
+        window.addEventListener('online',  () => { state.isOnline = true;  updateBadge(); flushQueue(); });
+        window.addEventListener('offline', () => { state.isOnline = false; updateBadge(); });
+
+        // ── Cargar tickets ─────────────────────────────────────────────────────
+        function refreshCounter() {
+            state.counter = [...state.tickets.values()].filter(t => t.used).length;
+            elCounter.textContent = state.counter;
+        }
+
+        async function loadTickets() {
+            const cached = localStorage.getItem(`tickets_${eventId}`);
+            if (cached) {
+                JSON.parse(cached).forEach(t => state.tickets.set(t.id, t));
+                refreshCounter();
+            }
+            const ref = collection(db, `events/${eventId}/tickets`);
+            state.unsubscribe = onSnapshot(ref,
+                (snap) => {
+                    snap.docChanges().forEach(change => {
+                        const d = change.doc.data();
+                        const t = {
+                            id: change.doc.id,
+                            name: d.name || 'Sin nombre',
+                            ticketNumber: d.ticketNumber || null,
+                            ticketNumberFormatted: d.ticketNumberFormatted || null,
+                            artistName: d.artistName || null,
+                            used: d.used || false,
+                            ...d
+                        };
+                        if (change.type !== 'removed') state.tickets.set(t.id, t);
+                        else state.tickets.delete(t.id);
+                    });
+                    refreshCounter();
+                    localStorage.setItem(`tickets_${eventId}`, JSON.stringify([...state.tickets.values()]));
+                    // Refrescar resultados si hay búsqueda activa
+                    if (elSearchInput.value.trim()) performSearch(elSearchInput.value);
+                },
+                () => { state.isOnline = false; updateBadge(); }
+            );
+        }
+
+        // ── Cola offline ───────────────────────────────────────────────────────
+        async function flushQueue() {
+            if (!state.isOnline || !state.syncQueue.length) return;
+            const pending = [...state.syncQueue];
+            state.syncQueue = [];
+            for (const item of pending) {
+                try {
+                    await updateDoc(doc(db, `events/${eventId}/tickets`, item.ticketId), item.data);
+                } catch {
+                    state.syncQueue.push(item);
+                }
+            }
+            localStorage.setItem(`syncQueue_${eventId}`, JSON.stringify(state.syncQueue));
+            updateBadge();
+        }
+
+        // ── Audio / vibración ──────────────────────────────────────────────────
+        function beep(freq, dur) {
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc = ctx.createOscillator(), gain = ctx.createGain();
+                osc.connect(gain); gain.connect(ctx.destination);
+                osc.frequency.value = freq; osc.type = 'sine';
+                gain.gain.setValueAtTime(.3, ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(.01, ctx.currentTime + dur / 1000);
+                osc.start(ctx.currentTime); osc.stop(ctx.currentTime + dur / 1000);
+            } catch { /* ignorar */ }
+        }
+
+        // ── Feedback flash ─────────────────────────────────────────────────────
+        function flash(type, name, detail) {
+            const cls   = { success:'flash-success', warning:'flash-warning', error:'flash-error' };
+            const icons = { success:'✅', warning:'⚠️', error:'❌' };
+            const el = document.createElement('div');
+            el.className = `feedback-flash ${cls[type]}`;
+            el.innerHTML = `<div class="feedback-content">
+                <div class="feedback-icon">${icons[type]}</div>
+                <div class="feedback-name">${name}</div>
+                <div class="feedback-detail">${detail}</div>
+            </div>`;
+            document.body.appendChild(el);
+            if (type === 'success') { beep(820,90);  navigator.vibrate?.([50,25,100]); }
+            if (type === 'warning') { beep(600,140); navigator.vibrate?.([130,50,130]); }
+            if (type === 'error')   { beep(380,200); navigator.vibrate?.([200,80,200,80,200]); }
+            setTimeout(() => el.remove(), 1100);
+        }
+
+        // ── Marcar ingreso ─────────────────────────────────────────────────────
+        async function markEntry(ticketId) {
+            const ticket = state.tickets.get(ticketId);
+            if (!ticket) { flash('error', 'NO ENCONTRADO', 'Ticket no existe'); return; }
+            if (ticket.used) { flash('warning', 'YA INGRESÓ', ticket.name); return; }
+
+            ticket.used   = true;
+            ticket.usedAt = new Date().toISOString();
+            state.tickets.set(ticketId, ticket);
+            refreshCounter();
+            localStorage.setItem(`tickets_${eventId}`, JSON.stringify([...state.tickets.values()]));
+
+            flash('success', ticket.name,
+                ticket.ticketNumberFormatted ? `Nº ${ticket.ticketNumberFormatted}` : 'Entrada registrada');
+
+            // Refrescar lista para mostrar el nuevo estado
+            if (elSearchInput.value.trim()) performSearch(elSearchInput.value);
+
+            const payload = { used: true, usedAt: ticket.usedAt };
+            if (state.isOnline) {
+                try {
+                    await updateDoc(doc(db, `events/${eventId}/tickets`, ticketId), payload);
+                } catch {
+                    state.syncQueue.push({ ticketId, data: payload });
+                    localStorage.setItem(`syncQueue_${eventId}`, JSON.stringify(state.syncQueue));
+                    updateBadge();
+                }
+            } else {
+                state.syncQueue.push({ ticketId, data: payload });
+                localStorage.setItem(`syncQueue_${eventId}`, JSON.stringify(state.syncQueue));
+                updateBadge();
+            }
+        }
+
+        // ── Búsqueda ───────────────────────────────────────────────────────────
+        function performSearch(query) {
+            const q = query.toLowerCase().trim();
+
+            if (!q) {
+                elResults.innerHTML = `<div class="hint-box"><div class="hint-icon">🔍</div><div class="hint-txt">Escribí para buscar una entrada</div></div>`;
+                return;
+            }
+
+            let results = [...state.tickets.values()];
+
+            if (state.searchMode === 'artist') {
+                results = results.filter(t => t.artistName && t.artistName.toLowerCase().includes(q));
+
+                if (!results.length) {
+                    elResults.innerHTML = `<div class="hint-box"><div class="hint-icon">🎤</div><div class="hint-txt">No hay invitados de ese artista</div></div>`;
+                    return;
+                }
+
+                // Agrupar por artista
+                const groups = {};
+                results.forEach(t => {
+                    const key = t.artistName || 'Sin artista';
+                    if (!groups[key]) groups[key] = [];
+                    groups[key].push(t);
+                });
+
+                elResults.innerHTML = Object.entries(groups).map(([artist, tickets]) => `
+                    <div class="artist-group">
+                        <div class="artist-header">
+                            <div class="artist-header-name">🎤 ${artist}</div>
+                            <div class="artist-header-sub">${tickets.length} invitado(s) · ${tickets.filter(t=>!t.used).length} disponible(s)</div>
+                        </div>
+                        ${tickets.map(t => cardHTML(t, true)).join('')}
+                    </div>
+                `).join('');
+
+            } else {
+                results = results.filter(t =>
+                    t.name.toLowerCase().includes(q) ||
+                    (t.ticketNumber && t.ticketNumber.toString().includes(query.trim())) ||
+                    (t.ticketNumberFormatted && t.ticketNumberFormatted.includes(query.trim())) ||
+                    t.id.toLowerCase().includes(q) ||
+                    (t.artistName && t.artistName.toLowerCase().includes(q))
+                );
+
+                if (!results.length) {
+                    elResults.innerHTML = `<div class="hint-box"><div class="hint-icon">❌</div><div class="hint-txt">Sin resultados para "${query}"</div></div>`;
+                    return;
+                }
+
+                elResults.innerHTML = results.map(t => cardHTML(t, false)).join('');
+            }
+
+            // Adjuntar listeners a las tarjetas
+            elResults.querySelectorAll('.result-card:not(.used)').forEach(card => {
+                card.addEventListener('click', () => markEntry(card.dataset.id));
+            });
+        }
+
+        function cardHTML(t, hideArtist) {
+            return `
+                <div class="result-card ${t.used ? 'used' : ''}" data-id="${t.id}">
+                    <div class="result-top">
+                        ${t.ticketNumberFormatted ? `<span class="ticket-num">Nº ${t.ticketNumberFormatted}</span>` : ''}
+                        <span class="result-name">${t.name}</span>
+                    </div>
+                    ${(!hideArtist && t.artistName) ? `<div class="artist-tag">🎤 ${t.artistName}</div>` : ''}
+                    <div class="result-id">${t.id}</div>
+                    <div class="result-status ${t.used ? 'status-used' : 'status-ok'}">
+                        ${t.used ? '⚠️ Ya ingresó' : '✅ Disponible — toca para registrar ingreso'}
+                    </div>
+                </div>`;
+        }
+
+        // ── Filtros ────────────────────────────────────────────────────────────
+        elFilterAll.addEventListener('click', () => {
+            state.searchMode = 'all';
+            elFilterAll.className    = 'filter-btn active-all';
+            elFilterArtist.className = 'filter-btn inactive';
+            elSearchInput.placeholder = 'Nº entrada, nombre, artista, ID…';
+            performSearch(elSearchInput.value);
+        });
+
+        elFilterArtist.addEventListener('click', () => {
+            state.searchMode = 'artist';
+            elFilterArtist.className = 'filter-btn active-artist';
+            elFilterAll.className    = 'filter-btn inactive';
+            elSearchInput.placeholder = '🎤 Nombre del artista…';
+            elSearchInput.value = '';
+            elResults.innerHTML = `<div class="hint-box"><div class="hint-icon">🎤</div><div class="hint-txt">Escribí el nombre del artista</div></div>`;
+        });
+
+        elSearchInput.addEventListener('input', e => performSearch(e.target.value));
+
+        // ── Arrancar ───────────────────────────────────────────────────────────
+        const savedQueue = localStorage.getItem(`syncQueue_${eventId}`);
+        if (savedQueue) { try { state.syncQueue = JSON.parse(savedQueue); } catch { state.syncQueue = []; } }
+
+        updateBadge();
+        await loadTickets();
+        if (state.isOnline) flushQueue();
+
+        // Autofocus en el campo de búsqueda
+        setTimeout(() => elSearchInput.focus(), 300);
+    </script>
+</body>
+</html>

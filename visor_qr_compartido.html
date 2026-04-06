@@ -76,7 +76,7 @@
 
     <script type="module">
         import { db } from './firebase_config.js';
-        import { collection, query, where, getDocs, getDocsFromServer } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         const state = { 
             allTicketsData: []
@@ -269,10 +269,16 @@
             renderTickets(filtered);
         }
         
-        // Función para normalizar texto (quitar acentos y convertir a minúsculas)
+        // Función para normalizar texto (quitar acentos, minúsculas, y puntuación final)
+        // WhatsApp y otros mensajeros cortan los puntos/comas al final de las URLs,
+        // por eso también quitamos puntuación final para que el filtro siga funcionando.
         function normalizeText(text) {
             if (!text) return '';
-            return text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+            return text.normalize("NFD")
+                       .replace(/[\u0300-\u036f]/g, "") // quitar tildes
+                       .toLowerCase()
+                       .trim()
+                       .replace(/[.,;:\-!?]+$/, ''); // quitar puntuación final (WhatsApp la corta)
         }
 
         async function loadTickets(eventId, artistPrefixes = null, artistId = null) {
@@ -285,15 +291,10 @@
                 // 🔧 CRÍTICO: Usar getDocsFromServer para SIEMPRE leer del servidor (no del caché)
                 // Esto soluciona el problema en móvil donde enableIndexedDbPersistence devuelve
                 // el caché vacío (primera visita) en lugar de esperar la respuesta del servidor.
+                // Con memoryLocalCache() el caché siempre arranca vacío en cada visita,
+                // por lo que getDocs siempre va directo al servidor. Sin race condition en móvil.
                 const q = query(ticketsCollectionRef);
-                let querySnapshot;
-                try {
-                    querySnapshot = await getDocsFromServer(q);
-                } catch (serverErr) {
-                    // Si falla el servidor (sin internet), caer a getDocs normal (con caché)
-                    console.warn('⚠️ Server fetch fallido, usando caché:', serverErr.message);
-                    querySnapshot = await getDocs(q);
-                }
+                const querySnapshot = await getDocs(q);
                 let allTickets = querySnapshot.docs.map(doc => doc.data()).sort((a,b) => (a.name || '').localeCompare(b.name || ''));
                 
                 // ✅ MODO artistId: filtrar por artistId del artista
