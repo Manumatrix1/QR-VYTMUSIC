@@ -168,30 +168,32 @@
     <!-- Modal para confirmar eliminación de artista -->
     <div id="delete-artist-modal" class="modal-backdrop hidden">
         <div class="modal-content">
-            <h3 class="text-xl font-bold mb-4 text-red-400">¿Eliminar Artista?</h3>
+            <h3 class="text-xl font-bold mb-4 text-yellow-400">¿Qué querés hacer?</h3>
             <div id="delete-artist-info" class="mb-4">
-                <p class="text-gray-300 mb-2">¿Estás seguro de que quieres eliminar a este artista?</p>
                 <div class="bg-gray-700 p-3 rounded flex items-center gap-3">
-                    <img id="delete-artist-photo" src="" class="w-12 h-12 rounded-full object-cover border-2 border-red-400">
+                    <img id="delete-artist-photo" src="" class="w-12 h-12 rounded-full object-cover border-2 border-yellow-400">
                     <div>
-                        <p id="delete-artist-name" class="font-semibold text-red-300"></p>
-                        <p class="text-sm text-gray-400">Esta acción no se puede deshacer</p>
+                        <p id="delete-artist-name" class="font-semibold text-white"></p>
+                        <p class="text-sm text-gray-400">Elegí una opción abajo</p>
                     </div>
                 </div>
             </div>
-            <div class="bg-red-900 p-3 rounded mb-4">
-                <p class="text-red-200 text-sm">
-                    <strong>⚠️ Advertencia:</strong> Se eliminarán también:
-                </p>
-                <ul class="text-red-200 text-sm mt-1 ml-4">
-                    <li>• Todos los votos de jurados para este artista</li>
-                    <li>• Su foto del almacenamiento</li>
-                    <li>• Su perfil completo</li>
-                </ul>
+
+            <!-- Opción 1: Quitar de esta gala -->
+            <div class="bg-yellow-900 border border-yellow-600 p-3 rounded mb-3">
+                <p class="text-yellow-200 text-sm font-bold mb-1">🗂️ Quitar de esta Gala</p>
+                <p class="text-yellow-100 text-xs">Solo lo saca de la lista de esta gala. Sus datos, pistas y votaciones en otras galas del certamen <strong>NO se tocan</strong>.</p>
             </div>
-            <div class="flex justify-end space-x-4">
+            <button id="remove-from-gala-btn" class="w-full mb-4 px-4 py-2 bg-yellow-600 text-white font-semibold rounded-lg hover:bg-yellow-700">🗂️ Quitar de esta Gala únicamente</button>
+
+            <!-- Opción 2: Eliminar definitivamente -->
+            <div class="bg-red-900 border border-red-700 p-3 rounded mb-3">
+                <p class="text-red-200 text-sm font-bold mb-1">🗑️ Eliminar de esta Gala + limpiar votos</p>
+                <p class="text-red-100 text-xs">Borra al artista de esta gala Y elimina sus votos de jurados en este evento. Solo afecta a esta gala, no al certamen global.</p>
+            </div>
+            <div class="flex justify-end space-x-3">
                 <button id="cancel-delete-artist-btn" class="px-4 py-2 bg-gray-600 text-white font-semibold rounded-lg hover:bg-gray-700">Cancelar</button>
-                <button id="confirm-delete-artist-btn" class="px-4 py-2 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700">Eliminar Definitivamente</button>
+                <button id="confirm-delete-artist-btn" class="px-4 py-2 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700">🗑️ Eliminar + limpiar votos</button>
             </div>
         </div>
     </div>
@@ -878,6 +880,23 @@
             artistToDelete = null;
         }
 
+        // Solo quita al artista de esta gala, sin tocar votos ni otros eventos
+        async function removeFromGalaOnly() {
+            if (!artistToDelete) return;
+            try {
+                showLoading(true);
+                await deleteDoc(doc(db, `events/${eventId}/artists`, artistToDelete.id));
+                showMessage(`✅ "${artistToDelete.name}" quitado de esta gala. Sus datos en el certamen no fueron modificados.`);
+                closeDeleteModal();
+                await loadArtists();
+            } catch (error) {
+                console.error('Error al quitar artista de la gala:', error);
+                showMessage(`Error: ${error.message}`, 'error');
+            } finally {
+                showLoading(false);
+            }
+        }
+
         async function confirmDeleteArtist() {
             if (!artistToDelete) return;
             
@@ -885,7 +904,7 @@
                 showLoading(true);
                 showMessage(`Eliminando artista ${artistToDelete.name}...`, 'info');
                 
-                // Eliminar todos los votos de jurados para este artista
+                // Eliminar todos los votos de jurados para este artista en esta gala
                 const votesSnapshot = await getDocs(collection(db, `events/${eventId}/jury-votes`));
                 const deleteVotesPromises = [];
                 
@@ -898,12 +917,12 @@
                 
                 await Promise.all(deleteVotesPromises);
                 
-                // Eliminar el documento del artista
+                // Eliminar el documento del artista de esta gala
                 await deleteDoc(doc(db, `events/${eventId}/artists`, artistToDelete.id));
                 
-                showMessage(`✅ Artista "${artistToDelete.name}" eliminado correctamente`);
+                showMessage(`✅ Artista "${artistToDelete.name}" eliminado de esta gala y sus votos limpiados.`);
                 closeDeleteModal();
-                await loadArtists(); // Recargar lista
+                await loadArtists();
                 
             } catch (error) {
                 console.error('Error deleting artist:', error);
@@ -920,10 +939,7 @@
         // Event listeners para eliminación
         ui.cancelDeleteArtistBtn.addEventListener('click', closeDeleteModal);
         ui.confirmDeleteArtistBtn.addEventListener('click', confirmDeleteArtist);
-        
-        // Event listeners para eliminación
-        ui.cancelDeleteArtistBtn.addEventListener('click', closeDeleteModal);
-        ui.confirmDeleteArtistBtn.addEventListener('click', confirmDeleteArtist);
+        document.getElementById('remove-from-gala-btn').addEventListener('click', removeFromGalaOnly);
 
         // Funciones para manejo de cambio de foto
         function handlePhotoPreview(event) {
