@@ -174,12 +174,23 @@
                 </button>
             </div>
             <!-- Barra de progreso -->
-            <div class="flex items-center gap-3 text-xs">
+            <div class="flex items-center gap-3 text-xs mb-2">
                 <span id="currentTime" class="font-mono text-green-300">0:00</span>
-                <div class="flex-1 bg-gray-700 rounded-full h-2 overflow-hidden">
+                <div class="flex-1 bg-gray-700 rounded-full h-2 overflow-hidden cursor-pointer" id="progressBarContainer">
                     <div id="progressBar" class="bg-green-400 h-full transition-all duration-200" style="width: 0%"></div>
                 </div>
                 <span id="totalTime" class="font-mono text-gray-300">0:00</span>
+            </div>
+            <!-- Control de volumen -->
+            <div class="flex items-center gap-2 text-xs">
+                <button onclick="setVolume(0)" class="text-gray-400 hover:text-white transition" title="Silenciar">
+                    <i id="volumeIcon" class="fas fa-volume-up w-4"></i>
+                </button>
+                <input type="range" id="volumeSlider" min="0" max="100" value="100"
+                    oninput="setVolume(this.value / 100)"
+                    class="flex-1 h-2 rounded-full accent-green-400 cursor-pointer" style="max-width:160px">
+                <span id="volumeLabel" class="text-green-300 font-mono w-8 text-right">100%</span>
+                <button onclick="setVolume(1)" class="text-gray-400 hover:text-white transition text-xs ml-1" title="Máximo">Max</button>
             </div>
         </div>
 
@@ -1103,7 +1114,31 @@
             globalAudio.addEventListener('ended', () => {
                 stopAudio();
             });
+
+            // Aplicar volumen guardado
+            const savedVol = parseFloat(localStorage.getItem('vytVol') ?? '1');
+            globalAudio.volume = savedVol;
+            const slider = document.getElementById('volumeSlider');
+            if (slider) slider.value = Math.round(savedVol * 100);
+            const lbl = document.getElementById('volumeLabel');
+            if (lbl) lbl.textContent = Math.round(savedVol * 100) + '%';
         }
+
+        window.setVolume = function(val) {
+            const v = Math.max(0, Math.min(1, parseFloat(val)));
+            if (globalAudio) globalAudio.volume = v;
+            localStorage.setItem('vytVol', v);
+            const slider = document.getElementById('volumeSlider');
+            if (slider) slider.value = Math.round(v * 100);
+            const lbl = document.getElementById('volumeLabel');
+            if (lbl) lbl.textContent = Math.round(v * 100) + '%';
+            const icon = document.getElementById('volumeIcon');
+            if (icon) {
+                icon.className = v === 0 ? 'fas fa-volume-mute w-4'
+                    : v < 0.5 ? 'fas fa-volume-down w-4'
+                    : 'fas fa-volume-up w-4';
+            }
+        };
         
         // Reproducir pista
         window.playTrack = function(url, artistName, songName, trackId, pitchOffset = 0) {
@@ -1128,6 +1163,7 @@
                 if (!isFromCache) cacheInBackground(url);
                 stopActiveTonePlayerAdmin();
                 globalAudio.src = playUrl;
+                globalAudio.volume = parseFloat(localStorage.getItem('vytVol') ?? '1');
                 globalAudio.play().catch(() => {});
                 
                 // Mostrar banner de reproducción
