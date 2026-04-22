@@ -400,6 +400,42 @@
             </div>
         </div>
 
+        <!-- Carpeta Local — reproducción directa sin subir -->
+        <div id="localFolderSection" class="mb-6">
+            <div class="bg-gradient-to-r from-indigo-900 to-blue-900 rounded-xl shadow-xl p-4 border border-indigo-600/50">
+                <div class="flex items-center justify-between flex-wrap gap-3 mb-3">
+                    <h3 class="text-white font-bold text-lg flex items-center gap-2">
+                        <span>💻</span> Carpeta Local
+                        <span id="localFolderCount" class="bg-indigo-600 text-white text-xs font-bold px-2 py-0.5 rounded-full hidden">0</span>
+                        <span class="text-indigo-300 text-xs font-normal hidden md:inline">— reproducción directa desde tu PC, sin subir</span>
+                    </h3>
+                    <div class="flex gap-2 items-center">
+                        <button onclick="openLocalFolder()" id="openFolderBtn"
+                            class="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-1.5 rounded-lg text-sm font-semibold transition flex items-center gap-2">
+                            <i class="fas fa-folder-open"></i> Abrir carpeta
+                        </button>
+                        <button onclick="clearLocalFolder()" id="clearFolderBtn" class="hidden text-indigo-400 hover:text-red-400 transition text-sm px-2">
+                            <i class="fas fa-times"></i> Limpiar
+                        </button>
+                        <button onclick="toggleLocalFolder()" class="text-indigo-300 hover:text-white px-2">
+                            <i class="fas fa-chevron-up" id="localFolderChevron"></i>
+                        </button>
+                    </div>
+                </div>
+                <p id="localFolderHint" class="text-indigo-400 text-xs">
+                    <i class="fas fa-info-circle"></i> Las canciones se reproducen directamente desde tu computadora — no se suben a internet. Solo funciona en Chrome/Edge.
+                </p>
+                <!-- Buscador dentro de la carpeta -->
+                <div id="localSearchBox" class="hidden mt-3">
+                    <input type="text" id="localSearchInput" placeholder="Buscar canción..." oninput="filterLocalTracks(this.value)"
+                        class="w-full px-3 py-2 rounded-lg bg-indigo-950 text-white border border-indigo-600 focus:border-indigo-400 focus:outline-none text-sm">
+                </div>
+            </div>
+            <!-- Grid de canciones locales por categoría/carpeta -->
+            <div id="localFolderGrid" class="mt-2 grid grid-cols-1 gap-2">
+            </div>
+        </div>
+
         <!-- Lista de Artistas -->
         <div id="artistsContainer" class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
             <!-- Se llenará dinámicamente -->
@@ -2715,7 +2751,163 @@
             }
         };
 
-        document.getElementById('bibliotecaForm').addEventListener('submit', async function(e) {
+        // ══════════════════════════════════════════════════════════
+        // CARPETA LOCAL — reproducción directa sin subir
+        // ══════════════════════════════════════════════════════════
+
+        let localTracks = [];       // { id, name, folder, file, url }
+        let localCollapseState = {};
+
+        window.openLocalFolder = async function() {
+            if (!window.showDirectoryPicker) {
+                alert('Esta función requiere Chrome o Edge. En otros browsers no está disponible.');
+                return;
+            }
+            try {
+                const dirHandle = await window.showDirectoryPicker({ mode: 'read' });
+                localTracks = [];
+                const audioExts = ['mp3','wav','mpeg','mpga','ogg','aac','flac','m4a'];
+
+                async function readDir(handle, folder) {
+                    for await (const [name, entry] of handle.entries()) {
+                        if (entry.kind === 'directory') {
+                            await readDir(entry, folder ? folder + '/' + name : name);
+                        } else {
+                            const ext = name.split('.').pop().toLowerCase();
+                            if (audioExts.includes(ext)) {
+                                const file = await entry.getFile();
+                                const url = URL.createObjectURL(file);
+                                const displayName = name.replace(/\.[^.]+$/, '').replace(/_/g, ' ');
+                                localTracks.push({
+                                    id: 'local_' + localTracks.length,
+                                    name: displayName,
+                                    folder: folder || '📁 Raíz',
+                                    file, url
+                                });
+                            }
+                        }
+                    }
+                }
+
+                await readDir(dirHandle, '');
+                localTracks.sort((a,b) => a.folder.localeCompare(b.folder) || a.name.localeCompare(b.name));
+                displayLocalTracks(localTracks);
+
+                document.getElementById('localFolderHint').classList.add('hidden');
+                document.getElementById('localSearchBox').classList.remove('hidden');
+                document.getElementById('clearFolderBtn').classList.remove('hidden');
+                const cnt = document.getElementById('localFolderCount');
+                cnt.textContent = localTracks.length;
+                cnt.classList.remove('hidden');
+            } catch(e) {
+                if (e.name !== 'AbortError') alert('Error al leer carpeta: ' + e.message);
+            }
+        };
+
+        function displayLocalTracks(tracks) {
+            const grid = document.getElementById('localFolderGrid');
+            if (!grid) return;
+            if (tracks.length === 0) {
+                grid.innerHTML = '<p class="text-indigo-400 text-sm text-center py-4">No se encontraron archivos de audio en esta carpeta.</p>';
+                return;
+            }
+
+            // Agrupar por carpeta
+            const groups = {};
+            tracks.forEach(t => {
+                if (!groups[t.folder]) groups[t.folder] = [];
+                groups[t.folder].push(t);
+            });
+
+            let html = '';
+            Object.entries(groups).forEach(([folder, items]) => {
+                const isOpen = localCollapseState[folder] !== false;
+                const safeKey = btoa(encodeURIComponent(folder)).replace(/[^a-z0-9]/gi,'_');
+                html += `
+                <div class="mb-2">
+                    <button onclick="toggleLocalCategory('${safeKey}','${folder.replace(/'/g,"\\'")}') " class="w-full flex items-center justify-between bg-indigo-900/60 hover:bg-indigo-900 border border-indigo-700 rounded-xl px-4 py-2.5 text-left transition">
+                        <span class="flex items-center gap-2 text-indigo-200 font-semibold text-sm">
+                            <i class="fas fa-folder text-indigo-400"></i> ${folder}
+                            <span class="text-indigo-400 font-normal text-xs">${items.length} pista${items.length>1?'s':''}</span>
+                        </span>
+                        <i class="fas fa-chevron-${isOpen?'up':'down'} text-indigo-400" id="localChevron_${safeKey}"></i>
+                    </button>
+                    <div id="localCat_${safeKey}" class="${isOpen?'':'hidden'} mt-1 grid md:grid-cols-3 lg:grid-cols-4 gap-2">
+                        ${items.map(t => {
+                            const safe = t.name.replace(/'/g,"\\'").replace(/`/g,'');
+                            return `<div class="rounded-lg p-3 border border-indigo-700 bg-indigo-950 flex flex-col gap-2">
+                                <p class="text-white text-sm font-semibold truncate" title="${t.name}">${t.name}</p>
+                                <button onclick="toggleLocalTrack('${t.id}','${t.url}','${safe}')"
+                                    id="playBtn_${t.id}"
+                                    class="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-1.5 rounded text-xs font-semibold transition">
+                                    <i class="fas fa-play"></i> Play
+                                </button>
+                            </div>`;
+                        }).join('')}
+                    </div>
+                </div>`;
+            });
+            grid.innerHTML = html;
+        }
+
+        window.toggleLocalCategory = function(safeKey, folder) {
+            const content = document.getElementById('localCat_' + safeKey);
+            const chevron = document.getElementById('localChevron_' + safeKey);
+            if (!content) return;
+            const hidden = content.classList.toggle('hidden');
+            if (chevron) chevron.className = 'fas fa-chevron-' + (hidden ? 'down' : 'up') + ' text-indigo-400';
+            localCollapseState[folder] = !hidden;
+        };
+
+        window.toggleLocalTrack = function(trackId, url, name) {
+            // El volumen local usa el mismo canal que biblioteca
+            if (currentPlayingTrackId === trackId && globalAudio && !globalAudio.paused) {
+                stopAudio();
+            } else {
+                if (currentPlayingTrackId && currentPlayingTrackId !== trackId) {
+                    const prev = document.getElementById('playBtn_' + currentPlayingTrackId);
+                    if (prev) prev.innerHTML = '<i class="fas fa-play"></i> Play';
+                }
+                currentPlayingTrackId = trackId;
+                globalAudio.src = url;
+                globalAudio.volume = parseFloat(localStorage.getItem('vytBibVol') ?? '1');
+                globalAudio.play().catch(()=>{});
+                _syncBannerSlider(globalAudio.volume);
+                const btn = document.getElementById('playBtn_' + trackId);
+                if (btn) btn.innerHTML = '<i class="fas fa-stop"></i> Parar';
+                const banner = document.getElementById('nowPlayingBanner');
+                const bannerText = document.getElementById('nowPlayingText');
+                if (banner && bannerText) { bannerText.textContent = name; banner.classList.remove('hidden'); }
+            }
+        };
+
+        window.filterLocalTracks = function(query) {
+            const q = query.toLowerCase().trim();
+            const filtered = q ? localTracks.filter(t => t.name.toLowerCase().includes(q) || t.folder.toLowerCase().includes(q)) : localTracks;
+            displayLocalTracks(filtered);
+        };
+
+        window.clearLocalFolder = function() {
+            localTracks.forEach(t => URL.revokeObjectURL(t.url));
+            localTracks = [];
+            document.getElementById('localFolderGrid').innerHTML = '';
+            document.getElementById('localFolderHint').classList.remove('hidden');
+            document.getElementById('localSearchBox').classList.add('hidden');
+            document.getElementById('clearFolderBtn').classList.add('hidden');
+            document.getElementById('localFolderCount').classList.add('hidden');
+            document.getElementById('localSearchInput').value = '';
+        };
+
+        window.toggleLocalFolder = function() {
+            const grid = document.getElementById('localFolderGrid');
+            const search = document.getElementById('localSearchBox');
+            const chev = document.getElementById('localFolderChevron');
+            const hidden = grid.classList.toggle('hidden');
+            if (search) search.classList.toggle('hidden', hidden);
+            if (chev) chev.className = 'fas fa-chevron-' + (hidden ? 'down' : 'up');
+        };
+
+
             e.preventDefault();
             const category = document.getElementById('bibCategory').value;
             const files = Array.from(document.getElementById('bibFile').files);
