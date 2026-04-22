@@ -422,8 +422,8 @@
                 </div>
                 <div id="spotifyContent">
                     <div class="flex gap-2 mb-3">
-                        <input id="spotifyInput" type="url"
-                            placeholder="https://open.spotify.com/playlist/... o track/... o album/..."
+                        <input id="spotifyInput" type="text"
+                            placeholder="Link de Spotify o código <iframe> completo..."
                             class="flex-1 bg-green-900/40 border border-green-700 text-white placeholder-green-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-green-400">
                         <button onclick="loadSpotifyEmbed()"
                             class="bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded-lg text-sm font-semibold transition flex-shrink-0">
@@ -449,7 +449,7 @@
                         </p>
                     </div>
                     <p id="spotifyHint" class="text-green-600 text-xs text-center py-2">
-                        Copiá el link desde Spotify → Compartir → Copiar enlace
+                        Podés pegar el link de Spotify <strong class="text-green-500">o el código &lt;iframe&gt; completo</strong> que te da "Compartir → Insertar"
                     </p>
                 </div>
             </div>
@@ -2976,18 +2976,31 @@
         window.loadSpotifyEmbed = function() {
             const raw = document.getElementById('spotifyInput').value.trim();
             if (!raw) return;
-            // Extraer tipo y ID del link de Spotify
-            const match = raw.match(/spotify\.com\/(playlist|track|album|artist|episode|show)\/([a-zA-Z0-9]+)/);
-            if (!match) {
-                alert('Link de Spotify no válido. Debe ser de playlist, track, álbum, etc.');
-                return;
-            }
-            const [, type, id] = match;
-            const embedUrl = `https://open.spotify.com/embed/${type}/${id}?utm_source=generator&theme=0`;
             const iframe = document.getElementById('spotifyIframe');
+            let embedUrl = null;
+            let iframeHeight = '380';
+
+            // Caso 1: pegaron código <iframe ...> completo
+            const iframeSrcMatch = raw.match(/src=["']([^"']+)["']/);
+            if (raw.includes('<iframe') && iframeSrcMatch) {
+                embedUrl = iframeSrcMatch[1];
+                // intentar detectar altura del iframe original
+                const hMatch = raw.match(/height=["']?(\d+)["']?/);
+                if (hMatch) iframeHeight = hMatch[1];
+            } else {
+                // Caso 2: link directo o embed de Spotify
+                const match = raw.match(/spotify\.com\/(?:embed\/)?([a-zA-Z]+)\/([a-zA-Z0-9]+)/);
+                if (!match) {
+                    alert('Pegá un link de Spotify o el código <iframe> que te da Spotify al compartir.');
+                    return;
+                }
+                const [, type, id] = match;
+                embedUrl = `https://open.spotify.com/embed/${type}/${id}?utm_source=generator&theme=0`;
+                iframeHeight = (type === 'track' || type === 'episode') ? '152' : '380';
+            }
+
             iframe.src = embedUrl;
-            // Altura según tipo
-            iframe.height = (type === 'track' || type === 'episode') ? '152' : '380';
+            iframe.height = iframeHeight;
             document.getElementById('spotifyEmbedContainer').classList.remove('hidden');
             document.getElementById('spotifyHint').classList.add('hidden');
         };
