@@ -395,7 +395,7 @@
                     </select>
                 </div>
             </div>
-            <div id="bibliotecaGrid" class="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div id="bibliotecaGrid" class="grid grid-cols-1 gap-2">
                 <!-- se llena dinámicamente -->
             </div>
         </div>
@@ -579,29 +579,21 @@
 
     <!-- Modal: Biblioteca VYT Global -->
     <div id="bibliotecaModal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
-        <div class="bg-gray-900 rounded-xl shadow-2xl max-w-lg w-full border-2 border-emerald-500">
-            <div class="bg-gradient-to-r from-emerald-600 to-teal-600 p-6 flex items-center justify-between">
-                <h2 class="text-2xl font-bold text-white">📚 Agregar a Biblioteca VYT</h2>
+        <div class="bg-gray-900 rounded-xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto border-2 border-emerald-500">
+            <div class="bg-gradient-to-r from-emerald-600 to-teal-600 p-5 flex items-center justify-between sticky top-0 z-10">
+                <h2 class="text-xl font-bold text-white">📚 Agregar a Biblioteca VYT</h2>
                 <button onclick="closeBibliotecaModal()" class="text-white hover:text-gray-300 text-3xl">
                     <i class="fas fa-times"></i>
                 </button>
             </div>
-            <div class="p-6">
-                <div class="bg-emerald-900/30 rounded-lg p-4 mb-4 border border-emerald-500/30">
-                    <p class="text-emerald-300 text-sm">
-                        <i class="fas fa-info-circle"></i>
-                        Las pistas de la biblioteca quedan guardadas <strong>para siempre</strong>, disponibles en todas las galas.
-                    </p>
+            <div class="p-5">
+                <div class="bg-emerald-900/30 rounded-lg p-3 mb-4 border border-emerald-500/30 text-emerald-300 text-sm">
+                    <i class="fas fa-info-circle"></i>
+                    Guardadas <strong>para siempre</strong> en todas las galas. Podés subir <strong>varias canciones a la vez</strong>.
                 </div>
                 <form id="bibliotecaForm" class="space-y-4">
                     <div>
-                        <label class="block text-white font-semibold mb-2"><i class="fas fa-music"></i> Nombre</label>
-                        <input type="text" id="bibName" required
-                            placeholder="Ej: Intro VYT, Música apertura..."
-                            class="w-full px-4 py-3 rounded-lg bg-gray-700 text-white border-2 border-gray-600 focus:border-emerald-500 focus:outline-none">
-                    </div>
-                    <div>
-                        <label class="block text-white font-semibold mb-2"><i class="fas fa-tag"></i> Categoría</label>
+                        <label class="block text-white font-semibold mb-2"><i class="fas fa-tag"></i> Categoría para todas</label>
                         <select id="bibCategory" required
                             class="w-full px-4 py-3 rounded-lg bg-gray-700 text-white border-2 border-gray-600 focus:border-emerald-500 focus:outline-none">
                             <option value="">Seleccioná una categoría...</option>
@@ -614,14 +606,30 @@
                         </select>
                     </div>
                     <div>
-                        <label class="block text-white font-semibold mb-2"><i class="fas fa-file-audio"></i> Archivo de Audio</label>
-                        <input type="file" id="bibFile" accept=".mp3,.wav,.mpeg,.mpga,audio/*" required
+                        <label class="block text-white font-semibold mb-2"><i class="fas fa-file-audio"></i> Archivos de Audio <span class="text-emerald-400 font-normal text-sm">(podés seleccionar varios)</span></label>
+                        <input type="file" id="bibFile" accept=".mp3,.wav,.mpeg,.mpga,audio/*" multiple required
+                            onchange="previewBibFiles(this.files)"
                             class="w-full px-4 py-3 rounded-lg bg-gray-700 text-white border-2 border-gray-600 focus:border-emerald-500 focus:outline-none file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-emerald-600 file:text-white hover:file:bg-emerald-700">
-                        <p class="text-gray-400 text-sm mt-1">Máximo 100MB. Formatos: MP3, WAV, MPEG</p>
+                        <p class="text-gray-400 text-xs mt-1">Máx 100MB por archivo · MP3, WAV, MPEG · El nombre del archivo se usa como nombre de la pista</p>
+                    </div>
+                    <!-- Preview de archivos seleccionados -->
+                    <div id="bibFilePreview" class="hidden">
+                        <p class="text-emerald-300 text-sm font-semibold mb-2">Archivos a subir:</p>
+                        <div id="bibFileList" class="space-y-1 max-h-40 overflow-y-auto"></div>
+                    </div>
+                    <!-- Barra de progreso multiple -->
+                    <div id="bibUploadProgress" class="hidden">
+                        <div class="flex justify-between text-xs text-gray-400 mb-1">
+                            <span id="bibProgressText">Subiendo...</span>
+                            <span id="bibProgressCount"></span>
+                        </div>
+                        <div class="w-full bg-gray-700 rounded-full h-3">
+                            <div id="bibProgressBar" class="bg-emerald-500 h-3 rounded-full transition-all" style="width:0%"></div>
+                        </div>
                     </div>
                     <button type="submit" id="bibSubmitBtn"
                         class="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold py-4 px-6 rounded-xl transition">
-                        <i class="fas fa-upload"></i> Guardar en Biblioteca
+                        <i class="fas fa-upload"></i> Subir a Biblioteca
                     </button>
                 </form>
             </div>
@@ -2595,41 +2603,95 @@
 
             if (bibliotecaData.length === 0) {
                 grid.innerHTML = `<p class="text-emerald-500/60 text-sm col-span-full text-center py-3">
-                    No hay pistas en la biblioteca todavía —
+                    No hay pistas todavía —
                     <button onclick="openBibliotecaModal()" class="underline text-emerald-400">Agregar primera pista</button>
                 </p>`;
                 return;
             }
 
-            grid.innerHTML = bibliotecaData.map(track => {
-                const cat = CAT_CONFIG[track.category] || CAT_CONFIG['otro'];
-                const safeName = (track.name||'').replace(/'/g,"\\'").replace(/`/g,'');
-                const sizeMB = track.size ? (track.size / (1024*1024)).toFixed(1) : '?';
-                const fmt = (track.format||'').toUpperCase();
-                return `
-                    <div class="rounded-xl shadow-xl p-5 border-2 border-emerald-600 bg-emerald-950">
-                        <div class="flex items-start gap-3 mb-3">
-                            <div class="w-14 h-14 rounded-full bg-emerald-800 flex items-center justify-center border-4 border-emerald-500 text-3xl flex-shrink-0">📚</div>
-                            <div class="flex-1 min-w-0">
-                                <span class="${cat.badge} text-xs font-bold px-2 py-0.5 rounded-full">${cat.label}</span>
-                                <h3 class="text-white font-bold text-base mt-1 truncate" title="${track.name}">${track.name}</h3>
-                                <p class="text-gray-400 text-xs">${sizeMB} MB · ${fmt}</p>
-                            </div>
-                        </div>
-                        <div class="flex gap-2">
-                            <button onclick="toggleTrack('bib_${track.id}','${track.url}','VYT','${safeName}',0)"
-                                id="playBtn_bib_${track.id}"
-                                class="flex-1 bg-green-600 hover:bg-green-500 text-white py-2 rounded-lg text-sm font-semibold transition">
-                                <i class="fas fa-play"></i> Reproducir
-                            </button>
-                            <button onclick="deleteBibliotecaTrack('${track.id}')"
-                                class="bg-red-800 hover:bg-red-700 text-white px-3 py-2 rounded-lg text-sm transition">
-                                <i class="fas fa-trash"></i>
-                            </button>
-                        </div>
-                    </div>`;
-            }).join('');
+            // Agrupar por categoría en orden
+            const catOrder = ['intro','presentacion','vyt','intermedio','cierre','otro'];
+            const groups = {};
+            bibliotecaData.forEach(t => {
+                const key = catOrder.includes(t.category) ? t.category : 'otro';
+                if (!groups[key]) groups[key] = [];
+                groups[key].push(t);
+            });
+
+            // Estado de colapso guardado
+            let collapseState = {};
+            try { collapseState = JSON.parse(localStorage.getItem('vytBibCollapse') || '{}'); } catch(e){}
+
+            let html = '';
+            catOrder.forEach(catKey => {
+                if (!groups[catKey]) return;
+                const cat = CAT_CONFIG[catKey];
+                const tracks = groups[catKey];
+                const isOpen = collapseState[catKey] !== false; // abierto por defecto
+                html += `
+                <div class="mb-3 col-span-full">
+                    <button onclick="toggleBibCategory('${catKey}')" class="w-full flex items-center justify-between bg-gray-800 hover:bg-gray-750 border border-gray-700 rounded-xl px-4 py-2.5 text-left transition">
+                        <span class="flex items-center gap-2">
+                            <span class="${cat.badge} text-xs font-bold px-2 py-0.5 rounded-full">${cat.label}</span>
+                            <span class="text-gray-300 text-sm">${tracks.length} pista${tracks.length > 1 ? 's' : ''}</span>
+                        </span>
+                        <i class="fas fa-chevron-${isOpen ? 'up' : 'down'} text-gray-400" id="bibCatChevron_${catKey}"></i>
+                    </button>
+                    <div id="bibCatContent_${catKey}" class="${isOpen ? '' : 'hidden'} mt-2 grid md:grid-cols-3 lg:grid-cols-4 gap-3">
+                        ${tracks.map(track => {
+                            const safeName = (track.name||'').replace(/'/g,"\\'").replace(/`/g,'');
+                            const sizeMB = track.size ? (track.size/(1024*1024)).toFixed(1) : '?';
+                            const isPlaying = currentPlayingTrackId === 'bib_' + track.id;
+                            return `
+                            <div class="rounded-lg p-3 border border-emerald-700 bg-emerald-950 flex flex-col gap-2">
+                                <p class="text-white font-semibold text-sm truncate" title="${track.name}">${track.name}</p>
+                                <p class="text-gray-400 text-xs">${sizeMB} MB</p>
+                                <div class="flex gap-1.5 mt-auto">
+                                    <button onclick="toggleTrack('bib_${track.id}','${track.url}','VYT','${safeName}',0)"
+                                        id="playBtn_bib_${track.id}"
+                                        class="flex-1 ${isPlaying ? 'bg-red-600 hover:bg-red-500' : 'bg-green-600 hover:bg-green-500'} text-white py-1.5 rounded text-xs font-semibold transition">
+                                        <i class="fas fa-${isPlaying ? 'stop' : 'play'}"></i> ${isPlaying ? 'Parar' : 'Play'}
+                                    </button>
+                                    <button onclick="deleteBibliotecaTrack('${track.id}')"
+                                        class="bg-red-900 hover:bg-red-700 text-white px-2 py-1.5 rounded text-xs transition">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </div>
+                            </div>`;
+                        }).join('')}
+                    </div>
+                </div>`;
+            });
+            grid.innerHTML = html;
         }
+
+        window.toggleBibCategory = function(catKey) {
+            const content = document.getElementById('bibCatContent_' + catKey);
+            const chevron = document.getElementById('bibCatChevron_' + catKey);
+            if (!content) return;
+            const isHidden = content.classList.toggle('hidden');
+            if (chevron) chevron.className = 'fas fa-chevron-' + (isHidden ? 'down' : 'up') + ' text-gray-400';
+            try {
+                const state = JSON.parse(localStorage.getItem('vytBibCollapse') || '{}');
+                state[catKey] = !isHidden;
+                localStorage.setItem('vytBibCollapse', JSON.stringify(state));
+            } catch(e){}
+        };
+
+        window.previewBibFiles = function(files) {
+            const preview = document.getElementById('bibFilePreview');
+            const list = document.getElementById('bibFileList');
+            if (!files || files.length === 0) { preview.classList.add('hidden'); return; }
+            preview.classList.remove('hidden');
+            list.innerHTML = Array.from(files).map(f => {
+                const mb = (f.size/(1024*1024)).toFixed(1);
+                const ok = f.size/(1024*1024) <= 100;
+                return `<div class="flex items-center justify-between text-xs px-2 py-1 rounded ${ok ? 'bg-emerald-900/40 text-emerald-300' : 'bg-red-900/40 text-red-300'}">
+                    <span class="truncate mr-2">${f.name.replace(/\.[^.]+$/, '')}</span>
+                    <span class="flex-shrink-0">${mb} MB ${ok ? '' : '⚠️ muy grande'}</span>
+                </div>`;
+            }).join('');
+        };
 
         window.openBibliotecaModal = function() {
             document.getElementById('bibliotecaModal').classList.remove('hidden');
@@ -2655,54 +2717,73 @@
 
         document.getElementById('bibliotecaForm').addEventListener('submit', async function(e) {
             e.preventDefault();
-            const name = document.getElementById('bibName').value.trim();
             const category = document.getElementById('bibCategory').value;
-            const file = document.getElementById('bibFile').files[0];
+            const files = Array.from(document.getElementById('bibFile').files);
             const btn = document.getElementById('bibSubmitBtn');
+            const progressBar = document.getElementById('bibProgressBar');
+            const progressText = document.getElementById('bibProgressText');
+            const progressCount = document.getElementById('bibProgressCount');
+            const progressDiv = document.getElementById('bibUploadProgress');
 
-            if (!name || !category || !file) { alert('Completá todos los campos'); return; }
-            if (file.size / (1024*1024) > 100) {
-                alert(`Archivo demasiado grande: ${(file.size/(1024*1024)).toFixed(1)} MB. Máximo 100 MB`);
+            if (!category) { alert('Elegí una categoría'); return; }
+            if (files.length === 0) { alert('Seleccioná al menos un archivo'); return; }
+
+            const oversized = files.filter(f => f.size/(1024*1024) > 100);
+            if (oversized.length > 0) {
+                alert(`Estos archivos superan 100 MB:\n${oversized.map(f=>f.name).join('\n')}`);
                 return;
             }
 
-            try {
-                btn.disabled = true;
-                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Subiendo...';
+            btn.disabled = true;
+            progressDiv.classList.remove('hidden');
+            document.getElementById('bibFilePreview').classList.add('hidden');
 
-                const ext = file.name.split('.').pop().toLowerCase();
-                const safe = name.replace(/[^a-z0-9]/gi, '_');
-                const storagePath = `biblioteca_global/${safe}_${Date.now()}.${ext}`;
+            const { ref: storageRef, uploadBytes, getDownloadURL } = window.storageModules;
+            const { collection, addDoc, Timestamp } = window.firestoreModules;
 
-                const { ref: storageRef, uploadBytes, getDownloadURL } = window.storageModules;
-                const fileRef = storageRef(window.storage, storagePath);
-                await uploadBytes(fileRef, file);
-                const url = await getDownloadURL(fileRef);
+            let done = 0, errors = 0;
+            for (const file of files) {
+                const name = file.name.replace(/\.[^.]+$/, '').replace(/_/g, ' ');
+                try {
+                    progressText.textContent = `Subiendo: ${name}`;
+                    progressCount.textContent = `${done + 1}/${files.length}`;
+                    progressBar.style.width = Math.round((done / files.length) * 100) + '%';
 
-                const { collection, addDoc, Timestamp } = window.firestoreModules;
-                await addDoc(collection(window.db, 'biblioteca_global'), {
-                    name, category, url, storagePath,
-                    size: file.size, format: ext,
-                    uploadedAt: Timestamp.now()
-                });
-
-                btn.innerHTML = '<i class="fas fa-check-circle"></i> ¡Guardada en biblioteca!';
-                document.getElementById('bibName').value = '';
-                document.getElementById('bibCategory').value = '';
-                document.getElementById('bibFile').value = '';
-
-                setTimeout(() => {
-                    closeBibliotecaModal();
-                    btn.disabled = false;
-                    btn.innerHTML = '<i class="fas fa-upload"></i> Guardar en Biblioteca';
-                }, 2000);
-
-            } catch(err) {
-                console.error(err);
-                alert('Error al subir: ' + err.message);
-                btn.disabled = false;
-                btn.innerHTML = '<i class="fas fa-upload"></i> Guardar en Biblioteca';
+                    const ext = file.name.split('.').pop().toLowerCase();
+                    const safe = name.replace(/[^a-z0-9]/gi, '_');
+                    const storagePath = `biblioteca_global/${safe}_${Date.now()}.${ext}`;
+                    const fileRef = storageRef(window.storage, storagePath);
+                    await uploadBytes(fileRef, file);
+                    const url = await getDownloadURL(fileRef);
+                    await addDoc(collection(window.db, 'biblioteca_global'), {
+                        name, category, url, storagePath,
+                        size: file.size, format: ext,
+                        uploadedAt: Timestamp.now()
+                    });
+                    done++;
+                } catch(err) {
+                    console.error(err);
+                    errors++;
+                    done++;
+                }
             }
+
+            progressBar.style.width = '100%';
+            progressText.textContent = errors === 0
+                ? `✅ ${done} pista${done > 1 ? 's' : ''} guardada${done > 1 ? 's' : ''} en la biblioteca`
+                : `⚠️ ${done - errors} guardadas, ${errors} con error`;
+            progressCount.textContent = '';
+
+            document.getElementById('bibCategory').value = '';
+            document.getElementById('bibFile').value = '';
+
+            setTimeout(() => {
+                closeBibliotecaModal();
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-upload"></i> Subir a Biblioteca';
+                progressDiv.classList.add('hidden');
+                progressBar.style.width = '0%';
+            }, 2500);
         });
 
         init();
