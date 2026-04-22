@@ -181,16 +181,38 @@
                 </div>
                 <span id="totalTime" class="font-mono text-gray-300">0:00</span>
             </div>
-            <!-- Control de volumen -->
-            <div class="flex items-center gap-2 text-xs">
+            <!-- Control de volumen + fades -->
+            <div class="flex items-center gap-2 text-xs flex-wrap">
                 <button onclick="setVolume(0)" class="text-gray-400 hover:text-white transition" title="Silenciar">
                     <i id="volumeIcon" class="fas fa-volume-up w-4"></i>
                 </button>
                 <input type="range" id="volumeSlider" min="0" max="100" value="100"
                     oninput="setVolume(this.value / 100)"
-                    class="flex-1 h-2 rounded-full accent-green-400 cursor-pointer" style="max-width:160px">
+                    class="h-2 rounded-full accent-green-400 cursor-pointer" style="width:130px">
                 <span id="volumeLabel" class="text-green-300 font-mono w-8 text-right">100%</span>
-                <button onclick="setVolume(1)" class="text-gray-400 hover:text-white transition text-xs ml-1" title="Máximo">Max</button>
+
+                <!-- Separador -->
+                <span class="text-gray-600 mx-1">|</span>
+
+                <!-- Velocidad de fade -->
+                <span class="text-gray-400">Fade:</span>
+                <select id="fadeSpeed" class="bg-gray-700 text-white rounded px-1 py-0.5 text-xs border border-gray-600 focus:outline-none">
+                    <option value="2">Rápido 2s</option>
+                    <option value="5" selected>Normal 5s</option>
+                    <option value="10">Lento 10s</option>
+                    <option value="20">Muy lento 20s</option>
+                </select>
+
+                <!-- Botones fade -->
+                <button onclick="fadeIn()" id="fadeInBtn"
+                    class="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1 rounded font-semibold transition flex items-center gap-1">
+                    <i class="fas fa-arrow-up"></i> Fade In
+                </button>
+                <button onclick="fadeOut()" id="fadeOutBtn"
+                    class="bg-orange-600 hover:bg-orange-500 text-white px-3 py-1 rounded font-semibold transition flex items-center gap-1">
+                    <i class="fas fa-arrow-down"></i> Fade Out
+                </button>
+                <button onclick="setVolume(1)" class="text-gray-400 hover:text-white transition ml-1" title="Máximo">Max</button>
             </div>
         </div>
 
@@ -1139,8 +1161,56 @@
                     : 'fas fa-volume-up w-4';
             }
         };
-        
-        // Reproducir pista
+
+        let _fadeInterval = null;
+        function _stopFade() {
+            if (_fadeInterval) { clearInterval(_fadeInterval); _fadeInterval = null; }
+        }
+        function _getFadeSeconds() {
+            const sel = document.getElementById('fadeSpeed');
+            return sel ? parseFloat(sel.value) : 5;
+        }
+
+        window.fadeOut = function() {
+            if (!globalAudio) return;
+            _stopFade();
+            const secs = _getFadeSeconds();
+            const steps = 40;
+            const interval = (secs * 1000) / steps;
+            const delta = globalAudio.volume / steps;
+            const btn = document.getElementById('fadeOutBtn');
+            if (btn) { btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Bajando...'; btn.disabled = true; }
+            _fadeInterval = setInterval(() => {
+                const next = Math.max(0, globalAudio.volume - delta);
+                setVolume(next);
+                if (next <= 0) {
+                    _stopFade();
+                    if (btn) { btn.innerHTML = '<i class="fas fa-arrow-down"></i> Fade Out'; btn.disabled = false; }
+                }
+            }, interval);
+        };
+
+        window.fadeIn = function() {
+            if (!globalAudio) return;
+            _stopFade();
+            const secs = _getFadeSeconds();
+            const steps = 40;
+            const interval = (secs * 1000) / steps;
+            const startVol = globalAudio.volume;
+            const delta = (1 - startVol) / steps;
+            const btn = document.getElementById('fadeInBtn');
+            if (btn) { btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Subiendo...'; btn.disabled = true; }
+            _fadeInterval = setInterval(() => {
+                const next = Math.min(1, globalAudio.volume + delta);
+                setVolume(next);
+                if (next >= 1) {
+                    _stopFade();
+                    if (btn) { btn.innerHTML = '<i class="fas fa-arrow-up"></i> Fade In'; btn.disabled = false; }
+                }
+            }, interval);
+        };
+
+
         window.playTrack = function(url, artistName, songName, trackId, pitchOffset = 0) {
             // Resetear botón y estado del track anterior
             if (currentPlayingTrackElement) {
