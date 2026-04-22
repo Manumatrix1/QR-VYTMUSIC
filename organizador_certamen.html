@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎭 Organizador de Certamen - VYTMUSIC</title>
+    <title>🎭 Organizador de Certamen - VYTMUSIC v4</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.3/Sortable.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -151,6 +151,9 @@
                 <button onclick="window.sincronizarDesdeGalas()" class="bg-cyan-700 hover:bg-cyan-600 text-white font-semibold px-3 py-2 rounded-lg text-sm transition-all flex items-center gap-1" title="Reconstruir tablero desde Firebase">
                     <i class="fas fa-sync-alt"></i> <span class="hidden sm:inline">Sincronizar</span>
                 </button>
+                <button onclick="window.diagnosticoPromedios()" class="bg-yellow-700 hover:bg-yellow-600 text-white font-semibold px-3 py-2 rounded-lg text-sm transition-all flex items-center gap-1" title="Ver diagnóstico de promedios en consola">
+                    <i class="fas fa-stethoscope"></i> <span class="hidden sm:inline">Diagnóstico</span>
+                </button>
                 <button onclick="clearBoard()" title="Limpiar tablero" class="bg-red-800 hover:bg-red-700 text-white px-3 py-2 rounded-lg text-sm transition-all">
                     <i class="fas fa-trash-alt"></i>
                 </button>
@@ -267,6 +270,34 @@
                     Cancelar
                 </button>
             </div>
+        </div>
+    </div>
+
+    <!-- MODAL: Bienvenida - cargar guardado o empezar nuevo -->
+    <div id="modalBienvenida" class="hidden fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
+        <div class="bg-gray-900 border border-purple-700 rounded-2xl p-6 w-full max-w-lg shadow-2xl">
+            <div class="text-center mb-5">
+                <span class="text-4xl">🎭</span>
+                <h3 class="text-white font-bold text-xl mt-2">Organizador de Certamen</h3>
+                <p class="text-gray-400 text-sm mt-1">¿Qué querés hacer?</p>
+            </div>
+            <!-- Opción cargar guardado -->
+            <div class="mb-4">
+                <p class="text-gray-300 text-sm font-semibold mb-2">📂 Cargar lista guardada:</p>
+                <div id="bienvenidaGuardadosList" class="space-y-2 max-h-60 overflow-y-auto">
+                    <p class="text-gray-500 text-sm text-center py-3">⏳ Buscando guardados...</p>
+                </div>
+            </div>
+            <!-- Divisor -->
+            <div class="flex items-center gap-3 my-4">
+                <div class="flex-1 h-px bg-gray-700"></div>
+                <span class="text-gray-500 text-xs">o</span>
+                <div class="flex-1 h-px bg-gray-700"></div>
+            </div>
+            <!-- Empezar desde cero -->
+            <button onclick="window.bienvenidaNuevo()" class="w-full bg-purple-700 hover:bg-purple-600 text-white font-bold py-3 rounded-xl transition-all">
+                ✨ Empezar desde cero — seleccionar galas
+            </button>
         </div>
     </div>
 
@@ -570,8 +601,8 @@
                         <p class="text-white/50 mb-4">Seleccioná las galas a cargar</p>
                     </div>`;
                 
-                // Abrir modal inmediatamente sin demora
-                showGen13Modal();
+                // Mostrar modal de bienvenida: cargar guardado o nuevo
+                await mostrarModalBienvenida();
                 
             } catch (error) {
                 console.error('❌ Error cargando generaciones:', error);
@@ -890,40 +921,146 @@
                             const artistsSnap = await getDocs(collection(db, `events/${event.id}/artists`));
                             console.log(`📥 Escaneando ${artistsSnap.docs.length} artistas de "${eventName}"`);
                             
-                            // Cargar votos para marcar si cantaron
+                            // Cargar votos para marcar si cantaron + calcular promedios (sin secretos)
                             const artistasConVotos = new Set();
+                            const scoresPerArtist = new Map();     // artistDocId → [scores]
+                            const scoresPerArtistName = new Map(); // normalizedName → [scores] (fallback)
+                            const hasVotesByName = new Set();       // normalizedName fallback
                             
-                            // Verificar votos de jurados
+                            const normForLookup = n => (n || '')
+                                .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+                                .toLowerCase().replace(/\s+/g, ' ').trim()
+                                .replace(/[^a-z0-9 ]/g, '');
+                            
+                            // Verificar votos de jurados y acumular puntajes
+                            let juryEvalCount = 0;
+                            let juryScoreCount = 0;
                             try {
                                 const evalSnap = await getDocs(collection(db, `events/${event.id}/jury_evaluations`));
+                                juryEvalCount = evalSnap.size;
                                 evalSnap.docs.forEach(eDoc => {
-                                    const aid = eDoc.data().artista_id || eDoc.data().artistId;
-                                    if (aid) artistasConVotos.add(aid);
+                                    const data = eDoc.data();
+                                    const aid = data.artista_id || data.artistId;
+                                    if (!aid) return;
+                                    artistasConVotos.add(aid);
+                                    const nName = normForLookup(data.artistName);
+                                    if (nName) hasVotesByName.add(nName);
+                                    const s = extractScore(data);
+                                    if (s !== null) {
+                                        juryScoreCount++;
+                                        if (!scoresPerArtist.has(aid)) scoresPerArtist.set(aid, []);
+                                        scoresPerArtist.get(aid).push(s);
+                                        if (nName) {
+                                            if (!scoresPerArtistName.has(nName)) scoresPerArtistName.set(nName, []);
+                                            scoresPerArtistName.get(nName).push(s);
+                                        }
+                                    }
                                 });
-                            } catch (_) { }
+                                if (juryEvalCount > 0 && juryScoreCount === 0) {
+                                    const sample = evalSnap.docs[0].data();
+                                    console.warn(`  ⚠️ ${event.name}: ${juryEvalCount} jury_eval docs pero 0 scores calculables`);
+                                    console.warn(`  🔍 Muestra → artist:"${sample.artistName}" average:${JSON.stringify(sample.average)} score:${JSON.stringify(sample.score)} scores:${JSON.stringify(sample.scores)}`);
+                                }
+                            } catch (e) {
+                                console.warn(`  ❌ Error jury_evaluations de ${event.name}:`, e.message);
+                            }
+
+                            // FALLBACK: colección antigua votaciones_jurados_{eventId}
+                            // Usada por galas anteriores que usaron el sistema viejo
+                            if (juryScoreCount === 0) {
+                                try {
+                                    const oldSnap = await getDocs(collection(db, `votaciones_jurados_${event.id}`));
+                                    if (oldSnap.size > 0) {
+                                        console.log(`  📦 Fallback colección vieja votaciones_jurados_: ${oldSnap.size} docs`);
+                                        oldSnap.docs.forEach(eDoc => {
+                                            const data = eDoc.data();
+                                            const aid = data.artista_id || data.artistId || data.id;
+                                            if (!aid) return;
+                                            artistasConVotos.add(aid);
+                                            const nName = normForLookup(data.artistName || data.nombre);
+                                            if (nName) hasVotesByName.add(nName);
+                                            const s = extractScore(data);
+                                            if (s !== null) {
+                                                juryScoreCount++;
+                                                if (!scoresPerArtist.has(aid)) scoresPerArtist.set(aid, []);
+                                                scoresPerArtist.get(aid).push(s);
+                                                if (nName) {
+                                                    if (!scoresPerArtistName.has(nName)) scoresPerArtistName.set(nName, []);
+                                                    scoresPerArtistName.get(nName).push(s);
+                                                }
+                                            }
+                                        });
+                                    }
+                                } catch (_) {}
+                            }
+
+                            // FALLBACK 2: leer promedios acumulados en artistas_${eventId}
+                            // Algunas galas acumulaban el score en el documento del artista
+                            if (juryScoreCount === 0) {
+                                try {
+                                    const artAccSnap = await getDocs(collection(db, `artistas_${event.id}`));
+                                    if (artAccSnap.size > 0) {
+                                        console.log(`  📦 Fallback artistas_: ${artAccSnap.size} docs`);
+                                        artAccSnap.docs.forEach(aDoc => {
+                                            const data = aDoc.data();
+                                            const nName = normForLookup(data.name || data.nombre);
+                                            if (!nName) return;
+                                            hasVotesByName.add(nName);
+                                            // Calcular promedio desde campos acumulados
+                                            const count = data.totalRatingsCount || data.cantVotos || 0;
+                                            let s = null;
+                                            if (count > 0) {
+                                                const total = data.totalScore || data.puntajeTotal || 0;
+                                                if (total > 0) s = total / count;
+                                            }
+                                            if (s !== null) {
+                                                juryScoreCount++;
+                                                if (!scoresPerArtistName.has(nName)) scoresPerArtistName.set(nName, []);
+                                                scoresPerArtistName.get(nName).push(s);
+                                            }
+                                        });
+                                    }
+                                } catch (_) {}
+                            }
                             
                             // Verificar votos públicos
+                            let publicVoteCount = 0;
                             try {
                                 const votesSnap = await getDocs(collection(db, `events/${event.id}/votes`));
+                                publicVoteCount = votesSnap.size;
                                 votesSnap.docs.forEach(vDoc => {
                                     const aid = vDoc.data().artistId || vDoc.data().artista_id;
                                     if (aid) artistasConVotos.add(aid);
                                 });
                             } catch (_) { }
                             
-                            console.log(`  ✅ ${artistasConVotos.size} artistas con votos en esta gala`);
+                            console.log(`  📊 jury_evals:${juryEvalCount}(scores:${juryScoreCount}) | public_votes:${publicVoteCount} | artistasConVotos:${artistasConVotos.size}`);
                             
                             // CARGAR TODOS los artistas (con o sin votos)
                             let artistasAgregados = 0;
                             artistsSnap.docs.forEach(d => {
                                 const artistName = d.data().name || 'Sin nombre';
+                                const nName = normForLookup(artistName);
                                 // ID estable basado en nombre normalizado (no cambia entre sesiones)
                                 const normalizedForId = artistName
                                     .normalize("NFD").replace(/[\u0300-\u036f]/g, '')
                                     .toLowerCase().replace(/\s+/g, '_').trim()
                                     .replace(/[^a-z0-9_]/g, '') || d.id;
                                 const artistId = `artist_${normalizedForId}`;
-                                const hasVotes = artistasConVotos.has(d.id);
+                                // Buscar votos por ID directo (exacto) o por nombre (fallback)
+                                const hasVotesById = artistasConVotos.has(d.id);
+                                const hasVotesNm  = hasVotesByName.has(nName);
+                                const hasVotes = hasVotesById || hasVotesNm;
+                                // Scores: primero por ID, sino por nombre
+                                const scoresById  = scoresPerArtist.get(d.id) || [];
+                                const scoresByNm  = (!scoresById.length && nName) ? (scoresPerArtistName.get(nName) || []) : [];
+                                const scoresArr = scoresById.length ? scoresById : scoresByNm;
+                                if (!hasVotesById && hasVotesNm) {
+                                    console.log(`  ⚠️ ${artistName}: votos encontrados por NOMBRE (ID mismatch en ${event.name})`);
+                                }
+                                const artistAvg = scoresArr.length > 0
+                                    ? Math.round(scoresArr.reduce((a, b) => a + b, 0) / scoresArr.length * 10) / 10
+                                    : null;
                                 
                                 newArtists.push({
                                     id: artistId,
@@ -935,7 +1072,8 @@
                                     generacion: generacion,
                                     galas: hasVotes ? 1 : 0,  // Solo cuenta si tiene votos
                                     hasVotes: hasVotes,
-                                    avg: null,
+                                    avg: artistAvg,
+                                    _allScores: [...scoresArr],
                                     eventIds: [event.id],
                                     votedEventIds: hasVotes ? [event.id] : []
                                 });
@@ -984,8 +1122,17 @@
                         
                         // El contador de galas = eventos donde tiene votos
                         existing.galas = existing.votedEventIds.length;
+
+                        // Acumular scores de esta gala y recalcular promedio
+                        if (artist._allScores && artist._allScores.length > 0) {
+                            if (!existing._allScores) existing._allScores = [];
+                            existing._allScores.push(...artist._allScores);
+                            existing.avg = Math.round(
+                                existing._allScores.reduce((a, b) => a + b, 0) / existing._allScores.length * 10
+                            ) / 10;
+                        }
                         
-                        console.log(`  🔗 "${artist.name}" duplicado de "${existing.name}" → ${existing.galas} galas con votos de ${existing.eventIds.length} eventos`);
+                        console.log(`  🔗 "${artist.name}" duplicado de "${existing.name}" → ${existing.galas} galas con votos, avg: ${existing.avg ?? 'sin promedio'}`);
                     } else {
                         // NO EXISTE → Agregar nuevo
                         artistMap.set(normalizedName, artist);
@@ -1030,9 +1177,9 @@
                 if (!loadedGenerations.includes(generacion)) loadedGenerations.push(generacion);
 
                 if (!merge) {
+                    // Limpiar caché ANTES de restaurar estado para que no se apliquen promedios viejos
+                    localStorage.removeItem(AVG_CACHE_KEY);
                     await loadSavedState();
-                    // Aplicar promedios desde caché ANTES de mostrar el board
-                    applyAvgCache();
                     document.getElementById('loadingState').classList.add('hidden');
                     document.getElementById('board').classList.remove('hidden');
                     // Buscar participaciones en galas pasadas (en background) y actualizar caché
@@ -1316,6 +1463,25 @@
 
         // ═══════════════════════════════════════════
         // ═══════════════════════════════════════════
+        // EXTRAER SCORE DE UN DOCUMENTO jury_evaluations
+        // Intenta average → score → calcula desde objeto scores
+        // ═══════════════════════════════════════════
+        function extractScore(data) {
+            // 1. Campo average o score directo (acepta número o string numérico)
+            let s = data.average ?? data.score;
+            if (typeof s === 'string') s = parseFloat(s);
+            if (typeof s === 'number' && !isNaN(s) && s > 0) return s;
+            // 2. Calcular desde el objeto de criterios (ej: {tecnica_vocal: 80, melodia: 60})
+            if (data.scores && typeof data.scores === 'object' && !Array.isArray(data.scores)) {
+                const vals = Object.values(data.scores)
+                    .map(v => typeof v === 'string' ? parseFloat(v) : v)
+                    .filter(v => typeof v === 'number' && !isNaN(v) && v > 0);
+                if (vals.length > 0) return vals.reduce((a, b) => a + b, 0) / vals.length;
+            }
+            return null;
+        }
+
+        // ═══════════════════════════════════════════
         // MATCH FUZZY DE NOMBRES (para artistas con apellido agregado)
         // ═══════════════════════════════════════════
         function normalizeName(str) {
@@ -1411,61 +1577,83 @@
                     || /gen\s*\d+/i.test(n);            // "gen12"
             };
 
-            const otherEvents = (allEvents || []).filter(e =>
-                !loadedEventIds.has(e.id) && !isOtherGeneration(e.name || e.id)
-            );
-            if (otherEvents.length === 0) return;
+            // Escanear TODOS los eventos de la generación (cargados Y no cargados)
+            // para detectar participaciones cruzadas (artista en gala A evaluado en gala B)
+            const allGenEvents = (allEvents || []).filter(e => !isOtherGeneration(e.name || e.id));
+            if (allGenEvents.length === 0) return;
 
             let enriched = 0;
-            for (const event of otherEvents) {
+            for (const event of allGenEvents) {
                 try {
                     const evalSnap = await getDocs(collection(db, `events/${event.id}/jury_evaluations`));
                     if (evalSnap.empty) continue;
 
-                    // IDs únicos de artistas evaluados en este evento
-                    const evalArtistIds = new Set();
+                    // Agrupar evaluaciones por artistId, usando artistName del propio documento
+                    const evalsByArtist = new Map(); // artistId → { name, docs[] }
                     evalSnap.docs.forEach(d => {
-                        const aid = d.data().artistId || d.data().artista_id;
-                        if (aid) evalArtistIds.add(aid);
+                        const data = d.data();
+                        const aid = data.artistId || data.artista_id;
+                        if (!aid) return;
+                        if (!evalsByArtist.has(aid)) {
+                            evalsByArtist.set(aid, {
+                                name: data.artistName || '',  // ← nombre guardado en el voto
+                                docs: []
+                            });
+                        }
+                        evalsByArtist.get(aid).docs.push(data);
                     });
 
-                    for (const artId of evalArtistIds) {
-                        try {
-                            const artDoc = await getDoc(doc(db, `events/${event.id}/artists`, artId));
-                            if (!artDoc.exists()) continue;
-                            const histName = artDoc.data().name || '';
-                            // Buscar coincidencia en artistas cargados
-                            const match = allArtists.find(a => fuzzyNameMatch(a.name, histName));
-                            if (match && !(match.votedEventIds || []).includes(event.id)) {
-                                if (!match.votedEventIds) match.votedEventIds = [];
-                                match.votedEventIds.push(event.id);
-                                match.galas = match.votedEventIds.length;
-                                match.hasVotes = true;
-                                // Calcular promedio de todos los jurados para este artista en este evento
-                                const evalDocs = evalSnap.docs.filter(d =>
-                                    (d.data().artistId === artId || d.data().artista_id === artId)
-                                );
-                                const scores = evalDocs.map(d => d.data().score).filter(s => typeof s === 'number');
-                                if (scores.length > 0) {
-                                    const eventAvg = scores.reduce((a, b) => a + b, 0) / scores.length;
-                                    // Acumular para promedio global entre galas
-                                    if (!match._allScores) match._allScores = [];
-                                    match._allScores.push(...scores);
-                                    const globalAvg = match._allScores.reduce((a, b) => a + b, 0) / match._allScores.length;
-                                    match.avg = Math.round(globalAvg * 10) / 10;
-                                }
-                                enriched++;
-                                console.log(`🏅 ${match.name} ↔ "${histName}" en ${event.name || event.id}${match.avg !== null ? ' | avg: ' + match.avg : ''}`);
-                            }
-                        } catch(_) {}
+                    for (const [artId, { name: histName, docs: evalDocs }] of evalsByArtist) {
+                        // Si el nombre no está en el voto, intentar desde la colección artists
+                        let resolvedName = histName;
+                        if (!resolvedName) {
+                            try {
+                                const artDoc = await getDoc(doc(db, `events/${event.id}/artists`, artId));
+                                if (artDoc.exists()) resolvedName = artDoc.data().name || '';
+                            } catch(_) {}
+                        }
+                        if (!resolvedName) continue;
+
+                        // Buscar coincidencia en artistas cargados
+                        const match = allArtists.find(a => fuzzyNameMatch(a.name, resolvedName));
+                        if (!match) continue;
+
+                        // Si ya tiene este evento contado, saltar
+                        // (el scan loop ya leyó esta misma colección con fallback por nombre)
+                        if ((match.votedEventIds || []).includes(event.id)) continue;
+
+                        if (!match.votedEventIds) match.votedEventIds = [];
+                        match.votedEventIds.push(event.id);
+                        match.galas = match.votedEventIds.length;
+                        match.hasVotes = true;
+
+                        // Si el evento tampoco estaba en eventIds, agregarlo
+                        if (!(match.eventIds || []).includes(event.id)) {
+                            if (!match.eventIds) match.eventIds = [];
+                            match.eventIds.push(event.id);
+                        }
+
+                        // Incluir todos los votos (el organizador es vista admin)
+                        const scores = evalDocs
+                            .map(d => extractScore(d))
+                            .filter(s => s !== null);
+                        if (scores.length > 0) {
+                            if (!match._allScores) match._allScores = [];
+                            match._allScores.push(...scores);
+                            const globalAvg = match._allScores.reduce((a, b) => a + b, 0) / match._allScores.length;
+                            match.avg = Math.round(globalAvg * 10) / 10;
+                        }
+                        enriched++;
+                        console.log(`🏅 ${match.name} ↔ "${resolvedName}" en "${event.name || event.id}" | galas: ${match.galas}${match.avg != null ? ' | avg: ' + match.avg : ' | sin promedio (¿voto secreto?)'}`);
                     }
                 } catch(e) {
                     console.warn(`⚠️ Error leyendo historial de ${event.name}:`, e);
                 }
             }
             if (enriched > 0) {
-                console.log(`✅ ${enriched} participaciones históricas detectadas`);
+                console.log(`✅ ${enriched} participaciones detectadas (cargadas + históricas)`);
                 renderBoard();
+                saveAvgCache();
             }
         }
 
@@ -1840,6 +2028,10 @@
         function renderBoard() {
             renderPool();
             renderColumns();
+            // Contar solo los artistas asignados a columnas (no los sin asignar)
+            const enColumnas = allArtists.filter(a => columnAssignments[a.id]).length;
+            const statsEl = document.getElementById('statsLabel');
+            if (statsEl) statsEl.textContent = `${enColumnas} artistas`;
         }
 
         function getPoolArtists() {
@@ -2006,19 +2198,24 @@
             const avgDisplay = artist.avg !== null ? `${artist.avg}` : '—';
             const galas = artist.galas || 0;  // galas con evaluaciones históricas
             const galasAsignadas = (artist.eventIds || []).length || 1; // galas actuales asignadas
+            const galasTotal = Math.max(galas, galasAsignadas); // total: la más alta entre asignadas y evaluadas
 
-            // Color de borde según galas evaluadas históricamente
-            const galasColor = galas === 0 ? 'border-gray-600'
-                             : galas === 1 ? 'border-blue-600'
-                             : galas === 2 ? 'border-purple-500'
+            // Color de borde según galas totales
+            const galasColor = galasTotal === 0 ? 'border-gray-600'
+                             : galasTotal === 1 ? 'border-blue-600'
+                             : galasTotal === 2 ? 'border-purple-500'
                              : 'border-yellow-500';  // 3+
 
-            // Puntos amarillos = galas ya evaluadas; sin evaluaciones = primera gala
-            const galasDots = galas > 0
-                ? Array.from({ length: Math.min(galas, 5) }, () =>
-                    `<span class="inline-block w-2 h-2 rounded-full bg-yellow-400"></span>`
-                  ).join('')
-                : `<span class="text-gray-500 text-xs">primera gala</span>`;
+            // Puntos: siempre mostrar el total de galas del certamen
+            // amarillo = cantó/evaluado, gris = pendiente
+            // Mínimo 4 aunque solo estén cargadas 3 galas (la 4ta todavía no ocurrió)
+            const totalGalasCertamen = Math.max(columns.filter(c => c.eventId).length, 4);
+            let galasDots = '';
+            for (let i = 0; i < totalGalasCertamen; i++) {
+                galasDots += i < galas
+                    ? `<span class="inline-block w-2.5 h-2.5 rounded-full bg-yellow-400" title="Gala ${i+1}: cantó ✅"></span>`
+                    : `<span class="inline-block w-2.5 h-2.5 rounded-full bg-gray-600 opacity-50" title="Gala ${i+1}: pendiente"></span>`;
+            }
 
             const photoEl = artist.photoURL
                 ? `<img src="${artist.photoURL}" alt="${artist.name}" class="w-14 h-14 rounded-full object-cover border-2 ${galasColor} mx-auto">`
@@ -2044,10 +2241,10 @@
                            </div>`
                         : `<div class="mt-1 text-gray-400 text-xs">sin promedio aún</div>`
                     }
-                    <!-- Galas evaluadas (históricas) -->
-                    <div class="flex items-center gap-1 mt-1" title="Galas evaluadas: ${galas} | Galas asignadas próx.: ${galasAsignadas}">
+                    <!-- Galas (asignadas + evaluadas) -->
+                    <div class="flex items-center gap-1 mt-1" title="Galas cantadas: ${galas} de ${totalGalasCertamen}">
                         <span class="text-gray-500 text-xs">Galas:</span>
-                        <span class="${galas >= 2 ? 'text-yellow-400' : galas === 1 ? 'text-blue-400' : 'text-gray-500'} text-xs font-bold">${galas > 0 ? galas : '—'}</span>
+                        <span class="${galas >= 2 ? 'text-yellow-400' : galas === 1 ? 'text-blue-400' : 'text-gray-500'} text-xs font-bold">${galas}/${totalGalasCertamen}</span>
                         <span class="flex gap-0.5 items-center">${galasDots}</span>
                     </div>
                 </div>
@@ -2482,6 +2679,48 @@
         });
 
         // ═══════════════════════════════════════════
+        // BIENVENIDA: modal inicial para cargar guardado o empezar nuevo
+        // ═══════════════════════════════════════════
+        async function mostrarModalBienvenida() {
+            const modal = document.getElementById('modalBienvenida');
+            const lista = document.getElementById('bienvenidaGuardadosList');
+            modal.classList.remove('hidden');
+            try {
+                const snap = await getDocs(query(collection(db, 'organizador_guardados'), orderBy('savedAt', 'desc')));
+                if (snap.empty) {
+                    lista.innerHTML = '<p class="text-gray-500 text-sm text-center py-3">💭 No hay listas guardadas todavía.</p>';
+                } else {
+                    lista.innerHTML = '';
+                    snap.docs.forEach(d => {
+                        const data = d.data();
+                        const fecha = data.savedAt?.toDate ? data.savedAt.toDate().toLocaleDateString('es-AR', {day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'}) : '---';
+                        const row = document.createElement('div');
+                        row.className = 'flex items-center gap-3 bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 cursor-pointer hover:border-purple-500 transition-all';
+                        row.innerHTML = `
+                            <div class="flex-1 min-w-0">
+                                <p class="text-white font-semibold text-sm truncate">${data.nombre || 'Sin nombre'}</p>
+                                <p class="text-gray-500 text-xs mt-0.5">${fecha} &bull; ${data.totalArtistas || '?'} artistas &bull; ${(data.columns||[]).length} grupos</p>
+                            </div>
+                            <button onclick="window.cargarDesdeGuardadoBienvenida('${d.id}')" class="shrink-0 bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-bold px-3 py-2 rounded-lg transition-all">📥 Cargar</button>
+                        `;
+                        lista.appendChild(row);
+                    });
+                }
+            } catch(e) {
+                lista.innerHTML = `<p class="text-red-400 text-sm text-center py-3">❌ Error: ${e.message}</p>`;
+            }
+        }
+
+        window.bienvenidaNuevo = function() {
+            document.getElementById('modalBienvenida').classList.add('hidden');
+            showGen13Modal();
+        };
+
+        window.cargarDesdeGuardadoBienvenida = async function(id) {
+            document.getElementById('modalBienvenida').classList.add('hidden');
+            await window.cargarGuardado(id);
+        };
+
         // GUARDAR COMO / MIS GUARDADOS
         // ═══════════════════════════════════════════
         window.abrirGuardarComo = function() {
@@ -2551,22 +2790,36 @@
         };
 
         window.cargarGuardado = async function(docId) {
-            if (!confirm('¿Cargar esta organización? Los grupos actuales serán reemplazados.')) return;
+            if (!confirm('\u00BFCargar esta organizaci\u00F3n? Los grupos actuales ser\u00E1n reemplazados.')) return;
             try {
                 const snap = await getDoc(doc(db, 'organizador_guardados', docId));
-                if (!snap.exists()) { showToast('Guardado no encontrado', '❌'); return; }
+                if (!snap.exists()) { showToast('Guardado no encontrado', '\u274C'); return; }
                 const state = snap.data();
-                columns            = state.columns || [];
-                columnAssignments  = state.columnAssignments || {};
-                columnOrder        = state.columnOrder || {};
-                artistStatus       = state.artistStatus || {};
-                if (state.loadedGenerations) loadedGenerations = state.loadedGenerations;
+                columns           = state.columns || [];
+                columnOrder       = state.columnOrder || {};
+                artistStatus      = state.artistStatus || {};
+                const asignaciones = state.columnAssignments || {};
+                const generaciones = state.loadedGenerations || [];
+                loadedGenerations = [];
                 document.getElementById('modalMisGuardados').classList.add('hidden');
+                document.getElementById('modalBienvenida').classList.add('hidden');
+                allArtists = [];
+                document.getElementById('loadingState').classList.remove('hidden');
+                document.getElementById('board').classList.add('hidden');
+                document.getElementById('loadingState').innerHTML = '<div class="text-center"><p class="text-white/60 text-lg">Restaurando...</p></div>';
+                for (const gen of generaciones) {
+                    const gen13Ids = gen === 'Generaci\u00F3n 13' ? JSON.parse(localStorage.getItem('gen13_selected_events') || '[]') : null;
+                    await loadArtistsByGeneration(gen, true, gen13Ids);
+                }
+                columnAssignments = asignaciones;
+                document.getElementById('loadingState').classList.add('hidden');
+                document.getElementById('board').classList.remove('hidden');
                 renderBoard();
                 updateLoadedGenerationsDisplay();
-                showToast(`✅ Cargado: “${state.nombre || 'sin nombre'}”`, '📂');
+                showToast('\u2705 Cargado: ' + (state.nombre || 'sin nombre'), '\uD83D\uDCC2');
             } catch(e) {
-                showToast('Error al cargar: ' + e.message, '❌');
+                showToast('Error al cargar: ' + e.message, '\u274C');
+                console.error('cargarGuardado error:', e);
             }
         };
 
@@ -2582,6 +2835,53 @@
         };
 
         // ── HISTORIAL DE ARTISTAS ──────────────────────────────────────
+        // DIAGNÓSTICO DE PROMEDIOS — vuelca en consola qué hay en Firestore
+        window.diagnosticoPromedios = async function() {
+            showToast('Ejecutando diagnóstico... abrí la consola (F12)', '🔍');
+            console.group('🔬 DIAGNÓSTICO PROMEDIOS');
+
+            // 1. Estado actual en memoria
+            console.group('📋 Estado en memoria (allArtists)');
+            const sorted = [...allArtists].sort((a,b) => a.name.localeCompare(b.name,'es'));
+            sorted.forEach(a => {
+                const status = a.avg != null ? `⭐ ${a.avg}` : '❌ SIN PROMEDIO';
+                console.log(`  ${status} | ${a.name} | galas:${a.galas} | eventIds:[${(a.eventIds||[]).join(', ')}] | _allScores:[${(a._allScores||[]).join(', ')}]`);
+            });
+            console.groupEnd();
+
+            // 2. Leer Firestore directo para cada evento cargado
+            const eventIds = [...new Set(allArtists.flatMap(a => a.eventIds || []))];
+            console.group(`🔥 Datos crudos en Firestore (${eventIds.length} eventos)`);
+            for (const eid of eventIds) {
+                const evName = allEvents.find(e => e.id === eid)?.name || eid;
+                try {
+                    const snap = await getDocs(collection(db, `events/${eid}/jury_evaluations`));
+                    console.group(`📅 ${evName} — ${snap.size} votos de jurados`);
+                    if (snap.empty) {
+                        console.warn('  ❌ VACÍO — no hay jury_evaluations aquí');
+                    } else {
+                        snap.docs.forEach(d => {
+                            const data = d.data();
+                            console.log(
+                                `  → ${data.artistName || '(sin nombre)'} | ` +
+                                `artistId:${data.artistId} | ` +
+                                `average:${data.average} | score:${data.score} | ` +
+                                `isSecretVote:${data.isSecretVote} | ` +
+                                `scores:${JSON.stringify(data.scores)}`
+                            );
+                        });
+                    }
+                    console.groupEnd();
+                } catch(e) {
+                    console.error(`❌ Error leyendo ${evName}:`, e);
+                }
+            }
+            console.groupEnd();
+
+            console.groupEnd();
+            alert('Diagnóstico completo. Abrí la consola del navegador (F12 → pestaña Console) y buscá "DIAGNÓSTICO PROMEDIOS".');
+        };
+
         // SINCRONIZAR TABLERO DESDE FIREBASE EVENTS
         // Lee directo de events/{id}/artists y reconstruye quién está en cada gala
         window.sincronizarDesdeGalas = async function() {

@@ -369,7 +369,7 @@
                 <div class="bg-blue-900/30 rounded-lg p-4 mb-4 border border-blue-500/30">
                     <p class="text-blue-300 text-sm">
                         <i class="fas fa-info-circle"></i> 
-                        Usá <strong>↑ ↓</strong> para cambiar el orden · Clic en una canción <i class="fas fa-play text-green-400 text-xs"></i> para escucharla · <strong>No canta</strong> la excluye sin borrar
+                        Arrastrar para ordenar · <strong>No canta</strong> = excluir sin borrar · 🎸 = toca con instrumento en vivo · <span class="text-orange-400">⚠️ naranja</span> = falta subir pistas
                     </p>
                 </div>
                 
@@ -619,48 +619,53 @@
             }
         }
 
-        // Cargar artistas
+        // Cargar artistas con listener en tiempo real
         async function loadArtists() {
             try {
-                const { collection, getDocs } = window.firestoreModules;
+                const { collection, getDocs, onSnapshot } = window.firestoreModules;
                 
-                // Intentar cargar de la estructura vieja primero (events/{eventId}/artists)
+                // Determinar qué colección usar
                 let artistsRef = collection(window.db, `events/${eventId}/artists`);
                 let snapshot = await getDocs(artistsRef);
                 let usedCollection = `events/${eventId}/artists`;
                 
-                // Si no hay artistas en la estructura vieja, intentar la nueva (artistas_{eventId})
                 if (snapshot.empty) {
                     console.log('⚠️ No hay artistas en events/${eventId}/artists, probando artistas_${eventId}...');
                     artistsRef = collection(window.db, `artistas_${eventId}`);
                     snapshot = await getDocs(artistsRef);
                     usedCollection = `artistas_${eventId}`;
                 }
-                
-                allArtists = [];
-                snapshot.forEach(doc => {
-                    const data = doc.data();
-                    allArtists.push({
-                        id: doc.id,
-                        nombre: data.name || data.nombre || 'Sin nombre',
-                        foto_url: data.photoURL || data.foto_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(data.name || data.nombre || 'A')}&background=4f46e5&color=fff&size=128`,
-                        playOrder: data.playOrder,
-                        excluded_gala: data.excluded_gala || false,
-                        oculto_panel_pistas: data.oculto_panel_pistas || false,
-                        _collectionPath: usedCollection
+
+                // Escuchar cambios en tiempo real
+                onSnapshot(collection(window.db, usedCollection), (snap) => {
+                    allArtists = [];
+                    snap.forEach(doc => {
+                        const data = doc.data();
+                        allArtists.push({
+                            id: doc.id,
+                            nombre: data.name || data.nombre || 'Sin nombre',
+                            foto_url: data.photoURL || data.foto_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(data.name || data.nombre || 'A')}&background=4f46e5&color=fff&size=128`,
+                            playOrder: data.playOrder,
+                            excluded_gala: data.excluded_gala || false,
+                            oculto_panel_pistas: data.oculto_panel_pistas || false,
+                            con_instrumento: data.con_instrumento || false,
+                            _collectionPath: usedCollection
+                        });
                     });
-                });
                 
-                // Ordenar por playOrder (orden de gala guardado), sin orden = al final alfabético
-                allArtists.sort((a, b) => {
-                    const aHas = a.playOrder != null;
-                    const bHas = b.playOrder != null;
-                    if (aHas && bHas) return a.playOrder - b.playOrder;
-                    if (aHas) return -1;
-                    if (bHas) return 1;
-                    return (a.nombre||'').localeCompare(b.nombre||'');
+                    // Ordenar por playOrder (orden de gala guardado), sin orden = al final alfabético
+                    allArtists.sort((a, b) => {
+                        const aHas = a.playOrder != null;
+                        const bHas = b.playOrder != null;
+                        if (aHas && bHas) return a.playOrder - b.playOrder;
+                        if (aHas) return -1;
+                        if (bHas) return 1;
+                        return (a.nombre||'').localeCompare(b.nombre||'');
+                    });
+                    console.log('✅ Artistas actualizados:', allArtists.length);
+                    updateStats();
+                    renderArtists();
                 });
-                console.log('✅ Artistas cargados:', allArtists.length);
             } catch (error) {
                 console.error('❌ Error cargando artistas:', error);
             }
@@ -733,13 +738,68 @@
                     !allTracksData.some(t => t.artistId === artist.id)
                 );
             }
+
+            // Mezclar con pistas de organización (solo en vista Todos, ordenadas por playOrder)
+            const orgItems = currentFilter === 'without-tracks' ? [] :
+                orgTracksData.filter(t => !t.excluded_gala).map(t => ({ _isOrg: true, ...t }));
+
+            const unified = [
+                ...filteredArtists.map(a => ({ _isOrg: false, _artist: a, _order: a.playOrder })),
+                ...orgItems.map(t => ({ _isOrg: true, _track: t, _order: t.playOrder }))
+            ].sort((a, b) => {
+                const aHas = a._order != null, bHas = b._order != null;
+                if (aHas && bHas) return a._order - b._order;
+                if (aHas) return -1;
+                if (bHas) return 1;
+                const aName = a._isOrg ? (a._track.artist||a._track.name||'') : (a._artist.nombre||'');
+                const bName = b._isOrg ? (b._track.artist||b._track.name||'') : (b._artist.nombre||'');
+                return aName.localeCompare(bName);
+            });
             
-            if (filteredArtists.length === 0) {
+            if (unified.length === 0) {
                 container.innerHTML = '<p class="text-gray-400 text-center col-span-full">No hay artistas para mostrar</p>';
                 return;
             }
             
-            container.innerHTML = filteredArtists.map(artist => {
+            container.innerHTML = unified.map(entry => {
+                if (entry._isOrg) {
+                    const track = entry._track;
+                    const displayName = track.artist || track.name || 'Organización';
+                    const subtitle = track.artist ? track.name : (track.category || '');
+                    const safeArtist = (track.artist||'').replace(/'/g,"\\'").replace(/`/g,'');
+                    const safeName = (track.name||'').replace(/'/g,"\\'").replace(/`/g,'');
+                    const orderBadge = track.playOrder != null
+                        ? `<span class="inline-block bg-purple-600 text-white text-xs font-bold px-2 py-0.5 rounded-full mr-1">#${track.playOrder + 1}</span>`
+                        : '';
+                    return `
+                        <div class="artist-card rounded-xl shadow-xl p-6 border-2 border-purple-700 bg-purple-950">
+                            <div class="flex items-center gap-4 mb-4">
+                                <div class="w-20 h-20 rounded-full bg-purple-800 flex items-center justify-center border-4 border-purple-500 text-4xl flex-shrink-0">🎧</div>
+                                <div class="flex-1">
+                                    <h3 class="text-white font-bold text-xl">${orderBadge}${displayName}</h3>
+                                    <p class="text-purple-300 text-sm mt-1">${subtitle}</p>
+                                    <p class="text-purple-400 text-xs mt-0.5"><i class="fas fa-headphones"></i> Organización</p>
+                                </div>
+                            </div>
+                            ${track.url ? `
+                            <div class="track-item rounded-lg p-3 mb-4">
+                                <div class="flex items-center justify-between">
+                                    <div class="flex-1">
+                                        <p class="text-white font-semibold text-sm"><i class="fas fa-headphones text-purple-400"></i> ${track.name}</p>
+                                        ${track.category ? `<p class="text-gray-400 text-xs">${track.category}</p>` : ''}
+                                    </div>
+                                    <div class="flex gap-1">
+                                        <button onclick="toggleTrack('org_${track.id}','${track.url}','${safeArtist}','${safeName}',0)"
+                                            id="playBtn_org_${track.id}"
+                                            class="bg-green-500 hover:bg-green-600 text-white px-3 py-2 rounded text-sm transition">
+                                            <i class="fas fa-play"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>` : '<p class="text-gray-500 text-xs mb-4">Sin URL de pista</p>'}
+                        </div>`;
+                }
+                const artist = entry._artist;
                 const artistTracks = allTracksData.find(t => t.artistId === artist.id);
                 const hasTracks = !!artistTracks;
                 const tracksCount = hasTracks ? artistTracks.pistas.length : 0;
@@ -1391,14 +1451,12 @@
         let sortableInstance = null;
 
         window.openPlaylistManager = function() {
-            const artistsWithTracks = allArtists.filter(a =>
-                allTracksData.some(t => t.artistId === a.id)
-            );
-            if (artistsWithTracks.length === 0) {
-                displayMessage('No hay artistas con pistas subidas todavía', 'warning');
+            if (allArtists.length === 0 && orgTracksData.length === 0) {
+                displayMessage('No hay artistas ni entradas de organización cargadas todavía', 'warning');
                 return;
             }
-            const included = artistsWithTracks
+            loadOrgTracksBackground(); // asegurarse que están cargadas
+            const includedArtists = allArtists
                 .filter(a => !a.excluded_gala)
                 .sort((a, b) => {
                     if (a.playOrder != null && b.playOrder != null) return a.playOrder - b.playOrder;
@@ -1406,8 +1464,8 @@
                     if (b.playOrder != null) return 1;
                     return (a.nombre||'').localeCompare(b.nombre||'');
                 });
-            const excluded = artistsWithTracks.filter(a => a.excluded_gala);
-            renderPlaylistItems(included, excluded);
+            const excludedArtists = allArtists.filter(a => a.excluded_gala);
+            renderPlaylistItems(includedArtists, excludedArtists);
             document.getElementById('playlistModal').classList.remove('hidden');
         };
 
@@ -1418,20 +1476,82 @@
         // ── helpers del gestor de playlist ──
         function renderPlaylistItems(included, excluded) {
             const container = document.getElementById('playlistContainer');
-            let html = included.map((artist, index) => {
+
+            // Construir lista unificada: artistas + org mezclados por playOrder
+            const orgIncluded = orgTracksData.filter(t => !t.excluded_gala);
+            const unified = [
+                ...included.map(a => ({ _type: 'artist', _item: a, _order: a.playOrder })),
+                ...orgIncluded.map(t => ({ _type: 'org', _item: t, _order: t.playOrder }))
+            ].sort((a, b) => {
+                const aHas = a._order != null, bHas = b._order != null;
+                if (aHas && bHas) return a._order - b._order;
+                if (aHas) return -1;
+                if (bHas) return 1;
+                const aName = a._type === 'artist' ? (a._item.nombre||'') : (a._item.artist||a._item.name||'');
+                const bName = b._type === 'artist' ? (b._item.nombre||'') : (b._item.artist||b._item.name||'');
+                return aName.localeCompare(bName);
+            });
+
+            let html = unified.map((entry, index) => {
+                if (entry._type === 'org') {
+                    const track = entry._item;
+                    const displayName = track.artist || track.name || 'Organización';
+                    const subtitle = track.artist ? track.name : (track.category || 'Sin categoría');
+                    const safeArtist = (track.artist||'').replace(/'/g,"\\'").replace(/`/g,'');
+                    const safeName = (track.name||'').replace(/'/g,"\\'").replace(/`/g,'');
+                    return `
+                        <div class="playlist-item bg-purple-900 rounded-lg p-3 flex items-center gap-2 border-2 border-purple-600 mb-2" data-org-id="${track.id}" data-locked="false">
+                            <div class="flex-shrink-0 bg-purple-700 rounded-lg w-10 h-10 flex items-center justify-center">
+                                <span class="order-num text-white font-bold text-lg">${index+1}</span>
+                            </div>
+                            <div class="flex-shrink-0 w-9 h-9"></div>
+                            <div class="drag-handle flex-shrink-0 cursor-move px-2 py-3">
+                                <i class="fas fa-grip-vertical text-gray-400 text-xl"></i>
+                            </div>
+                            <div class="w-10 h-10 rounded-full bg-purple-700 flex items-center justify-center flex-shrink-0 border-2 border-purple-400 text-xl">🎧</div>
+                            <div class="flex-1 min-w-0">
+                                <div class="text-white font-bold text-sm truncate">${displayName}</div>
+                                <div class="text-purple-300 text-xs mt-0.5 truncate">${subtitle}</div>
+                            </div>
+                            <button onclick="setOrgExclusion('${track.id}', true)" class="flex-shrink-0 bg-red-900 hover:bg-red-700 text-red-300 hover:text-white px-2 py-1 rounded text-xs font-semibold">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>`;
+                }
+                // entry._type === 'artist'
+                const artist = entry._item;
                 const artistTracks = allTracksData.find(t => t.artistId === artist.id);
                 const artistName = artist.nombre || artist.name || 'Artista';
                 const artistPhoto = artist.foto_url || '';
                 const isLocked = artist._locked || false;
-                const trackCount = artistTracks ? artistTracks.pistas.length : 0;
-                const trackNames = artistTracks ? artistTracks.pistas.map(t => `${t.slot===1?'★':'♪'} ${t.nombre_cancion}`).join('  ') : '';
+                const hasTracks = !!artistTracks;
+                const hasInstrumento = artist.con_instrumento || false;
+                const trackNames = hasTracks
+                    ? artistTracks.pistas.map(t => `${t.slot===1?'★':'♪'} ${t.nombre_cancion}`).join('  ')
+                    : hasInstrumento
+                        ? '🎸 Toca con instrumento en vivo'
+                        : '⚠️ Sin pistas subidas';
+                const cardBg = hasTracks ? 'bg-blue-900' : hasInstrumento ? 'bg-amber-900' : 'bg-gray-800';
+                const borderColor = isLocked ? 'border-green-500' : hasTracks ? 'border-blue-600' : hasInstrumento ? 'border-amber-500' : 'border-orange-600';
+                const numBg = hasTracks ? 'bg-blue-700' : hasInstrumento ? 'bg-amber-700' : 'bg-gray-600';
+                const instrBtnClass = hasInstrumento
+                    ? 'bg-amber-600 border-amber-400 text-white'
+                    : 'bg-transparent border-gray-500 text-gray-500 hover:border-amber-400 hover:text-amber-400';
+                const instrTitle = hasInstrumento ? 'Clic para quitar — ya no toca con instrumento' : 'Marcar como toca con instrumento en vivo';
+                // Botones de play para cada pista del artista
+                const playButtons = hasTracks
+                    ? artistTracks.pistas.map(t => {
+                        const safeArtistName = artistName.replace(/'/g,"\\'").replace(/`/g,'');
+                        const safeSongName = t.nombre_cancion.replace(/'/g,"\\'").replace(/`/g,'');
+                        return `<button onclick="toggleTrack('track_${artist.id}_${t.slot}','${t.archivo_url}','${safeArtistName}','${safeSongName}',${t.pitch_offset||0})" id="playBtn_track_${artist.id}_${t.slot}" class="flex-shrink-0 bg-green-600 hover:bg-green-500 text-white w-8 h-8 rounded-full flex items-center justify-center transition text-xs" title="${t.slot===1?'★':' ♪'} ${t.nombre_cancion}"><i class="fas fa-play"></i></button>`;
+                    }).join('')
+                    : '';
                 return `
-                    <div class="playlist-item ${isLocked ? 'locked-item' : ''} bg-blue-900 rounded-lg p-3 flex items-center gap-2 border-2 ${isLocked ? 'border-green-500' : 'border-blue-600'} mb-2" data-artist-id="${artist.id}" data-locked="${isLocked}">
-                        <div class="flex-shrink-0 bg-blue-700 rounded-lg w-10 h-10 flex items-center justify-center">
+                    <div class="playlist-item ${isLocked ? 'locked-item' : ''} ${cardBg} rounded-lg p-3 flex items-center gap-2 border-2 ${borderColor} mb-2" data-artist-id="${artist.id}" data-locked="${isLocked}">
+                        <div class="flex-shrink-0 ${numBg} rounded-lg w-10 h-10 flex items-center justify-center">
                             <span class="order-num text-white font-bold text-lg">${index+1}</span>
                         </div>
-                        <!-- Botón lock ✓ -->
-                        <button onclick="togglePlaylistLock('${artist.id}',this)" class="lock-btn flex-shrink-0 w-9 h-9 rounded-full border-2 flex items-center justify-center transition-all ${isLocked ? 'bg-green-500 border-green-400 text-white' : 'bg-transparent border-gray-500 text-gray-500 hover:border-green-400 hover:text-green-400'}" title="${isLocked ? 'Posición fijada — clic para desbloquear' : 'Fijar posición'}">
+                        <button onclick="togglePlaylistLock('${artist.id}',this)" class="lock-btn flex-shrink-0 w-9 h-9 rounded-full border-2 flex items-center justify-center transition-all ${isLocked ? 'bg-green-500 border-green-400 text-white' : 'bg-transparent border-gray-500 text-gray-500 hover:border-green-400 hover:text-green-400'}" title="${isLocked ? 'Posición fijada' : 'Fijar posición'}">
                             <i class="fas fa-check text-sm"></i>
                         </button>
                         <div class="drag-handle flex-shrink-0 cursor-move px-2 py-3 ${isLocked ? 'opacity-20 pointer-events-none' : ''}">
@@ -1440,23 +1560,38 @@
                         <img src="${artistPhoto}" alt="${artistName}" class="w-10 h-10 rounded-full object-cover border-2 border-blue-400 flex-shrink-0" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(artistName)}&background=3b82f6&color=fff&size=40'">
                         <div class="flex-1 min-w-0">
                             <div class="text-white font-bold text-sm truncate">${artistName}</div>
-                            <div class="text-gray-400 text-xs mt-0.5 truncate">${trackNames}</div>
+                            <div class="${hasTracks ? 'text-gray-400' : hasInstrumento ? 'text-amber-300' : 'text-orange-400'} text-xs mt-0.5 truncate">${trackNames}</div>
                         </div>
+                        ${playButtons ? `<div class="flex gap-1 flex-shrink-0">${playButtons}</div>` : ''}
+                        <button onclick="toggleInstrumento('${artist.id}', ${hasInstrumento})" class="flex-shrink-0 w-9 h-9 rounded-full border-2 flex items-center justify-center transition-all ${instrBtnClass}" title="${instrTitle}">
+                            🎸
+                        </button>
                         <button onclick="setGalaExclusion('${artist.id}',true)" class="flex-shrink-0 bg-red-900 hover:bg-red-700 text-red-300 hover:text-white px-2 py-1 rounded text-xs font-semibold" title="No canta esta gala">
-                            <i class="fas fa-times"></i> No canta
+                            <i class="fas fa-times"></i>
                         </button>
                     </div>`;
             }).join('');
 
-            if (excluded.length > 0) {
+            // Excluidos al final
+            const excludedOrg = orgTracksData.filter(t => t.excluded_gala);
+            const totalExcluded = excluded.length + excludedOrg.length;
+            if (totalExcluded > 0) {
                 html += `<div class="mt-4 pt-3 border-t border-gray-600">
-                    <p class="text-gray-400 text-xs font-semibold mb-2"><i class="fas fa-times-circle text-red-400"></i> No cantan esta gala (${excluded.length})</p>
+                    <p class="text-gray-400 text-xs font-semibold mb-2"><i class="fas fa-times-circle text-red-400"></i> No participan esta gala (${totalExcluded})</p>
                     ${excluded.map(artist => {
-                        const artistName = artist.nombre || artist.name || 'Artista';
+                        const n = artist.nombre || artist.name || 'Artista';
                         return `<div class="bg-gray-800 rounded-lg p-2 flex items-center gap-2 border border-gray-600 mb-1 opacity-60">
-                            <img src="${artist.foto_url||''}" alt="${artistName}" class="w-8 h-8 rounded-full object-cover border border-gray-500 flex-shrink-0" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(artistName)}&background=374151&color=fff&size=32'">
-                            <span class="text-gray-300 flex-1 text-sm font-semibold line-through">${artistName}</span>
+                            <img src="${artist.foto_url||''}" alt="${n}" class="w-8 h-8 rounded-full object-cover border border-gray-500 flex-shrink-0" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(n)}&background=374151&color=fff&size=32'">
+                            <span class="text-gray-300 flex-1 text-sm line-through">${n}</span>
                             <button onclick="setGalaExclusion('${artist.id}',false)" class="bg-green-800 hover:bg-green-700 text-green-300 hover:text-white px-2 py-1 rounded text-xs font-semibold"><i class="fas fa-plus"></i> Reincluir</button>
+                        </div>`;
+                    }).join('')}
+                    ${excludedOrg.map(track => {
+                        const n = track.artist || track.name || 'Organización';
+                        return `<div class="bg-gray-800 rounded-lg p-2 flex items-center gap-2 border border-gray-600 mb-1 opacity-60">
+                            <span class="text-purple-300 text-xl">🎧</span>
+                            <span class="text-gray-300 flex-1 text-sm line-through">${n} <span class="text-xs text-purple-400">[org]</span></span>
+                            <button onclick="setOrgExclusion('${track.id}', false)" class="bg-green-800 hover:bg-green-700 text-green-300 hover:text-white px-2 py-1 rounded text-xs font-semibold"><i class="fas fa-plus"></i> Reincluir</button>
                         </div>`;
                     }).join('')}
                 </div>`;
@@ -1524,11 +1659,53 @@
         };
 
         function updateOrderNumbers() {
-            document.querySelectorAll('#playlistContainer .playlist-item[data-artist-id]').forEach((item, i) => {
+            document.querySelectorAll('#playlistContainer .playlist-item').forEach((item, i) => {
                 const badge = item.querySelector('.order-num');
                 if (badge) badge.textContent = i + 1;
             });
         }
+
+        window.setOrgExclusion = async function(trackId, exclude) {
+            try {
+                const { doc, updateDoc } = window.firestoreModules;
+                await updateDoc(doc(window.db, `pistas_organizacion_${eventId}`, trackId), { excluded_gala: exclude });
+                const t = orgTracksData.find(x => x.id === trackId);
+                if (t) t.excluded_gala = exclude;
+                const includedArtists = allArtists.filter(a => !a.excluded_gala).sort((a, b) => {
+                    if (a.playOrder != null && b.playOrder != null) return a.playOrder - b.playOrder;
+                    if (a.playOrder != null) return -1;
+                    if (b.playOrder != null) return 1;
+                    return (a.nombre||'').localeCompare(b.nombre||'');
+                });
+                renderPlaylistItems(includedArtists, allArtists.filter(a => a.excluded_gala));
+            } catch(e) {
+                console.error('Error:', e);
+                displayMessage('Error al actualizar', 'error');
+            }
+        };
+
+        window.toggleInstrumento = async function(artistId, currentValue) {
+            try {
+                const { doc, updateDoc } = window.firestoreModules;
+                const artistObj = allArtists.find(a => a.id === artistId);
+                if (!artistObj) return;
+                const newValue = !currentValue;
+                await updateDoc(doc(window.db, artistObj._collectionPath || `artistas_${eventId}`, artistId), { con_instrumento: newValue });
+                artistObj.con_instrumento = newValue;
+                const included = allArtists
+                    .filter(a => !a.excluded_gala)
+                    .sort((a, b) => {
+                        if (a.playOrder != null && b.playOrder != null) return a.playOrder - b.playOrder;
+                        if (a.playOrder != null) return -1;
+                        if (b.playOrder != null) return 1;
+                        return (a.nombre||'').localeCompare(b.nombre||'');
+                    });
+                renderPlaylistItems(included, allArtists.filter(a => a.excluded_gala));
+            } catch(e) {
+                console.error('Error:', e);
+                displayMessage('Error al actualizar', 'error');
+            }
+        };
 
         window.setGalaExclusion = async function(artistId, exclude) {
             try {
@@ -1537,8 +1714,7 @@
                 if (!artistObj) return;
                 await updateDoc(doc(window.db, artistObj._collectionPath || `artistas_${eventId}`, artistId), { excluded_gala: exclude });
                 artistObj.excluded_gala = exclude;
-                const artistsWithTracks = allArtists.filter(a => allTracksData.some(t => t.artistId === a.id));
-                const included = artistsWithTracks
+                const included = allArtists
                     .filter(a => !a.excluded_gala)
                     .sort((a, b) => {
                         if (a.playOrder != null && b.playOrder != null) return a.playOrder - b.playOrder;
@@ -1546,7 +1722,7 @@
                         if (b.playOrder != null) return 1;
                         return (a.nombre||'').localeCompare(b.nombre||'');
                     });
-                renderPlaylistItems(included, artistsWithTracks.filter(a => a.excluded_gala));
+                renderPlaylistItems(included, allArtists.filter(a => a.excluded_gala));
             } catch(e) {
                 console.error('Error:', e);
                 displayMessage('Error al actualizar', 'error');
@@ -1554,7 +1730,7 @@
         };
 
         window.savePlaylistOrder = async function() {
-            const items = document.querySelectorAll('#playlistContainer .playlist-item[data-artist-id]');
+            const items = document.querySelectorAll('#playlistContainer .playlist-item');
             const updates = [];
 
             const btn = document.getElementById('savePlaylistBtn');
@@ -1568,16 +1744,19 @@
                 
                 items.forEach((item, index) => {
                     const artistId = item.getAttribute('data-artist-id');
-                    const artistRef = allArtists.find(a => a.id === artistId);
-                    const collectionPath = (artistRef && artistRef._collectionPath) || `artistas_${eventId}`;
-                    const artistDocRef = doc(window.db, collectionPath, artistId);
-                    updates.push(updateDoc(artistDocRef, { playOrder: index }));
+                    const orgId = item.getAttribute('data-org-id');
+                    if (artistId) {
+                        const artistRef = allArtists.find(a => a.id === artistId);
+                        const collectionPath = (artistRef && artistRef._collectionPath) || `artistas_${eventId}`;
+                        updates.push(updateDoc(doc(window.db, collectionPath, artistId), { playOrder: index }));
+                    } else if (orgId) {
+                        updates.push(updateDoc(doc(window.db, `pistas_organizacion_${eventId}`, orgId), { playOrder: index }));
+                    }
                 });
                 
                 await Promise.all(updates);
 
-                // Confirmación dentro del modal
-                btn.innerHTML = `<i class="fas fa-check-circle"></i> ¡Orden guardado! (${updates.length} artistas)`;
+                btn.innerHTML = `<i class="fas fa-check-circle"></i> ¡Orden guardado! (${updates.length} entradas)`;
                 btn.className = 'w-full bg-gradient-to-r from-emerald-500 to-green-600 text-white font-bold py-4 px-6 rounded-lg';
                 btn.disabled = false;
 
@@ -1611,17 +1790,31 @@
             let rows = '';
             items.forEach((item, i) => {
                 const artistId = item.getAttribute('data-artist-id');
-                const artistName = item.querySelector('h3')?.textContent?.trim() || 'Artista';
-                const artistTracks = allTracksData.find(t => t.artistId === artistId);
-                let tracksHtml = 'Sin pistas';
-                if (artistTracks && artistTracks.pistas) {
-                    tracksHtml = artistTracks.pistas.map(t =>
-                        `${t.slot === 1 ? '★' : '♪'} <strong>${t.nombre_cancion}</strong> — ${t.estilo_cancion}${t.trim_duration ? ' (✂️ ' + formatTime(t.trim_duration) + ')' : ''}`
-                    ).join('<br>');
+                const orgId = item.getAttribute('data-org-id');
+                let displayName, tracksHtml, rowColor;
+                if (orgId) {
+                    const orgTrack = orgTracksData.find(t => t.id === orgId);
+                    displayName = (orgTrack?.artist || orgTrack?.name || 'Organización') + ' <span style="font-size:11px;color:#7c3aed;font-weight:normal;">[org]</span>';
+                    tracksHtml = orgTrack?.name && orgTrack?.artist ? orgTrack.name : (orgTrack?.category || '🎧 Organización');
+                    rowColor = '#f3e8ff';
+                } else {
+                    const artistTracks = allTracksData.find(t => t.artistId === artistId);
+                    const artistObj = allArtists.find(a => a.id === artistId);
+                    displayName = artistObj?.nombre || 'Artista';
+                    rowColor = null;
+                    if (artistTracks && artistTracks.pistas) {
+                        tracksHtml = artistTracks.pistas.map(t =>
+                            `${t.slot === 1 ? '★' : '♪'} <strong>${t.nombre_cancion}</strong> — ${t.estilo_cancion}${t.trim_duration ? ' (✂️ ' + formatTime(t.trim_duration) + ')' : ''}`
+                        ).join('<br>');
+                    } else if (artistObj?.con_instrumento) {
+                        tracksHtml = '🎸 Toca con instrumento en vivo';
+                    } else {
+                        tracksHtml = '<span style="color:#f97316">⚠️ Sin pistas subidas</span>';
+                    }
                 }
-                rows += `<tr>
+                rows += `<tr${rowColor ? ` style="background:${rowColor}"` : ''}>
                     <td style="width:55px;text-align:center;font-size:26px;font-weight:bold;color:#1d4ed8;padding:10px 4px;">${i + 1}</td>
-                    <td style="padding:10px 8px;font-size:16px;font-weight:700;">${artistName}</td>
+                    <td style="padding:10px 8px;font-size:16px;font-weight:700;">${displayName}</td>
                     <td style="padding:10px 8px;font-size:13px;color:#374151;">${tracksHtml}</td>
                 </tr>`;
             });
@@ -1686,6 +1879,7 @@
             await loadEvent();
             await loadArtists();
             loadTracks(); // Ya no es async, es listener
+            loadOrgTracksBackground(); // Cargar pistas de org para offline
             updateStats();
             displayArtists();
             
@@ -1705,6 +1899,12 @@
                     if (await isCached(track.archivo_url)) count++;
                 }
             }
+            // También contar pistas de organización
+            for (const track of orgTracksData) {
+                if (!track.url) continue;
+                total++;
+                if (await isCached(track.url)) count++;
+            }
             const el = document.getElementById('offlineSummary');
             if (!el) return;
             if (total === 0) { el.textContent = ''; return; }
@@ -1719,6 +1919,10 @@
                 for (const track of (artist.pistas || [])) {
                     if (track.archivo_url) tracks.push({ url: track.archivo_url, storagePath: track.storage_path || null });
                 }
+            }
+            // Incluir pistas de organización
+            for (const track of orgTracksData) {
+                if (track.url) tracks.push({ url: track.url, storagePath: track.storagePath || null });
             }
 
             if (tracks.length === 0) {
@@ -1792,9 +1996,20 @@
         // ══════════════════════════════════════════════════════════
         
         let orgTracksData = [];
+        let _orgTracksLoaded = false;
+
+        // Cargar pistas de organización en segundo plano al iniciar (para offline)
+        function loadOrgTracksBackground() {
+            if (_orgTracksLoaded) return;
+            _orgTracksLoaded = true;
+            loadOrgTracks();
+        }
 
         window.openOrgTracks = function() {
             document.getElementById('orgTracksModal').classList.remove('hidden');
+            if (!_orgTracksLoaded) {
+                _orgTracksLoaded = true;
+            }
             loadOrgTracks();
         };
 
@@ -1814,6 +2029,7 @@
                         orgTracksData.push({ id: doc.id, ...doc.data() });
                     });
                     displayOrgTracks();
+                    displayArtists(); // refrescar grid principal con tarjetas org
                 });
             } catch (error) {
                 console.error('Error loading org tracks:', error);

@@ -502,7 +502,7 @@
 
     <script type="module">
         import { db } from './firebase_config.js';
-        import { collection, getDocs, query, where, orderBy } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { collection, getDocs, getDoc, doc, setDoc, query, where, orderBy } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // Obtener params de URL (opcional - si viene de un panel específico)
         const params = new URLSearchParams(window.location.search);
@@ -868,18 +868,42 @@
                 const ticketsSnapshot = await getDocs(collection(db, `events/${event.id}/tickets`));
                 const tickets = ticketsSnapshot.docs.map(doc => doc.data());
                 
-                const entradasGala = tickets.length;
-                const asistentesGala = tickets.filter(t => t.scanned).length;
-                const recaudadoGala = tickets.reduce((sum, t) => sum + (parseFloat(t.price) || 0), 0);
+                const entradasSistema = tickets.length;
+                const asistentesGala = tickets.filter(t => t.used).length;
 
-                // Cargar gastos (si existen en la colección de accounting)
-                let gastosGala = 0;
+                // Recaudación: igual lógica que admin_preventa.html
+                // Órdenes de preventa están en ticket_orders_{eventId} (colección raíz)
+                let recaudadoGala = 0;
                 try {
-                    const expensesSnapshot = await getDocs(collection(db, `accounting_${event.id}`));
-                    gastosGala = expensesSnapshot.docs.reduce((sum, doc) => sum + (doc.data().amount || 0), 0);
-                } catch (e) {
-                    // No hay gastos registrados
+                    const ordersSnap = await getDocs(collection(db, `ticket_orders_${event.id}`));
+                    recaudadoGala = ordersSnap.docs
+                        .filter(d => ['approved', 'tickets_generated'].includes(d.data().status))
+                        .reduce((sum, d) => sum + (d.data().totalAmount || 0), 0);
+                    // Sumar tickets de puerta (isDoorSale, sin orderId — tienen precio propio)
+                    tickets.filter(t => !t.orderId).forEach(t => {
+                        recaudadoGala += (parseFloat(t.price) || 0);
+                    });
+                } catch(e) {
+                    // Fallback: sumar price de cada ticket
+                    recaudadoGala = tickets.reduce((sum, t) => sum + (parseFloat(t.price) || 0), 0);
                 }
+
+                // Cargar datos manuales guardados (gastos y entradas manuales)
+                let gastosGala = 0;
+                let entradasManual = null;
+                try {
+                    const manualDoc = await getDoc(doc(db, `gala_datos_manuales`, event.id));
+                    if (manualDoc.exists()) {
+                        const mData = manualDoc.data();
+                        if (mData.gastos != null) gastosGala = Number(mData.gastos) || 0;
+                        if (mData.entradasManual != null) entradasManual = Number(mData.entradasManual);
+                    }
+                } catch (e) {
+                    console.warn('No se pudieron cargar datos manuales para', event.id, e);
+                }
+
+                // Entradas: usar manual si se ingresó, sino las del sistema
+                const entradasGala = entradasManual != null ? entradasManual : entradasSistema;
 
                 totalRecaudado += recaudadoGala;
                 totalEntradas += entradasGala;
@@ -887,9 +911,11 @@
                 totalGastos += gastosGala;
 
                 galaBreakdown.push({
+                    eventId: event.id,
                     name: event.name,
                     date: event.date,
-                    entradas: entradasGala,
+                    entradas: entradasSistema,
+                    entradasManual: entradasManual,
                     asistentes: asistentesGala,
                     recaudado: recaudadoGala,
                     gastos: gastosGala,
@@ -931,33 +957,109 @@
                             <p class="text-sm text-gray-400">${gala.date}</p>
                         </div>
                         <div class="text-right">
-                            <p class="text-green-400 font-bold text-xl">$${gala.recaudado.toLocaleString()}</p>
+                            <p class="text-green-400 font-bold text-xl" id="recaudado-display-${gala.eventId}" data-value="${gala.recaudado}">$${gala.recaudado.toLocaleString()}</p>
                             <p class="text-xs text-gray-400">Recaudado</p>
                         </div>
                     </div>
-                    <div class="grid grid-cols-3 gap-3 text-center text-sm">
+                    <div class="grid grid-cols-2 gap-3 text-center text-sm mb-3">
                         <div>
-                            <p class="text-gray-400">Entradas</p>
+                            <p class="text-gray-400">Entradas (sistema)</p>
                             <p class="text-white font-bold">${gala.entradas}</p>
                         </div>
                         <div>
-                            <p class="text-gray-400">Asistentes</p>
+                            <p class="text-gray-400">Asistentes escaneados</p>
                             <p class="text-white font-bold">${gala.asistentes}</p>
+                        </div>
+                    </div>
+                    <!-- Entradas manuales -->
+                    <div class="bg-gray-800 rounded-lg p-3 mb-3">
+                        <p class="text-gray-400 text-xs mb-1">✏️ Entradas totales (manual — incluye puerta, preventa externa, etc.)</p>
+                        <div class="flex gap-2 items-center">
+                            <input type="number" id="entradas-manual-${gala.eventId}" 
+                                   value="${gala.entradasManual || gala.entradas || ''}"
+                                   placeholder="ej: 250"
+                                   class="flex-1 bg-gray-700 text-white rounded px-2 py-1 text-sm border border-gray-600 focus:border-blue-400 outline-none">
+                            <button onclick="guardarDatoGala('${gala.eventId}', 'entradasManual', document.getElementById('entradas-manual-${gala.eventId}').value)"
+                                    class="bg-blue-700 hover:bg-blue-600 text-white text-xs px-3 py-1 rounded">
+                                Guardar
+                            </button>
+                        </div>
+                    </div>
+                    <!-- Gastos -->
+                    <div class="bg-gray-800 rounded-lg p-3 mb-3">
+                        <p class="text-gray-400 text-xs mb-1">💸 Gastos de la gala (alquiler, producción, personal, etc.)</p>
+                        <div class="flex gap-2 items-center">
+                            <input type="number" id="gastos-input-${gala.eventId}" 
+                                   value="${gala.gastos || ''}"
+                                   placeholder="ej: 150000"
+                                   class="flex-1 bg-gray-700 text-white rounded px-2 py-1 text-sm border border-gray-600 focus:border-red-400 outline-none">
+                            <button onclick="guardarDatoGala('${gala.eventId}', 'gastos', document.getElementById('gastos-input-${gala.eventId}').value)"
+                                    class="bg-red-700 hover:bg-red-600 text-white text-xs px-3 py-1 rounded">
+                                Guardar
+                            </button>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-3 text-center text-sm">
+                        <div>
+                            <p class="text-gray-400">Gastos</p>
+                            <p class="text-red-400 font-bold" id="gastos-display-${gala.eventId}">$${(gala.gastos||0).toLocaleString()}</p>
                         </div>
                         <div>
                             <p class="text-gray-400">Balance</p>
-                            <p class="font-bold ${gala.balance >= 0 ? 'text-green-400' : 'text-red-400'}">
+                            <p class="font-bold ${gala.balance >= 0 ? 'text-green-400' : 'text-red-400'}" id="balance-display-${gala.eventId}">
                                 $${gala.balance.toLocaleString()}
                             </p>
                         </div>
                     </div>
                 `;
+                item.querySelector('[id^="entradas-manual"]')?.__eventId;
+                item._eventId = gala.eventId;
+                item._recaudado = gala.recaudado;
                 breakdownList.appendChild(item);
             });
             
             console.log('✅ Desglose de galas renderizado');
             console.log('🎉 loadEconomicData COMPLETADA - Dashboard debería estar visible');
         }
+
+        // Guardar dato manual de gala (gastos o entradas manuales) en Firestore
+        window.guardarDatoGala = async function(eventId, campo, valor) {
+            const num = parseFloat(valor) || 0;
+            try {
+                await setDoc(doc(db, `gala_datos_manuales`, eventId), { [campo]: num }, { merge: true });
+                // Actualizar display del bloque de esa gala
+                if (campo === 'gastos') {
+                    const gastosEl = document.getElementById(`gastos-display-${eventId}`);
+                    const balanceEl = document.getElementById(`balance-display-${eventId}`);
+                    const recaudadoEl = document.getElementById(`recaudado-display-${eventId}`);
+                    const recaudado = parseFloat(recaudadoEl?.dataset.value || 0);
+                    const balance = recaudado - num;
+                    if (gastosEl) gastosEl.textContent = `$${num.toLocaleString()}`;
+                    if (balanceEl) {
+                        balanceEl.textContent = `$${balance.toLocaleString()}`;
+                        balanceEl.className = `font-bold ${balance >= 0 ? 'text-green-400' : 'text-red-400'}`;
+                    }
+                    // Recalcular total gastos del header sumando todos los displays
+                    let totalGastosActual = 0;
+                    document.querySelectorAll('[id^="gastos-display-"]').forEach(el => {
+                        totalGastosActual += parseFloat(el.textContent.replace(/[$.,]/g, '')) || 0;
+                    });
+                    const statGastos = document.getElementById('stat-gastos');
+                    const statBalance = document.getElementById('stat-balance');
+                    const statRecaudado = parseFloat(document.getElementById('stat-dinero-recaudado')?.textContent?.replace(/[$.,]/g, '') || 0);
+                    if (statGastos) statGastos.textContent = `$${totalGastosActual.toLocaleString()}`;
+                    if (statBalance) {
+                        const bal = statRecaudado - totalGastosActual;
+                        statBalance.textContent = `$${bal.toLocaleString()}`;
+                    }
+                }
+                // Feedback visual
+                const btn = document.querySelector(`button[onclick*="${eventId}"][onclick*="${campo}"]`);
+                if (btn) { btn.textContent = '✅'; setTimeout(() => btn.textContent = 'Guardar', 2000); }
+            } catch(e) {
+                alert('Error guardando: ' + e.message);
+            }
+        };
 
         //  🎤 CARGAR ARTISTAS DE LA GENERACIÓN CON FOTOS Y PARTICIPACIONES
         let allArtistsData = []; // Almacenar globalmente para filtrar
@@ -991,11 +1093,16 @@
                     const evaluationsMap = new Map();
                     
                     evaluationsSnapshot.forEach(doc => {
+                        // Ignorar votos parciales (guardados mientras el jurado evalúa)
+                        if (doc.id.endsWith('_partial')) return;
                         const data = doc.data();
+                        if (data.isPartial) return;
+                        const score = data.average || data.score;
+                        if (!score || score <= 0) return;
                         if (!evaluationsMap.has(data.artistId)) {
                             evaluationsMap.set(data.artistId, []);
                         }
-                        evaluationsMap.set(data.artistId, [...evaluationsMap.get(data.artistId), data.average || data.score || 0]);
+                        evaluationsMap.set(data.artistId, [...evaluationsMap.get(data.artistId), score]);
                     });
                     
                     artistsSnapshot.forEach(doc => {
@@ -1033,7 +1140,7 @@
                             date: event.date,
                             score: averageScore
                         });
-                        artistData.scores.push(averageScore);
+                        if (averageScore > 0) artistData.scores.push(averageScore);
                         artistData.totalGalas++;
                         totalParticipations++;
                     });

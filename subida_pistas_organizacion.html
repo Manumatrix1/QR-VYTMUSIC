@@ -13,14 +13,15 @@ all.min.css">
     <script type="module">
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
         import { getFirestore, collection, doc, getDocs, addDoc, deleteDoc, updateDoc, onSnapshot, Timestamp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
-        import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js';
+        import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject, getBlob } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js';
         
         import { app, db, storage } from './firebase_config.js';
         
         window.db = db;
         window.storage = storage;
+        window.getBlobFn = getBlob;
         window.firestoreModules = { collection, doc, getDocs, addDoc, deleteDoc, updateDoc, onSnapshot, Timestamp };
-        window.storageModules = { ref, uploadBytes, getDownloadURL, deleteObject };
+        window.storageModules = { ref, uploadBytes, getDownloadURL, deleteObject, getBlob };
     </script>
     
     <!-- Wavesurfer.js para editor de audio -->
@@ -268,9 +269,32 @@ all.min.css">
 
             <!-- Lista de pistas -->
             <div class="bg-gradient-to-br from-gray-800 to-gray-900 rounded-xl shadow-2xl p-6 border-2 border-purple-500">
-                <h2 class="text-2xl font-bold text-white mb-6 flex items-center gap-2">
+                <h2 class="text-2xl font-bold text-white mb-4 flex items-center gap-2">
                     <i class="fas fa-list"></i> Pistas Subidas (<span id="trackCount">0</span>)
                 </h2>
+
+                <!-- Botón Guardar para Gala -->
+                <div class="mb-5 bg-gray-800 rounded-xl p-4 border border-teal-500/40">
+                    <button onclick="prepareOffline()" id="offlineBtn"
+                        class="w-full bg-teal-600 hover:bg-teal-700 text-white font-bold py-3 px-4 rounded-xl transition flex items-center justify-center gap-2">
+                        <i class="fas fa-cloud-download-alt"></i> 💾 Guardar para Gala (sin internet)
+                    </button>
+                    <p class="text-gray-400 text-xs mt-2 text-center">
+                        Guardá todas las pistas en el dispositivo antes de la gala (con WiFi).
+                        <span id="offlineSummary" class="ml-1 text-green-400 font-semibold"></span>
+                    </p>
+                    <!-- Barra de progreso -->
+                    <div id="offlineProgress" class="hidden mt-3">
+                        <div class="flex justify-between text-sm mb-1">
+                            <span class="text-teal-300 font-semibold" id="offlineProgressText">🔄 Guardando...</span>
+                            <span class="text-white font-mono" id="offlineProgressCount">0/0</span>
+                        </div>
+                        <div class="bg-gray-700 rounded-full h-3">
+                            <div id="offlineProgressBar" class="bg-teal-500 h-3 rounded-full transition-all duration-300" style="width:0%"></div>
+                        </div>
+                    </div>
+                </div>
+
                 <div id="tracksListContainer" class="space-y-3">
                     <p class="text-gray-400 text-center py-8">Aún no hay pistas de organización</p>
                 </div>
@@ -458,11 +482,23 @@ all.min.css">
             document.getElementById('nowPlayingBanner').classList.add('hidden');
         };
 
-        window.playTrack = function(url, name) {
+        window.playTrack = async function(url, name) {
             stopPlayer();
             if (wavesurfer && wavesurfer.isPlaying()) wavesurfer.stop();
-            
-            globalAudio = new Audio(url);
+
+            // Intentar reproducir desde caché local primero
+            let playUrl = url;
+            const cached = await getAudioBlob(url);
+            if (cached) {
+                playUrl = URL.createObjectURL(cached);
+                console.log('🔌 Reproduciendo OFFLINE desde caché:', name);
+            } else {
+                console.log('🌐 Reproduciendo desde red:', name);
+                // Cachear en segundo plano para la próxima vez
+                cacheOrgTrackInBackground(url);
+            }
+
+            globalAudio = new Audio(playUrl);
             globalAudio.play();
             globalAudio.addEventListener('ended', () => stopPlayer());
             globalAudio.addEventListener('timeupdate', () => {
@@ -470,7 +506,7 @@ all.min.css">
                 const current = globalAudio.currentTime;
                 const total = globalAudio.duration;
                 if (!isNaN(total) && total > 0) {
-                    document.getElementById('progressBar').style.width = ` ${(current / total) * 100}%`;
+                    document.getElementById('progressBar').style.width = `${(current / total) * 100}%`;
                     document.getElementById('currentTime').textContent = formatTime(current);
                     document.getElementById('totalTime').textContent = formatTime(total);
                 }
@@ -479,6 +515,23 @@ all.min.css">
             document.getElementById('nowPlayingText').textContent = name;
             document.getElementById('nowPlayingBanner').classList.remove('hidden');
         };
+
+        // Cachear pista de org en segundo plano al reproducirla
+        function cacheOrgTrackInBackground(url) {
+            getAudioBlob(url).then(existing => {
+                if (existing) return;
+                const track = orgTracksData.find(t => t.url === url);
+                const path = track?.storagePath || (() => {
+                    const m = url.match(/\/o\/(.+?)[\?&]/);
+                    return m ? decodeURIComponent(m[1]) : null;
+                })();
+                if (path && window.getBlobFn && window.storageModules) {
+                    window.getBlobFn(window.storageModules.ref(window.storage, path))
+                        .then(blob => putAudioBlob(url, blob))
+                        .catch(() => {});
+                }
+            });
+        }
 
         // Configurar editor de audio
         document.getElementById('trackFile').addEventListener('change', async (e) => {
@@ -620,7 +673,7 @@ all.min.css">
             });
         }
 
-        function displayTracks() {
+        async function displayTracks() {
             const container = document.getElementById('tracksListContainer');
             const count = document.getElementById('trackCount');
             
@@ -628,6 +681,7 @@ all.min.css">
             
             if (orgTracksData.length === 0) {
                 container.innerHTML = '<p class="text-gray-400 text-center py-8">Aún no hay pistas de organización</p>';
+                showOfflineSummary();
                 return;
             }
             
@@ -636,9 +690,17 @@ all.min.css">
                 const dateB = b.uploadedAt?.toDate() || new Date(0);
                 return dateB - dateA;
             });
+
+            // Verificar cuáles están en caché
+            const cacheStatus = await Promise.all(orgTracksData.map(t => t.url ? isCached(t.url) : Promise.resolve(false)));
             
-            container.innerHTML = orgTracksData.map(track => `
-                <div class="bg-gray-700 rounded-lg p-4 border border-gray-600 hover:border-purple-500 transition">
+            container.innerHTML = orgTracksData.map((track, i) => {
+                const cached = cacheStatus[i];
+                const offlineBadge = cached
+                    ? `<span class="inline-flex items-center gap-1 bg-green-700/60 text-green-300 text-xs font-semibold px-2 py-0.5 rounded-full mt-1"><i class="fas fa-check-circle"></i> Guardada offline</span>`
+                    : `<span class="inline-flex items-center gap-1 bg-gray-600/60 text-gray-400 text-xs px-2 py-0.5 rounded-full mt-1"><i class="fas fa-wifi"></i> Solo con internet</span>`;
+                return `
+                <div class="bg-gray-700 rounded-lg p-4 border ${cached ? 'border-green-600' : 'border-gray-600'} hover:border-purple-500 transition">
                     <div class="flex items-center justify-between">
                         <div class="flex-1">
                             <h4 class="text-white font-bold"><i class="fas fa-headphones text-pink-400"></i> ${track.name}</h4>
@@ -650,6 +712,7 @@ all.min.css">
                                 <i class="fas fa-clock"></i> ${track.uploadedAt?.toDate().toLocaleString('es-ES') || ''}
                                 <span class="ml-2"><i class="fas fa-file"></i> ${(track.size / (1024 * 1024)).toFixed(2)} MB</span>
                             </p>
+                            <div>${offlineBadge}</div>
                         </div>
                         <div class="flex gap-2 ml-4">
                             <button onclick="playTrack('${track.url}', '${track.name.replace(/'/g, "\\'")}')"
@@ -670,8 +733,9 @@ all.min.css">
                             </button>
                         </div>
                     </div>
-                </div>
-            `).join('');
+                </div>`;
+            }).join('');
+            showOfflineSummary();
         }
 
         window.copyLink = async function(url) {
@@ -858,8 +922,133 @@ all.min.css">
             }
         });
 
+        // ===== CACHE LOCAL (IndexedDB) para offline =====
+        const AUDIO_DB_NAME = 'vytmusic-audio-v1';
+        const AUDIO_STORE = 'blobs';
+        let _audioDb = null;
+
+        async function openAudioDb() {
+            if (_audioDb) return _audioDb;
+            return new Promise((resolve, reject) => {
+                const req = indexedDB.open(AUDIO_DB_NAME, 1);
+                req.onupgradeneeded = e => e.target.result.createObjectStore(AUDIO_STORE);
+                req.onsuccess = e => { _audioDb = e.target.result; resolve(_audioDb); };
+                req.onerror = () => reject(req.error);
+            });
+        }
+
+        async function getAudioBlob(url) {
+            try {
+                const db = await openAudioDb();
+                return new Promise(resolve => {
+                    const tx = db.transaction(AUDIO_STORE, 'readonly');
+                    tx.objectStore(AUDIO_STORE).get(url).onsuccess = e => resolve(e.target.result || null);
+                });
+            } catch { return null; }
+        }
+
+        async function putAudioBlob(url, blob) {
+            try {
+                const db = await openAudioDb();
+                await new Promise((resolve, reject) => {
+                    const tx = db.transaction(AUDIO_STORE, 'readwrite');
+                    tx.objectStore(AUDIO_STORE).put(blob, url).onsuccess = resolve;
+                    tx.onerror = () => reject(tx.error);
+                });
+            } catch { /* ignorar errores de escritura */ }
+        }
+
+        async function isCached(url) {
+            const blob = await getAudioBlob(url);
+            return !!blob;
+        }
+
+        async function showOfflineSummary() {
+            let count = 0;
+            let total = orgTracksData.length;
+            for (const track of orgTracksData) {
+                if (track.url && await isCached(track.url)) count++;
+            }
+            const el = document.getElementById('offlineSummary');
+            if (!el) return;
+            if (total === 0) { el.textContent = ''; return; }
+            if (count === 0) { el.textContent = '(ninguna guardada aún)'; el.className = 'ml-1 text-gray-400 font-semibold'; }
+            else if (count < total) { el.textContent = `(⬇️ ${count}/${total} guardadas)`; el.className = 'ml-1 text-yellow-400 font-semibold'; }
+            else { el.textContent = `(✅ todas guardadas — lista para gala sin internet)`; el.className = 'ml-1 text-green-400 font-semibold'; }
+        }
+
+        window.prepareOffline = async function() {
+            const tracks = orgTracksData.filter(t => t.url);
+            if (tracks.length === 0) {
+                displayMessage('No hay pistas para guardar', 'info');
+                return;
+            }
+
+            const btn = document.getElementById('offlineBtn');
+            const progress = document.getElementById('offlineProgress');
+            const bar = document.getElementById('offlineProgressBar');
+            const text = document.getElementById('offlineProgressText');
+            const cnt = document.getElementById('offlineProgressCount');
+
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 🔄 Descargando...';
+            progress.classList.remove('hidden');
+            bar.style.width = '0%';
+            bar.className = 'bg-teal-500 h-3 rounded-full transition-all duration-300';
+            text.textContent = '🔄 Descargando pistas para uso offline...';
+            cnt.textContent = `0/${tracks.length}`;
+
+            let done = 0, errors = 0;
+            for (const track of tracks) {
+                try {
+                    const existing = await getAudioBlob(track.url);
+                    if (!existing) {
+                        const storageRef = window.storageModules.ref;
+                        const getBlobFn = window.getBlobFn;
+                        let blob = null;
+                        // Obtener el path de storage
+                        const path = track.storagePath || (() => {
+                            const m = track.url.match(/\/o\/(.+?)[\?&]/);
+                            return m ? decodeURIComponent(m[1]) : null;
+                        })();
+                        if (path && getBlobFn) {
+                            // Usar Firebase SDK getBlob (evita CORS, funciona con autenticación)
+                            blob = await getBlobFn(storageRef(window.storage, path));
+                        }
+                        if (blob) {
+                            await putAudioBlob(track.url, blob);
+                            console.log('✅ Guardada:', track.name);
+                        } else {
+                            errors++;
+                            console.warn('⚠️ No se pudo obtener blob para:', track.name);
+                        }
+                    } else {
+                        console.log('✅ Ya estaba en caché:', track.name);
+                    }
+                } catch(e) { errors++; console.error('❌ Error guardando pista:', track.name, e); }
+                done++;
+                bar.style.width = Math.round((done / tracks.length) * 100) + '%';
+                cnt.textContent = `${done}/${tracks.length}`;
+            }
+
+            const saved = tracks.length - errors;
+            bar.className = errors === 0
+                ? 'bg-green-500 h-3 rounded-full transition-all duration-300'
+                : 'bg-yellow-500 h-3 rounded-full transition-all duration-300';
+            text.innerHTML = errors === 0
+                ? `✅ ¡${saved} pistas guardadas! La gala funciona sin internet.`
+                : `⚠️ ${saved} guardadas, ${errors} con error. Reintentá con internet.`;
+            btn.disabled = false;
+            btn.innerHTML = `<i class="fas fa-check-circle"></i> ✅ ${saved}/${tracks.length} guardadas`;
+            setTimeout(() => {
+                btn.innerHTML = '<i class="fas fa-cloud-download-alt"></i> 💾 Guardar para Gala (sin internet)';
+                displayTracks(); // Refrescar badges offline en cada pista
+            }, 8000);
+        };
+
         // Inicializar
         loadOrgTracks();
+        setTimeout(showOfflineSummary, 2000);
     </script>
 </body>
 </html>
