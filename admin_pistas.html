@@ -407,49 +407,34 @@
             </div>
         </div>
 
-        <!-- Spotify Embed -->
+        <!-- Spotify Embed (múltiples) -->
         <div id="spotifySection" class="mb-6">
             <div class="bg-gradient-to-r from-green-950 to-emerald-950 rounded-xl shadow-xl p-4 border border-green-700/50">
                 <div class="flex items-center justify-between flex-wrap gap-3 mb-3">
                     <h3 class="text-white font-bold text-lg flex items-center gap-2">
                         <svg class="w-5 h-5 text-green-400" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/></svg>
                         Spotify
-                        <span class="text-green-400 text-xs font-normal">— pegá un link de playlist, canción o álbum</span>
+                        <span id="spotifyCount" class="bg-green-700 text-white text-xs font-bold px-2 py-0.5 rounded-full hidden">0</span>
                     </h3>
                     <button onclick="toggleSpotifySection()" class="text-green-400 hover:text-white transition">
                         <i id="spotifyChevron" class="fas fa-chevron-up"></i>
                     </button>
                 </div>
                 <div id="spotifyContent">
-                    <div class="flex gap-2 mb-3">
+                    <div class="flex gap-2 mb-4">
                         <input id="spotifyInput" type="text"
-                            placeholder="Link de Spotify o código <iframe> completo..."
+                            placeholder="Link de Spotify o código &lt;iframe&gt; completo..."
                             class="flex-1 bg-green-900/40 border border-green-700 text-white placeholder-green-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-green-400">
-                        <button onclick="loadSpotifyEmbed()"
+                        <button onclick="addSpotifyEmbed()"
                             class="bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded-lg text-sm font-semibold transition flex-shrink-0">
-                            <i class="fas fa-play"></i> Cargar
-                        </button>
-                        <button onclick="clearSpotifyEmbed()"
-                            class="bg-gray-700 hover:bg-gray-600 text-white px-3 py-2 rounded-lg text-sm transition flex-shrink-0" title="Limpiar">
-                            <i class="fas fa-times"></i>
+                            <i class="fas fa-plus"></i> Agregar
                         </button>
                     </div>
-                    <div id="spotifyEmbedContainer" class="hidden">
-                        <iframe id="spotifyIframe"
-                            src=""
-                            width="100%" height="380"
-                            frameborder="0"
-                            allowtransparency="true"
-                            allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
-                            loading="lazy"
-                            class="rounded-xl">
-                        </iframe>
-                        <p class="text-green-600 text-xs mt-2 text-center">
-                            <i class="fas fa-info-circle"></i> El volumen se controla con el slider de Spotify. Asegurate de estar logueada en Spotify en este browser para escuchar canciones completas.
-                        </p>
+                    <div id="spotifyList" class="flex flex-col gap-4">
+                        <!-- iframes se agregan aquí -->
                     </div>
-                    <p id="spotifyHint" class="text-green-600 text-xs text-center py-2">
-                        Podés pegar el link de Spotify <strong class="text-green-500">o el código &lt;iframe&gt; completo</strong> que te da "Compartir → Insertar"
+                    <p id="spotifyHint" class="text-green-700 text-xs text-center py-2">
+                        Pegá el link o el &lt;iframe&gt; de Spotify y hacé clic en Agregar. Podés poner varias listas a la vez.
                     </p>
                 </div>
             </div>
@@ -2973,44 +2958,79 @@
         // ══════════════════════════════════════════════════════════
         // SPOTIFY EMBED
         // ══════════════════════════════════════════════════════════
-        window.loadSpotifyEmbed = function() {
-            const raw = document.getElementById('spotifyInput').value.trim();
-            if (!raw) return;
-            const iframe = document.getElementById('spotifyIframe');
-            let embedUrl = null;
-            let iframeHeight = '380';
+        let _spotifyCount = 0;
 
-            // Caso 1: pegaron código <iframe ...> completo
+        function _parseSpotifyUrl(raw) {
             const iframeSrcMatch = raw.match(/src=["']([^"']+)["']/);
             if (raw.includes('<iframe') && iframeSrcMatch) {
-                embedUrl = iframeSrcMatch[1];
-                // intentar detectar altura del iframe original
                 const hMatch = raw.match(/height=["']?(\d+)["']?/);
-                if (hMatch) iframeHeight = hMatch[1];
-            } else {
-                // Caso 2: link directo o embed de Spotify
-                const match = raw.match(/spotify\.com\/(?:embed\/)?([a-zA-Z]+)\/([a-zA-Z0-9]+)/);
-                if (!match) {
-                    alert('Pegá un link de Spotify o el código <iframe> que te da Spotify al compartir.');
-                    return;
-                }
-                const [, type, id] = match;
-                embedUrl = `https://open.spotify.com/embed/${type}/${id}?utm_source=generator&theme=0`;
-                iframeHeight = (type === 'track' || type === 'episode') ? '152' : '380';
+                return { url: iframeSrcMatch[1], height: hMatch ? hMatch[1] : '380' };
             }
+            const match = raw.match(/spotify\.com\/(?:embed\/)?([a-zA-Z]+)\/([a-zA-Z0-9]+)/);
+            if (!match) return null;
+            const [, type, id] = match;
+            return {
+                url: `https://open.spotify.com/embed/${type}/${id}?utm_source=generator&theme=0`,
+                height: (type === 'track' || type === 'episode') ? '152' : '380'
+            };
+        }
 
-            iframe.src = embedUrl;
-            iframe.height = iframeHeight;
-            document.getElementById('spotifyEmbedContainer').classList.remove('hidden');
-            document.getElementById('spotifyHint').classList.add('hidden');
-        };
+        window.addSpotifyEmbed = function() {
+            const raw = document.getElementById('spotifyInput').value.trim();
+            if (!raw) return;
+            const parsed = _parseSpotifyUrl(raw);
+            if (!parsed) {
+                alert('Pegá un link de Spotify o el código <iframe> que te da "Compartir → Insertar".');
+                return;
+            }
+            const id = 'spEmbed_' + (++_spotifyCount);
+            const list = document.getElementById('spotifyList');
+            const hint = document.getElementById('spotifyHint');
 
-        window.clearSpotifyEmbed = function() {
-            document.getElementById('spotifyIframe').src = '';
+            const wrapper = document.createElement('div');
+            wrapper.id = id;
+            wrapper.className = 'relative';
+            wrapper.innerHTML = `
+                <button onclick="removeSpotifyEmbed('${id}')"
+                    class="absolute top-2 right-2 z-10 bg-red-700 hover:bg-red-600 text-white rounded-full w-7 h-7 flex items-center justify-center text-xs shadow-lg" title="Quitar">
+                    <i class="fas fa-times"></i>
+                </button>
+                <iframe src="${parsed.url}"
+                    width="100%" height="${parsed.height}"
+                    frameborder="0"
+                    allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
+                    loading="lazy"
+                    class="rounded-xl block">
+                </iframe>`;
+            list.appendChild(wrapper);
+
             document.getElementById('spotifyInput').value = '';
-            document.getElementById('spotifyEmbedContainer').classList.add('hidden');
-            document.getElementById('spotifyHint').classList.remove('hidden');
+            hint.classList.add('hidden');
+
+            // actualizar badge
+            const badge = document.getElementById('spotifyCount');
+            badge.textContent = list.children.length;
+            badge.classList.remove('hidden');
         };
+
+        window.removeSpotifyEmbed = function(id) {
+            const el = document.getElementById(id);
+            if (el) el.remove();
+            const list = document.getElementById('spotifyList');
+            const badge = document.getElementById('spotifyCount');
+            const count = list.children.length;
+            if (count === 0) {
+                badge.classList.add('hidden');
+                document.getElementById('spotifyHint').classList.remove('hidden');
+            } else {
+                badge.textContent = count;
+            }
+        };
+
+        // También permitir Enter en el input
+        document.getElementById('spotifyInput').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') addSpotifyEmbed();
+        });
 
         window.toggleSpotifySection = function() {
             const content = document.getElementById('spotifyContent');
