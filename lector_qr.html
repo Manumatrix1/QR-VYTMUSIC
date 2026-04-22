@@ -461,35 +461,38 @@
         // ── Detección: BarcodeDetector (Android) + jsQR (iOS/fallback) ──
         let barcodeDetector = null;
         if ('BarcodeDetector' in window) {
-            try { barcodeDetector = new BarcodeDetector({ formats: ['qr_code', 'code_128'] }); } catch {}
+            try {
+                // Pedir todos los formatos soportados para máxima compatibilidad
+                const supported = await BarcodeDetector.getSupportedFormats().catch(() => ['qr_code']);
+                const formats = ['qr_code', 'code_128', 'code_39', 'ean_13', 'ean_8'].filter(f => supported.includes(f));
+                barcodeDetector = new BarcodeDetector({ formats: formats.length ? formats : ['qr_code'] });
+            } catch {}
         }
         const elScanDot = document.getElementById('scan-dot');
         let frameCount = 0;
-        let isProcessing = false; // evita ejecuciones paralelas del loop
+        let isProcessing = false;
+        let _processingSince = 0;
 
         // ── Loop de escaneo ─────────────────────────────────────
         function scheduleNext() {
             setTimeout(() => {
-                if (state.scanning) state.animFrameId = requestAnimationFrame(scanLoop);
-            }, 80); // 12fps — suficiente para QR, no bloquea mobile
+                if (state.scanning) scanLoop();
+            }, 100); // ~10fps — suficiente para QR en mobile
         }
 
         async function scanLoop() {
             if (!state.scanning) return;
-            if (isProcessing) { scheduleNext(); return; } // no acumular llamadas
+
+            // Safety: si isProcessing lleva más de 3s, algo se trabó — resetear
+            if (isProcessing) {
+                if (Date.now() - _processingSince > 3000) { isProcessing = false; }
+                else { scheduleNext(); return; }
+            }
             if (video.readyState < 2 || video.videoWidth === 0) { scheduleNext(); return; }
 
             isProcessing = true;
+            _processingSince = Date.now();
             frameCount++;
-
-            // Un solo tamaño — 480px es el mejor balance velocidad/detalle para jsQR en mobile
-            const scanW = 480;
-            const scanH = Math.round((video.videoHeight / video.videoWidth) * scanW) || 640;
-            if (canvas.width !== scanW || canvas.height !== scanH) {
-                canvas.width  = scanW;
-                canvas.height = scanH;
-            }
-            ctx.drawImage(video, 0, 0, scanW, scanH);
 
             // Parpadeo dot
             elScanDot.style.opacity = (frameCount % 2 === 0) ? '1' : '0.2';
@@ -497,23 +500,42 @@
             try {
                 let raw = null;
 
+                // 1️⃣ BarcodeDetector directo sobre el <video> — mucho más fiable que canvas en mobile
                 if (barcodeDetector) {
-                    const results = await barcodeDetector.detect(canvas);
-                    if (results.length > 0) raw = results[0].rawValue;
+                    try {
+                        const results = await barcodeDetector.detect(video);
+                        if (results.length > 0) raw = results[0].rawValue;
+                    } catch {}
                 }
+
+                // 2️⃣ jsQR en canvas de alta resolución (640px) como fallback (iOS/Safari)
                 if (!raw && window.jsQR) {
+                    const vw = video.videoWidth  || 640;
+                    const vh = video.videoHeight || 480;
+                    // Usar resolución más alta para mejor detección
+                    const scanW = Math.min(vw, 640);
+                    const scanH = Math.round(vh / vw * scanW) || 480;
+                    if (canvas.width !== scanW || canvas.height !== scanH) {
+                        canvas.width  = scanW;
+                        canvas.height = scanH;
+                    }
+                    ctx.drawImage(video, 0, 0, scanW, scanH);
                     const imgData = ctx.getImageData(0, 0, scanW, scanH);
-                    const code = window.jsQR(imgData.data, scanW, scanH, { inversionAttempts: 'attemptBoth' });
-                    if (code) raw = code.data;
+                    // Verificar que no sea imagen negra (video todavía no entregó frame)
+                    const notBlack = imgData.data[0] || imgData.data[100] || imgData.data[1000];
+                    if (notBlack) {
+                        // intentBoth: prueba con y sin inversión — necesario para QR oscuros sobre fondo claro
+                        const code = window.jsQR(imgData.data, scanW, scanH, { inversionAttempts: 'attemptBoth' });
+                        if (code) raw = code.data;
+                    }
                 }
 
                 if (raw) {
                     dbg(`🔍 ${raw.substring(0, 55)}`);
-                    // Flash MP-style: border verde en video por 150ms
                     video.style.outline = '6px solid #10b981';
-                    setTimeout(() => { video.style.outline = ''; }, 150);
+                    setTimeout(() => { video.style.outline = ''; }, 200);
                     await handleScan(raw);
-                } else if (frameCount % 25 === 0) {
+                } else if (frameCount % 20 === 0) {
                     const m = barcodeDetector ? 'BD+jsQR' : (window.jsQR ? 'jsQR' : '⚠️ sin librería');
                     dbg(`frame ${frameCount} | ${state.tickets.size} tickets | ${m}`);
                 }
