@@ -90,7 +90,10 @@
             border-radius: 16px;
             padding: 18px 20px;
             display: flex; align-items: center; gap: 16px;
-            animation: bannerPop .8s ease-out forwards;
+            animation-name: bannerPop;
+            animation-timing-function: ease-out;
+            animation-fill-mode: forwards;
+            animation-duration: var(--flash-dur, .8s);
             box-shadow: 0 8px 32px rgba(0,0,0,0.6);
         }
         .result-ok   { background: linear-gradient(135deg, #059669, #10b981); }
@@ -212,14 +215,16 @@
            style="position:fixed;top:0;left:0;width:100vw;height:100vh;object-fit:cover;z-index:1;background:#000;"></video>
     <canvas id="qr-canvas" style="display:none;"></canvas>
 
-    <!-- Barra de debug (pequeña, discreta) -->
+    <!-- Barra de debug (más visible para diagnóstico) -->
     <div id="debug-bar" style="
         position:fixed; bottom:72px; left:0; right:0; z-index:201;
-        color:rgba(255,255,255,0.35);
-        font-size:0.6rem; font-family:monospace;
-        padding:3px 8px; text-align:center;
+        color:rgba(255,255,255,0.55);
+        font-size:0.65rem; font-family:monospace;
+        padding:4px 10px; text-align:center;
+        background:rgba(0,0,0,0.5);
         pointer-events:none;
-    ">⏳</div>
+        word-break:break-all;
+    ">⏳ Cargando...</div>
 
     <!-- Línea de escaneo pantalla completa -->
     <div class="scan-line-full"></div>
@@ -240,7 +245,7 @@
     <script type="module">
         import { db } from './firebase_config.js';
         import {
-            collection, doc, updateDoc, onSnapshot
+            collection, doc, updateDoc, onSnapshot, getDoc
         } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // ── Parámetros URL ──────────────────────────────────────
@@ -326,28 +331,50 @@
         window.addEventListener('offline', () => { state.isOnline = false; updateBadge(); });
 
         // ── Tickets en tiempo real ──────────────────────────────
-        async function loadTickets() {
-            const cached = localStorage.getItem(`tickets_${eventId}`);
-            if (cached) {
-                try { JSON.parse(cached).forEach(t => state.tickets.set(t.id, t)); } catch {}
-                refreshCounter();
-            }
-            const ref = collection(db, `events/${eventId}/tickets`);
-            state.unsubscribe = onSnapshot(ref,
-                snap => {
-                    snap.docChanges().forEach(change => {
-                        const d = change.doc.data();
-                        const t = { id: change.doc.id, name: d.name || 'Sin nombre',
-                                    ticketNumberFormatted: d.ticketNumberFormatted || null,
-                                    used: d.used || false, ...d };
-                        change.type !== 'removed' ? state.tickets.set(t.id, t) : state.tickets.delete(t.id);
-                    });
+        function loadTickets() {
+            return new Promise((resolve) => {
+                // Cargar cache inmediatamente para no bloquear
+                const cached = localStorage.getItem(`tickets_${eventId}`);
+                if (cached) {
+                    try { JSON.parse(cached).forEach(t => {
+                        state.tickets.set(t.id, t);
+                        // También indexar por el docId del campo si difiere
+                        if (t._docId && t._docId !== t.id) state.tickets.set(t._docId, t);
+                    }); } catch {}
                     refreshCounter();
-                    dbg(`✅ ${state.tickets.size} tickets cargados | método: ${barcodeDetector ? 'BarcodeDetector' : 'jsQR'}`);
-                    localStorage.setItem(`tickets_${eventId}`, JSON.stringify([...state.tickets.values()]));
-                },
-                () => { state.isOnline = false; updateBadge(); }
-            );
+                }
+                const ref = collection(db, `events/${eventId}/tickets`);
+                let firstSnap = true;
+                state.unsubscribe = onSnapshot(ref,
+                    snap => {
+                        snap.docChanges().forEach(change => {
+                            const d = change.doc.data();
+                            const docId = change.doc.id;
+                            // Siempre usar docId como id principal para que coincida con QR
+                            const t = { id: docId, _docId: docId, name: d.name || 'Sin nombre',
+                                        ticketNumberFormatted: d.ticketNumberFormatted || null,
+                                        used: d.used || false, ...d, id: docId };
+                            if (change.type !== 'removed') {
+                                state.tickets.set(docId, t);
+                                // También indexar por campo id del dato (si difiere) como fallback
+                                if (d.id && d.id !== docId) state.tickets.set(d.id, t);
+                            } else {
+                                state.tickets.delete(docId);
+                                if (d.id && d.id !== docId) state.tickets.delete(d.id);
+                            }
+                        });
+                        refreshCounter();
+                        const method = typeof barcodeDetector !== 'undefined' && barcodeDetector ? 'BD' : 'jsQR';
+                        dbg(`evento: ${eventId} | ${state.tickets.size} tickets | ${method}`);
+                        localStorage.setItem(`tickets_${eventId}`, JSON.stringify([...state.tickets.values()]));
+                        // Resolver la promesa en el primer snapshot para desbloquear la cámara
+                        if (firstSnap) { firstSnap = false; resolve(); }
+                    },
+                    (err) => { state.isOnline = false; updateBadge(); if (firstSnap) { firstSnap = false; resolve(); } }
+                );
+                // Timeout de seguridad: no bloquear más de 5 segundos
+                setTimeout(() => { if (firstSnap) { firstSnap = false; resolve(); } }, 5000);
+            });
         }
 
         function refreshCounter() {
@@ -386,14 +413,15 @@
         }
         function vibrate(p) { try { navigator.vibrate?.(p); } catch {} }
 
-        // ── Banner de resultado (no tapa la cámara, dura 0.8s) ──────────
+        // ── Banner de resultado (dura menos en éxito para escanear rápido) ──────────
         function flash(type, name, detail) {
             const cls   = { success:'result-ok', warning:'result-warn', error:'result-err' };
             const icons = { success:'✅', warning:'⚠️', error:'❌' };
+            const dur   = { success: 350, warning: 800, error: 900 }; // ms
             document.querySelectorAll('.result-banner').forEach(e => e.remove());
             const wrap = document.createElement('div');
             wrap.className = 'result-banner';
-            wrap.innerHTML = `<div class="result-inner ${cls[type]}">
+            wrap.innerHTML = `<div class="result-inner ${cls[type]}" style="--flash-dur:${dur[type]}ms">
                 <div class="result-icon">${icons[type]}</div>
                 <div class="result-text">
                     <div class="result-title">${name}</div>
@@ -404,14 +432,15 @@
             if (type === 'success') { beep(820,80);  vibrate([40,20,80]); }
             if (type === 'warning') { beep(500,120); vibrate([100,40,100]); }
             if (type === 'error')   { beep(320,180); vibrate([180,60,180]); }
-            setTimeout(() => wrap.remove(), 800);
+            setTimeout(() => wrap.remove(), dur[type]);
         }
 
         // ── Procesar código escaneado (QR o código de barras) ──────────
         async function handleScan(rawText) {
             if (!rawText) return;
             const now = Date.now();
-            if (rawText === state.lastScanCode && now - state.lastScanTs < 2500) return;
+            // 1.2s de anti-duplicado para el MISMO código; distintos códigos pasan de inmediato
+            if (rawText === state.lastScanCode && now - state.lastScanTs < 1200) return;
             state.lastScanCode = rawText;
             state.lastScanTs   = now;
 
@@ -435,7 +464,42 @@
                 }
             }
 
-            if (!ticket) { flash('error', '❌ NO ENCONTRADO', 'Este código no está en la lista'); return; }
+            if (!ticket) {
+                // Buscar directamente en Firebase (por si fue generado luego de cargar)
+                try {
+                    const snap = await getDoc(doc(db, `events/${eventId}/tickets`, ticketId));
+                    if (snap.exists()) {
+                        const d = snap.data();
+                        ticket = { id: snap.id, _docId: snap.id, name: d.name || 'Sin nombre',
+                                   ticketNumberFormatted: d.ticketNumberFormatted || null,
+                                   used: d.used || false, ...d, id: snap.id };
+                        state.tickets.set(snap.id, ticket);
+                    }
+                } catch {}
+            }
+
+            if (!ticket) {
+                const example = state.tickets.size > 0 ? [...state.tickets.keys()][0] : 'ninguno';
+                // Mostrar diagnóstico grande y legible en pantalla
+                document.querySelectorAll('.result-banner').forEach(e => e.remove());
+                const wrap = document.createElement('div');
+                wrap.className = 'result-banner';
+                wrap.style.cssText = 'top:0;bottom:0;display:flex;align-items:center;padding:16px;';
+                wrap.innerHTML = `<div style="
+                    background:#991b1b;border-radius:16px;padding:20px;width:100%;
+                    font-family:monospace;font-size:0.8rem;line-height:1.7;
+                    box-shadow:0 8px 32px rgba(0,0,0,0.6);">
+                    <div style="font-size:1.4rem;font-weight:900;margin-bottom:8px;">❌ NO ENCONTRADO</div>
+                    <div><b>Evento:</b> ${eventId}</div>
+                    <div><b>Tickets:</b> ${state.tickets.size}</div>
+                    <div style="word-break:break-all"><b>QR leído:</b> ${ticketId.substring(0,80)}</div>
+                    <div style="word-break:break-all"><b>Ejemplo:</b> ${example.substring(0,80)}</div>
+                </div>`;
+                document.body.appendChild(wrap);
+                beep(320,180); vibrate([180,60,180]);
+                setTimeout(() => wrap.remove(), 3500);
+                return;
+            }
             if (ticket.used) { flash('warning', '⚠️ YA INGRESÓ', ticket.name); return; }
 
             ticket.used   = true;
@@ -447,10 +511,11 @@
             flash('success', '✅ INGRESADO',
                 ticket.name + (ticket.ticketNumberFormatted ? `  — Nº${ticket.ticketNumberFormatted}` : ''));
 
+            // Sincronizar con Firebase en segundo plano (sin await — no bloquea el escáner)
             const payload = { used: true, usedAt: ticket.usedAt };
             if (state.isOnline) {
-                try { await updateDoc(doc(db, `events/${eventId}/tickets`, ticketId), payload); }
-                catch { state.syncQueue.push({ ticketId, data: payload }); updateBadge(); }
+                updateDoc(doc(db, `events/${eventId}/tickets`, ticketId), payload)
+                    .catch(() => { state.syncQueue.push({ ticketId, data: payload }); updateBadge(); });
             } else {
                 state.syncQueue.push({ ticketId, data: payload });
                 localStorage.setItem(`syncQueue_${eventId}`, JSON.stringify(state.syncQueue));
@@ -475,9 +540,7 @@
 
         // ── Loop de escaneo ─────────────────────────────────────
         function scheduleNext() {
-            setTimeout(() => {
-                if (state.scanning) scanLoop();
-            }, 100); // ~10fps — suficiente para QR en mobile
+            if (state.scanning) requestAnimationFrame(scanLoop); // 60fps real
         }
 
         async function scanLoop() {
@@ -508,13 +571,12 @@
                     } catch {}
                 }
 
-                // 2️⃣ jsQR en canvas de alta resolución (640px) como fallback (iOS/Safari)
+                // 2️⃣ jsQR en canvas reducido (320px) para máxima velocidad
                 if (!raw && window.jsQR) {
                     const vw = video.videoWidth  || 640;
                     const vh = video.videoHeight || 480;
-                    // Usar resolución más alta para mejor detección
-                    const scanW = Math.min(vw, 640);
-                    const scanH = Math.round(vh / vw * scanW) || 480;
+                    const scanW = Math.min(vw, 320); // 320px: 4x más rápido que 640px
+                    const scanH = Math.round(vh / vw * scanW) || 240;
                     if (canvas.width !== scanW || canvas.height !== scanH) {
                         canvas.width  = scanW;
                         canvas.height = scanH;
@@ -533,9 +595,12 @@
                 if (raw) {
                     dbg(`🔍 ${raw.substring(0, 55)}`);
                     video.style.outline = '6px solid #10b981';
-                    setTimeout(() => { video.style.outline = ''; }, 200);
-                    await handleScan(raw);
-                } else if (frameCount % 20 === 0) {
+                    setTimeout(() => { video.style.outline = ''; }, 150);
+                    isProcessing = false;
+                    handleScan(raw); // sin await: la detección no espera al proceso
+                    scheduleNext();
+                    return;
+                } else if (frameCount % 30 === 0) {
                     const m = barcodeDetector ? 'BD+jsQR' : (window.jsQR ? 'jsQR' : '⚠️ sin librería');
                     dbg(`frame ${frameCount} | ${state.tickets.size} tickets | ${m}`);
                 }
@@ -666,9 +731,14 @@
             if (saved) state.syncQueue = JSON.parse(saved);
         } catch {}
 
-        // ── Arrancar ────────────────────────────────────────────
         updateBadge();
+        elLoadingTxt.textContent = `Cargando tickets del evento...`;
         await loadTickets();
+        if (state.tickets.size === 0) {
+            // Aviso si no se encontraron entradas (posible eventId incorrecto)
+            elLoadingTxt.textContent = `⚠️ 0 tickets encontrados para "${eventId}"\u2014verificá el evento`;
+            await new Promise(r => setTimeout(r, 2500));
+        }
         await startCamera();
         if (state.isOnline) flushQueue();
 

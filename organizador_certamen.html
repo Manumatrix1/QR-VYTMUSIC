@@ -490,6 +490,26 @@
         </div>
     </div>
 
+    <!-- MODAL: Asignar artistas existentes a otra gala -->
+    <div id="modalAssignExisting" class="hidden fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
+        <div class="bg-gray-900 border border-purple-700 rounded-2xl p-5 w-full max-w-lg shadow-2xl" style="max-height:85vh;display:flex;flex-direction:column">
+            <div class="flex items-center justify-between mb-2">
+                <h3 class="text-white font-bold text-base">🎤 Agregar a <span id="assignModalColName" class="text-purple-300"></span></h3>
+                <button onclick="document.getElementById('modalAssignExisting').classList.add('hidden')" class="text-gray-400 hover:text-white text-xl leading-none">×</button>
+            </div>
+            <p class="text-gray-500 text-xs mb-3">Se agregan a esta gala <b>sin quitarlos de su gala original</b>. Su historial aparece en cada tarjeta.</p>
+            <input type="text" id="assignSearchInput" placeholder="🔍 Buscar artista..." oninput="filterAssignList()"
+                   class="w-full bg-gray-800 border border-gray-700 text-white rounded-xl px-3 py-2 text-sm mb-3 focus:border-purple-500 focus:outline-none">
+            <input type="hidden" id="assignModalColId">
+            <div id="assignArtistList" class="overflow-y-auto flex-1 space-y-1 pr-1">
+                <!-- populated by JS -->
+            </div>
+            <div class="mt-3 pt-3 border-t border-white/10">
+                <button onclick="document.getElementById('modalAssignExisting').classList.add('hidden')" class="w-full py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-xl text-sm">Cerrar</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Firebase SDK -->
     <script type="module">
         import { app, db, storage } from './firebase_config.js';
@@ -503,6 +523,7 @@
         let artistStatus = {};        // { artistId: 'canto' | 'ausente' | 'noprog' }
         let columnAssignments = {};   // { artistId: columnId }
         let columnOrder = {};         // { colId: [artistId, ...] } — orden dentro de cada columna
+        let columnMulti = {};          // { artistId: [colId, ...] } — artista asignado a múltiples galas
         let columns = [];             // [{ id, name, color }]
         let allEvents = [];
         let allGenerations = [];      // Lista de generaciones disponibles
@@ -1240,6 +1261,7 @@
                 columns,
                 columnAssignments,
                 columnOrder,
+                columnMulti,
                 artistStatus,
                 loadedGenerations,
                 updatedAt: new Date().toISOString()
@@ -1249,7 +1271,7 @@
         // localOnly=true → solo guarda en localStorage (NO sobreescribe Firebase)
         // Usar localOnly=true en cargas automáticas para proteger el estado guardado desde otro dispositivo
         function saveState(showConfirm = false, localOnly = false) {
-            const state = { columns, artistStatus, columnAssignments, columnOrder, allArtists, loadedGenerations };
+            const state = { columns, artistStatus, columnAssignments, columnOrder, columnMulti, allArtists, loadedGenerations };
             localStorage.setItem('organizador_session', JSON.stringify(state));
             if (loadedGenerations.length === 1) {
                 localStorage.setItem(`organizador_gen_${loadedGenerations[0]}`, JSON.stringify(state));
@@ -1364,6 +1386,7 @@
                             artistStatus = state.artistStatus || {};
                             columnAssignments = state.columnAssignments || {};
                             columnOrder = state.columnOrder || {};
+                            columnMulti = state.columnMulti || {};
                             // Migrar IDs viejos si los artistas tuvieron cambio de nombre
                             const migrated = migrateOldAssignments();
                             if (migrated > 0) {
@@ -1399,6 +1422,7 @@
                             artistStatus = state.artistStatus || {};
                             columnAssignments = state.columnAssignments || {};
                             columnOrder = state.columnOrder || {};
+                            columnMulti = state.columnMulti || {};
                             const migrated = migrateOldAssignments();
                             if (migrated > 0) saveState(false, false);
                             console.log('✅ Estado restaurado desde localStorage');
@@ -2025,11 +2049,169 @@
         // ═══════════════════════════════════════════
         // RENDER TABLERO
         // ═══════════════════════════════════════════
+        // ═══════════════════════════════════════════
+        // MULTI-GALA: asignar artista a otra gala sin moverlo de la original
+        // ═══════════════════════════════════════════
+
+        // Historial de compañeros: retorna [{colName, companions:[nombre,...]}] para cada gala del artista
+        function getArtistHistorial(artistId) {
+            const result = [];
+            const allColIds = [
+                columnAssignments[artistId],
+                ...(columnMulti[artistId] || [])
+            ].filter(Boolean);
+            for (const colId of allColIds) {
+                const col = columns.find(c => c.id === colId);
+                if (!col) continue;
+                const companions = allArtists
+                    .filter(a => a.id !== artistId && (
+                        columnAssignments[a.id] === colId ||
+                        (columnMulti[a.id] || []).includes(colId)
+                    ))
+                    .map(a => a.name.split(' ')[0]); // solo primer nombre
+                result.push({ colId, colName: col.name, companions });
+            }
+            return result;
+        }
+
+        window.assignToGala = function(artistId, colId) {
+            const artist = allArtists.find(a => a.id === artistId);
+            const col = columns.find(c => c.id === colId);
+            if (!artist || !col) return;
+            if (columnAssignments[artistId] === colId || (columnMulti[artistId] || []).includes(colId)) {
+                showToast(`${artist.name} ya está en esta gala`, 'ℹ️');
+                return;
+            }
+            if (!columnMulti[artistId]) columnMulti[artistId] = [];
+            columnMulti[artistId].push(colId);
+            if (col.eventId) syncArtistToEvent(artist, col.eventId);
+            saveState();
+            renderBoard();
+            // Actualizar solo el botón dentro del modal (sin cerrarlo)
+            const btn = document.querySelector(`#assignArtistList [data-artist-assign="${artistId}"]`);
+            if (btn) {
+                btn.textContent = '✅ Agregado';
+                btn.disabled = true;
+                btn.className = 'px-3 py-1 bg-green-900 text-green-400 text-xs rounded-lg flex-shrink-0 cursor-default';
+            }
+            showToast(`✅ ${artist.name} → ${col.name}`, '🎤');
+        };
+
+        window.removeFromGala = function(artistId, colId) {
+            if (!columnMulti[artistId]) return;
+            columnMulti[artistId] = columnMulti[artistId].filter(c => c !== colId);
+            if (columnMulti[artistId].length === 0) delete columnMulti[artistId];
+            // También quitar de Firebase si la gala es real
+            const col = columns.find(c => c.id === colId);
+            if (col?.eventId) {
+                const artist = allArtists.find(a => a.id === artistId);
+                if (artist) removeArtistFromEvent(artist, col.eventId);
+            }
+            saveState();
+            renderBoard();
+            showToast('Artista quitado de la gala', '↩️');
+        };
+
+        // Lista para filtrado en el modal
+        let _assignPickerArtists = [];
+        let _assignPickerColId = '';
+
+        window.openAssignExistingModal = function(colId) {
+            const col = columns.find(c => c.id === colId);
+            if (!col) return;
+            _assignPickerColId = colId;
+            document.getElementById('assignModalColId').value = colId;
+            document.getElementById('assignModalColName').textContent = col.name;
+            document.getElementById('assignSearchInput').value = '';
+            // Artistas que NO están ya en esta columna
+            _assignPickerArtists = allArtists
+                .filter(a => columnAssignments[a.id] !== colId && !(columnMulti[a.id] || []).includes(colId))
+                .sort((a, b) => a.name.localeCompare(b.name, 'es'));
+            renderAssignList(_assignPickerArtists, colId);
+            document.getElementById('modalAssignExisting').classList.remove('hidden');
+            setTimeout(() => document.getElementById('assignSearchInput').focus(), 150);
+        };
+
+        window.filterAssignList = function() {
+            const q = document.getElementById('assignSearchInput').value.toLowerCase();
+            const filtered = q
+                ? _assignPickerArtists.filter(a => a.name.toLowerCase().includes(q))
+                : _assignPickerArtists;
+            renderAssignList(filtered, _assignPickerColId);
+        };
+
+        function renderAssignList(artists, colId) {
+            const list = document.getElementById('assignArtistList');
+            list.innerHTML = '';
+            if (artists.length === 0) {
+                list.innerHTML = '<div class="text-gray-500 text-sm text-center py-6">No hay artistas disponibles</div>';
+                return;
+            }
+            const totalGalasCertamen = Math.max(columns.filter(c => c.eventId).length, 4);
+            artists.forEach(artist => {
+                const historial = getArtistHistorial(artist.id);
+                const galas = artist.galas || 0;
+                const histHTML = historial.length > 0
+                    ? historial.map(h => {
+                        const comps = h.companions.slice(0, 3).join(', ');
+                        return `<span class="text-gray-500 text-xs">🎤 ${h.colName}: <span class="text-gray-400">${comps || 'solista'}</span></span>`;
+                      }).join('<br>')
+                    : '<span class="text-gray-600 text-xs">Sin galas asignadas aún</span>';
+                const alreadyAdded = (columnMulti[artist.id] || []).includes(colId);
+                const galasColor = galas === 0 ? 'text-gray-500' : galas === 1 ? 'text-blue-400' : galas >= 2 ? 'text-yellow-400' : 'text-gray-500';
+                const item = document.createElement('div');
+                item.className = 'flex items-center gap-2 p-2 rounded-xl hover:bg-white/5 transition-all';
+                item.dataset.artistId = artist.id;
+                item.innerHTML = `
+                    <div class="flex-shrink-0">
+                        ${artist.photoURL
+                            ? `<img src="${artist.photoURL}" class="w-10 h-10 rounded-full object-cover border border-purple-700">`
+                            : `<div class="w-10 h-10 rounded-full bg-purple-800 flex items-center justify-center text-white font-bold text-sm">${artist.name.charAt(0)}</div>`
+                        }
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-2">
+                            <span class="text-white text-sm font-bold leading-tight">${artist.name}</span>
+                            <span class="${galasColor} text-xs font-bold flex-shrink-0">${galas}/${totalGalasCertamen} galas</span>
+                        </div>
+                        <div class="leading-tight mt-0.5">${histHTML}</div>
+                    </div>
+                    <div class="flex flex-col gap-1 flex-shrink-0">
+                        <button data-artist-assign="${artist.id}"
+                                onclick="assignToGala('${artist.id}', '${colId}')"
+                                ${alreadyAdded ? 'disabled' : ''}
+                                class="px-3 py-1 text-xs rounded-lg transition-all ${alreadyAdded
+                                    ? 'bg-green-900 text-green-400 cursor-default'
+                                    : 'bg-purple-700 hover:bg-purple-600 text-white cursor-pointer'}">
+                            ${alreadyAdded ? '✅' : '➕'}
+                        </button>
+                        <button onclick="removeArtistFromPicker('${artist.id}', this)"
+                                class="px-3 py-1 text-xs rounded-lg bg-red-900/60 hover:bg-red-800 text-red-400 hover:text-white transition-all"
+                                title="Dar de baja del certamen">
+                            🗑️
+                        </button>
+                    </div>`;
+                list.appendChild(item);
+            });
+        }
+
+        window.removeArtistFromPicker = function(artistId, btn) {
+            const artist = allArtists.find(a => a.id === artistId);
+            if (!artist) return;
+            const name = artist.name;
+            if (!confirm(`⚠️ ¿Dar de baja a "${name}"?\n\nSe eliminará del certamen. Esta acción NO SE PUEDE DESHACER.`)) return;
+            // Quitar de la lista del picker inmediatamente
+            btn.closest('[data-artist-id]')?.remove();
+            // Reusar la función existente removeArtist
+            removeArtist(artistId);
+        };
+
+        // ══════════════════════════════════════════════════════════
         function renderBoard() {
             renderPool();
             renderColumns();
-            // Contar solo los artistas asignados a columnas (no los sin asignar)
-            const enColumnas = allArtists.filter(a => columnAssignments[a.id]).length;
+            // Contar artistas asignados a columnas (primary + multi)
+            const enColumnas = allArtists.filter(a => columnAssignments[a.id] || columnMulti[a.id]?.length > 0).length;
             const statsEl = document.getElementById('statsLabel');
             if (statsEl) statsEl.textContent = `${enColumnas} artistas`;
         }
@@ -2037,7 +2219,7 @@
         function getPoolArtists() {
             const filter = document.getElementById('poolSearch').value.toLowerCase();
             return allArtists.filter(a => {
-                const inPool = !columnAssignments[a.id];
+                const inPool = !columnAssignments[a.id] && !(columnMulti[a.id]?.length > 0);
                 const matchFilter = !filter || a.name.toLowerCase().includes(filter);
                 return inPool && matchFilter;
             });
@@ -2070,13 +2252,20 @@
 
                 // Agregar artistas asignados a esta columna (respetando orden guardado)
                 const dropZone = colEl.querySelector('.drop-zone');
-                let colArtists = allArtists.filter(a => columnAssignments[a.id] === col.id);
+                // Incluir primary + multi-assigned
+                let colArtists = allArtists.filter(a =>
+                    columnAssignments[a.id] === col.id ||
+                    (columnMulti[a.id] || []).includes(col.id)
+                );
                 if (columnOrder[col.id] && columnOrder[col.id].length > 0) {
                     const orderMap = {};
                     columnOrder[col.id].forEach((id, idx) => { orderMap[id] = idx; });
                     colArtists.sort((a, b) => (orderMap[a.id] ?? 9999) - (orderMap[b.id] ?? 9999));
                 }
-                colArtists.forEach(a => dropZone.appendChild(createArtistCard(a)));
+                colArtists.forEach(a => {
+                    const isMulti = (columnMulti[a.id] || []).includes(col.id);
+                    dropZone.appendChild(createArtistCard(a, { colId: col.id, isMulti }));
+                });
 
                 // Inicializar SortableJS en la columna
                 sortableInstances[col.id] = new Sortable(dropZone, {
@@ -2181,7 +2370,8 @@
             });
         }
 
-        function createArtistCard(artist) {
+        function createArtistCard(artist, opts = {}) {
+            const { colId = null, isMulti = false } = opts;
             const status = artistStatus[artist.id] || 'noprog';
             const statusConfig = {
                 canto:  { label: 'Cantó', icon: '✅', cls: 'badge-canto',  btnActive: 'active-canto' },
@@ -2196,19 +2386,15 @@
 
             const initial = artist.name.charAt(0).toUpperCase();
             const avgDisplay = artist.avg !== null ? `${artist.avg}` : '—';
-            const galas = artist.galas || 0;  // galas con evaluaciones históricas
-            const galasAsignadas = (artist.eventIds || []).length || 1; // galas actuales asignadas
-            const galasTotal = Math.max(galas, galasAsignadas); // total: la más alta entre asignadas y evaluadas
+            const galas = artist.galas || 0;
+            const galasAsignadas = (artist.eventIds || []).length || 1;
+            const galasTotal = Math.max(galas, galasAsignadas);
 
-            // Color de borde según galas totales
             const galasColor = galasTotal === 0 ? 'border-gray-600'
                              : galasTotal === 1 ? 'border-blue-600'
                              : galasTotal === 2 ? 'border-purple-500'
-                             : 'border-yellow-500';  // 3+
+                             : 'border-yellow-500';
 
-            // Puntos: siempre mostrar el total de galas del certamen
-            // amarillo = cantó/evaluado, gris = pendiente
-            // Mínimo 4 aunque solo estén cargadas 3 galas (la 4ta todavía no ocurrió)
             const totalGalasCertamen = Math.max(columns.filter(c => c.eventId).length, 4);
             let galasDots = '';
             for (let i = 0; i < totalGalasCertamen; i++) {
@@ -2221,9 +2407,32 @@
                 ? `<img src="${artist.photoURL}" alt="${artist.name}" class="w-14 h-14 rounded-full object-cover border-2 ${galasColor} mx-auto">`
                 : `<div class="w-14 h-14 rounded-full bg-gradient-to-br from-purple-600 to-indigo-700 flex items-center justify-center text-white font-bold text-xl mx-auto border-2 ${galasColor}">${initial}</div>`;
 
+            // Historial de compañeros en las otras galas (no en la actual)
+            const historial = getArtistHistorial(artist.id).filter(h => h.colId !== colId);
+            const histHTML = historial.length > 0
+                ? historial.map(h => {
+                    const comps = h.companions.slice(0, 3).join(', ');
+                    return `<span class="text-gray-600 text-xs">🎤 ${h.colName}: <span class="text-gray-500">${comps || 'solista'}</span></span>`;
+                  }).join('<br>')
+                : '';
+
+            // Botón de eliminar: si es multi-asignado, solo quita de ESTA gala; si es primario, baja del certamen
+            const deleteBtn = isMulti
+                ? `<button onclick="removeFromGala('${artist.id}', '${colId}')" 
+                           class="flex-1 text-xs py-1 rounded-lg border border-orange-800 text-orange-500 hover:bg-orange-800 hover:text-white transition-all"
+                           title="Quitar de esta gala (sigue en su gala original)">
+                       ↩️
+                   </button>`
+                : `<button onclick="removeArtist('${artist.id}')" 
+                           class="flex-1 text-xs py-1 rounded-lg border border-red-800 text-red-500 hover:bg-red-800 hover:text-white transition-all"
+                           title="Dar de baja (se bajó del certamen)">
+                       🗑️
+                   </button>`;
+
             card.innerHTML = `
                 <!-- Foto centrada -->
                 <div class="flex flex-col items-center mb-2">
+                    ${isMulti ? '<div class="text-xs text-purple-400 font-bold mb-1">🔀 Otra gala</div>' : ''}
                     ${photoEl}
                     <!-- Nombre debajo de la foto -->
                     <div class="flex items-center justify-center gap-1 mt-1 w-full">
@@ -2234,19 +2443,20 @@
                             <i class="fas fa-pen text-xs"></i>
                         </button>
                     </div>
-                    <!-- Promedio grande y destacado -->
+                    <!-- Promedio -->
                     ${artist.avg !== null
                         ? `<div class="mt-1 bg-yellow-100 border border-yellow-400 rounded-lg px-3 py-0.5">
                                <span class="text-yellow-700 text-sm font-black">⭐ ${avgDisplay}</span>
                            </div>`
                         : `<div class="mt-1 text-gray-400 text-xs">sin promedio aún</div>`
                     }
-                    <!-- Galas (asignadas + evaluadas) -->
+                    <!-- Galas -->
                     <div class="flex items-center gap-1 mt-1" title="Galas cantadas: ${galas} de ${totalGalasCertamen}">
                         <span class="text-gray-500 text-xs">Galas:</span>
                         <span class="${galas >= 2 ? 'text-yellow-400' : galas === 1 ? 'text-blue-400' : 'text-gray-500'} text-xs font-bold">${galas}/${totalGalasCertamen}</span>
                         <span class="flex gap-0.5 items-center">${galasDots}</span>
                     </div>
+                    ${histHTML ? `<div class="mt-1 w-full text-left leading-tight">${histHTML}</div>` : ''}
                 </div>
                 <!-- Botones status -->
                 <div class="flex gap-1">
@@ -2260,11 +2470,7 @@
                             title="No programado">
                         ⏱️
                     </button>
-                    <button onclick="removeArtist('${artist.id}')" 
-                            class="flex-1 text-xs py-1 rounded-lg border border-red-800 text-red-500 hover:bg-red-800 hover:text-white transition-all"
-                            title="Dar de baja (se bajó del certamen)">
-                        🗑️
-                    </button>
+                    ${deleteBtn}
                 </div>
             `;
             return card;
@@ -2272,7 +2478,9 @@
 
         function createColumnElement(col) {
             const colors = colorMap[col.color] || colorMap.purple;
-            const colArtistCount = allArtists.filter(a => columnAssignments[a.id] === col.id).length;
+            const colArtistCount = allArtists.filter(a =>
+                columnAssignments[a.id] === col.id || (columnMulti[a.id] || []).includes(col.id)
+            ).length;
 
             const div = document.createElement('div');
             div.className = `kanban-col`;
@@ -2324,9 +2532,12 @@
                                 class="w-full text-xs py-2 bg-indigo-900/60 hover:bg-indigo-800 text-indigo-300 rounded-lg border border-indigo-700 transition-all font-bold flex items-center justify-center gap-1">
                                 🎛️ Abrir Panel</a>`
                         }
+                        <button onclick="openAssignExistingModal('${col.id}')"
+                            class="w-full text-xs py-2 bg-purple-900/50 hover:bg-purple-800 text-purple-300 hover:text-white rounded-lg border border-purple-800 transition-all font-bold">
+                            🎤 Artistas de otras galas</button>
                         <button onclick="openAddArtistModal('${col.id}')"
                             class="w-full text-xs py-2 bg-white/5 hover:bg-white/15 text-white/60 hover:text-white rounded-lg border border-white/10 transition-all">
-                            ➕ Agregar Artista</button>
+                            ➕ Agregar Artista nuevo</button>
                     </div>
                 </div>`;
 
