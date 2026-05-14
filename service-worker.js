@@ -1,5 +1,5 @@
 // Service Worker para VYT MUSIC PWA
-const CACHE_NAME = 'vyt-music-v30';
+const CACHE_NAME = 'vyt-music-v31';
 
 // Solo cachear el mínimo indispensable para offline
 const urlsToCache = [
