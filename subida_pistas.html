@@ -484,13 +484,38 @@
     </div>
 
     <script type="module">
-        const params = new URLSearchParams(window.location.search);
-        const eventId = params.get('eventId');
-        const artistId = params.get('artistId');
+        import { collection, query, where, getDocs as _getDocs } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
 
-        if (!eventId || !artistId) {
-            alert('Acceso inválido. Falta eventId o artistId.');
+        const params = new URLSearchParams(window.location.search);
+        const artistId = params.get('artistId');
+        let eventId = params.get('eventId');
+
+        if (!artistId) {
+            alert('Acceso inválido. Falta el ID de artista.');
             window.location.href = 'index.html';
+        }
+
+        // Si no viene eventId en la URL, buscar la gala activa automáticamente
+        if (!eventId) {
+            try {
+                const snap = await _getDocs(query(collection(window.db, 'events'), where('isActive', '==', true)));
+                if (snap.empty) {
+                    document.body.innerHTML = `
+                        <div style="min-height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#0f172a;color:#fff;text-align:center;padding:2rem;font-family:system-ui">
+                            <div style="font-size:3rem;margin-bottom:1rem">⏳</div>
+                            <h2 style="color:#f59e0b;margin-bottom:0.5rem">Sin gala activa</h2>
+                            <p style="color:#64748b;max-width:320px">El organizador aún no habilitó la subida de pistas.<br>Esperá que te avisen y volvé a entrar a este link.</p>
+                            <button onclick="location.reload()" style="margin-top:1.5rem;background:#3b82f6;color:white;border:none;padding:0.75rem 2rem;border-radius:0.6rem;font-size:1rem;font-weight:700;cursor:pointer">🔄 Reintentar</button>
+                        </div>`;
+                } else {
+                    eventId = snap.docs[0].id;
+                    // Actualizar URL sin recargar para que goBackToPanel funcione
+                    history.replaceState(null, '', `?artistId=${artistId}&eventId=${eventId}`);
+                }
+            } catch (e) {
+                console.error('Error buscando gala activa:', e);
+                alert('Error de conexión. Revisá tu internet.');
+            }
         }
 
         // Función para volver al panel
