@@ -1,5 +1,5 @@
 // Service Worker para VYT MUSIC PWA - VERSIÓN PANEL SIMPLIFICADO
-const CACHE_NAME = 'vyt-music-simple-v28'; // 🔥 Actualizado 2026-05-14 - QR grande en descarga
+const CACHE_NAME = 'vyt-music-simple-v29'; // 🔥 Actualizado 2026-05-14 - links universales + fix pistas
 const urlsToCache = [
   '/',
   '/index.html',
