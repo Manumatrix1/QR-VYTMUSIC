@@ -252,9 +252,9 @@
                 try {
                     new QRCode(document.getElementById(`qrcode-${ticket.id}`), {
                         text: qrData,
-                        width: 256,
-                        height: 256,
-                        correctLevel: QRCode.CorrectLevel.M
+                        width: 300,
+                        height: 300,
+                        correctLevel: QRCode.CorrectLevel.H
                     });
                     console.log(`✅ QR generado exitosamente para ${ticket.id}`);
                 } catch (qrError) {
@@ -289,177 +289,142 @@
                     downloadButton.disabled = true;
                     
                     try {
-                        // Crear canvas para dibujar el ticket manualmente
+                        // Canvas de 600px de ancho para que el QR ocupe casi todo
                         const finalCanvas = document.createElement('canvas');
-                        finalCanvas.width = 800;
-                        finalCanvas.height = 1200;
+                        finalCanvas.width = 600;
+                        finalCanvas.height = 1350;
                         const ctx = finalCanvas.getContext('2d');
-                        
+
                         // Fondo
                         ctx.fillStyle = '#1f2937';
-                        ctx.fillRect(0, 0, 800, 1200);
-                        
+                        ctx.fillRect(0, 0, 600, 1350);
+
                         let yPos = 40;
-                        
+                        ctx.textAlign = 'center';
+
                         // Número de entrada
                         if (ticket.ticketNumberFormatted) {
                             downloadButton.textContent = '⏳ Dibujando ticket...';
                             ctx.fillStyle = '#0ea5e9';
-                            ctx.fillRect(200, yPos, 400, 50);
+                            ctx.fillRect(100, yPos, 400, 50);
                             ctx.fillStyle = '#ffffff';
                             ctx.font = 'bold 28px Arial';
-                            ctx.textAlign = 'center';
-                            ctx.fillText(`Nº ${ticket.ticketNumberFormatted}`, 400, yPos + 35);
+                            ctx.fillText(`Nº ${ticket.ticketNumberFormatted}`, 300, yPos + 35);
                             yPos += 70;
                         }
-                        
+
                         // Nombre del artista badge
                         if (ticket.artistName) {
                             ctx.fillStyle = '#9333ea';
-                            ctx.fillRect(150, yPos, 500, 50);
+                            ctx.fillRect(50, yPos, 500, 50);
                             ctx.fillStyle = '#ffffff';
                             ctx.font = 'bold 22px Arial';
-                            ctx.fillText(`🎤 Artista: ${ticket.artistName}`, 400, yPos + 33);
+                            ctx.fillText(`🎤 Artista: ${ticket.artistName}`, 300, yPos + 33);
                             yPos += 70;
                         }
-                        
-                        // Foto del artista - Método mejorado con fetch
+
+                        // Foto del artista
                         if (ticket.artistPhotoURL) {
                             downloadButton.textContent = '⏳ Cargando foto...';
                             try {
-                                // Cargar la imagen usando fetch para evitar problemas CORS
                                 const response = await fetch(ticket.artistPhotoURL);
                                 const blob = await response.blob();
                                 const objectURL = URL.createObjectURL(blob);
-                                
+
                                 const artistImage = await new Promise((resolve, reject) => {
                                     const img = new Image();
-                                    img.onload = () => {
-                                        URL.revokeObjectURL(objectURL); // Liberar memoria
-                                        resolve(img);
-                                    };
-                                    img.onerror = () => {
-                                        URL.revokeObjectURL(objectURL);
-                                        reject();
-                                    };
+                                    img.onload = () => { URL.revokeObjectURL(objectURL); resolve(img); };
+                                    img.onerror = () => { URL.revokeObjectURL(objectURL); reject(); };
                                     img.src = objectURL;
                                 });
-                                
-                                // Dibujar foto circular
+
                                 ctx.save();
                                 ctx.beginPath();
-                                ctx.arc(400, yPos + 64, 64, 0, Math.PI * 2);
+                                ctx.arc(300, yPos + 75, 75, 0, Math.PI * 2);
                                 ctx.closePath();
                                 ctx.clip();
-                                ctx.drawImage(artistImage, 336, yPos, 128, 128);
+                                ctx.drawImage(artistImage, 225, yPos, 150, 150);
                                 ctx.restore();
-                                
-                                // Borde circular
+
                                 ctx.strokeStyle = '#0ea5e9';
                                 ctx.lineWidth = 8;
                                 ctx.beginPath();
-                                ctx.arc(400, yPos + 64, 64, 0, Math.PI * 2);
+                                ctx.arc(300, yPos + 75, 75, 0, Math.PI * 2);
                                 ctx.stroke();
-                                
-                                yPos += 150;
+
+                                yPos += 175;
                             } catch (e) {
                                 console.warn('No se pudo cargar foto del artista:', e);
-                                // Dibujar placeholder si falla
                                 ctx.fillStyle = '#374151';
                                 ctx.beginPath();
-                                ctx.arc(400, yPos + 64, 64, 0, Math.PI * 2);
+                                ctx.arc(300, yPos + 75, 75, 0, Math.PI * 2);
                                 ctx.fill();
                                 ctx.fillStyle = '#9ca3af';
-                                ctx.font = '48px Arial';
-                                ctx.fillText('🎤', 400, yPos + 80);
-                                yPos += 150;
+                                ctx.font = '56px Arial';
+                                ctx.fillText('🎤', 300, yPos + 95);
+                                yPos += 175;
                             }
                         }
-                        
+
                         // Nombre del asistente
                         ctx.fillStyle = '#0ea5e9';
                         ctx.font = 'bold 32px Arial';
-                        ctx.textAlign = 'center';
-                        ctx.fillText(ticket.name, 400, yPos);
+                        ctx.fillText(ticket.name, 300, yPos);
                         yPos += 40;
-                        
+
                         ctx.fillStyle = '#9ca3af';
                         ctx.font = '20px Arial';
-                        ctx.fillText(ticket.seatLocation || 'General', 400, yPos);
+                        ctx.fillText(ticket.seatLocation || 'General', 300, yPos);
                         yPos += 50;
-                        
-                        // QR Code - MEJORADO con validación y regeneración
+
+                        // QR grande y nítido generado específicamente para descarga
                         downloadButton.textContent = '⌛ Generando QR...';
-                        let qrcodeCanvas = cardWrapper.querySelector(`#qrcode-${ticket.id} canvas`);
-                        
-                        // ✅ Si el QR canvas no existe o está vacío, regenerarlo
-                        if (!qrcodeCanvas || qrcodeCanvas.width === 0) {
-                            console.warn('⚠️ QR canvas no encontrado, regenerando...');
-                            
-                            // Crear contenedor temporal para regenerar QR
-                            const tempQRDiv = document.createElement('div');
-                            tempQRDiv.style.display = 'none';
-                            document.body.appendChild(tempQRDiv);
-                            
-                            try {
-                                const qrData = ticket.id;
-                                new QRCode(tempQRDiv, {
-                                    text: qrData,
-                                    width: 300,
-                                    height: 300,
-                                    correctLevel: QRCode.CorrectLevel.M
-                                });
-                                
-                                // Esperar a que se genere
-                                await new Promise(resolve => setTimeout(resolve, 200));
-                                qrcodeCanvas = tempQRDiv.querySelector('canvas');
-                                
-                                if (!qrcodeCanvas) {
-                                    throw new Error('No se pudo regenerar el QR');
-                                }
-                            } catch (qrGenError) {
-                                console.error('❌ Error regenerando QR:', qrGenError);
-                                // Dibujar mensaje de error en el ticket
-                                ctx.fillStyle = '#ef4444';
-                                ctx.fillRect(200, yPos, 400, 100);
+                        const tempQRDiv = document.createElement('div');
+                        tempQRDiv.style.cssText = 'position:absolute;left:-9999px;top:-9999px;';
+                        document.body.appendChild(tempQRDiv);
+
+                        try {
+                            new QRCode(tempQRDiv, {
+                                text: ticket.id,
+                                width: 550,
+                                height: 550,
+                                correctLevel: QRCode.CorrectLevel.H
+                            });
+
+                            await new Promise(resolve => setTimeout(resolve, 300));
+                            const qrcodeCanvas = tempQRDiv.querySelector('canvas');
+
+                            if (qrcodeCanvas && qrcodeCanvas.width > 0) {
                                 ctx.fillStyle = '#ffffff';
-                                ctx.font = 'bold 18px Arial';
-                                ctx.fillText('❌ ERROR: QR no generado', 400, yPos + 50);
-                                yPos += 120;
-                                
-                                document.body.removeChild(tempQRDiv);
-                                throw new Error('No se pudo generar el código QR');
+                                ctx.fillRect(25, yPos, 550, 550);
+                                ctx.drawImage(qrcodeCanvas, 25, yPos, 550, 550);
+                                console.log('✅ QR grande dibujado en descarga');
+                                yPos += 570;
+                            } else {
+                                throw new Error('QR canvas inválido');
                             }
-                        }
-                        
-                        // Dibujar el QR en el canvas
-                        if (qrcodeCanvas && qrcodeCanvas.width > 0) {
-                            // Fondo blanco para el QR
-                            ctx.fillStyle = '#ffffff';
-                            ctx.fillRect(250, yPos, 300, 300);
-                            ctx.drawImage(qrcodeCanvas, 250, yPos, 300, 300);
-                            console.log('✅ QR dibujado en el canvas de descarga');
-                            yPos += 320;
-                        } else {
-                            console.error('❌ QR canvas inválido, omitiendo');
+                        } catch (qrErr) {
+                            console.error('❌ Error generando QR para descarga:', qrErr);
                             ctx.fillStyle = '#ef4444';
-                            ctx.font = 'bold 16px Arial';
-                            ctx.fillText('❌ QR NO DISPONIBLE', 400, yPos + 50);
-                            yPos += 100;
+                            ctx.fillRect(25, yPos, 550, 100);
+                            ctx.fillStyle = '#ffffff';
+                            ctx.font = 'bold 18px Arial';
+                            ctx.fillText('❌ ERROR: QR no generado', 300, yPos + 50);
+                            yPos += 120;
+                        } finally {
+                            document.body.removeChild(tempQRDiv);
                         }
-                        
+
                         // Código de barras
                         const barcodeCanvas = document.getElementById(`barcode-${ticket.id}`);
                         if (barcodeCanvas) {
-                            // Crear canvas temporal para el barcode
                             const tempBarcodeCanvas = document.createElement('canvas');
-                            tempBarcodeCanvas.width = 600;
+                            tempBarcodeCanvas.width = 560;
                             tempBarcodeCanvas.height = 80;
                             const tempCtx = tempBarcodeCanvas.getContext('2d');
                             tempCtx.fillStyle = '#ffffff';
-                            tempCtx.fillRect(0, 0, 600, 80);
-                            
-                            // Redibujar barcode
+                            tempCtx.fillRect(0, 0, 560, 80);
+
                             try {
                                 JsBarcode(tempBarcodeCanvas, ticket.id, {
                                     format: "CODE128",
@@ -468,42 +433,42 @@
                                     displayValue: true,
                                     fontSize: 14
                                 });
-                                ctx.drawImage(tempBarcodeCanvas, 100, yPos, 600, 80);
+                                ctx.drawImage(tempBarcodeCanvas, 20, yPos, 560, 80);
                                 yPos += 100;
                             } catch (e) {
                                 console.warn('Error dibujando barcode');
                             }
                         }
-                        
+
                         // Info del evento
                         ctx.fillStyle = '#ffffff';
                         ctx.font = 'bold 24px Arial';
-                        ctx.fillText(ticket.showName, 400, yPos);
+                        ctx.fillText(ticket.showName, 300, yPos);
                         yPos += 35;
-                        
+
                         ctx.fillStyle = '#9ca3af';
                         ctx.font = '18px Arial';
-                        ctx.fillText(ticket.showLocation, 400, yPos);
+                        ctx.fillText(ticket.showLocation, 300, yPos);
                         yPos += 30;
-                        
+
                         if (ticket.showAddress) {
                             ctx.font = '14px Arial';
-                            ctx.fillText(ticket.showAddress, 400, yPos);
+                            ctx.fillText(ticket.showAddress, 300, yPos);
                             yPos += 40;
                         }
-                        
+
                         // Contacto
                         ctx.fillStyle = '#0ea5e9';
                         ctx.font = 'bold 20px Arial';
-                        ctx.fillText('VYT-MUSIC', 400, yPos);
+                        ctx.fillText('VYT-MUSIC', 300, yPos);
                         yPos += 25;
                         ctx.fillStyle = '#9ca3af';
                         ctx.font = '14px Arial';
-                        ctx.fillText('certamen de canto', 400, yPos);
+                        ctx.fillText('certamen de canto', 300, yPos);
                         yPos += 25;
                         ctx.fillStyle = '#22c55e';
                         ctx.font = '14px Arial';
-                        ctx.fillText('📱 WhatsApp: +5493417422062', 400, yPos);
+                        ctx.fillText('📱 WhatsApp: +5493417422062', 300, yPos);
                         
                         // Descargar
                         downloadButton.textContent = '⏳ Descargando...';
