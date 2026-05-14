@@ -1051,47 +1051,54 @@ all.min.css">
         setTimeout(showOfflineSummary, 2000);
     </script>
 
-    <!-- Validación de gala activa — módulo separado para no interferir con el código principal -->
+    <!-- Validación de gala activa — módulo separado, oculta el form de inmediato -->
     <script type="module">
         import { collection, query, where, getDocs } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
         import { db } from './firebase_config.js';
 
         const params = new URLSearchParams(window.location.search);
         const eventId = params.get('eventId');
+        const form = document.getElementById('uploadForm');
 
-        try {
-            const snap = await getDocs(query(collection(db, 'events'), where('isActive', '==', true)));
+        // Ocultar el form INMEDIATAMENTE — se muestra solo si la gala es la activa
+        if (form) form.style.display = 'none';
 
-            if (snap.empty) {
-                // Sin gala activa
-                const banner = document.createElement('div');
-                banner.style.cssText = 'position:sticky;top:0;z-index:999;background:#78350f;color:#fef3c7;padding:0.85rem 1.25rem;font-weight:600;font-size:0.95rem;';
-                banner.textContent = '⚠️ No hay ninguna gala activa — la subida de pistas está deshabilitada.';
-                document.body.prepend(banner);
-                const form = document.getElementById('uploadForm');
-                if (form) form.style.display = 'none';
-                return;
+        (async () => {
+            try {
+                const snap = await getDocs(query(collection(db, 'events'), where('isActive', '==', true)));
+
+                if (snap.empty) {
+                    const banner = document.createElement('div');
+                    banner.style.cssText = 'position:sticky;top:0;z-index:999;background:#78350f;color:#fef3c7;padding:0.85rem 1.25rem;font-weight:600;font-size:0.95rem;';
+                    banner.textContent = '⚠️ No hay ninguna gala activa — la subida de pistas está deshabilitada.';
+                    document.body.prepend(banner);
+                    return;
+                }
+
+                const activeDoc = snap.docs[0];
+                if (activeDoc.id === eventId) {
+                    // Gala correcta — mostrar el formulario
+                    if (form) form.style.display = '';
+                } else {
+                    // Gala incorrecta — mostrar banner, form sigue oculto
+                    const activeName = activeDoc.data().name || 'Gala activa';
+                    const activeId   = activeDoc.id;
+                    const banner = document.createElement('div');
+                    banner.style.cssText = 'position:sticky;top:0;z-index:999;background:#7f1d1d;color:#fee2e2;padding:0.85rem 1.25rem;font-weight:600;font-size:0.95rem;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem;';
+                    banner.innerHTML = `
+                        <span>🚫 Esta gala <strong>no está activa</strong> — podés ver las pistas pero no subir nuevas.</span>
+                        <a href="subida_pistas_organizacion.html?eventId=${activeId}&eventName=${encodeURIComponent(activeName)}"
+                           style="background:#10b981;color:white;padding:0.4rem 1rem;border-radius:0.4rem;text-decoration:none;font-size:0.85rem;white-space:nowrap">
+                            ✅ Ir a la gala activa: ${activeName}
+                        </a>`;
+                    document.body.prepend(banner);
+                }
+            } catch (e) {
+                // Si falla la conexión, mostrar el form para no bloquear al usuario
+                console.warn('Validación gala activa:', e);
+                if (form) form.style.display = '';
             }
-
-            const activeDoc = snap.docs[0];
-            if (activeDoc.id !== eventId) {
-                const activeName = activeDoc.data().name || 'Gala activa';
-                const activeId   = activeDoc.id;
-                const banner = document.createElement('div');
-                banner.style.cssText = 'position:sticky;top:0;z-index:999;background:#7f1d1d;color:#fee2e2;padding:0.85rem 1.25rem;font-weight:600;font-size:0.95rem;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem;';
-                banner.innerHTML = `
-                    <span>🚫 Esta gala <strong>no está activa</strong> — podés ver las pistas pero no subir nuevas.</span>
-                    <a href="subida_pistas_organizacion.html?eventId=${activeId}&eventName=${encodeURIComponent(activeName)}"
-                       style="background:#10b981;color:white;padding:0.4rem 1rem;border-radius:0.4rem;text-decoration:none;font-size:0.85rem;white-space:nowrap">
-                        ✅ Ir a la gala activa: ${activeName}
-                    </a>`;
-                document.body.prepend(banner);
-                const form = document.getElementById('uploadForm');
-                if (form) form.style.display = 'none';
-            }
-        } catch (e) {
-            console.warn('Validación gala activa:', e);
-        }
+        })();
     </script>
 </body>
 </html>
