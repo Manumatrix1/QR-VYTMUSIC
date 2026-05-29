@@ -77,6 +77,28 @@
         /* Create form toggle */
         #create-form-body { transition: all 0.2s ease; }
         .section-label { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #6b7280; margin-bottom: 8px; }
+        /* Galas activas widget */
+        .active-gala-card {
+            background: linear-gradient(135deg, #0f2027 0%, #1a2a1a 100%);
+            border: 2px solid #22c55e;
+            border-radius: 14px;
+            padding: 14px 16px;
+            transition: all 0.2s;
+        }
+        .active-gala-card:hover { border-color: #4ade80; box-shadow: 0 6px 20px rgba(34,197,94,0.15); }
+        .active-gala-title { font-size: 1rem; font-weight: 800; color: #4ade80; }
+        .active-gala-date { font-size: 0.75rem; color: #6b7280; margin-top: 2px; }
+        .panel-btn {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 7px 14px; border-radius: 8px; font-size: 0.8rem; font-weight: 700;
+            text-decoration: none; transition: all 0.15s; white-space: nowrap;
+        }
+        .link-chip {
+            display: inline-flex; align-items: center; gap: 4px;
+            padding: 5px 10px; border-radius: 20px; font-size: 0.72rem; font-weight: 700;
+            text-decoration: none; transition: all 0.15s; white-space: nowrap;
+        }
+        .link-chip:hover { transform: translateY(-1px); opacity: 0.9; }
         .create-toggle-btn { width: 100%; display: flex; align-items: center; justify-between; gap: 8px; padding: 12px 16px; background: #1f2937; border: 1px dashed #4b5563; border-radius: 10px; color: #9ca3af; font-weight: 600; font-size: 0.9rem; cursor: pointer; transition: all 0.2s; }
         .create-toggle-btn:hover { background: #374151; border-color: #6366f1; color: #e5e7eb; }
         /* Drag & drop galas */
@@ -170,6 +192,16 @@
             </section>
 
 
+
+            <!-- ═══════════════════════════════════════════
+                 GALAS ACTIVAS — acceso rápido
+            ═══════════════════════════════════════════ -->
+            <section id="active-galas-section">
+                <p class="section-label">Galas activas ahora</p>
+                <div id="active-galas-container">
+                    <p class="text-gray-500 text-sm py-2">Cargando...</p>
+                </div>
+            </section>
 
             <!-- Modal Página Pública -->
             <div id="modal-pagina" class="fixed inset-0 bg-black bg-opacity-80 hidden flex items-center justify-center z-50 p-4">
@@ -310,6 +342,19 @@
                             <div>
                                 <label for="event-date" class="block mb-1 font-semibold text-gray-300 text-sm">Fecha</label>
                                 <input type="date" id="event-date" required class="w-full p-3 rounded-md border border-gray-600 bg-gray-900 text-white text-sm">
+                            </div>
+                            <div class="bg-yellow-900 bg-opacity-30 p-3 rounded-lg border border-yellow-600">
+                                <p class="text-yellow-300 text-sm font-semibold mb-3">💰 Valor de Entradas</p>
+                                <div class="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label class="block mb-1 text-gray-300 text-xs">Anticipada ($)</label>
+                                        <input type="number" id="event-price-anticipada" value="10000" min="0" step="500" class="w-full p-2 rounded-md border border-gray-600 bg-gray-900 text-white text-sm">
+                                    </div>
+                                    <div>
+                                        <label class="block mb-1 text-gray-300 text-xs">Puerta ($)</label>
+                                        <input type="number" id="event-price-puerta" value="15000" min="0" step="500" class="w-full p-2 rounded-md border border-gray-600 bg-gray-900 text-white text-sm">
+                                    </div>
+                                </div>
                             </div>
                             <div class="bg-blue-900 bg-opacity-30 p-3 rounded-lg border border-blue-500">
                                 <label class="flex items-center cursor-pointer">
@@ -710,13 +755,18 @@
                         });
                         await batch.commit();
                     }
-                    
-                    const eventData = { 
-                        name: eventName, 
-                        date: eventDate, 
+
+                    const priceAnticipada = parseInt(document.getElementById('event-price-anticipada').value) || 10000;
+                    const pricePuerta = parseInt(document.getElementById('event-price-puerta').value) || 15000;
+
+                    const eventData = {
+                        name: eventName,
+                        date: eventDate,
                         isActive: makeActive,
-                        createdAt: serverTimestamp(), 
-                        ownerId: user.uid 
+                        ticketPriceAnticipada: priceAnticipada,
+                        ticketPricePuerta: pricePuerta,
+                        createdAt: serverTimestamp(),
+                        ownerId: user.uid
                     };
                     
                     if (eventGroup) {
@@ -838,11 +888,66 @@
                 }
             });
 
+            // ── GALAS ACTIVAS WIDGET ──────────────────────────
+            function renderActiveGalas(events) {
+                const container = document.getElementById('active-galas-container');
+                if (!container) return;
+                const baseUrl = 'https://vyt-music.web.app/';
+                const activas = events.filter(e => e.data().isActive);
+
+                if (activas.length === 0) {
+                    container.innerHTML = '<p class="text-gray-600 text-sm py-1 italic">Sin galas activas en este momento.</p>';
+                    return;
+                }
+
+                container.innerHTML = '';
+                activas.forEach(docSnap => {
+                    const ev = docSnap.data();
+                    const eventId = docSnap.id;
+                    const eventName = ev.name || 'Gala';
+                    const fecha = ev.fecha || ev.date || '';
+                    const params = `?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`;
+                    const panelUrl = `panel_evento_SIMPLE.html${params}`;
+
+                    const links = [
+                        { emoji: '🎤', label: 'Pistas Artistas', url: baseUrl + 'acceso_pistas_artistas.html', color: '#7c3aed', bg: 'rgba(124,58,237,0.15)' },
+                        { emoji: '🎟️', label: 'Preventa',        url: baseUrl + 'acceso_preventa.html',        color: '#d97706', bg: 'rgba(217,119,6,0.15)' },
+                        { emoji: '🗳️', label: 'Votación',        url: baseUrl + 'acceso_publico.html',          color: '#a855f7', bg: 'rgba(168,85,247,0.15)' },
+                        { emoji: '⚖️', label: 'Jurados',         url: baseUrl + 'acceso_jurado.html',           color: '#f59e0b', bg: 'rgba(245,158,11,0.15)' },
+                        { emoji: '🎵', label: 'Pistas Org',      url: baseUrl + 'acceso_pistas_org.html',       color: '#38bdf8', bg: 'rgba(56,189,248,0.15)' },
+                    ];
+
+                    const card = document.createElement('div');
+                    card.className = 'active-gala-card mb-3';
+                    card.innerHTML = `
+                        <div class="flex flex-wrap items-start justify-between gap-2 mb-3">
+                            <div>
+                                <div class="active-gala-title">⭐ ${eventName}</div>
+                                ${fecha ? `<div class="active-gala-date">📅 ${fecha}</div>` : ''}
+                            </div>
+                            <a href="${panelUrl}" class="panel-btn bg-green-700 hover:bg-green-600 text-white">
+                                🎛️ Ir al Panel →
+                            </a>
+                        </div>
+                        <div class="flex flex-wrap gap-2">
+                            ${links.map(l => `
+                                <a href="${l.url}" target="_blank" rel="noopener"
+                                   class="link-chip"
+                                   style="background:${l.bg}; color:${l.color}; border:1px solid ${l.color}40;">
+                                    ${l.emoji} ${l.label}
+                                </a>`).join('')}
+                        </div>
+                    `;
+                    container.appendChild(card);
+                });
+            }
+
             // Listener para snapshot de eventos
             const q = query(eventsCol, orderBy('createdAt', 'desc'));
             onSnapshot(q, (snapshot) => {
                 allEvents = snapshot.docs;
                 renderEvents(snapshot.docs);
+                renderActiveGalas(snapshot.docs);
                 // Actualizar grupos después de cargar eventos
                 loadGroups();
             });

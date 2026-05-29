@@ -156,19 +156,19 @@
                 <div class="text-center">
                     <div class="text-6xl mb-2">⚡</div>
                     <h3 class="text-2xl font-bold mb-2">Precio Anticipado</h3>
-                    <p class="text-5xl font-black mb-2">$10,000</p>
+                    <p class="text-5xl font-black mb-2" id="display-price-anticipada">$10,000</p>
                     <p class="text-sm opacity-90" id="deadline-text">Hasta el jueves antes del evento</p>
                     <div class="mt-3 bg-white/20 rounded-lg p-2">
-                        <p class="text-sm font-semibold">👶 Niños (menores de 8): $5,000</p>
+                        <p class="text-sm font-semibold" id="display-price-kids-anticipada">👶 Niños (menores de 8): $5,000</p>
                     </div>
                 </div>
                 <div class="text-center">
                     <div class="text-6xl mb-2">🚪</div>
                     <h3 class="text-2xl font-bold mb-2">Precio Puerta</h3>
-                    <p class="text-5xl font-black mb-2">$15,000</p>
+                    <p class="text-5xl font-black mb-2" id="display-price-puerta">$15,000</p>
                     <p class="text-sm opacity-90">Después de la fecha límite</p>
                     <div class="mt-3 bg-white/20 rounded-lg p-2">
-                        <p class="text-sm font-semibold">👶 Niños (menores de 8): $7,500</p>
+                        <p class="text-sm font-semibold" id="display-price-kids-puerta">👶 Niños (menores de 8): $7,500</p>
                     </div>
                 </div>
             </div>
@@ -257,7 +257,7 @@
                 <div>
                     <label class="block text-lg font-semibold mb-2">¿Hay niños menores de 8 años?</label>
                     <div class="bg-blue-900/30 border border-blue-500 rounded-lg p-4 mb-3">
-                        <p class="text-sm text-blue-300 mb-2">💡 Menores de 8 años: <span class="font-bold">$5,000</span> (anticipado, 5+ entradas) o <span class="font-bold">$8,000</span> (puerta)</p>
+                        <p class="text-sm text-blue-300 mb-2" id="display-kids-info">💡 Menores de 8 años: <span class="font-bold">$5,000</span> (anticipado, 5+ entradas) o <span class="font-bold">$8,000</span> (puerta)</p>
                     </div>
                     <input type="number" id="ticket-quantity-kids" min="0" max="50" value="0" placeholder="Cantidad de niños (menores de 8 años)" class="w-full p-4 rounded-lg bg-gray-700 border-2 border-gray-600 focus:border-purple-500 focus:outline-none text-white text-xl font-bold text-center">
                 </div>
@@ -582,17 +582,39 @@
 
         // Variables globales
         let currentOrderId = null;
-        let currentPrice = 10000; // Precio anticipado por defecto
+        let PRICE_ANTICIPADA = 10000;
+        let PRICE_PUERTA = 15000;
+        let PRICE_KIDS_ANTICIPADA = 5000;
+        let PRICE_KIDS_PUERTA = 8000;
+        let currentPrice = PRICE_ANTICIPADA;
         let eventData = null;
         let countdownInterval = null;
         let allArtistsTop = [];     // artistas cargados al inicio
         let selectedTopArtist = null; // artista elegido en el selector del tope
         let previousPurchasesCount = 0; // ✨ Nuevo: contador de compras previas acumuladas
 
+        function updatePriceDisplay() {
+            const fmt = n => '$' + n.toLocaleString();
+            const el = id => document.getElementById(id);
+            if (el('display-price-anticipada')) el('display-price-anticipada').textContent = fmt(PRICE_ANTICIPADA);
+            if (el('display-price-kids-anticipada')) el('display-price-kids-anticipada').textContent = `👶 Niños (menores de 8): ${fmt(PRICE_KIDS_ANTICIPADA)}`;
+            if (el('display-price-puerta')) el('display-price-puerta').textContent = fmt(PRICE_PUERTA);
+            if (el('display-price-kids-puerta')) el('display-price-kids-puerta').textContent = `👶 Niños (menores de 8): ${fmt(PRICE_KIDS_PUERTA)}`;
+            if (el('display-kids-info')) el('display-kids-info').innerHTML = `💡 Menores de 8 años: <span class="font-bold">${fmt(PRICE_KIDS_ANTICIPADA)}</span> (anticipado, 5+ entradas) o <span class="font-bold">${fmt(PRICE_KIDS_PUERTA)}</span> (puerta)`;
+            if (el('countdown-footer')) el('countdown-footer').textContent = `Después cambia a precio puerta: ${fmt(PRICE_PUERTA)}`;
+        }
+
         // Aplica la configuración de deadline a la UI
         // Si hay un artista seleccionado con deadline_override, usa ese en vez del global
         function applyDeadlineConfig(data) {
             eventData = data;
+            // Cargar precios desde el evento (con defaults)
+            PRICE_ANTICIPADA = data.ticketPriceAnticipada || 10000;
+            PRICE_PUERTA = data.ticketPricePuerta || 15000;
+            PRICE_KIDS_ANTICIPADA = data.ticketPriceKidsAnticipada || 5000;
+            PRICE_KIDS_PUERTA = data.ticketPriceKidsPuerta || 8000;
+            updatePriceDisplay();
+
             const overrideStr = selectedTopArtist ? (allArtistsTop.find(a => a.id === selectedTopArtist.id) || {}).deadline_override : null;
             const effectiveDeadlineStr = overrideStr || data.ticketDeadline;
             const deadlineDate = effectiveDeadlineStr ? new Date(effectiveDeadlineStr) : null;
@@ -604,16 +626,16 @@
 
             if (deadlineDate) {
                 if (now > deadlineDate) {
-                    currentPrice = 15000;
-                    document.getElementById('price-per-ticket').textContent = '$15,000';
+                    currentPrice = PRICE_PUERTA;
+                    document.getElementById('price-per-ticket').textContent = '$' + PRICE_PUERTA.toLocaleString();
                     const deadlineText = document.getElementById('deadline-text');
                     deadlineText.textContent = '⚠️ Fecha límite superada - Precio puerta';
                     deadlineText.classList.add('text-yellow-400', 'font-bold');
                     document.getElementById('countdown-banner').classList.add('hidden');
                     if (countdownInterval) { clearInterval(countdownInterval); countdownInterval = null; }
                 } else {
-                    currentPrice = 10000;
-                    document.getElementById('price-per-ticket').textContent = '$10,000';
+                    currentPrice = PRICE_ANTICIPADA;
+                    document.getElementById('price-per-ticket').textContent = '$' + PRICE_ANTICIPADA.toLocaleString();
                     document.getElementById('countdown-banner').classList.remove('hidden');
                     const deadlineFormatted = deadlineDate.toLocaleDateString('es-ES', {
                         weekday: 'long', year: 'numeric', month: 'long',
@@ -826,10 +848,10 @@
                     // Tiempo expirado
                     clearInterval(countdownInterval);
                     countdownEl.classList.add('hidden');
-                    
+
                     // Actualizar precio a puerta
-                    currentPrice = 15000;
-                    document.getElementById('price-per-ticket').textContent = '$15,000';
+                    currentPrice = PRICE_PUERTA;
+                    document.getElementById('price-per-ticket').textContent = '$' + PRICE_PUERTA.toLocaleString();
                     updateTotal();
                     return;
                 }
@@ -853,12 +875,12 @@
                     // URGENTE: Menos de 24 horas
                     countdownEl.classList.remove('from-orange-600', 'to-red-600', 'animate-pulse');
                     countdownEl.classList.add('from-red-700', 'to-red-900', 'animate-bounce');
-                    document.getElementById('countdown-footer').innerHTML = '🚨 ¡ÚLTIMAS HORAS! 🚨 Después cambia a precio puerta: $15,000';
+                    document.getElementById('countdown-footer').innerHTML = `🚨 ¡ÚLTIMAS HORAS! 🚨 Después cambia a precio puerta: $${PRICE_PUERTA.toLocaleString()}`;
                 } else if (totalHoursLeft <= 48) {
                     // ADVERTENCIA: Menos de 48 horas
                     countdownEl.classList.remove('from-orange-600', 'to-red-600');
                     countdownEl.classList.add('from-red-600', 'to-red-700');
-                    document.getElementById('countdown-footer').innerHTML = '⚠️ ¡QUEDAN POCAS HORAS! Después cambia a precio puerta: $15,000';
+                    document.getElementById('countdown-footer').innerHTML = `⚠️ ¡QUEDAN POCAS HORAS! Después cambia a precio puerta: $${PRICE_PUERTA.toLocaleString()}`;
                 }
             }
             
@@ -876,12 +898,12 @@
             const accumulatedTotal = previousPurchasesCount + totalTickets;
             console.log(`💰 Cálculo de precio: ${previousPurchasesCount} previas + ${totalTickets} actuales = ${accumulatedTotal} total acumulado`);
 
-            // LÓGICA CORREGIDA: Si tiene 5+ entradas acumuladas, SIEMPRE $10k (ignora deadline)
+            // LÓGICA CORREGIDA: Si tiene 5+ entradas acumuladas, SIEMPRE precio anticipado (ignora deadline)
             // Precio puerta SOLO si: tiene menos de 5 entradas acumuladas Y además pasó el deadline
             const hasMinimunTickets = accumulatedTotal >= 5;
-            const isDoorPrice = !hasMinimunTickets && currentPrice >= 15000;
-            const effectivePriceAdult = hasMinimunTickets ? 10000 : (isDoorPrice ? 15000 : currentPrice);
-            const effectivePriceKids  = hasMinimunTickets ? 5000 : (isDoorPrice ? 8000 : (currentPrice / 2));
+            const isDoorPrice = !hasMinimunTickets && currentPrice >= PRICE_PUERTA;
+            const effectivePriceAdult = hasMinimunTickets ? PRICE_ANTICIPADA : (isDoorPrice ? PRICE_PUERTA : currentPrice);
+            const effectivePriceKids  = hasMinimunTickets ? PRICE_KIDS_ANTICIPADA : (isDoorPrice ? PRICE_KIDS_PUERTA : PRICE_KIDS_ANTICIPADA);
 
             const totalAdults = quantityAdults * effectivePriceAdult;
             const totalKids = quantityKids * effectivePriceKids;
@@ -899,16 +921,16 @@
                         const needed = 5 - accumulatedTotal;
                         minQtyNotice.innerHTML = `
                             <p class="text-orange-200 font-semibold text-sm">
-                                💡 Ya tenés ${previousPurchasesCount} entrada${previousPurchasesCount > 1 ? 's' : ''}. 
-                                Te ${needed > 1 ? 'faltan' : 'falta'} <strong>${needed} más</strong> para alcanzar el precio anticipado ($10,000 c/u). 
-                                Con ${accumulatedTotal} el precio es de puerta (<strong>$15,000 c/u</strong>).
+                                💡 Ya tenés ${previousPurchasesCount} entrada${previousPurchasesCount > 1 ? 's' : ''}.
+                                Te ${needed > 1 ? 'faltan' : 'falta'} <strong>${needed} más</strong> para alcanzar el precio anticipado ($${PRICE_ANTICIPADA.toLocaleString()} c/u).
+                                Con ${accumulatedTotal} el precio es de puerta (<strong>$${PRICE_PUERTA.toLocaleString()} c/u</strong>).
                             </p>
                         `;
                     } else {
                         minQtyNotice.innerHTML = `
                             <p class="text-orange-200 font-semibold text-sm">
-                                💡 El precio anticipado aplica desde <strong>5 entradas</strong>. 
-                                Con menos de 5 el precio es el de puerta (<strong>$15,000 c/u</strong>) — pero igual podés comprarlas sin problema.
+                                💡 El precio anticipado aplica desde <strong>5 entradas</strong>.
+                                Con menos de 5 el precio es el de puerta (<strong>$${PRICE_PUERTA.toLocaleString()} c/u</strong>) — pero igual podés comprarlas sin problema.
                             </p>
                         `;
                     }
@@ -918,8 +940,8 @@
                     // ✅ Mostrar mensaje de éxito si alcanzaron el mínimo (ignora deadline)
                     minQtyNotice.innerHTML = `
                         <p class="text-green-200 font-semibold text-sm">
-                            ✅ ¡Perfecto! Con ${accumulatedTotal} entradas en total (${previousPurchasesCount} previas + ${totalTickets} ${totalTickets > 1 ? 'nuevas' : 'nueva'}) 
-                            obtenés el <strong>precio anticipado de $10,000 c/u</strong> — incluso si expiró la fecha límite.
+                            ✅ ¡Perfecto! Con ${accumulatedTotal} entradas en total (${previousPurchasesCount} previas + ${totalTickets} ${totalTickets > 1 ? 'nuevas' : 'nueva'})
+                            obtenés el <strong>precio anticipado de $${PRICE_ANTICIPADA.toLocaleString()} c/u</strong> — incluso si expiró la fecha límite.
                         </p>
                     `;
                     minQtyNotice.className = 'bg-green-900/40 border border-green-400 rounded-lg p-4';
@@ -1231,9 +1253,9 @@
             
             // ✨ NUEVO: Calcular precio con total acumulado (previas + actuales)
             const accumulatedTotal = previousPurchasesCount + quantity;
-            const isDoorPrice = currentPrice >= 15000 || accumulatedTotal < 5;
-            const effectivePriceAdult = isDoorPrice ? 15000 : currentPrice;
-            const effectivePriceKids  = isDoorPrice ? 8000 : (currentPrice / 2);
+            const isDoorPrice = currentPrice >= PRICE_PUERTA || accumulatedTotal < 5;
+            const effectivePriceAdult = isDoorPrice ? PRICE_PUERTA : PRICE_ANTICIPADA;
+            const effectivePriceKids  = isDoorPrice ? PRICE_KIDS_PUERTA : PRICE_KIDS_ANTICIPADA;
             const totalAmount = (quantityAdults * effectivePriceAdult) + (quantityKids * effectivePriceKids);
             
             console.log(`💰 Orden final: ${previousPurchasesCount} previas + ${quantity} nuevas = ${accumulatedTotal} total → Precio: $${effectivePriceAdult}`);
@@ -2273,9 +2295,14 @@
         fetch(`https://firestore.googleapis.com/v1/projects/vyt-music/databases/(default)/documents/events/${eventId}`)
             .then(r => r.json())
             .then(json => {
-                const deadline = json?.fields?.ticketDeadline?.stringValue;
-                if (deadline) applyDeadlineConfig({ ticketDeadline: deadline });
-                else applyDeadlineConfig({});
+                const f = json?.fields || {};
+                applyDeadlineConfig({
+                    ticketDeadline: f.ticketDeadline?.stringValue || null,
+                    ticketPriceAnticipada: parseInt(f.ticketPriceAnticipada?.integerValue || 0) || undefined,
+                    ticketPricePuerta: parseInt(f.ticketPricePuerta?.integerValue || 0) || undefined,
+                    ticketPriceKidsAnticipada: parseInt(f.ticketPriceKidsAnticipada?.integerValue || 0) || undefined,
+                    ticketPriceKidsPuerta: parseInt(f.ticketPriceKidsPuerta?.integerValue || 0) || undefined,
+                });
             })
             .catch(e => console.warn('Error carga REST:', e));
         loadEventConfig();

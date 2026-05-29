@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ranking del Certamen — VYT MUSIC</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body { background: #0f172a; font-family: 'Inter', sans-serif; color: #f1f5f9; }
+
+        .step-card { background: #1e293b; border: 1px solid #334155; border-radius: 14px; }
+        .step-card.active { border-color: #3b82f6; }
+        .step-num { background: #3b82f6; color: white; width: 28px; height: 28px; border-radius: 50%; display:inline-flex; align-items:center; justify-content:center; font-weight:800; font-size:.85rem; flex-shrink:0; }
+
+        .gala-row { background: #0f172a; border: 1px solid #1e293b; border-radius: 8px; padding: 10px 14px; display:flex; align-items:center; gap:10px; cursor:pointer; transition: all .15s; }
+        .gala-row:hover { border-color: #475569; }
+        .gala-row.selected-previa { border-color: #3b82f6; background: #0f2344; }
+        .gala-row.selected-final { border-color: #f59e0b; background: #1a1000; }
+
+        .rank-card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; transition: all .2s; }
+        .rank-card.pos-1 { border-color: #f59e0b; background: linear-gradient(135deg,#1a1000,#1e293b); box-shadow: 0 0 24px rgba(245,158,11,.18); }
+        .rank-card.pos-2 { border-color: #9ca3af; background: linear-gradient(135deg,#111827,#1e293b); }
+        .rank-card.pos-3 { border-color: #b45309; background: linear-gradient(135deg,#140c00,#1e293b); }
+
+        .slot { background: rgba(255,255,255,.05); border-radius: 7px; padding: 5px 10px; text-align:center; min-width: 62px; }
+        .slot-final { background: rgba(245,158,11,.1); border: 1px solid #78350f; }
+
+        .badge-p { background:#f59e0b; color:#1f2937; font-size:.6rem; font-weight:800; padding:1px 4px; border-radius:3px; vertical-align:middle; }
+
+        .btn-primary { background: linear-gradient(135deg,#3b82f6,#6366f1); color:white; font-weight:700; padding:.75rem 2rem; border-radius:10px; border:none; cursor:pointer; transition:all .2s; }
+        .btn-primary:hover { transform:translateY(-1px); box-shadow:0 8px 20px rgba(99,102,241,.4); }
+        .btn-primary:disabled { opacity:.4; cursor:not-allowed; transform:none; }
+
+        .winner-banner { background: linear-gradient(135deg,#92400e,#78350f,#451a03); border:2px solid #f59e0b; border-radius:16px; }
+
+        @media(max-width:640px){ .slot { min-width:50px; font-size:.8rem; } }
+    </style>
+</head>
+<body class="min-h-screen">
+
+<!-- Header -->
+<div class="bg-gradient-to-r from-yellow-700 via-orange-700 to-red-700 py-5 shadow-xl">
+    <div class="max-w-3xl mx-auto px-4 flex items-center justify-between">
+        <div>
+            <h1 class="text-2xl font-black tracking-tight">🏆 Ranking del Certamen</h1>
+            <p class="text-sm opacity-75 mt-0.5">Puntaje acumulado · Promediado automático</p>
+        </div>
+        <button onclick="history.back()" class="bg-white/20 hover:bg-white/30 text-white text-sm font-semibold px-4 py-2 rounded-lg transition">
+            <i class="fas fa-arrow-left mr-1"></i> Volver
+        </button>
+    </div>
+</div>
+
+<div class="max-w-3xl mx-auto px-4 py-6 space-y-5">
+
+    <!-- PASO 1: Grupo -->
+    <div class="step-card p-5" id="step1">
+        <div class="flex items-center gap-3 mb-4">
+            <span class="step-num">1</span>
+            <div>
+                <p class="font-bold text-white">Seleccioná el certamen</p>
+                <p class="text-xs text-gray-400">Elegí el grupo de galas que forman este certamen</p>
+            </div>
+        </div>
+        <select id="group-select" onchange="loadGalas()" class="w-full p-3 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm">
+            <option value="">Cargando grupos...</option>
+        </select>
+    </div>
+
+    <!-- PASO 2: Galas -->
+    <div class="step-card p-5 hidden" id="step2">
+        <div class="flex items-center gap-3 mb-4">
+            <span class="step-num">2</span>
+            <div>
+                <p class="font-bold text-white">Configurá las galas</p>
+                <p class="text-xs text-gray-400">Marcá cuáles son galas previas (hasta 3) y cuál es la Final</p>
+            </div>
+        </div>
+
+        <div class="bg-blue-900/30 border border-blue-700 rounded-lg p-3 mb-4 text-xs text-blue-300 space-y-1">
+            <p><span class="text-blue-100 font-semibold">Galas Previas:</span> las que se jugaron antes de la final (máx. 3)</p>
+            <p><span class="text-yellow-300 font-semibold">Final:</span> la última gala donde se define el ganador (14/6)</p>
+            <p><span class="text-orange-300 font-semibold">Promediado automático:</span> si un artista faltó a una gala previa, su puntaje se calcula solo con las que cantó</p>
+        </div>
+
+        <div id="galas-list" class="space-y-2 mb-4"></div>
+
+        <div class="flex items-center gap-3 text-xs text-gray-400 mb-4">
+            <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-sm bg-blue-600 inline-block"></span> Previa seleccionada</span>
+            <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-sm bg-yellow-600 inline-block"></span> Final seleccionada</span>
+        </div>
+
+        <button id="calcular-btn" onclick="calcular()" class="btn-primary w-full text-base" disabled>
+            <i class="fas fa-calculator mr-2"></i> Calcular Ranking Final
+        </button>
+    </div>
+
+    <!-- LOADING -->
+    <div id="loading" class="hidden text-center py-10">
+        <div class="w-12 h-12 border-4 border-yellow-500 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
+        <p class="text-gray-400 text-sm">Leyendo puntajes de jurados...</p>
+    </div>
+
+    <!-- RESULTADOS -->
+    <div id="results" class="hidden space-y-4">
+
+        <!-- Banner ganador -->
+        <div id="winner-banner" class="winner-banner p-6 text-center"></div>
+
+        <!-- Leyenda -->
+        <div id="legend" class="step-card p-3 text-xs text-gray-400 flex flex-wrap gap-x-4 gap-y-1"></div>
+
+        <!-- Ranking -->
+        <div id="ranking-list" class="space-y-3"></div>
+
+        <!-- Exportar -->
+        <div class="flex gap-3">
+            <button onclick="exportCSV()" class="flex-1 bg-green-800 hover:bg-green-700 text-white font-semibold py-3 rounded-xl text-sm transition">
+                <i class="fas fa-file-csv mr-1"></i> Exportar CSV
+            </button>
+            <button onclick="window.print()" class="flex-1 bg-blue-800 hover:bg-blue-700 text-white font-semibold py-3 rounded-xl text-sm transition">
+                <i class="fas fa-print mr-1"></i> Imprimir
+            </button>
+        </div>
+    </div>
+
+    <div id="msg" class=""></div>
+</div>
+
+<script type="module">
+import { db } from './firebase_config.js';
+import { collection, getDocs, query, orderBy } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+// ─── Estado ──────────────────────────────────────────────────────────────────
+let allGroups = [], allEvents = [];
+let selectedPrevias = [];   // [{id, name, date}]
+let selectedFinal  = null;  // {id, name, date}
+let rankingResult  = [];
+const cache = {};           // {eventId: {nameMap, artistDocs}}
+
+// ─── Utilidades ──────────────────────────────────────────────────────────────
+const norm = s => (s||'').toLowerCase().trim().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\s+/g,' ');
+const fmt  = n => (+(n||0)).toFixed(1);
+const $    = id => document.getElementById(id);
+
+function showMsg(txt, type='error') {
+    const c = {error:'bg-red-700', success:'bg-green-700', info:'bg-blue-700'};
+    $('msg').innerHTML = `<div class="${c[type]} text-white p-4 rounded-xl text-sm">${txt}</div>`;
+    setTimeout(() => $('msg').innerHTML = '', 5000);
+}
+
+// ─── Cargar grupos de eventos ─────────────────────────────────────────────────
+async function init() {
+    try {
+        const [groupSnap, eventSnap] = await Promise.all([
+            getDocs(query(collection(db,'event_groups'), orderBy('createdAt','desc'))),
+            getDocs(query(collection(db,'events'), orderBy('createdAt','desc')))
+        ]);
+        allGroups = groupSnap.docs.map(d => ({id:d.id,...d.data()}));
+        allEvents = eventSnap.docs.map(d => ({id:d.id,...d.data()}));
+
+        const sel = $('group-select');
+        if (allGroups.length === 0) {
+            // Sin grupos: mostrar todos los eventos directamente
+            sel.innerHTML = '<option value="__all__">— Todos los eventos (sin grupos) —</option>';
+            loadGalas();
+        } else {
+            sel.innerHTML = '<option value="">— Seleccioná el certamen —</option>' +
+                allGroups.map(g => `<option value="${g.id}">${g.name}</option>`).join('');
+        }
+    } catch(e) {
+        showMsg('Error cargando datos: ' + e.message);
+    }
+}
+
+// ─── Cargar galas del grupo ───────────────────────────────────────────────────
+window.loadGalas = function() {
+    const groupId = $('group-select').value;
+    const events = groupId === '__all__'
+        ? allEvents
+        : allEvents.filter(e => e.groupId === groupId);
+
+    if (!groupId) { $('step2').classList.add('hidden'); return; }
+
+    selectedPrevias = [];
+    selectedFinal   = null;
+
+    const list = $('galas-list');
+    list.innerHTML = events.length === 0
+        ? '<p class="text-gray-500 text-sm">No hay galas en este grupo.</p>'
+        : events.map(ev => `
+            <div id="row-${ev.id}" class="gala-row" onclick="toggleGala('${ev.id}','${(ev.name||'').replace(/'/g,"\\'")}','${ev.date||''}')">
+                <div class="flex-1 text-sm">
+                    <span class="font-semibold text-white">${ev.name || ev.id}</span>
+                    ${ev.date ? `<span class="text-gray-400 ml-2">${ev.date}</span>` : ''}
+                </div>
+                <span id="badge-${ev.id}" class="text-xs text-gray-500">sin asignar</span>
+            </div>`).join('');
+
+    $('step2').classList.remove('hidden');
+    updateCalcBtn();
+};
+
+// ─── Toggle gala previa / final / nada ───────────────────────────────────────
+window.toggleGala = function(id, name, date) {
+    const ev = {id, name, date};
+    const isFinal   = selectedFinal?.id === id;
+    const previaIdx = selectedPrevias.findIndex(p => p.id === id);
+    const isPrevia  = previaIdx !== -1;
+
+    // Ciclo: sin asignar → previa → final → sin asignar
+    if (!isPrevia && !isFinal) {
+        if (selectedPrevias.length < 3) {
+            selectedPrevias.push(ev);
+            setBadge(id, 'previa', selectedPrevias.length);
+        } else {
+            showMsg('Máximo 3 galas previas. Primero deseleccioná una.');
+        }
+    } else if (isPrevia) {
+        selectedPrevias.splice(previaIdx, 1);
+        // renumerar
+        selectedPrevias.forEach((p, i) => setBadge(p.id, 'previa', i+1));
+        if (selectedFinal?.id !== id) {
+            selectedFinal = ev;
+            setBadge(id, 'final');
+        } else {
+            setBadge(id, 'none');
+        }
+    } else {
+        // era final → quitar
+        selectedFinal = null;
+        setBadge(id, 'none');
+    }
+    updateCalcBtn();
+};
+
+function setBadge(id, type, num) {
+    const row   = document.getElementById(`row-${id}`);
+    const badge = document.getElementById(`badge-${id}`);
+    row.className = 'gala-row' + (type==='previa' ? ' selected-previa' : type==='final' ? ' selected-final' : '');
+    badge.className = 'text-xs font-bold';
+    if (type === 'previa') {
+        badge.textContent  = `Previa ${num}`;
+        badge.style.color  = '#60a5fa';
+    } else if (type === 'final') {
+        badge.textContent = '🏅 FINAL';
+        badge.style.color = '#fbbf24';
+    } else {
+        badge.textContent = 'sin asignar';
+        badge.style.color = '#6b7280';
+    }
+}
+
+function updateCalcBtn() {
+    $('calcular-btn').disabled = !(selectedPrevias.length >= 1 && selectedFinal);
+}
+
+// ─── Leer puntajes de un evento ───────────────────────────────────────────────
+async function getEventScores(eventId) {
+    if (cache[eventId]) return cache[eventId];
+
+    // Artistas del evento
+    const artSnap = await getDocs(collection(db,'events',eventId,'artists'));
+    const artists = {};
+    artSnap.docs.forEach(d => {
+        const data = d.data();
+        if (!data.name && !data.nombre) return;
+        artists[d.id] = { id: d.id, name: data.name || data.nombre, photo: data.photoURL || data.photoUrl || data.fotoURL || '' };
+    });
+
+    // Evaluaciones de jurados
+    const evalSnap = await getDocs(collection(db,'events',eventId,'jury_evaluations'));
+    const evalsByArtist = {};
+    evalSnap.docs.forEach(d => {
+        if (d.id.endsWith('_partial')) return;
+        const data = d.data();
+        if (data.isPartial) return;
+        const score = data.average || data.score || 0;
+        if (!score || !data.artistId) return;
+        if (!evalsByArtist[data.artistId]) evalsByArtist[data.artistId] = [];
+        evalsByArtist[data.artistId].push(score);
+    });
+
+    // Calcular promedio de jurados por artista
+    // También fallback: totalScore/totalRatingsCount del artista
+    const nameMap = {};  // normalizedName → {score, name, photo}
+    for (const [artId, artist] of Object.entries(artists)) {
+        let score = 0;
+        if (evalsByArtist[artId] && evalsByArtist[artId].length > 0) {
+            score = evalsByArtist[artId].reduce((a,b)=>a+b,0) / evalsByArtist[artId].length;
+        } else {
+            // Fallback: leer del documento del artista
+            const artData = artSnap.docs.find(d=>d.id===artId)?.data() || {};
+            if ((artData.totalRatingsCount||0) > 0) {
+                score = (artData.totalScore||0) / artData.totalRatingsCount;
+            }
+        }
+        if (score > 0) {
+            nameMap[norm(artist.name)] = { score, name: artist.name, photo: artist.photo };
+        }
+    }
+
+    cache[eventId] = { nameMap, artists };
+    return cache[eventId];
+}
+
+// ─── CALCULAR RANKING ────────────────────────────────────────────────────────
+window.calcular = async function() {
+    $('loading').classList.remove('hidden');
+    $('results').classList.add('hidden');
+    $('calcular-btn').disabled = true;
+
+    try {
+        // 1. Artistas de la gala final → son los finalistas
+        const { nameMap: finalMap } = await getEventScores(selectedFinal.id);
+        if (Object.keys(finalMap).length === 0) {
+            showMsg('La Gala Final no tiene puntajes de jurados cargados. Verificá que las votaciones estén registradas.');
+            return;
+        }
+
+        // 2. Puntajes de galas previas
+        const prevMaps = [];
+        for (const gala of selectedPrevias) {
+            const { nameMap } = await getEventScores(gala.id);
+            prevMaps.push({ gala, nameMap });
+        }
+
+        // 3. Construir ranking
+        const SLOTS = 3;
+        const ranking = Object.entries(finalMap).map(([normName, finalData]) => {
+            const finalScore = finalData.score;
+
+            // Puntajes reales en galas previas
+            const realSlots = prevMaps.map(({ gala, nameMap }) => ({
+                galaName: gala.name,
+                score: nameMap[normName]?.score ?? null,
+                esReal: normName in nameMap
+            }));
+
+            const reales = realSlots.filter(s => s.esReal);
+            const avgReal = reales.length > 0
+                ? reales.reduce((sum, s) => sum + s.score, 0) / reales.length
+                : finalScore; // si no cantó en ninguna previa, usar su score de la final como base
+
+            // Completar hasta SLOTS slots (rellenar con promedio)
+            const slots = [];
+            // Primero los slots configurados
+            realSlots.forEach(s => {
+                slots.push({ ...s, score: s.esReal ? s.score : avgReal, esPromediado: !s.esReal });
+            });
+            // Rellenar slots faltantes hasta 3
+            while (slots.length < SLOTS) {
+                slots.push({ galaName: null, score: avgReal, esReal: false, esPromediado: true });
+            }
+
+            const sumaPrevias = slots.reduce((sum, s) => sum + (s.score||0), 0);
+            const total = sumaPrevias + finalScore;
+
+            return {
+                name: finalData.name,
+                photo: finalData.photo,
+                slots,
+                finalScore,
+                sumaPrevias,
+                total,
+                galasReales: reales.length,
+                tienePromediado: reales.length < Math.min(selectedPrevias.length, SLOTS)
+            };
+        });
+
+        ranking.sort((a,b) => b.total - a.total);
+        rankingResult = ranking;
+        renderResults(ranking);
+
+    } catch(e) {
+        console.error(e);
+        showMsg('Error calculando: ' + e.message);
+    } finally {
+        $('loading').classList.add('hidden');
+        $('calcular-btn').disabled = false;
+    }
+};
+
+// ─── RENDERIZAR ───────────────────────────────────────────────────────────────
+function renderResults(ranking) {
+    if (ranking.length === 0) { showMsg('No hay artistas con puntajes en la gala final.'); return; }
+
+    const winner = ranking[0];
+
+    // Banner ganador
+    $('winner-banner').innerHTML = `
+        <div class="text-4xl mb-2">🏆</div>
+        <p class="text-yellow-400 text-sm font-semibold tracking-widest uppercase mb-1">Ganador del Certamen</p>
+        <p class="text-3xl font-black text-white mb-1">${winner.name}</p>
+        <p class="text-yellow-300 text-xl font-bold">${fmt(winner.total)} pts</p>
+        <p class="text-gray-400 text-xs mt-2">
+            Galas previas: ${fmt(winner.sumaPrevias)} · Final: ${fmt(winner.finalScore)}
+            ${winner.tienePromediado ? ' · <span class="badge-p" style="background:#f59e0b;color:#1f2937;font-size:.6rem;font-weight:800;padding:1px 4px;border-radius:3px;">P</span> = puntaje promediado' : ''}
+        </p>`;
+
+    // Leyenda
+    const galaLabels = selectedPrevias.map((g,i) => `<span><span class="font-bold text-blue-300">G${i+1}</span> = ${g.name}</span>`);
+    galaLabels.push(`<span><span class="font-bold text-yellow-300">Final</span> = ${selectedFinal.name}</span>`);
+    if (ranking.some(r => r.tienePromediado)) {
+        galaLabels.push(`<span><span class="badge-p" style="background:#f59e0b;color:#1f2937;font-size:.6rem;font-weight:800;padding:1px 4px;border-radius:3px;">P</span> Puntaje calculado por promedio (el artista no cantó esa gala)</span>`);
+    }
+    $('legend').innerHTML = galaLabels.join('<span class="text-gray-600">·</span>');
+
+    // Cards
+    const list = $('ranking-list');
+    list.innerHTML = '';
+    ranking.forEach((item, i) => {
+        const pos  = i + 1;
+        const cls  = pos === 1 ? 'pos-1' : pos === 2 ? 'pos-2' : pos === 3 ? 'pos-3' : '';
+        const medal = pos === 1 ? '🥇' : pos === 2 ? '🥈' : pos === 3 ? '🥉' : `<span class="text-gray-400 font-bold text-sm">#${pos}</span>`;
+
+        const slotsHtml = item.slots.map((s, si) => `
+            <div class="slot">
+                <div class="text-gray-500 text-xs mb-0.5">G${si+1}</div>
+                <div class="font-bold text-sm ${s.esPromediado ? 'text-amber-400' : 'text-blue-300'}">${fmt(s.score)}</div>
+                ${s.esPromediado ? '<span class="badge-p">P</span>' : ''}
+            </div>`).join('');
+
+        const card = document.createElement('div');
+        card.className = `rank-card ${cls} p-4`;
+        card.innerHTML = `
+            <div class="flex items-center gap-3 flex-wrap">
+                <div class="text-2xl w-9 text-center flex-shrink-0">${medal}</div>
+                <div class="flex items-center gap-2 flex-1 min-w-36">
+                    ${item.photo
+                        ? `<img src="${item.photo}" class="w-10 h-10 rounded-full object-cover border-2 border-slate-600" onerror="this.style.display='none'">`
+                        : `<div class="w-10 h-10 rounded-full bg-slate-700 flex items-center justify-center text-lg flex-shrink-0">🎤</div>`}
+                    <div>
+                        <div class="font-bold text-white">${item.name}</div>
+                        <div class="text-xs ${item.tienePromediado ? 'text-amber-400' : 'text-green-400'}">
+                            ${item.tienePromediado ? `${item.galasReales} gala${item.galasReales!==1?'s':''} reales · 1 promediada` : `${item.galasReales} galas completas ✓`}
+                        </div>
+                    </div>
+                </div>
+                <div class="flex gap-2 flex-wrap items-end">
+                    ${slotsHtml}
+                    <div class="slot slot-final">
+                        <div class="text-yellow-600 text-xs mb-0.5">Final</div>
+                        <div class="font-bold text-sm text-yellow-300">${fmt(item.finalScore)}</div>
+                    </div>
+                </div>
+                <div class="text-right flex-shrink-0 ml-auto">
+                    <div class="text-xl font-black text-green-400">${fmt(item.total)}</div>
+                    <div class="text-xs text-gray-500">total</div>
+                </div>
+            </div>
+            ${pos === 1 ? '<div class="mt-2 text-center text-yellow-400 text-xs font-bold tracking-widest">★ GANADOR DEL CERTAMEN ★</div>' : ''}`;
+        list.appendChild(card);
+    });
+
+    $('results').classList.remove('hidden');
+    $('results').scrollIntoView({ behavior:'smooth' });
+}
+
+// ─── EXPORTAR CSV ─────────────────────────────────────────────────────────────
+window.exportCSV = function() {
+    if (!rankingResult.length) return;
+    const rows = [
+        ['Pos','Artista','G1','G1_P','G2','G2_P','G3','G3_P','Final','Total'],
+        ...rankingResult.map((r,i) => [
+            i+1, `"${r.name}"`,
+            fmt(r.slots[0]?.score||0), r.slots[0]?.esPromediado?'SI':'NO',
+            fmt(r.slots[1]?.score||0), r.slots[1]?.esPromediado?'SI':'NO',
+            fmt(r.slots[2]?.score||0), r.slots[2]?.esPromediado?'SI':'NO',
+            fmt(r.finalScore), fmt(r.total)
+        ].join(','))
+    ].join('\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([rows],{type:'text/csv;charset=utf-8;'}));
+    a.download = `ranking_certamen_${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+};
+
+// ─── INIT ─────────────────────────────────────────────────────────────────────
+init();
+</script>
+</body>
+</html>

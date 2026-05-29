@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ranking Final del Certamen - VYTMUSIC</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body { background: linear-gradient(135deg, #0f172a, #1e293b); font-family: 'Inter', sans-serif; }
+
+        .promediado-badge {
+            display: inline-block;
+            background: #f59e0b;
+            color: #1f2937;
+            font-size: 0.6rem;
+            font-weight: 800;
+            padding: 1px 5px;
+            border-radius: 4px;
+            vertical-align: middle;
+            letter-spacing: 0.05em;
+        }
+
+        .score-real { color: #60a5fa; }
+        .score-promediado { color: #f59e0b; }
+        .score-final { color: #fbbf24; }
+        .score-total { color: #34d399; font-size: 1.25rem; }
+
+        .rank-card {
+            background: linear-gradient(135deg, #1e293b, #0f172a);
+            border: 1px solid #334155;
+            transition: all 0.2s;
+        }
+        .rank-card.ganador {
+            border: 2px solid #fbbf24;
+            background: linear-gradient(135deg, #1f1500, #0f172a);
+            box-shadow: 0 0 30px rgba(251, 191, 36, 0.2);
+        }
+        .rank-card.segundo {
+            border: 2px solid #9ca3af;
+            background: linear-gradient(135deg, #111827, #0f172a);
+        }
+        .rank-card.tercero {
+            border: 2px solid #cd7f32;
+            background: linear-gradient(135deg, #1a0f00, #0f172a);
+        }
+
+        .gala-slot {
+            background: rgba(255,255,255,0.05);
+            border-radius: 6px;
+            padding: 4px 8px;
+            text-align: center;
+            min-width: 70px;
+        }
+
+        .config-card {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid #334155;
+            border-radius: 12px;
+        }
+
+        .event-checkbox:checked + label {
+            background: rgba(59, 130, 246, 0.2);
+            border-color: #3b82f6;
+        }
+
+        @media (max-width: 640px) {
+            .gala-slot { min-width: 55px; font-size: 0.75rem; }
+            .score-total { font-size: 1rem; }
+        }
+    </style>
+</head>
+<body class="min-h-screen text-white">
+
+    <!-- Header -->
+    <div class="bg-gradient-to-r from-yellow-600 via-orange-600 to-red-600 py-5 shadow-lg">
+        <div class="container mx-auto px-4">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h1 class="text-2xl font-bold">🏆 Ranking Final del Certamen</h1>
+                    <p class="text-sm mt-1 opacity-80">Puntajes acumulados con promediado automático</p>
+                </div>
+                <button onclick="goBack()" class="bg-white text-orange-700 hover:bg-orange-50 px-4 py-2 rounded-lg font-semibold text-sm transition">
+                    <i class="fas fa-arrow-left"></i> Volver
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="container mx-auto px-4 py-6 max-w-4xl">
+
+        <!-- Config Panel -->
+        <div id="config-panel" class="config-card p-6 mb-6">
+            <h2 class="text-lg font-bold text-gray-200 mb-4">⚙️ Configurar Certamen</h2>
+
+            <div class="mb-5">
+                <label class="block text-sm font-semibold text-yellow-400 mb-2">
+                    🏅 Gala Final (Gala 4 - 14/6)
+                </label>
+                <select id="final-event-select" class="w-full p-3 rounded-lg bg-gray-900 border border-gray-600 text-white text-sm">
+                    <option value="">Cargando eventos...</option>
+                </select>
+                <p class="text-xs text-gray-500 mt-1">Los artistas cargados en esta gala son los finalistas</p>
+            </div>
+
+            <div class="mb-5">
+                <label class="block text-sm font-semibold text-blue-400 mb-2">
+                    📋 Galas Previas (marcar las que correspondan al certamen)
+                </label>
+                <div id="prev-galas-list" class="space-y-2 max-h-56 overflow-y-auto pr-2">
+                    <p class="text-gray-500 text-sm">Seleccioná primero la Gala Final...</p>
+                </div>
+                <p class="text-xs text-gray-500 mt-2">Podés marcar 1, 2 o 3 galas previas. Los slots faltantes se promedian automáticamente.</p>
+            </div>
+
+            <div class="bg-blue-900/30 border border-blue-700 rounded-lg p-4 mb-5 text-sm text-blue-200">
+                <p class="font-semibold mb-1">💡 Cómo funciona el promediado:</p>
+                <ul class="space-y-1 text-xs text-blue-300">
+                    <li>• Cada artista necesita puntaje en 3 galas + la final</li>
+                    <li>• Si cantó en 2 galas → el 3° slot se completa con el promedio de esas 2</li>
+                    <li>• Si cantó en 1 gala → los 2 slots faltantes se completan con ese puntaje</li>
+                    <li>• Los slots promediados aparecen con la etiqueta <span class="promediado-badge">P</span></li>
+                    <li>• Puntaje total = Gala1 + Gala2 + Gala3 + GalaFinal</li>
+                </ul>
+            </div>
+
+            <button id="calcular-btn" onclick="calcularRanking()"
+                class="w-full bg-gradient-to-r from-yellow-600 to-orange-600 hover:from-yellow-700 hover:to-orange-700 text-white font-bold py-4 rounded-xl text-lg transition transform hover:scale-105 disabled:opacity-50">
+                <i class="fas fa-trophy"></i> Calcular Ranking Final
+            </button>
+        </div>
+
+        <!-- Loading -->
+        <div id="loading-section" class="hidden text-center py-12">
+            <div class="inline-block w-12 h-12 border-4 border-yellow-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+            <p class="text-gray-400">Calculando puntajes...</p>
+        </div>
+
+        <!-- Results -->
+        <div id="results-section" class="hidden">
+
+            <!-- Summary -->
+            <div class="grid grid-cols-3 gap-3 mb-6">
+                <div class="config-card p-4 text-center">
+                    <div class="text-2xl font-bold text-blue-400" id="stat-artistas">0</div>
+                    <div class="text-xs text-gray-400 mt-1">Finalistas</div>
+                </div>
+                <div class="config-card p-4 text-center">
+                    <div class="text-2xl font-bold text-yellow-400" id="stat-galas">0</div>
+                    <div class="text-xs text-gray-400 mt-1">Galas previas</div>
+                </div>
+                <div class="config-card p-4 text-center">
+                    <div class="text-2xl font-bold text-orange-400" id="stat-promediados">0</div>
+                    <div class="text-xs text-gray-400 mt-1">Con promediado</div>
+                </div>
+            </div>
+
+            <!-- Leyenda columnas -->
+            <div id="columnas-header" class="config-card px-4 py-3 mb-3 flex items-center gap-2 overflow-x-auto text-xs text-gray-400">
+                <!-- Se rellena dinámicamente -->
+            </div>
+
+            <!-- Ranking cards -->
+            <div id="ranking-list" class="space-y-3"></div>
+
+            <!-- Export -->
+            <div class="mt-6 flex gap-3 flex-wrap">
+                <button onclick="exportarCSV()"
+                    class="flex-1 min-w-32 bg-green-700 hover:bg-green-600 text-white font-semibold py-3 rounded-lg text-sm transition">
+                    <i class="fas fa-file-csv"></i> Exportar CSV
+                </button>
+                <button onclick="window.print()"
+                    class="flex-1 min-w-32 bg-blue-700 hover:bg-blue-600 text-white font-semibold py-3 rounded-lg text-sm transition">
+                    <i class="fas fa-print"></i> Imprimir
+                </button>
+            </div>
+        </div>
+
+        <div id="message-container" class="mt-4"></div>
+    </div>
+
+    <script type="module">
+        import { db } from './firebase_config.js';
+        import {
+            collection, getDocs, query, orderBy, doc, getDoc
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- Estado global ---
+        let allEvents = [];
+        let rankingData = [];
+        let prevGalaIds = [];
+        let prevGalaNames = {};
+        let finalEventId = null;
+        let finalEventName = '';
+
+        // --- Utilidades ---
+        function normalizeName(name) {
+            return (name || '')
+                .toLowerCase().trim()
+                .normalize('NFD').replace(/[̀-ͯ]/g, '')
+                .replace(/\s+/g, ' ');
+        }
+
+        function fmt(n) {
+            return (n || 0).toFixed(1);
+        }
+
+        // --- Cargar eventos ---
+        async function loadEvents() {
+            try {
+                const snap = await getDocs(query(collection(db, 'events'), orderBy('createdAt', 'desc')));
+                allEvents = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+                renderEventSelectors();
+            } catch (e) {
+                showMessage('Error cargando eventos: ' + e.message, 'error');
+            }
+        }
+
+        function renderEventSelectors() {
+            const finalSel = document.getElementById('final-event-select');
+            finalSel.innerHTML = '<option value="">-- Seleccioná la Gala Final --</option>';
+            allEvents.forEach(ev => {
+                const opt = document.createElement('option');
+                opt.value = ev.id;
+                opt.textContent = `${ev.name || ev.id}${ev.date ? ' (' + ev.date + ')' : ''}`;
+                finalSel.appendChild(opt);
+            });
+
+            finalSel.addEventListener('change', () => {
+                finalEventId = finalSel.value;
+                finalEventName = allEvents.find(e => e.id === finalEventId)?.name || '';
+                renderPrevGalas(finalEventId);
+            });
+        }
+
+        function renderPrevGalas(excludeId) {
+            const container = document.getElementById('prev-galas-list');
+            const other = allEvents.filter(e => e.id !== excludeId);
+
+            if (other.length === 0) {
+                container.innerHTML = '<p class="text-gray-500 text-sm">No hay otras galas disponibles.</p>';
+                return;
+            }
+
+            container.innerHTML = other.map(ev => `
+                <label class="flex items-center gap-3 p-3 rounded-lg border border-gray-700 cursor-pointer hover:border-blue-500 transition">
+                    <input type="checkbox" class="prev-gala-check w-4 h-4 accent-blue-500" value="${ev.id}" data-name="${ev.name || ev.id}">
+                    <span class="text-sm text-gray-300">${ev.name || ev.id}${ev.date ? ' <span class="text-gray-500">(' + ev.date + ')</span>' : ''}</span>
+                </label>
+            `).join('');
+        }
+
+        // --- Cargar artistas de un evento ---
+        const artistCache = {};
+        async function loadArtists(eventId) {
+            if (artistCache[eventId]) return artistCache[eventId];
+            const snap = await getDocs(collection(db, 'events', eventId, 'artists'));
+            const artists = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+            artistCache[eventId] = artists;
+            return artists;
+        }
+
+        function getScore(artist) {
+            if ((artist.totalRatingsCount || 0) > 0) {
+                return (artist.totalScore || 0) / artist.totalRatingsCount;
+            }
+            return artist.totalScore || 0;
+        }
+
+        // --- Calcular ranking ---
+        window.calcularRanking = async function() {
+            finalEventId = document.getElementById('final-event-select').value;
+            prevGalaIds = [...document.querySelectorAll('.prev-gala-check:checked')].map(cb => cb.value);
+            prevGalaNames = {};
+            [...document.querySelectorAll('.prev-gala-check:checked')].forEach(cb => {
+                prevGalaNames[cb.value] = cb.dataset.name;
+            });
+
+            if (!finalEventId) {
+                showMessage('Seleccioná la Gala Final', 'error'); return;
+            }
+            if (prevGalaIds.length === 0) {
+                showMessage('Marcá al menos una Gala Previa', 'error'); return;
+            }
+            if (prevGalaIds.length > 3) {
+                showMessage('Máximo 3 galas previas (solo 3 slots disponibles)', 'error'); return;
+            }
+
+            document.getElementById('config-panel').classList.add('opacity-50', 'pointer-events-none');
+            document.getElementById('loading-section').classList.remove('hidden');
+            document.getElementById('results-section').classList.add('hidden');
+
+            try {
+                // 1. Artistas de la final
+                const finalArtists = await loadArtists(finalEventId);
+                if (finalArtists.length === 0) {
+                    showMessage('La Gala Final no tiene artistas cargados', 'error');
+                    return;
+                }
+
+                // 2. Scores de galas previas (map por nombre normalizado)
+                const galaScoreMaps = {};
+                for (const galaId of prevGalaIds) {
+                    galaScoreMaps[galaId] = {};
+                    const artists = await loadArtists(galaId);
+                    for (const a of artists) {
+                        const norm = normalizeName(a.name);
+                        galaScoreMaps[galaId][norm] = getScore(a);
+                    }
+                }
+
+                // 3. Construir ranking
+                const ranking = finalArtists.map(artist => {
+                    const norm = normalizeName(artist.name);
+                    const finalScore = getScore(artist);
+
+                    // Slots de galas previas
+                    const slots = prevGalaIds.map(galaId => {
+                        const score = galaScoreMaps[galaId][norm];
+                        return {
+                            galaId,
+                            galaName: prevGalaNames[galaId],
+                            score: score !== undefined ? score : null,
+                            esReal: score !== undefined
+                        };
+                    });
+
+                    // Promedio de las galas reales
+                    const reales = slots.filter(s => s.esReal);
+                    const avgReal = reales.length > 0
+                        ? reales.reduce((sum, s) => sum + s.score, 0) / reales.length
+                        : 0;
+
+                    // Rellenar promediados (hasta 3 slots)
+                    const TOTAL_GALAS_PREVIAS = 3;
+                    const slotsRellenos = [...slots];
+
+                    // Si hay menos de 3 slots configurados, rellenar los faltantes con promediado
+                    while (slotsRellenos.length < TOTAL_GALAS_PREVIAS) {
+                        slotsRellenos.push({
+                            galaId: null,
+                            galaName: null,
+                            score: avgReal,
+                            esReal: false,
+                            esPromediado: true
+                        });
+                    }
+
+                    // También marcar los slots configurados que no tienen score como promediados
+                    const slotsFinal = slotsRellenos.map(s => ({
+                        ...s,
+                        score: s.esReal ? s.score : avgReal,
+                        esPromediado: !s.esReal
+                    }));
+
+                    const sumaPrevias = slotsFinal.reduce((sum, s) => sum + (s.score || 0), 0);
+                    const total = sumaPrevias + finalScore;
+                    const galasReales = reales.length;
+
+                    return {
+                        artist,
+                        slots: slotsFinal,
+                        finalScore,
+                        sumaPrevias,
+                        total,
+                        galasReales,
+                        tienePromediado: galasReales < TOTAL_GALAS_PREVIAS
+                    };
+                });
+
+                ranking.sort((a, b) => b.total - a.total);
+                rankingData = ranking;
+
+                renderRanking(ranking);
+
+            } catch (e) {
+                console.error(e);
+                showMessage('Error calculando ranking: ' + e.message, 'error');
+            } finally {
+                document.getElementById('loading-section').classList.add('hidden');
+                document.getElementById('config-panel').classList.remove('opacity-50', 'pointer-events-none');
+            }
+        };
+
+        function renderRanking(ranking) {
+            // Stats
+            document.getElementById('stat-artistas').textContent = ranking.length;
+            document.getElementById('stat-galas').textContent = prevGalaIds.length;
+            document.getElementById('stat-promediados').textContent = ranking.filter(r => r.tienePromediado).length;
+
+            // Header de columnas
+            const header = document.getElementById('columnas-header');
+            const colsHtml = [
+                '<span class="mr-4 font-semibold text-gray-300">Columnas:</span>',
+                ...prevGalaIds.map((id, i) => `<span class="mr-3"><span class="score-real font-bold">G${i+1}</span> = ${prevGalaNames[id]}</span>`),
+                `<span class="mr-3"><span class="score-final font-bold">Final</span> = ${finalEventName}</span>`,
+                '<span class="text-gray-500 text-xs ml-auto"><span class="promediado-badge">P</span> = puntaje promediado</span>'
+            ].join('');
+            header.innerHTML = colsHtml;
+
+            // Cards de ranking
+            const list = document.getElementById('ranking-list');
+            list.innerHTML = '';
+
+            ranking.forEach((item, index) => {
+                const pos = index + 1;
+                const medal = pos === 1 ? '🥇' : pos === 2 ? '🥈' : pos === 3 ? '🥉' : `#${pos}`;
+                const cardClass = pos === 1 ? 'ganador' : pos === 2 ? 'segundo' : pos === 3 ? 'tercero' : '';
+
+                const slotsHtml = item.slots.map((slot, si) => `
+                    <div class="gala-slot">
+                        <div class="text-xs text-gray-500 mb-1">G${si + 1}${slot.galaName ? '' : ''}</div>
+                        <div class="font-bold ${slot.esPromediado ? 'score-promediado' : 'score-real'}">
+                            ${fmt(slot.score)}
+                        </div>
+                        ${slot.esPromediado ? '<span class="promediado-badge">P</span>' : ''}
+                    </div>
+                `).join('');
+
+                const card = document.createElement('div');
+                card.className = `rank-card ${cardClass} rounded-xl p-4`;
+                card.innerHTML = `
+                    <div class="flex items-center gap-3 flex-wrap">
+                        <!-- Posición -->
+                        <div class="text-2xl font-bold w-10 text-center flex-shrink-0">${medal}</div>
+
+                        <!-- Nombre + foto -->
+                        <div class="flex items-center gap-2 flex-1 min-w-36">
+                            ${item.artist.photoUrl
+                                ? `<img src="${item.artist.photoUrl}" class="w-10 h-10 rounded-full object-cover border-2 border-gray-600" alt="">`
+                                : `<div class="w-10 h-10 rounded-full bg-gray-700 flex items-center justify-center text-lg flex-shrink-0">🎤</div>`
+                            }
+                            <div>
+                                <div class="font-bold text-white text-sm">${item.artist.name || '?'}</div>
+                                ${item.tienePromediado
+                                    ? `<div class="text-xs text-amber-400">${item.galasReales} de 3 galas reales</div>`
+                                    : `<div class="text-xs text-green-400">3 galas completas ✓</div>`
+                                }
+                            </div>
+                        </div>
+
+                        <!-- Slots de galas -->
+                        <div class="flex gap-2 flex-wrap">
+                            ${slotsHtml}
+
+                            <!-- Gala Final -->
+                            <div class="gala-slot border border-yellow-700">
+                                <div class="text-xs text-yellow-500 mb-1">Final</div>
+                                <div class="font-bold score-final">${fmt(item.finalScore)}</div>
+                            </div>
+                        </div>
+
+                        <!-- Total -->
+                        <div class="text-right flex-shrink-0 ml-auto">
+                            <div class="score-total font-bold">${fmt(item.total)}</div>
+                            <div class="text-xs text-gray-500">total</div>
+                        </div>
+                    </div>
+
+                    ${pos === 1 ? `
+                        <div class="mt-3 text-center text-yellow-400 font-bold text-sm tracking-widest">
+                            ★ GANADOR DEL CERTAMEN ★
+                        </div>
+                    ` : ''}
+                `;
+                list.appendChild(card);
+            });
+
+            document.getElementById('results-section').classList.remove('hidden');
+
+            // Scroll a resultados
+            document.getElementById('results-section').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        // --- Exportar CSV ---
+        window.exportarCSV = function() {
+            if (!rankingData.length) return;
+
+            const headers = ['Pos', 'Artista', 'Gala1', 'G1_Promediado', 'Gala2', 'G2_Promediado', 'Gala3', 'G3_Promediado', 'GalaFinal', 'Total'];
+            const rows = rankingData.map((item, i) => [
+                i + 1,
+                `"${item.artist.name}"`,
+                fmt(item.slots[0]?.score || 0),
+                item.slots[0]?.esPromediado ? 'SI' : 'NO',
+                fmt(item.slots[1]?.score || 0),
+                item.slots[1]?.esPromediado ? 'SI' : 'NO',
+                fmt(item.slots[2]?.score || 0),
+                item.slots[2]?.esPromediado ? 'SI' : 'NO',
+                fmt(item.finalScore),
+                fmt(item.total)
+            ].join(','));
+
+            const csv = [headers.join(','), ...rows].join('\n');
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `ranking_certamen_${new Date().toISOString().split('T')[0]}.csv`;
+            a.click();
+        };
+
+        // --- Volver ---
+        window.goBack = function() {
+            const params = new URLSearchParams(window.location.search);
+            const eventId = params.get('eventId');
+            const eventName = params.get('eventName');
+            if (eventId) {
+                window.location.href = `panel_evento_SIMPLE.html?eventId=${eventId}${eventName ? '&eventName=' + eventName : ''}`;
+            } else {
+                window.history.back();
+            }
+        };
+
+        // --- Mensaje ---
+        function showMessage(msg, type = 'info') {
+            const colors = { success: 'bg-green-700', error: 'bg-red-700', info: 'bg-blue-700' };
+            const c = document.getElementById('message-container');
+            c.innerHTML = `<div class="${colors[type]} text-white p-4 rounded-lg">${msg}</div>`;
+            setTimeout(() => c.innerHTML = '', 5000);
+        }
+
+        // --- Init ---
+        loadEvents();
+    </script>
+</body>
+</html>

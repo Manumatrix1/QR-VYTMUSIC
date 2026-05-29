@@ -1134,15 +1134,17 @@
                         }
                         
                         const artistData = artistsMap.get(normalizedName);
-                        artistData.participations.push({
-                            event: event.name,
-                            eventId: event.id,
-                            date: event.date,
-                            score: averageScore
-                        });
-                        if (averageScore > 0) artistData.scores.push(averageScore);
-                        artistData.totalGalas++;
-                        totalParticipations++;
+                        if (averageScore > 0) {
+                            artistData.participations.push({
+                                event: event.name,
+                                eventId: event.id,
+                                date: event.date,
+                                score: averageScore
+                            });
+                            artistData.scores.push(averageScore);
+                            artistData.totalGalas++;
+                            totalParticipations++;
+                        }
                     });
                     
                 } catch (error) {
@@ -1151,12 +1153,22 @@
             }
             
             // Convertir Map a Array para renderizar
-            allArtistsData = Array.from(artistsMap.values()).map(artist => ({
-                ...artist,
-                averageScore: artist.scores.length > 0
-                    ? artist.scores.reduce((sum, s) => sum + s, 0) / artist.scores.length
-                    : 0
-            }));
+            // Cap: máximo 3 galas por artista (un certamen tiene 3 galas previas)
+            // Si un artista aparece en más de 3 eventos, se quedan los 3 con mayor puntaje
+            allArtistsData = Array.from(artistsMap.values()).map(artist => {
+                if (artist.participations.length > 3) {
+                    artist.participations.sort((a, b) => b.score - a.score);
+                    artist.participations = artist.participations.slice(0, 3);
+                    artist.scores = artist.participations.map(p => p.score);
+                    artist.totalGalas = 3;
+                }
+                return {
+                    ...artist,
+                    averageScore: artist.scores.length > 0
+                        ? artist.scores.reduce((sum, s) => sum + s, 0) / artist.scores.length
+                        : 0
+                };
+            });
             
             // Ordenar por promedio (mayor a menor)
             allArtistsData.sort((a, b) => b.averageScore - a.averageScore);

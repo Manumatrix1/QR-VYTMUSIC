@@ -91,6 +91,63 @@
             </div>
         </div>
 
+        <!-- Panel: Precios de Entradas -->
+        <div class="bg-gray-800/60 border-2 border-green-500/50 rounded-xl p-5 mb-6">
+            <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+                <div class="flex-1">
+                    <h2 class="text-lg font-bold text-green-400 flex items-center gap-2">
+                        💰 Precios de Entradas
+                    </h2>
+                    <p class="text-sm text-gray-400 mt-1">Estos precios se aplican en la página de compra de los artistas</p>
+                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
+                        <div>
+                            <label class="block text-xs text-gray-400 mb-1">⚡ Anticipada (adulto)</label>
+                            <div class="flex items-center gap-1">
+                                <span class="text-gray-400 text-sm">$</span>
+                                <input type="number" id="price-anticipada-input" min="0" step="500"
+                                    class="w-full p-2 rounded-lg bg-gray-700 border border-gray-600 text-white focus:border-green-500 focus:outline-none text-sm"
+                                    placeholder="10000">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-xs text-gray-400 mb-1">🚪 Puerta (adulto)</label>
+                            <div class="flex items-center gap-1">
+                                <span class="text-gray-400 text-sm">$</span>
+                                <input type="number" id="price-puerta-input" min="0" step="500"
+                                    class="w-full p-2 rounded-lg bg-gray-700 border border-gray-600 text-white focus:border-green-500 focus:outline-none text-sm"
+                                    placeholder="15000">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-xs text-gray-400 mb-1">👶 Anticipada (niño)</label>
+                            <div class="flex items-center gap-1">
+                                <span class="text-gray-400 text-sm">$</span>
+                                <input type="number" id="price-kids-anticipada-input" min="0" step="500"
+                                    class="w-full p-2 rounded-lg bg-gray-700 border border-gray-600 text-white focus:border-green-500 focus:outline-none text-sm"
+                                    placeholder="5000">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-xs text-gray-400 mb-1">👶 Puerta (niño)</label>
+                            <div class="flex items-center gap-1">
+                                <span class="text-gray-400 text-sm">$</span>
+                                <input type="number" id="price-kids-puerta-input" min="0" step="500"
+                                    class="w-full p-2 rounded-lg bg-gray-700 border border-gray-600 text-white focus:border-green-500 focus:outline-none text-sm"
+                                    placeholder="8000">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex flex-col gap-2 sm:pt-7">
+                    <button id="save-prices-btn"
+                        class="px-5 py-2 bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg transition-all text-sm">
+                        💾 Guardar precios
+                    </button>
+                    <p id="prices-saved-msg" class="hidden text-xs text-green-400 text-center font-semibold">✅ Guardado</p>
+                </div>
+            </div>
+        </div>
+
         <!-- Panel: Artistas y Estado de Entradas Anticipadas (acordeón) -->
         <div class="bg-gray-800/60 border-2 border-sky-500/40 rounded-xl mb-6 overflow-hidden">
             <button id="artists-panel-toggle" onclick="toggleArtistsPanel()"
@@ -217,6 +274,42 @@
 
         document.getElementById('event-name').textContent = eventName;
         document.getElementById('back-btn').href = `panel_evento_SIMPLE.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`;
+
+        // ── PRECIOS DE ENTRADAS ──
+        async function loadPrices() {
+            try {
+                const evSnap = await getDocFromServer(doc(db, 'events', eventId));
+                const data = evSnap.exists() ? evSnap.data() : {};
+                document.getElementById('price-anticipada-input').value = data.ticketPriceAnticipada || 10000;
+                document.getElementById('price-puerta-input').value = data.ticketPricePuerta || 15000;
+                document.getElementById('price-kids-anticipada-input').value = data.ticketPriceKidsAnticipada || 5000;
+                document.getElementById('price-kids-puerta-input').value = data.ticketPriceKidsPuerta || 8000;
+            } catch(e) { console.warn('Error cargando precios:', e); }
+        }
+
+        document.getElementById('save-prices-btn').addEventListener('click', async () => {
+            const pA = parseInt(document.getElementById('price-anticipada-input').value) || 0;
+            const pP = parseInt(document.getElementById('price-puerta-input').value) || 0;
+            const pKA = parseInt(document.getElementById('price-kids-anticipada-input').value) || 0;
+            const pKP = parseInt(document.getElementById('price-kids-puerta-input').value) || 0;
+            if (!pA || !pP) { alert('⚠️ Los precios no pueden ser 0'); return; }
+            const btn = document.getElementById('save-prices-btn');
+            btn.disabled = true; btn.textContent = '⏳ Guardando...';
+            try {
+                await setDoc(doc(db, 'events', eventId), {
+                    ticketPriceAnticipada: pA,
+                    ticketPricePuerta: pP,
+                    ticketPriceKidsAnticipada: pKA,
+                    ticketPriceKidsPuerta: pKP,
+                }, { merge: true });
+                const msg = document.getElementById('prices-saved-msg');
+                msg.classList.remove('hidden');
+                setTimeout(() => msg.classList.add('hidden'), 3000);
+            } catch(e) {
+                alert('❌ Error al guardar precios: ' + e.message);
+            }
+            btn.disabled = false; btn.textContent = '💾 Guardar precios';
+        });
 
         // ── DEADLINE PREVENTA ──
         async function loadDeadline() {
@@ -1092,6 +1185,7 @@
         // Inicializar
         loadOrders();
         loadDeadline();
+        loadPrices();
         loadArtistsSummary();
 
         // ═══════════════════════════════════════════════════════════
