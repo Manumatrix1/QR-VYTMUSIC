@@ -384,21 +384,30 @@
                         document.body.appendChild(tempQRDiv);
 
                         try {
+                            // correctLevel L = módulos más grandes = más fácil de escanear en imagen impresa/descargada
                             new QRCode(tempQRDiv, {
                                 text: ticket.id,
                                 width: 550,
                                 height: 550,
-                                correctLevel: QRCode.CorrectLevel.H
+                                correctLevel: QRCode.CorrectLevel.L
                             });
 
-                            await new Promise(resolve => setTimeout(resolve, 300));
+                            await new Promise(resolve => setTimeout(resolve, 400));
                             const qrcodeCanvas = tempQRDiv.querySelector('canvas');
 
                             if (qrcodeCanvas && qrcodeCanvas.width > 0) {
                                 ctx.fillStyle = '#ffffff';
                                 ctx.fillRect(25, yPos, 550, 550);
-                                ctx.drawImage(qrcodeCanvas, 25, yPos, 550, 550);
-                                console.log('✅ QR grande dibujado en descarga');
+                                // imageSmoothingEnabled = false es CRÍTICO:
+                                // evita que el escalado DPR difumine los bordes del QR haciéndolo ilegible
+                                ctx.imageSmoothingEnabled = false;
+                                ctx.drawImage(
+                                    qrcodeCanvas,
+                                    0, 0, qrcodeCanvas.width, qrcodeCanvas.height,  // fuente: tamaño nativo (puede ser DPR*550)
+                                    25, yPos, 550, 550                               // destino: 550x550 exacto
+                                );
+                                ctx.imageSmoothingEnabled = true;
+                                console.log('✅ QR dibujado sin suavizado:', qrcodeCanvas.width + 'x' + qrcodeCanvas.height + ' → 550x550');
                                 yPos += 570;
                             } else {
                                 throw new Error('QR canvas inválido');

@@ -214,8 +214,8 @@
 
             <form id="request-form" class="space-y-6">
                 <div>
-                    <label class="block text-lg font-semibold mb-2">Tu Nombre (como artista)</label>
-                    <input type="text" id="artist-name" class="w-full p-4 rounded-lg bg-gray-700 border-2 border-gray-600 focus:border-purple-500 focus:outline-none text-white" placeholder="Ej: María González" required>
+                    <label class="block text-lg font-semibold mb-2">Tu nombre (quien compra)</label>
+                    <input type="text" id="artist-name" class="w-full p-4 rounded-lg bg-gray-700 border-2 border-gray-600 focus:border-purple-500 focus:outline-none text-white" placeholder="Ej: Juan Pérez (tu nombre, no el del artista)" required>
                 </div>
 
                 <div>
@@ -404,23 +404,38 @@
         <!-- PASO 3: Esperando Aprobación -->
         <div id="section-pending" class="bg-gray-800/50 rounded-2xl p-8 border-2 border-gray-700 mb-6 hidden">
             <h2 class="text-3xl font-bold mb-6 flex items-center gap-3">
-                <span class="text-4xl">⏳</span> Esperando Aprobación
+                <span class="text-4xl">✅</span> ¡Todo listo!
             </h2>
 
-            <div class="text-center py-8">
-                <div class="animate-spin rounded-full h-20 w-20 border-4 border-purple-500 border-t-transparent mx-auto mb-6"></div>
-                <h3 class="text-2xl font-bold mb-3">Tu pago está siendo verificado</h3>
-                <p class="text-gray-300 mb-4">Recibirás una confirmación por email cuando sea aprobado</p>
-                
-                <div class="bg-green-900/30 border-2 border-green-500 rounded-xl p-4 max-w-md mx-auto mb-6">
-                    <p class="text-green-400 font-bold text-lg mb-2">🔄 Actualización en Tiempo Real</p>
-                    <p class="text-sm text-gray-200">✨ <strong>¡Deja esta página abierta!</strong> Se actualizará automáticamente cuando tu pago sea aprobado. No necesitas recargar.</p>
+            <div class="text-center py-4">
+                <!-- Mensaje principal -->
+                <div class="bg-green-900/40 border-2 border-green-500 rounded-2xl p-6 max-w-lg mx-auto mb-6">
+                    <div class="text-5xl mb-3">📲</div>
+                    <h3 class="text-2xl font-bold mb-2 text-green-300">Te enviaremos las entradas QR por WhatsApp</h3>
+                    <p class="text-gray-200 text-sm leading-relaxed">
+                        La organización está revisando tu transferencia.<br>
+                        En cuanto confirmemos el pago, te mandamos los QR directamente a tu WhatsApp.
+                    </p>
                 </div>
-                
-                <div class="bg-blue-900/30 border border-blue-500 rounded-xl p-6 max-w-md mx-auto">
+
+                <!-- Botón WhatsApp para notificar al organizador -->
+                <div class="bg-yellow-900/30 border-2 border-yellow-500 rounded-xl p-5 max-w-lg mx-auto mb-6">
+                    <p class="text-yellow-300 font-bold mb-2">📢 Avisale al organizador</p>
+                    <p class="text-sm text-gray-300 mb-4">Para que aprueben tu pago más rápido, enviale un mensaje por WhatsApp:</p>
+                    <a id="whatsapp-admin-btn"
+                       href="#"
+                       target="_blank"
+                       class="block w-full bg-green-600 hover:bg-green-700 text-white font-bold py-4 px-6 rounded-xl text-lg transition-all text-center">
+                        💬 Avisar al organizador por WhatsApp
+                    </a>
+                    <p class="text-xs text-gray-400 mt-2">Se abrirá WhatsApp con el mensaje ya listo — solo tocá "Enviar"</p>
+                </div>
+
+                <!-- Info de orden -->
+                <div class="bg-gray-700/50 border border-gray-600 rounded-xl p-4 max-w-md mx-auto">
                     <p class="text-sm"><strong>Orden:</strong> #<span id="order-id-pending">XXXXX</span></p>
                     <p class="text-sm mt-2"><strong>Estado:</strong> <span id="status-display" class="text-yellow-400 font-semibold">Pendiente de verificación</span></p>
-                    <p class="text-xs text-gray-400 mt-3">⏱️ Tiempo promedio de aprobación: 5-30 minutos</p>
+                    <p class="text-xs text-gray-400 mt-3">⏱️ Esta página se actualiza automáticamente si la aprobación llega mientras la tenés abierta</p>
                 </div>
             </div>
         </div>
@@ -592,6 +607,188 @@
         let allArtistsTop = [];     // artistas cargados al inicio
         let selectedTopArtist = null; // artista elegido en el selector del tope
         let previousPurchasesCount = 0; // ✨ Nuevo: contador de compras previas acumuladas
+
+        // ===================================
+        // 💾 BORRADOR AUTOMÁTICO — localStorage
+        // ===================================
+        const DRAFT_KEY = `vyt_preventa_draft_${eventId}`;
+        let saveDraftTimer = null;
+
+        function saveDraft() {
+            clearTimeout(saveDraftTimer);
+            saveDraftTimer = setTimeout(() => {
+                try {
+                    const adults = parseInt(document.getElementById('ticket-quantity').value) || 1;
+                    const kids   = parseInt(document.getElementById('ticket-quantity-kids').value) || 0;
+                    const guestNames = [];
+                    for (let i = 1; i <= adults + kids; i++) {
+                        const inp = document.getElementById(`step1-name-${i}`);
+                        guestNames.push(inp ? inp.value.trim() : '');
+                    }
+                    const draft = {
+                        artistName:    document.getElementById('artist-name').value.trim(),
+                        artistEmail:   document.getElementById('artist-email').value.trim(),
+                        artistPhone:   document.getElementById('artist-phone').value.trim(),
+                        phoneConfirmed: !document.getElementById('telefono-ok').classList.contains('hidden'),
+                        ticketQuantity:     adults,
+                        ticketQuantityKids: kids,
+                        topArtistId: selectedTopArtist ? selectedTopArtist.id : null,
+                        guestNames,
+                        currentOrderId,
+                        savedAt: Date.now()
+                    };
+                    localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+                } catch(e) { /* storage lleno o modo privado — ignorar */ }
+            }, 600);
+        }
+
+        function clearDraft() {
+            try { localStorage.removeItem(DRAFT_KEY); } catch(e) {}
+        }
+
+        async function restoreDraft() {
+            try {
+                const raw = localStorage.getItem(DRAFT_KEY);
+                if (!raw) return;
+                const draft = JSON.parse(raw);
+
+                // Borrar si tiene más de 48 horas
+                if (Date.now() - draft.savedAt > 48 * 60 * 60 * 1000) {
+                    clearDraft(); return;
+                }
+
+                const hasData = draft.artistName || draft.artistEmail || draft.topArtistId || (draft.guestNames && draft.guestNames.some(n => n));
+                if (!hasData) return;
+
+                // Restaurar campos básicos del formulario
+                if (draft.artistName)  document.getElementById('artist-name').value  = draft.artistName;
+                if (draft.artistEmail) document.getElementById('artist-email').value = draft.artistEmail;
+                if (draft.artistPhone) {
+                    document.getElementById('artist-phone').value = draft.artistPhone;
+                    if (draft.phoneConfirmed) {
+                        document.getElementById('confirm-telefono').classList.add('hidden');
+                        document.getElementById('telefono-ok').classList.remove('hidden');
+                    }
+                }
+                if (draft.ticketQuantity)     document.getElementById('ticket-quantity').value      = draft.ticketQuantity;
+                if (draft.ticketQuantityKids) document.getElementById('ticket-quantity-kids').value = draft.ticketQuantityKids;
+
+                // Restaurar artista seleccionado en el selector del tope
+                if (draft.topArtistId) {
+                    const sel = document.getElementById('top-artist-selector');
+                    sel.value = draft.topArtistId;
+                    if (sel.value === draft.topArtistId) sel.dispatchEvent(new Event('change'));
+                }
+
+                // Restaurar nombres de invitados (esperar a que los campos existan)
+                if (draft.guestNames && draft.guestNames.some(n => n)) {
+                    const adults = parseInt(document.getElementById('ticket-quantity').value) || 1;
+                    const kids   = parseInt(document.getElementById('ticket-quantity-kids').value) || 0;
+                    generateStep1Names(adults, kids);
+                    await new Promise(r => setTimeout(r, 80));
+                    draft.guestNames.forEach((name, i) => {
+                        const inp = document.getElementById(`step1-name-${i + 1}`);
+                        if (inp && name) { inp.value = name; inp.dispatchEvent(new Event('input')); }
+                    });
+                    updateStep1Count();
+                }
+
+                updateTotal();
+
+                // Banner de datos recuperados
+                const banner = document.createElement('div');
+                banner.id = 'restore-banner';
+                banner.className = 'fixed top-3 left-3 right-3 z-50 bg-blue-900 border-2 border-blue-400 rounded-xl p-4 shadow-2xl max-w-lg mx-auto';
+                banner.innerHTML = `
+                    <div class="flex items-start gap-3">
+                        <span class="text-2xl">💾</span>
+                        <div class="flex-1">
+                            <p class="font-bold text-blue-300">Datos recuperados automáticamente</p>
+                            <p class="text-sm text-gray-300 mt-1">Encontramos tu solicitud guardada. Ya cargamos todo — solo revisá y continuá.</p>
+                        </div>
+                        <button onclick="document.getElementById('restore-banner').remove()" class="text-gray-400 hover:text-white text-xl ml-2">✕</button>
+                    </div>
+                `;
+                document.body.appendChild(banner);
+                setTimeout(() => { try { banner.remove(); } catch(e){} }, 7000);
+
+                // Si había una orden en curso (comprobante aún no subido o ya subido), retomar
+                if (draft.currentOrderId) await resumeOrderFromDraft(draft.currentOrderId);
+
+            } catch(e) {
+                console.warn('Error restaurando borrador:', e);
+            }
+        }
+
+        async function resumeOrderFromDraft(savedOrderId) {
+            try {
+                const orderSnap = await getDoc(doc(db, `ticket_orders_${eventId}`, savedOrderId));
+                if (!orderSnap.exists()) return;
+                const order = orderSnap.data();
+                // Solo retomar si está en un estado "en curso" (no completado)
+                if (['tickets_generated', 'rejected'].includes(order.status)) {
+                    clearDraft(); return;
+                }
+                currentOrderId = savedOrderId;
+
+                const resumeBanner = document.createElement('div');
+                resumeBanner.className = 'fixed top-3 left-3 right-3 z-50 bg-yellow-900 border-2 border-yellow-500 rounded-xl p-4 shadow-2xl max-w-lg mx-auto mt-24';
+                let msg = '';
+
+                if (order.status === 'pending') {
+                    // Crearon la orden pero no subieron el comprobante
+                    document.getElementById('section-request').classList.add('hidden');
+                    document.getElementById('section-payment').classList.remove('hidden');
+                    document.getElementById('payment-amount').textContent = `$${(order.totalAmount || 0).toLocaleString()}`;
+                    document.getElementById('order-id-display').textContent = savedOrderId.substring(0, 8).toUpperCase();
+                    document.getElementById('mp-payment-amount').textContent = `$${(order.totalAmount || 0).toLocaleString()}`;
+                    document.getElementById('mp-order-id-display').textContent = savedOrderId.substring(0, 8).toUpperCase();
+                    updateSteps(2);
+                    msg = 'Tenés una solicitud pendiente. Subí el comprobante para continuar.';
+                } else if (order.status === 'payment_uploaded') {
+                    // Subieron el comprobante, esperando aprobación
+                    document.getElementById('section-request').classList.add('hidden');
+                    document.getElementById('section-pending').classList.remove('hidden');
+                    document.getElementById('order-id-pending').textContent = savedOrderId.substring(0, 8).toUpperCase();
+                    updateSteps(3);
+                    startOrderListener();
+                    msg = 'Tu comprobante ya fue enviado. Estamos verificando tu pago.';
+                } else if (order.status === 'approved') {
+                    // Aprobado pero no generaron los QRs
+                    document.getElementById('section-request').classList.add('hidden');
+                    if (order.attendeeNames && order.attendeeNames.length === order.quantity) {
+                        window.attendeeNames = order.attendeeNames;
+                        updateSteps(5);
+                        document.getElementById('section-select-artist').classList.remove('hidden');
+                        await loadGalaDataAndArtists();
+                    } else {
+                        document.getElementById('section-names').classList.remove('hidden');
+                        document.getElementById('names-total').textContent = order.quantity;
+                        document.getElementById('btn-total').textContent = order.quantity;
+                        updateSteps(4);
+                        generateNameInputs(order.quantity);
+                    }
+                    msg = '✅ ¡Tu pago fue aprobado! Continuá para generar los QRs.';
+                }
+
+                if (msg) {
+                    resumeBanner.innerHTML = `
+                        <div class="flex items-start gap-3">
+                            <span class="text-2xl">🔄</span>
+                            <div class="flex-1">
+                                <p class="font-bold text-yellow-300">Solicitud retomada</p>
+                                <p class="text-sm text-gray-200 mt-1">${msg}</p>
+                            </div>
+                            <button onclick="this.closest('div.fixed').remove()" class="text-gray-400 hover:text-white text-xl ml-2">✕</button>
+                        </div>
+                    `;
+                    document.body.appendChild(resumeBanner);
+                    setTimeout(() => { try { resumeBanner.remove(); } catch(e){} }, 9000);
+                }
+            } catch(e) {
+                console.warn('Error retomando orden desde borrador:', e);
+            }
+        }
 
         function updatePriceDisplay() {
             const fmt = n => '$' + n.toLocaleString();
@@ -786,6 +983,7 @@
                 return;
             }
             selectedTopArtist = { id: opt.value, name: opt.dataset.name, photoURL: opt.dataset.photo, deadline_override: opt.dataset.deadline || null };
+            saveDraft();
             // Mostrar preview
             document.getElementById('top-artist-photo').src = opt.dataset.photo || 'https://placehold.co/56x56/1f2937/f9fafb?text=' + encodeURIComponent((opt.dataset.name||'A').charAt(0));
             document.getElementById('top-artist-name').textContent = opt.dataset.name;
@@ -811,9 +1009,7 @@
             setTimeout(() => contentBlock.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
             // Recalcular precio con deadline de este artista
             if (eventData) applyDeadlineConfig(eventData);
-            // Pre-rellenar el campo de nombre si está vacío
-            const nameField = document.getElementById('artist-name');
-            if (nameField && !nameField.value.trim()) nameField.value = opt.dataset.name;
+            // No auto-rellenar el nombre del comprador con el del artista — son personas distintas
         });
 
         // Escucha en TIEMPO REAL la fecha límite del evento
@@ -833,8 +1029,8 @@
             });
         }
         
-        // Arranca carga de artistas junto con event config
-        loadTopArtists();
+        // Arranca carga de artistas y luego restaura el borrador (el restore necesita el selector poblado)
+        loadTopArtists().then(() => restoreDraft());
 
         // Countdown actualizado cada segundo
         function startCountdown(deadline) {
@@ -986,8 +1182,8 @@
             }
         }
 
-        document.getElementById('ticket-quantity').addEventListener('input', () => { updateTotal(); regenerateStep1Names(); });
-        document.getElementById('ticket-quantity-kids').addEventListener('input', () => { updateTotal(); regenerateStep1Names(); });
+        document.getElementById('ticket-quantity').addEventListener('input', () => { updateTotal(); regenerateStep1Names(); saveDraft(); });
+        document.getElementById('ticket-quantity-kids').addEventListener('input', () => { updateTotal(); regenerateStep1Names(); saveDraft(); });
 
         // ★ GESTIÓN DE NOMBRES EN PASO 1 (antes del pago)
         // Ahora diferencia visualmente adultos de niños
@@ -1043,7 +1239,7 @@
                 container.appendChild(div);
                 const input = div.querySelector('input');
                 if (currentValues[i - 1]) input.value = currentValues[i - 1];
-                input.addEventListener('input', updateStep1Count);
+                input.addEventListener('input', () => { updateStep1Count(); saveDraft(); });
             }
             document.getElementById('step1-total-count').textContent = total;
             updateStep1Count();
@@ -1158,7 +1354,8 @@
                 
                 div.classList.add('hidden');
                 ok.classList.remove('hidden');
-                
+                saveDraft();
+
                 // ✨ NUEVO: Verificar compras automáticamente al confirmar el teléfono
                 const email = document.getElementById('artist-email').value.trim();
                 const name = document.getElementById('artist-name').value.trim();
@@ -1179,24 +1376,22 @@
         // Verificar por nombre (el más importante para detección temprana)
         document.getElementById('artist-name').addEventListener('input', function() {
             const name = this.value.trim();
-            // Esperar que terminen de escribir (debounce)
+            saveDraft();
             clearTimeout(nameCheckTimeout);
             nameCheckTimeout = setTimeout(async () => {
-                // Validar nombre mínimo 3 caracteres
                 if (name.length >= 3) {
                     const email = document.getElementById('artist-email').value.trim();
                     const phone = document.getElementById('artist-phone').value.trim();
                     await checkPreviousPurchases(email, phone, name);
                 }
-            }, 600); // Más rápido para nombre (600ms vs 800ms)
+            }, 600);
         });
 
         document.getElementById('artist-email').addEventListener('input', function() {
             const email = this.value.trim();
-            // Esperar que terminen de escribir (debounce)
+            saveDraft();
             clearTimeout(emailCheckTimeout);
             emailCheckTimeout = setTimeout(async () => {
-                // Validar formato email básico
                 if (email && email.includes('@') && email.includes('.')) {
                     const phone = document.getElementById('artist-phone').value.trim();
                     const name = document.getElementById('artist-name').value.trim();
@@ -1207,11 +1402,10 @@
 
         document.getElementById('artist-phone').addEventListener('input', function() {
             const phone = this.value.trim();
-            // Esperar que terminen de escribir (debounce)
+            saveDraft();
             clearTimeout(phoneCheckTimeout);
             phoneCheckTimeout = setTimeout(async () => {
                 const cleanPhone = phone.replace(/\D/g, '');
-                // Validar teléfono mínimo 8 dígitos
                 if (cleanPhone.length >= 8) {
                     const email = document.getElementById('artist-email').value.trim();
                     const name = document.getElementById('artist-name').value.trim();
@@ -1322,9 +1516,14 @@
                 const orderData = {
                     eventId,
                     eventName,
-                    artistName,
+                    // Datos del comprador
+                    artistName,       // nombre del comprador (quien paga)
                     artistEmail,
                     artistPhone,
+                    // Artista que viene a ver (seleccionado en el tope del formulario)
+                    targetArtistId:    selectedTopArtist?.id   || null,
+                    targetArtistName:  selectedTopArtist?.name || null,
+                    targetArtistPhoto: selectedTopArtist?.photoURL || null,
                     quantity,
                     quantityAdults,
                     quantityKids,
@@ -1345,6 +1544,7 @@
 
                 const orderRef = await addDoc(collection(db, `ticket_orders_${eventId}`), orderData);
                 currentOrderId = orderRef.id;
+                saveDraft(); // guardar orderId para poder retomar si salen
 
                 displayMessage('✅ Orden creada exitosamente', 'success');
 
@@ -1414,6 +1614,7 @@
                     body: JSON.stringify({
                         artistName: _artistName,
                         artistPhone: _artistPhone,
+                        targetArtistName: selectedTopArtist?.name || null,
                         guestCount: _guestCount,
                         amount: _totalNum,
                         orderId: currentOrderId,
@@ -1422,17 +1623,22 @@
                     })
                 }).catch(e => console.warn('avisarPagoAdmin:', e.message)); // fire-and-forget
 
-                // 2. WA de respaldo (se abre en nueva pestaña; el artista puede enviarlo o no)
+                // 2. Preparar link de WhatsApp para el botón en "Esperando Aprobación"
                 const _adminLink = `https://vyt-music.web.app/admin_preventa.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`;
                 const _waMsg = `🎟️ *NUEVO COMPROBANTE DE PAGO*\n\n✅ ${_artistName} subió comprobante\n\n🎫 ${_guestCount} entradas\n💰 $${_total}\n\n📸 Revisar y aprobar:\n${_adminLink}`;
-                window.open(`https://wa.me/5493413632329?text=${encodeURIComponent(_waMsg)}`, '_blank');
+                const _waUrl = `https://wa.me/5493413632329?text=${encodeURIComponent(_waMsg)}`;
 
-                displayMessage('✅ ¡Comprobante enviado! La organización fue notificada. Esta página se actualizará cuando aprueben tu pago.', 'success');
+                displayMessage('✅ ¡Comprobante enviado! Avisale al organizador por WhatsApp para que aprueben tu pago.', 'success');
 
                 // Ir directo a espera de aprobación
                 document.getElementById('section-payment').classList.add('hidden');
                 document.getElementById('section-pending').classList.remove('hidden');
                 document.getElementById('order-id-pending').textContent = currentOrderId.substring(0, 8).toUpperCase();
+
+                // Setear el link del botón de WhatsApp con el mensaje pre-armado
+                const waBtn = document.getElementById('whatsapp-admin-btn');
+                if (waBtn) waBtn.href = _waUrl;
+
                 updateSteps(3);
                 startOrderListener();
             } catch (error) {
@@ -1852,6 +2058,7 @@
                 generatedAt: serverTimestamp()
             });
             
+            clearDraft(); // proceso completado — limpiar borrador
             return generatedTickets;
         }
         

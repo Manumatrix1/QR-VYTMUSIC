@@ -10,6 +10,63 @@ const APP_URL = 'https://vyt-music.web.app';
 admin.initializeApp();
 const db = admin.firestore();
 
+// ─────────────────────────────────────────────
+// Helper: enviar push FCM a todos los tokens admin registrados
+// ─────────────────────────────────────────────
+async function sendPushToAdmin(title, body, link) {
+    try {
+        const snap = await db.collection('admin_fcm_tokens')
+            .where('activo', '==', true)
+            .get();
+
+        if (snap.empty) {
+            console.log('sendPushToAdmin: sin tokens registrados');
+            return;
+        }
+
+        const tokens = snap.docs.map(d => d.data().token).filter(Boolean);
+        if (tokens.length === 0) return;
+
+        const response = await admin.messaging().sendEachForMulticast({
+            tokens,
+            notification: { title, body },
+            webpush: {
+                fcmOptions: { link: link || 'https://vyt-music.web.app/admin_preventa.html' },
+                notification: {
+                    icon: 'https://vyt-music.web.app/logo-192x192.png',
+                    badge: 'https://vyt-music.web.app/logo-72x72.png',
+                    tag: 'vyt-admin-notif',
+                    renotify: true
+                }
+            },
+            data: { link: link || '' }
+        });
+
+        // Limpiar tokens inválidos (revocados, expirados)
+        const invalidTokens = [];
+        response.responses.forEach((r, i) => {
+            if (!r.success && (r.error?.code === 'messaging/invalid-registration-token' ||
+                               r.error?.code === 'messaging/registration-token-not-registered')) {
+                invalidTokens.push(tokens[i]);
+            }
+        });
+        if (invalidTokens.length > 0) {
+            const batch = db.batch();
+            snap.docs.forEach(d => {
+                if (invalidTokens.includes(d.data().token)) {
+                    batch.update(d.ref, { activo: false });
+                }
+            });
+            await batch.commit();
+            console.log(`🗑️ Tokens inválidos desactivados: ${invalidTokens.length}`);
+        }
+
+        console.log(`✅ Push enviado a ${response.successCount} dispositivo(s)`);
+    } catch (err) {
+        console.error('Error enviando push FCM:', err.message);
+    }
+}
+
 // ==========================================
 // FUNCIÓN: Notificar nueva audición — crea admin_notifications en Firestore
 // Se dispara automáticamente cuando se crea un doc en /audiciones
@@ -51,6 +108,13 @@ exports.notificarNuevaAudicion = functions.firestore
         autoOpenWhatsApp: false
       });
       console.log(`✅ admin_notifications creado para nueva audición: ${nombre}`);
+
+      // Enviar push FCM al celular/navegador del admin
+      await sendPushToAdmin(
+        `🎤 Nueva inscripción: ${nombre}`,
+        `${locationStr ? locationStr + ' · ' : ''}${telefono}`,
+        docLink
+      );
     } catch (e) {
       console.error(`❌ Error creando notificación para ${nombre}:`, e.message);
     }
@@ -299,7 +363,7 @@ exports.avisarPagoAdmin = functions.https.onRequest(async (req, res) => {
   if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
   if (req.method !== 'POST') { res.status(405).json({ error: 'Method not allowed' }); return; }
 
-  const { artistName, artistPhone, guestCount, amount, orderId, eventId, eventName } = req.body || {};
+  const { artistName, artistPhone, targetArtistName, guestCount, amount, orderId, eventId, eventName } = req.body || {};
 
   if (!eventId || !orderId) {
     res.status(400).json({ error: 'Faltan eventId u orderId' });
@@ -308,12 +372,13 @@ exports.avisarPagoAdmin = functions.https.onRequest(async (req, res) => {
 
   const adminLink = `https://vyt-music.web.app/admin_preventa.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName || '')}`;
   const amountFmt = parseInt(amount || 0).toLocaleString('es-AR');
+  const artistaLine = targetArtistName ? `🎤 Para: *${targetArtistName}*\n` : '';
   const waMsg =
-    `🎟️ *NUEVO COMPROBANTE DE PAGO*\n\n` +
-    `✅ El artista subió su comprobante\n\n` +
-    `👤 ${artistName || 'Artista'}\n` +
+    `🎟️ *NUEVA COMPRA DE ENTRADAS*\n\n` +
+    artistaLine +
+    `👤 Comprador: ${artistName || 'Sin nombre'}\n` +
     (artistPhone ? `📱 ${artistPhone}\n` : '') +
-    `🎫 ${guestCount || 0} entradas\n` +
+    `🎫 ${guestCount || 0} entrada(s)\n` +
     `💰 $${amountFmt}\n` +
     `📦 Orden: ${String(orderId).substring(0, 8).toUpperCase()}\n\n` +
     `📋 Aprobar pago:\n${adminLink}`;
@@ -324,11 +389,12 @@ exports.avisarPagoAdmin = functions.https.onRequest(async (req, res) => {
       eventId: eventId,
       eventName: eventName || '',
       orderId: orderId,
-      clientName: artistName || 'Artista',
+      clientName: artistName || 'Sin nombre',
       clientPhone: artistPhone || 'N/A',
+      targetArtistName: targetArtistName || null,
       quantity: guestCount || 0,
       amount: parseInt(amount || 0),
-      message: `🎟️ Comprobante de pago: ${artistName || 'Artista'} — ${guestCount || 0} entradas — $${amountFmt}`,
+      message: `🎟️ ${targetArtistName ? 'Para ' + targetArtistName + ' — ' : ''}${artistName || 'Sin nombre'}: ${guestCount || 0} entradas — $${amountFmt}`,
       whatsappLink: `https://wa.me/5493413632329?text=${encodeURIComponent(waMsg)}`,
       adminLink: adminLink,
       whatsappMessage: waMsg,
@@ -337,6 +403,17 @@ exports.avisarPagoAdmin = functions.https.onRequest(async (req, res) => {
       autoOpenWhatsApp: false
     });
     console.log(`✅ admin_notifications creado para comprobante: ${artistName}`);
+
+    // Enviar push FCM al celular/navegador del admin
+    const pushTitle = targetArtistName
+      ? `🎟️ Nueva compra para ${targetArtistName}`
+      : `🎟️ Nueva compra: ${artistName || 'comprador'}`;
+    await sendPushToAdmin(
+      pushTitle,
+      `${guestCount || 0} entrada(s) · $${amountFmt} — tocá para aprobar`,
+      adminLink
+    );
+
     res.status(200).json({ success: true });
   } catch (e) {
     console.error('❌ Error creando notificación de pago:', e.message);
@@ -553,9 +630,77 @@ exports.mercadopagoWebhookV2 = functions.https.onRequest(async (req, res) => {
 
   } catch (error) {
     console.error('❌ Error procesando webhook:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Error procesando webhook',
-      message: error.message 
+      message: error.message
     });
   }
 });
+
+// ==========================================
+// FUNCIÓN: Proxy HTTPS → servidor IA del agente entrenado
+// ==========================================
+exports.chatProxy = functions
+  .runWith({ timeoutSeconds: 30, memory: '256MB' })
+  .https.onRequest(async (req, res) => {
+
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type');
+  if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+  if (req.method !== 'POST')   { res.status(405).json({ error: 'Method not allowed' }); return; }
+
+  const { messages, source } = req.body || {};
+  if (!messages || !Array.isArray(messages) || messages.length === 0) {
+    res.status(400).json({ error: 'messages vacío o inválido.' });
+    return;
+  }
+
+  const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
+  if (!ANTHROPIC_KEY) {
+    res.status(503).json({ reply: 'Asistente no configurado.' });
+    return;
+  }
+
+  // Leer prompt desde Firestore con Admin SDK (siempre confiable)
+  const src = source || 'presencial';
+  let systemPrompt = null;
+  try {
+    const snap = await db.collection('config_sitio').doc(`ia_prompt_${src}`).get();
+    if (snap.exists && snap.data().texto) systemPrompt = snap.data().texto;
+  } catch(e) { /* sigue */ }
+  if (!systemPrompt) {
+    try {
+      const snap = await db.collection('config_sitio').doc('ia_prompt').get();
+      if (snap.exists && snap.data().texto) systemPrompt = snap.data().texto;
+    } catch(e) { /* sigue */ }
+  }
+  if (!systemPrompt) {
+    systemPrompt = 'Sos VYT-Bot, asistente de VYT MUSIC. El casting es SIEMPRE enviando un video por WhatsApp. NUNCA hay audición presencial. Respondés en español rioplatense.';
+  }
+
+  // Llamar a Claude (Anthropic) directamente
+  try {
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': ANTHROPIC_KEY,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 600,
+        system: systemPrompt,
+        messages: messages
+      })
+    });
+    const json = await r.json();
+    const reply = json?.content?.[0]?.text || 'No pude responder. Intentá de nuevo.';
+    res.status(200).json({ reply });
+  } catch (err) {
+    console.error('chatProxy Claude error:', err.message);
+    res.status(502).json({ reply: 'No pude responder en este momento. Intentá de nuevo.' });
+  }
+});
+
