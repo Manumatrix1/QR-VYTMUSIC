@@ -456,37 +456,62 @@
             }
         }
 
-        // Fusionar entradas con el mismo nombre normalizado (evita duplicados por artistId vs nombre)
-        function mergeByName() {
-            const norm = s => (s || '').toLowerCase().trim().normalize('NFD').replace(/[̀-ͯ]/g, '');
-            const nameToKey = {};
-            const toDelete = [];
+        const norm = s => (s || '').toLowerCase().trim().normalize('NFD').replace(/[̀-ͯ]/g, '');
 
-            Object.entries(artistsData).forEach(([key, artist]) => {
-                const n = norm(artist.name);
-                if (!n) return;
-                if (nameToKey[n] !== undefined && nameToKey[n] !== key) {
-                    const mainKey = nameToKey[n];
-                    const main = artistsData[mainKey];
-                    main.totalTickets += artist.totalTickets;
-                    main.totalUsed += artist.totalUsed;
-                    // Fusionar galas
-                    Object.entries(artist.galas).forEach(([galaId, gala]) => {
-                        if (main.galas[galaId]) {
-                            main.galas[galaId].tickets += gala.tickets;
-                            main.galas[galaId].used += gala.used;
-                            main.galas[galaId].guests.push(...gala.guests);
-                        } else {
-                            main.galas[galaId] = gala;
-                        }
-                    });
-                    // Preferir la entrada que tiene ID real
-                    if (artist.id && !main.id) main.id = artist.id;
-                    toDelete.push(key);
+        function mergeInto(mainKey, secKey) {
+            const main = artistsData[mainKey];
+            const other = artistsData[secKey];
+            if (!main || !other) return;
+            main.totalTickets += other.totalTickets;
+            main.totalUsed   += other.totalUsed;
+            if (other.id && !main.id) main.id = other.id;
+            // Preferir nombre más largo (más completo)
+            if ((other.name || '').length > (main.name || '').length) main.name = other.name;
+            Object.entries(other.galas).forEach(([gId, g]) => {
+                if (main.galas[gId]) {
+                    main.galas[gId].tickets += g.tickets;
+                    main.galas[gId].used    += g.used;
+                    main.galas[gId].guests.push(...g.guests);
                 } else {
-                    nameToKey[n] = key;
+                    main.galas[gId] = { ...g, guests: [...g.guests] };
                 }
             });
+        }
+
+        // Fusión inteligente: mismo nombre exacto O nombre corto (1 palabra) que coincide con el primer nombre de otro
+        function mergeByName() {
+            const toDelete = [];
+            const nameToKey  = {};   // nombre normalizado completo → key
+            const firstToKey = {};   // primera palabra → key del nombre más largo
+
+            // Primer paso: indexar
+            Object.entries(artistsData).forEach(([key, a]) => {
+                const n = norm(a.name);
+                if (!n) return;
+                const words = n.split(/\s+/);
+                if (nameToKey[n] === undefined) nameToKey[n] = key;
+                if (words.length > 1 && firstToKey[words[0]] === undefined) firstToKey[words[0]] = key;
+            });
+
+            // Segundo paso: fusionar
+            Object.entries(artistsData).forEach(([key, a]) => {
+                if (toDelete.includes(key)) return;
+                const n = norm(a.name);
+                const words = n.split(/\s+/);
+
+                // Coincidencia exacta con otra entrada
+                if (nameToKey[n] && nameToKey[n] !== key) {
+                    mergeInto(nameToKey[n], key);
+                    toDelete.push(key);
+                    return;
+                }
+                // Nombre de una sola palabra que coincide con el primer nombre de una entrada más larga
+                if (words.length === 1 && firstToKey[n] && firstToKey[n] !== key) {
+                    mergeInto(firstToKey[n], key);
+                    toDelete.push(key);
+                }
+            });
+
             toDelete.forEach(k => delete artistsData[k]);
         }
 
@@ -522,74 +547,76 @@
             const container = document.getElementById('sales-ranking');
             container.innerHTML = '';
 
-            const sorted = Object.entries(artistsData)
-                .sort((a, b) => b[1].totalTickets - a[1].totalTickets);
+            const sorted = Object.values(artistsData)
+                .filter(a => a.totalTickets > 0)
+                .sort((a, b) => b.totalTickets - a.totalTickets);
 
             if (sorted.length === 0) {
                 container.innerHTML = '<div class="text-center opacity-75">No hay entradas asociadas a artistas en las galas seleccionadas</div>';
                 return;
             }
 
-            sorted.forEach(([key, artist], index) => {
-                const rate = artist.totalTickets > 0 ? ((artist.totalUsed / artist.totalTickets) * 100).toFixed(0) : '0';
-                const rankClass = index === 0 ? 'rank-1' : index === 1 ? 'rank-2' : index === 2 ? 'rank-3' : 'rank-other';
-                const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '';
-                const galasCount = Object.keys(artist.galas).length;
-                const safeId = `detail-${key.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+            // Columnas de galas ordenadas por fecha
+            const galaIds = selectedGalas.slice().sort((a, b) => {
+                const evA = allEvents.find(e => e.id === a);
+                const evB = allEvents.find(e => e.id === b);
+                return (evA?.date || '').localeCompare(evB?.date || '');
+            });
 
-                // Desglose por gala visible en la card
-                const galaBreakdown = Object.values(artist.galas)
-                    .map(g => `<span class="text-xs bg-white bg-opacity-10 px-2 py-1 rounded">${g.name}: <strong>${g.tickets}</strong> tickets</span>`)
-                    .join(' ');
+            const shortName = id => {
+                const ev = allEvents.find(e => e.id === id);
+                return (ev?.name || id).replace(/generaci[oó]n\s*/i, 'Gen ').replace(/gala\s*/i, 'G').substring(0, 12);
+            };
 
-                const card = document.createElement('div');
-                card.className = `ranking-card ${rankClass} p-4`;
-                card.innerHTML = `
-                    <div class="flex justify-between items-center flex-wrap gap-3">
-                        <div class="flex items-center gap-3">
-                            <div class="text-2xl font-bold">${medal} #${index + 1}</div>
-                            <div>
-                                <h3 class="text-xl font-bold">${artist.name}</h3>
-                                <div class="flex flex-wrap gap-1 mt-1">${galaBreakdown}</div>
+            let html = `
+                <p class="text-xs opacity-60 mb-3">Tocá una fila para ver la lista de invitados</p>
+                <div class="overflow-x-auto">
+                <table class="w-full text-sm border-collapse">
+                    <thead>
+                        <tr class="border-b-2 border-white border-opacity-30">
+                            <th class="py-2 px-2 text-center w-10">#</th>
+                            <th class="py-2 px-3 text-left">Artista</th>
+                            ${galaIds.map(id => `<th class="py-2 px-2 text-center text-xs text-cyan-300 whitespace-nowrap">${shortName(id)}</th>`).join('')}
+                            <th class="py-2 px-3 text-center text-cyan-300 font-black">TOTAL</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            sorted.forEach((artist, index) => {
+                const medal = ['🥇','🥈','🥉'][index] || '';
+                const leftBorder = index === 0 ? 'border-l-4 border-yellow-400' : index === 1 ? 'border-l-4 border-gray-400' : index === 2 ? 'border-l-4 border-orange-400' : 'border-l-2 border-white border-opacity-20';
+                const rowBg = index % 2 === 0 ? 'bg-white bg-opacity-5' : '';
+                const safeId = `det-${index}`;
+
+                html += `
+                    <tr class="${rowBg} ${leftBorder} border-b border-white border-opacity-10 cursor-pointer hover:bg-white hover:bg-opacity-10 transition" onclick="toggleDetail('${safeId}')">
+                        <td class="py-3 px-2 text-center font-bold">${medal || `#${index+1}`}</td>
+                        <td class="py-3 px-3 font-bold">${artist.name}</td>
+                        ${galaIds.map(id => {
+                            const g = artist.galas[id];
+                            return `<td class="py-3 px-2 text-center">${g ? `<span class="font-bold">${g.tickets}</span>` : '<span class="opacity-25">—</span>'}</td>`;
+                        }).join('')}
+                        <td class="py-3 px-3 text-center font-black text-xl text-cyan-300">${artist.totalTickets}</td>
+                    </tr>
+                    <tr id="${safeId}" class="hidden">
+                        <td colspan="${2 + galaIds.length + 1}" class="p-0">
+                            <div class="bg-black bg-opacity-30 px-4 py-3">
+                                ${buildArtistDetail(artist)}
                             </div>
-                        </div>
-                        <div class="flex items-center gap-6">
-                            <div class="text-center">
-                                <div class="text-2xl font-bold text-cyan-300">${artist.totalTickets}</div>
-                                <div class="text-xs opacity-75">total tickets</div>
-                            </div>
-                            <div class="text-center">
-                                <div class="text-2xl font-bold text-green-300">${artist.totalUsed}</div>
-                                <div class="text-xs opacity-75">ingresaron</div>
-                            </div>
-                            <div class="text-center">
-                                <div class="text-2xl font-bold text-yellow-300">${rate}%</div>
-                                <div class="text-xs opacity-75">asistencia</div>
-                            </div>
-                            <button class="toggle-detail-btn bg-white bg-opacity-20 hover:bg-opacity-30 px-4 py-2 rounded font-bold" data-target="${safeId}">
-                                Ver lista ▼
-                            </button>
-                        </div>
-                    </div>
-                    <div id="${safeId}" class="hidden mt-4 pt-4 border-t border-white border-opacity-20"></div>
+                        </td>
+                    </tr>
                 `;
-                container.appendChild(card);
-
-                // Construir contenido del detalle (gala por gala + invitados)
-                const detailDiv = card.querySelector(`#${safeId}`);
-                detailDiv.innerHTML = buildArtistDetail(artist);
             });
 
-            // Listeners de "Ver detalle"
-            container.querySelectorAll('.toggle-detail-btn').forEach(btn => {
-                btn.addEventListener('click', () => {
-                    const target = document.getElementById(btn.dataset.target);
-                    const isHidden = target.classList.contains('hidden');
-                    target.classList.toggle('hidden');
-                    btn.textContent = isHidden ? 'Ocultar detalle ▲' : 'Ver detalle ▼';
-                });
-            });
+            html += '</tbody></table></div>';
+            container.innerHTML = html;
         }
+
+        window.toggleDetail = function(id) {
+            const el = document.getElementById(id);
+            if (el) el.classList.toggle('hidden');
+        };
 
         function buildArtistDetail(artist) {
             const galaIds = Object.keys(artist.galas)
