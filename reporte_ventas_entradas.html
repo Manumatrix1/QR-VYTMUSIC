@@ -456,8 +456,43 @@
             }
         }
 
+        // Fusionar entradas con el mismo nombre normalizado (evita duplicados por artistId vs nombre)
+        function mergeByName() {
+            const norm = s => (s || '').toLowerCase().trim().normalize('NFD').replace(/[̀-ͯ]/g, '');
+            const nameToKey = {};
+            const toDelete = [];
+
+            Object.entries(artistsData).forEach(([key, artist]) => {
+                const n = norm(artist.name);
+                if (!n) return;
+                if (nameToKey[n] !== undefined && nameToKey[n] !== key) {
+                    const mainKey = nameToKey[n];
+                    const main = artistsData[mainKey];
+                    main.totalTickets += artist.totalTickets;
+                    main.totalUsed += artist.totalUsed;
+                    // Fusionar galas
+                    Object.entries(artist.galas).forEach(([galaId, gala]) => {
+                        if (main.galas[galaId]) {
+                            main.galas[galaId].tickets += gala.tickets;
+                            main.galas[galaId].used += gala.used;
+                            main.galas[galaId].guests.push(...gala.guests);
+                        } else {
+                            main.galas[galaId] = gala;
+                        }
+                    });
+                    // Preferir la entrada que tiene ID real
+                    if (artist.id && !main.id) main.id = artist.id;
+                    toDelete.push(key);
+                } else {
+                    nameToKey[n] = key;
+                }
+            });
+            toDelete.forEach(k => delete artistsData[k]);
+        }
+
         // Render de todos los resultados
         function renderResults() {
+            mergeByName();
             renderSummary();
             renderRanking();
             renderChart();
