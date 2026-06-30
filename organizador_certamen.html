@@ -439,7 +439,7 @@
 
     <!-- MODAL: Agregar Artista Nuevo -->
     <div id="modalAddArtist" class="hidden fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
-        <div class="bg-gray-900 border border-gray-700 rounded-2xl p-6 w-full max-w-md shadow-2xl">
+        <div class="bg-gray-900 border border-gray-700 rounded-2xl p-6 w-full max-w-lg shadow-2xl" style="max-height:92vh;overflow-y:auto;">
             <h3 class="text-white font-bold text-lg mb-1">🎤 Agregar Artistas</h3>
             <p id="addArtistColLabel" class="text-gray-400 text-xs mb-4"></p>
             <input type="hidden" id="addArtistColId">
@@ -452,7 +452,11 @@
                 </button>
                 <button type="button" id="tab-varios" onclick="switchAddTab('varios')"
                         class="flex-1 py-2.5 bg-gray-800 text-gray-400 transition-colors">
-                    <i class="fas fa-users mr-1"></i> Varios (lista rápida)
+                    <i class="fas fa-users mr-1"></i> Lista rápida
+                </button>
+                <button type="button" id="tab-fotos" onclick="switchAddTab('fotos')"
+                        class="flex-1 py-2.5 bg-gray-800 text-gray-400 transition-colors">
+                    <i class="fas fa-images mr-1"></i> Varias (con fotos)
                 </button>
             </div>
 
@@ -495,6 +499,25 @@
                 <div id="bulkPreviewCount" class="text-xs text-gray-500 mt-1 mb-4"></div>
                 <div class="flex gap-3">
                     <button id="saveNewArtistsBulkBtn" onclick="saveNewArtistsBulk()" class="flex-1 bg-purple-600 hover:bg-purple-500 text-white font-bold py-3 rounded-xl transition-all">
+                        ✅ Agregar Todos
+                    </button>
+                    <button onclick="document.getElementById('modalAddArtist').classList.add('hidden')" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 rounded-xl transition-all">Cancelar</button>
+                </div>
+            </div>
+
+            <!-- PANEL: VARIAS CON FOTOS -->
+            <div id="panelAddFotos" class="hidden">
+                <p class="text-gray-400 text-xs mb-2">Elegí varias fotos a la vez (una por artista). El nombre se completa solo desde el archivo — editalo si hace falta.</p>
+                <label class="flex items-center justify-center gap-2 cursor-pointer bg-gray-800 hover:bg-gray-700 border border-dashed border-gray-600 rounded-xl px-3 py-4 mb-3 transition-all">
+                    <i class="fas fa-images text-purple-400"></i>
+                    <span class="text-white text-sm">Seleccionar fotos (podés elegir varias)</span>
+                    <input type="file" id="addArtistPhotosMultiple" accept="image/*" multiple class="hidden"
+                           onchange="handleFotosMultiple(this)">
+                </label>
+                <div id="fotosPreviewList" class="space-y-2 mb-2" style="max-height:42vh;overflow-y:auto;"></div>
+                <div id="fotosPreviewCount" class="text-xs text-gray-500 mt-1 mb-4"></div>
+                <div class="flex gap-3">
+                    <button id="saveNewArtistsFotosBtn" onclick="saveNewArtistsFotos()" class="flex-1 bg-purple-600 hover:bg-purple-500 text-white font-bold py-3 rounded-xl transition-all">
                         ✅ Agregar Todos
                     </button>
                     <button onclick="document.getElementById('modalAddArtist').classList.add('hidden')" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 rounded-xl transition-all">Cancelar</button>
@@ -2037,6 +2060,10 @@
             document.getElementById('addArtistPlaceholder').classList.remove('hidden');
             document.getElementById('addArtistBulkNames').value = '';
             document.getElementById('bulkPreviewCount').textContent = '';
+            document.getElementById('addArtistPhotosMultiple').value = '';
+            document.getElementById('fotosPreviewList').innerHTML = '';
+            document.getElementById('fotosPreviewCount').textContent = '';
+            _fotosPendientes = [];
             const btn = document.getElementById('saveNewArtistBtn');
             if (btn) { btn.disabled = false; btn.textContent = '✅ Agregar Artista'; }
             // Siempre abrir en tab "uno"
@@ -2046,12 +2073,13 @@
         };
 
         window.switchAddTab = function(tab) {
-            const isUno = tab === 'uno';
-            document.getElementById('panelAddUno').classList.toggle('hidden', !isUno);
-            document.getElementById('panelAddVarios').classList.toggle('hidden', isUno);
-            document.getElementById('tab-uno').className    = `flex-1 py-2.5 transition-colors ${isUno  ? 'bg-purple-900/70 text-purple-200' : 'bg-gray-800 text-gray-400'}`;
-            document.getElementById('tab-varios').className = `flex-1 py-2.5 transition-colors ${!isUno ? 'bg-purple-900/70 text-purple-200' : 'bg-gray-800 text-gray-400'}`;
-            if (!isUno) setTimeout(() => document.getElementById('addArtistBulkNames').focus(), 100);
+            const tabs = { uno: 'Uno', varios: 'Varios', fotos: 'Fotos' };
+            Object.keys(tabs).forEach(t => {
+                const isActive = t === tab;
+                document.getElementById(`panelAdd${tabs[t]}`).classList.toggle('hidden', !isActive);
+                document.getElementById(`tab-${t}`).className = `flex-1 py-2.5 transition-colors ${isActive ? 'bg-purple-900/70 text-purple-200' : 'bg-gray-800 text-gray-400'}`;
+            });
+            if (tab === 'varios') setTimeout(() => document.getElementById('addArtistBulkNames').focus(), 100);
         };
 
         // Actualizar contador de líneas en tiempo real
@@ -2105,6 +2133,117 @@
             renderBoard();
             document.getElementById('modalAddArtist').classList.add('hidden');
             showToast(`✅ ${agregados} artistas agregados`, '🎤');
+            if (btn) { btn.disabled = false; btn.textContent = '✅ Agregar Todos'; }
+        };
+
+        // ═══════════════════════════════════════════
+        // AGREGAR VARIOS ARTISTAS CON FOTO (carga masiva)
+        // ═══════════════════════════════════════════
+        let _fotosPendientes = []; // [{ file, name }]
+
+        // Limpia el nombre de archivo para sugerir un nombre de artista editable
+        function nombreDesdeArchivo(filename) {
+            return (filename || '')
+                .replace(/\.[^/.]+$/, '')         // sacar extensión
+                .replace(/[_\-]+/g, ' ')          // guiones/underscores → espacio
+                .replace(/\s+/g, ' ')
+                .trim()
+                .replace(/\b\w/g, c => c.toUpperCase()); // capitalizar
+        }
+
+        window.handleFotosMultiple = function(input) {
+            const files = Array.from(input.files || []);
+            files.forEach(file => {
+                _fotosPendientes.push({ file, name: nombreDesdeArchivo(file.name) });
+            });
+            input.value = ''; // permitir volver a elegir (incluso agregar más después)
+            renderFotosPreviewList();
+        };
+
+        function renderFotosPreviewList() {
+            const list = document.getElementById('fotosPreviewList');
+            list.innerHTML = '';
+            _fotosPendientes.forEach((item, idx) => {
+                const row = document.createElement('div');
+                row.className = 'flex items-center gap-2 bg-gray-800 border border-gray-700 rounded-xl p-2';
+                const img = document.createElement('img');
+                img.className = 'w-10 h-10 rounded-full object-cover border-2 border-purple-500 flex-shrink-0';
+                const reader = new FileReader();
+                reader.onload = e => { img.src = e.target.result; };
+                reader.readAsDataURL(item.file);
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.value = item.name;
+                input.maxLength = 60;
+                input.className = 'flex-1 bg-gray-700 border border-gray-600 text-white text-sm rounded-lg px-2 py-1.5 focus:border-purple-500 focus:outline-none';
+                input.oninput = () => { _fotosPendientes[idx].name = input.value; };
+                const removeBtn = document.createElement('button');
+                removeBtn.innerHTML = '<i class="fas fa-times"></i>';
+                removeBtn.className = 'text-gray-500 hover:text-red-400 p-1.5 flex-shrink-0';
+                removeBtn.onclick = () => removeFotoPendiente(idx);
+                row.appendChild(img);
+                row.appendChild(input);
+                row.appendChild(removeBtn);
+                list.appendChild(row);
+            });
+            const count = _fotosPendientes.length;
+            const counterEl = document.getElementById('fotosPreviewCount');
+            counterEl.textContent = count > 0 ? `${count} artista${count !== 1 ? 's' : ''} a agregar` : '';
+            counterEl.className = 'text-xs mt-1 mb-4 ' + (count > 0 ? 'text-purple-400' : 'text-gray-500');
+        }
+
+        window.removeFotoPendiente = function(idx) {
+            _fotosPendientes.splice(idx, 1);
+            renderFotosPreviewList();
+        };
+
+        window.saveNewArtistsFotos = async function() {
+            if (_fotosPendientes.length === 0) { showToast('Seleccioná al menos una foto', '⚠️'); return; }
+            const sinNombre = _fotosPendientes.some(p => !p.name.trim());
+            if (sinNombre) { showToast('Completá el nombre de todos los artistas', '⚠️'); return; }
+
+            const colId = document.getElementById('addArtistColId').value;
+            const total = _fotosPendientes.length;
+            const btn = document.getElementById('saveNewArtistsFotosBtn');
+            if (btn) { btn.disabled = true; btn.textContent = `⏳ Agregando 0/${total}...`; }
+
+            const col = columns.find(c => c.id === colId);
+            const eventId = col ? col.eventId : null;
+
+            let agregados = 0;
+            for (const item of _fotosPendientes) {
+                try {
+                    const photoRef = storRef(storage, `artists_photos/${Date.now()}_${Math.random().toString(36).slice(2, 6)}_${item.file.name}`);
+                    const snapshot = await uploadBytes(photoRef, item.file);
+                    const photoURL = await getDownloadURL(snapshot.ref);
+
+                    const localId = 'new_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+                    const newArtist = {
+                        id: localId, originalId: localId,
+                        eventId: eventId || colId || 'pool',
+                        eventLabel: col ? col.name : 'Pool',
+                        name: item.name.trim(), photoURL,
+                        generacion: loadedGenerations[0] || '',
+                        galas: 0, hasVotes: false, avg: null,
+                        eventIds: eventId ? [eventId] : [],
+                        votedEventIds: []
+                    };
+                    allArtists.push(newArtist);
+                    if (colId) {
+                        columnAssignments[localId] = colId;
+                        if (eventId) await syncArtistToEvent(newArtist, eventId);
+                    }
+                    agregados++;
+                    if (btn) btn.textContent = `⏳ Agregando ${agregados}/${total}...`;
+                } catch(e) {
+                    console.warn('Error agregando', item.name, e.message);
+                }
+            }
+            saveState();
+            renderBoard();
+            document.getElementById('modalAddArtist').classList.add('hidden');
+            showToast(`✅ ${agregados} artistas agregados con foto`, '🎤');
+            _fotosPendientes = [];
             if (btn) { btn.disabled = false; btn.textContent = '✅ Agregar Todos'; }
         };
 
