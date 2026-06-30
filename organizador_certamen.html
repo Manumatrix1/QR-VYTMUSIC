@@ -599,7 +599,7 @@
     <!-- Firebase SDK -->
     <script type="module">
         import { app, db, storage } from './firebase_config.js';
-        import { collection, getDocs, doc, updateDoc, query, orderBy, onSnapshot, getDoc, deleteDoc, setDoc, addDoc, serverTimestamp, writeBatch } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+        import { collection, getDocs, doc, updateDoc, query, orderBy, onSnapshot, getDoc, deleteDoc, setDoc, addDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
         import { ref as storRef, deleteObject, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js';
 
         // ═══════════════════════════════════════════
@@ -3068,8 +3068,8 @@
             const eventIsActive = col.eventId ? !!(allEvents.find(e => e.id === col.eventId)?.isActive) : false;
             const activeToggle = col.eventId
                 ? (eventIsActive
-                    ? `<button onclick="toggleGalaActiva('${col.eventId}')" class="text-xs px-1.5 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-full font-bold ml-1 transition-all" title="Click para desactivar">🎯 Activa</button>`
-                    : `<button onclick="toggleGalaActiva('${col.eventId}')" class="text-xs px-1.5 py-0.5 bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white border border-gray-600 rounded-full ml-1 transition-all" title="Click para activar para votación y escaneo">Activar</button>`)
+                    ? `<button onclick="toggleGalaActiva('${col.eventId}')" class="text-xs px-1.5 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-full font-bold ml-1 transition-all" title="Click para desactivar — dejará de venderse/votarse">🎯 Activa</button>`
+                    : `<button onclick="toggleGalaActiva('${col.eventId}')" class="text-xs px-1.5 py-0.5 bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white border border-gray-600 rounded-full ml-1 transition-all" title="Click para activar — habilita venta de entradas, votación y escaneo de esta gala">Activar</button>`)
                 : '';
 
             // Botón para abrir panel si es gala real
@@ -3273,26 +3273,19 @@
             }
         };
 
-        // Activa/desactiva una gala para votación y escaneo. Solo puede haber una
-        // gala activa a la vez en todo el certamen (mismo criterio que eventos.html).
+        // Activa/desactiva una gala para venta de entradas/votación/escaneo.
+        // Pueden estar activas varias galas a la vez (distintos eventos en simultáneo) —
+        // acceso_preventa.html ya soporta mostrar un selector cuando hay más de una activa.
         window.toggleGalaActiva = async function(eventId) {
             const event = allEvents.find(e => e.id === eventId);
             if (!event) return;
             const activar = !event.isActive;
             try {
-                if (activar) {
-                    const allEventsSnap = await getDocs(collection(db, 'events'));
-                    const batch = writeBatch(db);
-                    allEventsSnap.forEach(d => batch.update(d.ref, { isActive: false }));
-                    await batch.commit();
-                    await updateDoc(doc(db, 'events', eventId), { isActive: true });
-                    allEvents.forEach(e => { e.isActive = (e.id === eventId); });
-                    showToast(`🎯 "${event.name}" activada para votación y escaneo`, '✅');
-                } else {
-                    await updateDoc(doc(db, 'events', eventId), { isActive: false });
-                    event.isActive = false;
-                    showToast(`"${event.name}" desactivada`, 'ℹ️');
-                }
+                await updateDoc(doc(db, 'events', eventId), { isActive: activar });
+                event.isActive = activar;
+                showToast(activar
+                    ? `🎯 "${event.name}" activada para venta/votación/escaneo`
+                    : `"${event.name}" desactivada`, activar ? '✅' : 'ℹ️');
                 renderColumns();
             } catch (e) {
                 console.error('Error activando gala:', e);
