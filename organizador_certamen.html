@@ -28,6 +28,9 @@
             transition: border-color 0.2s;
         }
         .kanban-col.drag-over { border-color: #818cf8; background: #1e2d4a; }
+        /* Gala ya pasada: pierde prioridad visual (blanco y negro + atenuada) */
+        .kanban-col.col-pasada { filter: grayscale(0.85); opacity: 0.55; }
+        .kanban-col.col-pasada:hover { opacity: 0.85; }
 
         /* Zona de drop */
         .drop-zone {
@@ -2609,12 +2612,28 @@
             if (statsEl) statsEl.innerHTML = `<span class="text-purple-200 font-bold">${enColumnas}</span> en certamen &nbsp;<span class="text-gray-500 text-xs hidden lg:inline">${perGala}</span>`;
         }
 
+        // Una gala se considera "pasada" si tiene fecha y esa fecha ya fue.
+        // Sin fecha → se considera activa (no se puede saber si ya pasó).
+        function isColumnPast(col) {
+            if (!col || !col.date) return false;
+            const today = new Date(); today.setHours(0, 0, 0, 0);
+            const colDate = new Date(col.date + 'T00:00:00');
+            return colDate < today;
+        }
+
         function getPoolArtists() {
             const filter = document.getElementById('poolSearch').value.toLowerCase();
             return allArtists.filter(a => {
-                const inPool = !columnAssignments[a.id] && !(columnMulti[a.id]?.length > 0);
+                const assignedColIds = [columnAssignments[a.id], ...(columnMulti[a.id] || [])].filter(Boolean);
+                // Tiene una gala "activa" (futura o sin fecha) bloqueando su disponibilidad.
+                // Si todas sus galas asignadas ya pasaron, vuelve a aparecer acá para poder reasignarlo,
+                // sin perder el registro de que ya cantó en esas galas pasadas.
+                const tieneGalaActiva = assignedColIds.some(colId => {
+                    const col = columns.find(c => c.id === colId);
+                    return col && !isColumnPast(col);
+                });
                 const matchFilter = !filter || a.name.toLowerCase().includes(filter);
-                return inPool && matchFilter;
+                return !tieneGalaActiva && matchFilter;
             });
         }
 
@@ -2675,14 +2694,23 @@
                         // Capturar columna anterior ANTES de reasignar
                         const prevColId = columnAssignments[artistId];
                         const prevCol = prevColId ? columns.find(c => c.id === prevColId) : null;
+                        const prevColEraPasada = prevCol && isColumnPast(prevCol);
+
+                        // Si la gala anterior ya pasó, se preserva como historial (multi-asignación)
+                        // en vez de perderse — así el artista no "sale" de una gala que ya hizo.
+                        if (prevColEraPasada) {
+                            if (!columnMulti[artistId]) columnMulti[artistId] = [];
+                            if (!columnMulti[artistId].includes(prevColId)) columnMulti[artistId].push(prevColId);
+                        }
                         columnAssignments[artistId] = col.id;
                         captureColumnOrder(col.id, dropZone);
                         updateColumnCount(col.id);
                         updatePoolCount();
                         saveState();
                         const artist = allArtists.find(a => a.id === artistId);
-                        // Si venía de una gala real diferente → eliminar de la gala anterior en Firebase
-                        if (prevCol && prevCol.eventId && prevCol.eventId !== col.eventId) {
+                        // Si venía de una gala real diferente y NO era pasada → eliminar de la gala anterior en Firebase
+                        // (si era pasada se mantiene como registro histórico, no se borra)
+                        if (prevCol && !prevColEraPasada && prevCol.eventId && prevCol.eventId !== col.eventId) {
                             if (artist) {
                                 removeArtistFromEvent(artist, prevCol.eventId);
                                 // Actualizar eventIds en memoria
@@ -2875,14 +2903,18 @@
                 columnAssignments[a.id] === col.id || (columnMulti[a.id] || []).includes(col.id)
             ).length;
 
-            const div = document.createElement('div');
-            div.className = `kanban-col`;
-            div.dataset.colId = col.id;
+            const esPasada = isColumnPast(col);
 
-            // Indicador de gala real vs solo visual
-            const eventBadge = col.eventId
+            const div = document.createElement('div');
+            div.className = `kanban-col${esPasada ? ' col-pasada' : ''}`;
+            div.dataset.colId = col.id;
+            if (esPasada) div.title = 'Esta gala ya pasó — sus artistas vuelven a estar disponibles en "Artistas del certamen"';
+
+            // Indicador de gala real vs solo visual (+ badge de "pasada" si ya ocurrió)
+            const eventBadge = (col.eventId
                 ? `<span class="text-xs px-1.5 py-0.5 bg-green-900 text-green-300 border border-green-700 rounded-full font-bold">🔗 Gala real</span>`
-                : `<span class="text-xs px-1.5 py-0.5 bg-gray-800 text-gray-500 border border-gray-700 rounded-full">Solo visual</span>`;
+                : `<span class="text-xs px-1.5 py-0.5 bg-gray-800 text-gray-500 border border-gray-700 rounded-full">Solo visual</span>`)
+                + (esPasada ? `<span class="text-xs px-1.5 py-0.5 bg-black/40 text-gray-300 border border-gray-600 rounded-full ml-1">🕗 Pasada</span>` : '');
 
             // Botón para abrir panel si es gala real
             const panelLink = col.eventId
