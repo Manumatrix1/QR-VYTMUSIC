@@ -619,6 +619,12 @@
         let selectedColor = 'purple';
         let sortableInstances = {};
 
+        // Normaliza nombres de generación para comparar sin que tildes/mayúsculas
+        // distintas (ej. "GENERACIÒN 14" vs "Generación 14") rompan el matching.
+        function normGen(s) {
+            return (s || '').toString().trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+        }
+
         // Captura el orden DOM actual de una columna y lo guarda en columnOrder
         function captureColumnOrder(colId, dropZone) {
             columnOrder[colId] = Array.from(dropZone.querySelectorAll('.artist-card')).map(el => el.dataset.artistId);
@@ -725,17 +731,20 @@
                 console.log(`🎯 Generaciones únicas encontradas:`, allGenerations);
 
                 // ⭐ AGREGAR "Generación 13" MANUALMENTE (para selección manual)
-                if (!allGenerations.includes('Generación 13')) {
+                if (!allGenerations.some(g => normGen(g) === normGen('Generación 13'))) {
                     allGenerations.unshift('Generación 13'); // Al principio
                     console.log('✅ Generación 13 agregada manualmente');
                 }
 
                 // ⭐ AGREGAR generaciones definidas como grupos (event_groups), ej: Generación 14
+                // Se compara normalizado (sin tildes/mayúsculas) para no duplicar la entrada
+                // del dropdown cuando el grupo real tiene el nombre tipeado distinto
+                // (ej. "GENERACIÒN 14" vs "Generación 14" detectado por nombre de gala).
                 try {
                     const groupsSnap = await getDocs(collection(db, 'event_groups'));
                     allEventGroups = groupsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
                     allEventGroups.forEach(group => {
-                        if (group.name && !allGenerations.includes(group.name)) {
+                        if (group.name && !allGenerations.some(g => normGen(g) === normGen(group.name))) {
                             allGenerations.push(group.name);
                             console.log(`✅ Grupo "${group.name}" agregado desde event_groups`);
                         }
@@ -1099,10 +1108,10 @@
                     // explícito (galas creadas con "Nuevo grupo") O se detecta por nombre/fecha.
                     // Se combinan con OR para que una gala matchee aunque le falte alguno de los dos.
                     else {
-                        const group = allEventGroups.find(g => g.name === generacion);
+                        const group = allEventGroups.find(g => normGen(g.name) === normGen(generacion));
                         const matchesGroup = !!group && event.groupId === group.id;
                         const eventGeneracion = event.generacion || detectGeneration(eventName, event.date) || eventName;
-                        const matchesGeneracionField = (eventGeneracion === generacion);
+                        const matchesGeneracionField = (normGen(eventGeneracion) === normGen(generacion));
                         shouldLoadThisEvent = matchesGroup || matchesGeneracionField;
 
                         // Self-heal: si matcheó solo por el campo suelto y existe el grupo real,
@@ -1861,11 +1870,11 @@
             // de la MISMA generación). Usa la misma lógica de scoping que loadArtistsByGeneration
             // para evitar que artistas de otras generaciones/certámenes con nombre parecido
             // "contaminen" el historial de galas de esta generación.
-            const grupo = allEventGroups.find(g => g.name === generacion);
+            const grupo = allEventGroups.find(g => normGen(g.name) === normGen(generacion));
             const allGenEvents = (allEvents || []).filter(e => {
                 const eventName = e.name || e.id;
                 const matchesGroup = !!grupo && e.groupId === grupo.id;
-                const matchesGeneracionField = (e.generacion || detectGeneration(eventName, e.date) || eventName) === generacion;
+                const matchesGeneracionField = normGen(e.generacion || detectGeneration(eventName, e.date) || eventName) === normGen(generacion);
                 return matchesGroup || matchesGeneracionField;
             });
             if (allGenEvents.length === 0) return;
@@ -3258,7 +3267,7 @@
                     // Vincular al grupo real de la generación (event_groups) para que la gala
                     // aparezca también en eventos.html y se pueda activar para votación/escaneo.
                     const generacionActual = loadedGenerations[0] || '';
-                    const grupo = allEventGroups.find(g => g.name === generacionActual);
+                    const grupo = allEventGroups.find(g => normGen(g.name) === normGen(generacionActual));
 
                     const eventData = {
                         name,
