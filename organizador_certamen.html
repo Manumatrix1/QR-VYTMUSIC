@@ -182,6 +182,9 @@
                         <button onclick="window.diagnosticoPromedios(); document.getElementById('moreDropdown').classList.add('hidden')" class="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-gray-800 text-white text-sm text-left">
                             <i class="fas fa-stethoscope text-yellow-400 w-5"></i> Diagnóstico
                         </button>
+                        <button onclick="window.recuperarGalasVacias(); document.getElementById('moreDropdown').classList.add('hidden')" class="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-gray-800 text-orange-300 text-sm text-left">
+                            <i class="fas fa-first-aid text-orange-400 w-5"></i> Recuperar galas vacías
+                        </button>
                         <div class="border-t border-gray-700 my-1"></div>
                         <button onclick="clearBoard(); document.getElementById('moreDropdown').classList.add('hidden')" class="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-red-900 text-red-400 text-sm text-left">
                             <i class="fas fa-trash-alt w-5"></i> Limpiar tablero
@@ -236,6 +239,17 @@
         <!-- COLUMNAS DINÁMICAS -->
         <div id="columns" class="flex gap-4 flex-shrink-0" style="align-items: flex-start;">
             <!-- Columnas se agregan dinámicamente -->
+        </div>
+
+        <!-- BANNER TABLERO VACÍO -->
+        <div id="emptyBoardBanner" class="hidden fixed bottom-6 left-1/2 z-50" style="transform:translateX(-50%);width:90%;max-width:420px;">
+            <div class="bg-orange-600 rounded-2xl shadow-2xl p-4 flex flex-col gap-3 text-white text-center">
+                <div style="font-size:28px">⚠️</div>
+                <p class="font-bold text-base">Las galas están vacías</p>
+                <p class="text-sm text-orange-100">Los artistas no se asignaron correctamente. Toca el botón para reconstruir desde Firebase.</p>
+                <button onclick="window.fixEmptyBoard()" class="bg-white text-orange-700 font-bold rounded-xl py-3 px-4 text-base active:scale-95 transition-transform">🔧 Reconstruir tablero ahora</button>
+                <button onclick="document.getElementById('emptyBoardBanner').classList.add('hidden')" class="text-orange-200 text-sm underline">Ignorar</button>
+            </div>
         </div>
 
         <!-- Botón agregar columna (fin) -->
@@ -573,6 +587,7 @@
         let columnMulti = {};          // { artistId: [colId, ...] } — artista asignado a múltiples galas
         let columns = [];             // [{ id, name, color }]
         let allEvents = [];
+        let allEventGroups = [];      // Grupos definidos en event_groups (ej: Generación 14)
         let allGenerations = [];      // Lista de generaciones disponibles
         let loadedGenerations = [];   // Generaciones ya cargadas en el tablero
         let selectedColor = 'purple';
@@ -595,10 +610,43 @@
             teal:   { bg: 'from-teal-900 to-teal-800',     border: 'border-teal-500',   badge: 'bg-teal-900 text-teal-300',   header: 'bg-teal-900' },
         };
 
+        // Detecta a qué generación pertenece una gala a partir de su nombre/fecha.
+        // Misma lógica robusta que reporte_ventas_entradas.html (evita que "G14 - GALA 1",
+        // "G12 VYTMUSIC", etc. queden sueltos en vez de agruparse en su generación).
+        function detectGeneration(name = '', date = '') {
+            const n = (name || '').toLowerCase().replace(/[-_()\s]+/g, ' ').trim();
+            const year = date ? parseInt(String(date).substring(0, 4)) : 0;
+
+            // Gen 12: marcadores específicos
+            if (/\b12g\b|\bg12\b/.test(n)) return 'Generación 12';
+            if (n.includes('gen 12') || n.includes('generacion 12') || n.includes('generación 12')) return 'Generación 12';
+
+            // Gen 13: galas con número de grupo (g1/g2/g3 grupo)
+            if (/\bg[123] grupo\b/.test(n)) return 'Generación 13';
+            if (n.includes('si lo crees') || n.includes('crees lo creas')) return 'Generación 13';
+
+            // Patrón genérico: "generación N", "gen N", "gN", "Ng" (cualquier N, ej. 14, 15...)
+            const m = n.match(/generaci[oó]n\s*(\d+)/) || n.match(/\bgen\s*(\d+)\b/) || n.match(/\bg\s?(\d+)\b/) || n.match(/\b(\d+)\s?g\b/);
+            if (m) return `Generación ${m[1]}`;
+
+            // VYT-MUSIC genérico: usar año como desempate
+            if (n.includes('vyt music') || n.includes('vytmusic') || n.includes('vyt-music')) {
+                return year >= 2026 ? 'Generación 13' : 'Generación 12';
+            }
+
+            // Fase sin VYT → Gen 12
+            if (n.includes('fase') || n.includes('phase')) return 'Generación 12';
+
+            return null; // No se pudo detectar: queda como evento suelto
+        }
+
         // ═══════════════════════════════════════════
         // CARGA DE GENERACIONES
         // ═══════════════════════════════════════════
         async function loadGenerations() {
+            // ⚠️ Limpiar selección previa (para evitar que se mantenga entre sesiones)
+            window._selectedEventIds = null;
+            
             try {
                 console.log('🔍 Cargando eventos...');
                 // Cargar todos los eventos
@@ -611,35 +659,43 @@
                 
                 for (const event of allEvents) {
                     const eventName = event.name || event.id;
-                    let generacion = null;
-                    
-                    // Detectar generación SOLO de Gen 12 y eventos con número explícito
-                    // Gen 13 se selecciona manualmente mediante el modal
-                    if (/generaci[oó]n\s*(\d+)/i.test(eventName) || /(\d+)g\s/i.test(eventName)) {
-                        const match = eventName.match(/generaci[oó]n\s*(\d+)/i) || eventName.match(/(\d+)g\s/i);
-                        const num = match[1];
-                        generacion = `Generación ${num}`;
-                        console.log(`  📌 Gen ${num} detectada: ${eventName}`);
-                    } 
-                    // Otros eventos → usar nombre completo
-                    else {
+
+                    // Detectar generación con la heurística robusta (G12, G13, "G14 - GALA 1", etc.)
+                    // Gen 13 también se puede seleccionar manualmente mediante el modal
+                    let generacion = detectGeneration(eventName, event.date);
+
+                    // No se pudo detectar generación → queda como evento individual suelto
+                    if (!generacion) {
                         generacion = eventName;
                         console.log(`  📦 Evento individual: ${eventName}`);
-                    }
-                    
-                    if (generacion) {
-                        generationsSet.add(generacion);
+                    } else {
                         console.log(`  📌 ${eventName} → ${generacion}`);
                     }
+
+                    generationsSet.add(generacion);
                 }
 
-                allGenerations = Array.from(generationsSet).sort();
+                allGenerations = Array.from(generationsSet);
                 console.log(`🎯 Generaciones únicas encontradas:`, allGenerations);
 
                 // ⭐ AGREGAR "Generación 13" MANUALMENTE (para selección manual)
                 if (!allGenerations.includes('Generación 13')) {
                     allGenerations.unshift('Generación 13'); // Al principio
                     console.log('✅ Generación 13 agregada manualmente');
+                }
+
+                // ⭐ AGREGAR generaciones definidas como grupos (event_groups), ej: Generación 14
+                try {
+                    const groupsSnap = await getDocs(collection(db, 'event_groups'));
+                    allEventGroups = groupsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+                    allEventGroups.forEach(group => {
+                        if (group.name && !allGenerations.includes(group.name)) {
+                            allGenerations.push(group.name);
+                            console.log(`✅ Grupo "${group.name}" agregado desde event_groups`);
+                        }
+                    });
+                } catch (e) {
+                    console.warn('⚠️ No se pudieron cargar event_groups:', e.message);
                 }
 
                 // Poblar selector
@@ -656,12 +712,37 @@
                     return;
                 }
                 
-                allGenerations.forEach(gen => {
+                // Separar generaciones "propias" (Generación N) de eventos sueltos que no matchearon ningún patrón,
+                // y ordenar las generaciones numéricamente (más nueva primero) para que sea fácil encontrarlas.
+                const genRegex = /^Generaci[oó]n\s*(\d+)$/i;
+                const properGens = allGenerations
+                    .filter(g => genRegex.test(g))
+                    .sort((a, b) => parseInt(b.match(genRegex)[1]) - parseInt(a.match(genRegex)[1]));
+                const looseEvents = allGenerations
+                    .filter(g => !genRegex.test(g))
+                    .sort((a, b) => a.localeCompare(b));
+
+                const gruposGroup = document.createElement('optgroup');
+                gruposGroup.label = '🎭 Generaciones';
+                properGens.forEach(gen => {
                     const opt = document.createElement('option');
                     opt.value = gen;
                     opt.textContent = gen;
-                    sel.appendChild(opt);
+                    gruposGroup.appendChild(opt);
                 });
+                if (properGens.length > 0) sel.appendChild(gruposGroup);
+
+                if (looseEvents.length > 0) {
+                    const sueltosGroup = document.createElement('optgroup');
+                    sueltosGroup.label = '📦 Eventos individuales (sin generación detectada)';
+                    looseEvents.forEach(gen => {
+                        const opt = document.createElement('option');
+                        opt.value = gen;
+                        opt.textContent = gen;
+                        sueltosGroup.appendChild(opt);
+                    });
+                    sel.appendChild(sueltosGroup);
+                }
 
                 document.getElementById('loadingState').innerHTML = `
                     <div class="text-center py-12">
@@ -768,6 +849,9 @@
             
             // Guardar selección
             localStorage.setItem('gen13_selected_events', JSON.stringify(selectedEventIds));
+            
+            // ⭐ GUARDAR selección en variable global para que loadSavedState sepa qué columnas crear
+            window._selectedEventIds = selectedEventIds;
             
             // Cerrar modal
             document.getElementById('modalGen13').classList.add('hidden');
@@ -965,20 +1049,14 @@
                             console.log(`✅ Cargando gala seleccionada manualmente: ${eventName}`);
                         }
                     }
+                    // CASO 1.5: Generación definida como grupo en event_groups (ej: Generación 14)
+                    else if (allEventGroups.some(g => g.name === generacion)) {
+                        const group = allEventGroups.find(g => g.name === generacion);
+                        shouldLoadThisEvent = (event.groupId === group.id);
+                    }
                     // CASO 2: Detección automática (otras generaciones)
                     else {
-                        let eventGeneracion = null;
-                        
-                        // Inferir generación del nombre (SOLO Gen 12 y eventos con número)
-                        if (/generaci[oó]n\s*(\d+)/i.test(eventName) || /(\d+)g\s/i.test(eventName)) {
-                            const match = eventName.match(/generaci[oó]n\s*(\d+)/i) || eventName.match(/(\d+)g\s/i);
-                            const num = match[1];
-                            eventGeneracion = `Generación ${num}`;
-                        }
-                        else {
-                            eventGeneracion = eventName;
-                        }
-                        
+                        const eventGeneracion = detectGeneration(eventName, event.date) || eventName;
                         shouldLoadThisEvent = (eventGeneracion === generacion);
                     }
 
@@ -1235,6 +1313,31 @@
                 // Info de artistas cargados (sin alerta de conteo hardcodeado)
                 if (artistasUnicos.length === 0) {
                     console.warn(`⚠️ No se cargaron artistas para "${generacion}"`);
+                    // Intentar recuperar artistas guardados en Firebase
+                    if (!merge) {
+                        try {
+                            const genKey = generacion.replace(/[^a-zA-Z0-9]/g, '_');
+                            const fbSnap = await getDoc(doc(db, 'organizador_estado', genKey));
+                            if (fbSnap.exists() && (fbSnap.data().artists || []).length > 0) {
+                                const saved = fbSnap.data().artists;
+                                allArtists = [...allArtists, ...saved];
+                                if (!loadedGenerations.includes(generacion)) loadedGenerations.push(generacion);
+                                console.log(`✅ ${saved.length} artistas recuperados desde Firebase (sin eventos cargados)`);
+                                showToast(`✅ ${saved.length} artistas cargados desde copia guardada`, '☁️');
+                                if (!merge) {
+                                    localStorage.removeItem(AVG_CACHE_KEY);
+                                    await loadSavedState();
+                                    document.getElementById('loadingState').classList.add('hidden');
+                                    document.getElementById('board').classList.remove('hidden');
+                                }
+                                renderBoard();
+                                updateLoadedGenerationsDisplay();
+                                saveState(false, true);
+                                document.getElementById('statsLabel').textContent = `${allArtists.length} artistas`;
+                                return;
+                            }
+                        } catch(e) { console.warn('No se pudo recuperar artistas de Firebase:', e); }
+                    }
                     showToast(`⚠️ No se encontraron artistas para "${generacion}"`, '⚠️');
                 } else {
                     console.log(`✅ ${artistasUnicos.length} artistas únicos cargados para "${generacion}"`);
@@ -1257,11 +1360,21 @@
                 renderBoard();
                 updateLoadedGenerationsDisplay();
                 // localOnly=!merge: en carga inicial (merge=false) NO sobreescribir Firebase.
-                // Así el estado guardado desde PC queda intacto cuando abre el celular.
-                // En merge=true (agregar segunda generación) sí va a Firebase porque hay artistas nuevos.
                 saveState(false, !merge);
                 document.getElementById('statsLabel').textContent = `${allArtists.length} artistas`;
-                
+
+                // AUTO-FIX: si el tablero queda vacío pero hay galas reales, reconstruir desde Firebase
+                if (!merge) {
+                    const asignados = allArtists.filter(a => columnAssignments[a.id]).length;
+                    const galasReales = columns.filter(c => c.eventId).length;
+                    if (asignados === 0 && galasReales > 0 && allArtists.length > 0) {
+                        console.warn(`🔧 Auto-fix: tablero vacío (${allArtists.length} artistas, ${galasReales} galas). Reconstruyendo...`);
+                        showToast('Reconstruyendo tablero desde la nube...', '🔄');
+                        await sincronizarSilente(true);
+                    }
+                }
+
+
                 // Mensaje detallado
                 if (merge) {
                     let msg = `${artistasUnicos.length} artistas de "${generacion}" agregados`;
@@ -1304,17 +1417,18 @@
         async function guardarEnFirebase() {
             if (loadedGenerations.length === 0) return;
             const genKey = loadedGenerations[0].replace(/[^a-zA-Z0-9]/g, '_');
-            // artistNameMap: mapa nombre-normalizado → ID actual, para remap cross-dispositivo
             const artistNameMap = {};
             allArtists.forEach(a => { artistNameMap[normalizeName(a.name)] = a.id; });
+            // Guardar artistas (solo los campos necesarios, sin _allScores pesados)
+            const artistsSnapshot = allArtists.map(a => ({
+                id: a.id, name: a.name, photoURL: a.photoURL || null,
+                eventId: a.eventId || null, eventIds: a.eventIds || [],
+                galas: a.galas || 0, avg: a.avg || null, hasVotes: a.hasVotes || false
+            }));
             await setDoc(doc(db, 'organizador_estado', genKey), {
-                columns,
-                columnAssignments,
-                columnOrder,
-                columnMulti,
-                artistStatus,
-                loadedGenerations,
-                artistNameMap,
+                columns, columnAssignments, columnOrder, columnMulti,
+                artistStatus, loadedGenerations, artistNameMap,
+                artists: artistsSnapshot,
                 updatedAt: new Date().toISOString()
             });
         }
@@ -1378,50 +1492,109 @@
         async function loadSavedState() {
             const artistIds = new Set(allArtists.map(a => a.id));
 
+            // Mapa nombre normalizado → ID actual (para remap cross-dispositivo)
+            const nameToCurrentId = {};
+            allArtists.forEach(a => { nameToCurrentId[normalizeName(a.name)] = a.id; });
+
+            // Remapea un diccionario { oldId → value } al ID actual, usando artistNameMap como guía
+            function remapDict(dict, savedNameMap) {
+                const inverted = {}; // savedId → normalizedName
+                if (savedNameMap) {
+                    Object.entries(savedNameMap).forEach(([nm, sid]) => { inverted[sid] = nm; });
+                }
+                const result = {};
+                Object.entries(dict || {}).forEach(([savedId, value]) => {
+                    if (artistIds.has(savedId)) {
+                        result[savedId] = value; // coincidencia directa
+                    } else {
+                        // Buscar por nombre guardado en artistNameMap
+                        let nm = inverted[savedId];
+                        if (!nm) {
+                            // Fallback: extraer nombre del formato artist_nombre_apellido
+                            nm = normalizeName(savedId.replace(/^artist_/, '').replace(/_/g, ' '));
+                        }
+                        const curr = nameToCurrentId[nm];
+                        if (curr) result[curr] = value;
+                    }
+                });
+                return result;
+            }
+
+            // Aplica un estado guardado al tablero, remapeando IDs si es necesario
+            function applyState(state) {
+                const savedMap = state.artistNameMap || null;
+                
+                // ⭐ FILTRAR columnas: solo las de galas seleccionadas (si hay selección explícita)
+                const selectedEventIds = window._selectedEventIds || null;
+                const allColumns = state.columns || [];
+                
+                if (selectedEventIds && selectedEventIds.length > 0) {
+                    // Solo mantener columnas de galas seleccionadas
+                    columns = allColumns.filter(col => selectedEventIds.includes(col.eventId));
+                    console.log(`🎯 Filtrado: ${columns.length}/${allColumns.length} columnas (solo galas seleccionadas)`);
+                } else {
+                    // Sin selección explícita, cargar todas
+                    columns = allColumns;
+                }
+                
+                artistStatus  = state.artistStatus || {};
+                columnAssignments = remapDict(state.columnAssignments, savedMap);
+                // columnMulti: { savedId → [colId, ...] }
+                columnMulti = {};
+                Object.entries(state.columnMulti || {}).forEach(([savedId, colIds]) => {
+                    const remapped = remapDict({ [savedId]: colIds }, savedMap);
+                    Object.assign(columnMulti, remapped);
+                });
+                // Reconstruir columnOrder con los IDs actuales
+                columnOrder = {};
+                Object.entries(state.columnOrder || {}).forEach(([colId, savedIds]) => {
+                    columnOrder[colId] = (savedIds || [])
+                        .map(sid => {
+                            if (artistIds.has(sid)) return sid;
+                            const remapped = remapDict({ [sid]: true }, savedMap);
+                            return Object.keys(remapped)[0] || null;
+                        })
+                        .filter(Boolean);
+                });
+                
+                // ⭐ LIMPIAR asignaciones de columnas que no están en la selección
+                if (selectedEventIds && selectedEventIds.length > 0) {
+                    const validColIds = new Set(columns.map(c => c.id));
+                    // Filtrar columnAssignments
+                    Object.keys(columnAssignments).forEach(artistId => {
+                        if (!validColIds.has(columnAssignments[artistId])) {
+                            delete columnAssignments[artistId];
+                        }
+                    });
+                    // Filtrar columnMulti
+                    Object.keys(columnMulti).forEach(artistId => {
+                        columnMulti[artistId] = (columnMulti[artistId] || []).filter(colId => validColIds.has(colId));
+                        if (columnMulti[artistId].length === 0) delete columnMulti[artistId];
+                    });
+                    // Filtrar columnOrder
+                    Object.keys(columnOrder).forEach(colId => {
+                        if (!validColIds.has(colId)) delete columnOrder[colId];
+                    });
+                    console.log(`🧹 Limpieza: asignaciones filtradas para columnas seleccionadas`);
+                }
+                
+                const nA = Object.keys(columnAssignments).length;
+                const nM = Object.keys(columnMulti).length;
+                console.log(`✅ Estado aplicado: ${nA} asignaciones primarias, ${nM} multi-gala, ${columns.length} columnas`);
+                if (nA > 0) {
+                    const sampleKeys = Object.keys(columnAssignments).slice(0, 2);
+                    sampleKeys.forEach(k => console.log(`   ✔ ${k} → ${columnAssignments[k]}`));
+                } else {
+                    console.warn(`⚠️ applyState: columnAssignments quedó VACÍO. savedMap=${!!savedMap}, savedIds=${Object.keys(state.columnAssignments||{}).slice(0,3).join(',')}`);
+                }
+            }
+
             function checkCompatibility(state) {
                 const savedIds = Object.keys(state.columnAssignments || {});
                 if (savedIds.length === 0) return { ok: true, matches: 0, total: 0 };
                 const matches = savedIds.filter(id => artistIds.has(id)).length;
-                return { ok: matches >= savedIds.length * 0.4, matches, total: savedIds.length };
-            }
-
-            // Migra IDs viejos a nuevos cuando los artistas tuvieron cambios de nombre
-            // Ej: artist_marcelo → artist_marcelo_machuca
-            function migrateOldAssignments() {
-                const unmatched = Object.keys(columnAssignments).filter(id => !artistIds.has(id));
-                if (unmatched.length === 0) return 0;
-                let count = 0;
-                for (const oldId of unmatched) {
-                    // Extraer nombre del ID: artist_marcelo_machuca → "marcelo machuca"
-                    const nameFrag = normalizeName(
-                        oldId.replace(/^artist_/, '').replace(/_/g, ' ')
-                    );
-                    const words = nameFrag.split(' ').filter(w => w.length > 0);
-                    if (words.length === 0) continue;
-                    // Buscar artista cuyo primer nombre coincida con el del ID viejo
-                    const match = allArtists.find(a => {
-                        if (columnAssignments[a.id]) return false; // ya tiene columna
-                        const curr = normalizeName(a.name).split(' ').filter(w => w.length > 0);
-                        if (curr[0] !== words[0]) return false; // primer nombre obligatorio
-                        // Si el ID viejo tenía una sola palabra, alcanza con primer nombre
-                        if (words.length === 1) return true;
-                        // Si tenía más palabras, alguna más debe coincidir
-                        return words.slice(1).some(w => curr.includes(w));
-                    });
-                    if (match) {
-                        const colId = columnAssignments[oldId];
-                        columnAssignments[match.id] = colId;
-                        delete columnAssignments[oldId];
-                        // Actualizar columnOrder con el nuevo ID
-                        for (const order of Object.values(columnOrder)) {
-                            const idx = (order || []).indexOf(oldId);
-                            if (idx !== -1) order[idx] = match.id;
-                        }
-                        count++;
-                        console.log(`🔄 ID migrado: ${oldId} → ${match.id}`);
-                    }
-                }
-                return count;
+                // Umbral bajo: con cualquier coincidencia intentamos restaurar (el remap maneja el resto)
+                return { ok: matches > 0 || savedIds.length < 5, matches, total: savedIds.length };
             }
 
             // 1. Intentar restaurar desde Firebase primero
@@ -1431,56 +1604,22 @@
                     const snap = await getDoc(doc(db, 'organizador_estado', genKey));
                     if (snap.exists()) {
                         const state = snap.data();
-                        const compat = checkCompatibility(state);
-                        if (compat.ok && (state.columns || []).length > 0) {
-                            columns = state.columns || [];
-                            artistStatus = state.artistStatus || {};
-                            columnAssignments = state.columnAssignments || {};
-                            columnOrder = state.columnOrder || {};
-                            columnMulti = state.columnMulti || {};
-                            // Migrar IDs viejos si los artistas tuvieron cambio de nombre
-                            const migrated = migrateOldAssignments();
-                            if (migrated > 0) {
-                                console.log(`✅ ${migrated} artistas remapeados por cambio de nombre`);
-                                saveState(false, false); // persistir nuevos IDs a Firebase
-                            }
-                            console.log(`✅ Estado restaurado desde Firebase ☁️ (${compat.matches + migrated}/${compat.total} asignaciones válidas)`);
-                            return;
-                        } else if ((state.columns || []).length > 0) {
-                            // Columnas OK, asignaciones incompatibles → intentar remap por nombre
-                            columns = state.columns;
-                            artistStatus = state.artistStatus || {};
-                            columnOrder = state.columnOrder || {};
-                            if (state.artistNameMap && Object.keys(state.artistNameMap).length > 0) {
-                                // Remap: normalizedName → ID actual del dispositivo
-                                const nameToCurrentId = {};
-                                allArtists.forEach(a => { nameToCurrentId[normalizeName(a.name)] = a.id; });
-                                const invertedSaved = {}; // savedId → normalizedName
-                                Object.entries(state.artistNameMap).forEach(([nm, sid]) => { invertedSaved[sid] = nm; });
-                                const newAssignments = {};
-                                Object.entries(state.columnAssignments || {}).forEach(([savedId, colId]) => {
-                                    const nm = invertedSaved[savedId];
-                                    const curr = nm ? nameToCurrentId[nm] : (artistIds.has(savedId) ? savedId : null);
-                                    if (curr) newAssignments[curr] = colId;
-                                });
-                                const newMulti = {};
-                                Object.entries(state.columnMulti || {}).forEach(([savedId, colIds]) => {
-                                    const nm = invertedSaved[savedId];
-                                    const curr = nm ? nameToCurrentId[nm] : (artistIds.has(savedId) ? savedId : null);
-                                    if (curr) newMulti[curr] = colIds;
-                                });
-                                columnAssignments = newAssignments;
-                                columnMulti = newMulti;
-                                const remapped = Object.keys(newAssignments).length;
-                                console.log(`🔄 Firebase: ${remapped} artistas remapeados por nombre ☁️`);
-                                saveState(false, false); // persistir IDs remapeados
-                            } else {
+                        console.log(`☁️ Firebase state: cols=${(state.columns||[]).length} asig=${Object.keys(state.columnAssignments||{}).length} multi=${Object.keys(state.columnMulti||{}).length} nameMap=${Object.keys(state.artistNameMap||{}).length} updatedAt=${state.updatedAt||'?'}`);
+                        if ((state.columns || []).length > 0) {
+                            applyState(state);
+                            // Fallback: si columnAssignments quedó vacío pero hay artistas y columnas → reconstruir
+                            if (Object.keys(columnAssignments).length === 0 && allArtists.length > 0 && columns.length > 0) {
+                                console.warn(`⚠️ columnAssignments vacío tras applyState (${allArtists.length} artistas, ${columns.length} cols) → reconstruyendo desde eventIds...`);
                                 reconstruirAsignaciones(columns);
-                                console.log('🔧 Firebase: columnas restauradas, asignaciones reconstruidas por gala');
+                            }
+                            const compat = checkCompatibility(state);
+                            console.log(`✅ Estado restaurado desde Firebase ☁️ (${compat.matches}/${compat.total} IDs directos)`);
+                            if (compat.matches < compat.total) {
+                                saveState(false, false); // persistir IDs remapeados
                             }
                             return;
                         } else {
-                            console.warn(`⚠️ Firebase: sin columnas guardadas (${compat.matches}/${compat.total}). Probando localStorage...`);
+                            console.warn('⚠️ Firebase: sin columnas guardadas. Probando localStorage...');
                         }
                     }
                 } catch(e) {
@@ -1493,26 +1632,10 @@
                 if (raw) {
                     try {
                         const state = JSON.parse(raw);
-                        const compat = checkCompatibility(state);
-                        if (compat.ok) {
-                            columns = state.columns || [];
-                            artistStatus = state.artistStatus || {};
-                            columnAssignments = state.columnAssignments || {};
-                            columnOrder = state.columnOrder || {};
-                            columnMulti = state.columnMulti || {};
-                            const migrated = migrateOldAssignments();
-                            if (migrated > 0) saveState(false, false);
+                        if ((state.columns || []).length > 0) {
+                            applyState(state);
                             console.log('✅ Estado restaurado desde localStorage');
                             return;
-                        } else if ((state.columns || []).length > 0) {
-                            // Columnas OK, asignaciones incompatibles → reconstruir
-                            columns = state.columns;
-                            artistStatus = state.artistStatus || {};
-                            reconstruirAsignaciones(columns);
-                            console.log('🔧 localStorage: columnas restauradas, asignaciones reconstruidas por gala');
-                            return;
-                        } else {
-                            console.warn('⚠️ localStorage: IDs incompatibles y sin columnas. Auto-organizando...');
                         }
                     } catch (_) {}
                 }
@@ -1528,14 +1651,21 @@
             const colorList = ['purple','blue','green','yellow','teal','pink','orange','red'];
             let colorIdx = 0;
 
+            // ⭐ FILTRAR: Solo crear columnas para galas seleccionadas (si hay selección explícita)
+            const selectedEventIds = window._selectedEventIds || null;
+            
             // Agrupar artistas por eventId (su gala original)
             const eventGroups = new Map(); // eventId → [artist, ...]
             allArtists.forEach(a => {
+                // Si hay selección explícita, SOLO incluir artistas de esas galas
+                if (selectedEventIds && !selectedEventIds.includes(a.eventId)) {
+                    return; // Skip artistas de galas no seleccionadas
+                }
                 if (!eventGroups.has(a.eventId)) eventGroups.set(a.eventId, []);
                 eventGroups.get(a.eventId).push(a);
             });
 
-            // Crear una columna por cada gala y asignar artistas
+            // Crear una columna por cada gala (solo las seleccionadas) y asignar artistas
             eventGroups.forEach((artists, eventId) => {
                 const eventInfo = allEvents.find(e => e.id === eventId);
                 const colName = eventInfo?.name || eventId;
@@ -1559,7 +1689,8 @@
             });
 
             console.log(`✅ Auto-organizado: ${columns.length} columnas, ${Object.keys(columnAssignments).length} artistas asignados`);
-            showToast(`✅ ${columns.length} galas cargadas automáticamente. Organizá y luego Guardá.`, '🎭');
+            const msgGalas = selectedEventIds ? `${columns.length} galas seleccionadas` : `${columns.length} galas`;
+            showToast(`✅ ${msgGalas} cargadas automáticamente. Organizá y luego Guardá.`, '🎭');
         }
 
         // ═══════════════════════════════════════════
@@ -2401,11 +2532,69 @@
         };
 
         // ══════════════════════════════════════════════════════════
+        window.fixEmptyBoard = async function() {
+            document.getElementById('emptyBoardBanner').classList.add('hidden');
+            showToast('Reconstruyendo tablero desde Firebase...', '🔄');
+            // silent=false → reconstruye Y guarda en Firebase
+            await sincronizarSilente(false);
+        };
+
+        // RECUPERAR GALAS VACIAS: para columnas que tienen eventId pero 0 artistas
+        // Lee events/{eventId}/artists y asigna los artistas encontrados
+        window.recuperarGalasVacias = async function() {
+            const colasVacias = columns.filter(c => {
+                if (!c.eventId) return false;
+                const n = allArtists.filter(a =>
+                    columnAssignments[a.id] === c.id ||
+                    (columnMulti[a.id]||[]).includes(c.id)
+                ).length;
+                return n === 0;
+            });
+            if (colasVacias.length === 0) { showToast('No hay galas vacías con eventos vinculados', 'ℹ️'); return; }
+
+            showToast(`Recuperando ${colasVacias.length} galas vacías...`, '🔄');
+            let recovered = 0;
+            for (const col of colasVacias) {
+                try {
+                    const snap = await getDocs(collection(db, `events/${col.eventId}/artists`));
+                    for (const artDoc of snap.docs) {
+                        const fbName = (artDoc.data().name || '').trim();
+                        const match = allArtists.find(a => fuzzyNameMatch(a.name, fbName));
+                        if (!match) continue;
+                        if (!columnAssignments[match.id]) {
+                            columnAssignments[match.id] = col.id;
+                            if (!columnOrder[col.id]) columnOrder[col.id] = [];
+                            if (!columnOrder[col.id].includes(match.id)) columnOrder[col.id].push(match.id);
+                        } else {
+                            if (!columnMulti[match.id]) columnMulti[match.id] = [];
+                            if (!columnMulti[match.id].includes(col.id)) {
+                                columnMulti[match.id].push(col.id);
+                            }
+                        }
+                        recovered++;
+                    }
+                } catch(e) { console.warn(`Error recuperando ${col.name}:`, e); }
+            }
+            saveState(true, false);
+            renderBoard();
+            showToast(`✅ ${recovered} artistas recuperados en ${colasVacias.length} galas`, '✅');
+        };
+
         function renderBoard() {
             renderPool();
             renderColumns();
             // Contar artistas asignados a columnas (primary + multi)
             const enColumnas = allArtists.filter(a => columnAssignments[a.id] || columnMulti[a.id]?.length > 0).length;
+            // Mostrar banner si hay galas y artistas pero ninguno asignado
+            const banner = document.getElementById('emptyBoardBanner');
+            if (banner) {
+                const galasReales = columns.filter(c => c.eventId).length;
+                if (enColumnas === 0 && galasReales > 0 && allArtists.length > 0) {
+                    banner.classList.remove('hidden');
+                } else {
+                    banner.classList.add('hidden');
+                }
+            }
             const statsEl = document.getElementById('statsLabel');
             // Contar artistas únicos por gala real
             const perGala = columns
@@ -2936,65 +3125,97 @@
                 return;
             }
 
-            let texto = `📋 GRUPOS - VYTMUSIC\n`;
-            texto += `Generaciones: ${loadedGenerations.join(', ')}\n`;
-            texto += `═══════════════════════════════════\n\n`;
+            // Mostrar modal de selección de galas
+            const existing = document.getElementById('exportModal');
+            if (existing) existing.remove();
 
-            columns.forEach((col, idx) => {
-                // Obtener artistas de este grupo
-                const artistasGrupo = allArtists.filter(a => columnAssignments[a.id] === col.id);
-                
-                texto += `📁 ${col.name.toUpperCase()}\n`;
-                texto += `${'─'.repeat(40)}\n`;
-                
-                if (artistasGrupo.length === 0) {
-                    texto += `   (Sin artistas asignados)\n`;
-                } else {
-                    artistasGrupo.forEach(artist => {
-                        const estado = artistStatus[artist.id];
-                        let emoji = '🎤';
-                        if (estado === 'ausente') emoji = '❌';
-                        else if (estado === 'noprog') emoji = '⏸️';
-                        
-                        texto += `   ${emoji} ${artist.name}`;
-                        if (artist.galas > 0) texto += ` (${artist.galas} ${artist.galas === 1 ? 'gala' : 'galas'})`;
-                        if (artist.avg) texto += ` - Prom: ${artist.avg}`;
+            const modal = document.createElement('div');
+            modal.id = 'exportModal';
+            modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:99999;display:flex;align-items:center;justify-content:center;padding:16px;overflow:auto;';
+
+            const colsHtml = columns.map(col => {
+                const n = allArtists.filter(a => columnAssignments[a.id] === col.id || (columnMulti[a.id]||[]).includes(col.id)).length;
+                return `<label style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:#1f2937;border-radius:10px;cursor:pointer;">
+                    <input type="checkbox" value="${col.id}" checked style="width:18px;height:18px;accent-color:#7c3aed;">
+                    <span style="color:white;font-size:14px;">${col.name}</span>
+                    <span style="color:#9ca3af;font-size:12px;margin-left:auto">${n} artistas</span>
+                </label>`;
+            }).join('');
+
+            modal.innerHTML = `
+                <div style="background:#111827;border-radius:16px;padding:20px;max-width:400px;width:100%;">
+                    <p style="color:white;font-size:16px;font-weight:bold;margin-bottom:4px;">📋 Descargar grupos</p>
+                    <p style="color:#9ca3af;font-size:12px;margin-bottom:14px;">Elegí qué galas incluir:</p>
+                    <div style="display:flex;flex-direction:column;gap:8px;max-height:320px;overflow-y:auto;">${colsHtml}</div>
+                    <div style="display:flex;gap:8px;margin-top:16px;">
+                        <button onclick="document.getElementById('exportModal').remove()" style="flex:1;background:#374151;border:none;color:white;border-radius:8px;padding:10px;font-size:14px;cursor:pointer;">Cancelar</button>
+                        <button id="exportConfirmBtn" style="flex:2;background:#2563eb;border:none;color:white;border-radius:8px;padding:10px;font-size:14px;font-weight:bold;cursor:pointer;">📋 Copiar / Descargar</button>
+                    </div>
+                </div>`;
+            document.body.appendChild(modal);
+
+            modal.querySelector('#exportConfirmBtn').onclick = function() {
+                const checked = [...modal.querySelectorAll('input[type=checkbox]:checked')].map(cb => cb.value);
+                if (checked.length === 0) { showToast('Seleccioná al menos una gala', '⚠️'); return; }
+                modal.remove();
+
+                const selectedCols = columns.filter(c => checked.includes(c.id));
+                let texto = `📋 GRUPOS - VYTMUSIC\n`;
+                texto += `Generaciones: ${loadedGenerations.join(', ')}\n`;
+                texto += `Galas incluidas: ${selectedCols.map(c=>c.name).join(', ')}\n`;
+                texto += `═══════════════════════════════════\n\n`;
+
+                selectedCols.forEach(col => {
+                    const artistasGrupo = allArtists.filter(a =>
+                        columnAssignments[a.id] === col.id ||
+                        (columnMulti[a.id]||[]).includes(col.id)
+                    );
+                    texto += `📁 ${col.name.toUpperCase()}\n`;
+                    texto += `${'─'.repeat(40)}\n`;
+                    if (artistasGrupo.length === 0) {
+                        texto += `   (Sin artistas asignados)\n`;
+                    } else {
+                        artistasGrupo.forEach(artist => {
+                            const estado = artistStatus[artist.id];
+                            let emoji = '🎤';
+                            if (estado === 'ausente') emoji = '❌';
+                            else if (estado === 'noprog') emoji = '⏸️';
+                            texto += `   ${emoji} ${artist.name}`;
+                            if (artist.galas > 0) texto += ` (${artist.galas} ${artist.galas === 1 ? 'gala' : 'galas'})`;
+                            if (artist.avg) texto += ` - Prom: ${artist.avg}`;
+                            texto += `\n`;
+                        });
+                    }
+                    texto += `\n`;
+                });
+
+                const sinAsignar = allArtists.filter(a => !columnAssignments[a.id] && !(columnMulti[a.id]?.length > 0));
+                if (sinAsignar.length > 0) {
+                    texto += `📦 SIN ASIGNAR (${sinAsignar.length})\n`;
+                    texto += `${'─'.repeat(40)}\n`;
+                    sinAsignar.forEach(a => {
+                        texto += `   🎤 ${a.name}`;
+                        if (a.galas > 0) texto += ` (${a.galas} ${a.galas === 1 ? 'gala' : 'galas'})`;
                         texto += `\n`;
                     });
                 }
-                texto += `\n`;
-            });
+                texto += `\n═══════════════════════════════════\n`;
+                texto += `📅 Generado: ${new Date().toLocaleString('es-ES')}\n`;
+                texto += `🎵 VYTMUSIC - Sistema de Gestión\n`;
 
-            // Artistas sin asignar
-            const sinAsignar = allArtists.filter(a => !columnAssignments[a.id]);
-            if (sinAsignar.length > 0) {
-                texto += `📦 SIN ASIGNAR (${sinAsignar.length})\n`;
-                texto += `${'─'.repeat(40)}\n`;
-                sinAsignar.forEach(a => {
-                    texto += `   🎤 ${a.name}`;
-                    if (a.galas > 0) texto += ` (${a.galas} ${a.galas === 1 ? 'gala' : 'galas'})`;
-                    texto += `\n`;
+                navigator.clipboard.writeText(texto).then(() => {
+                    showToast('✅ Copiado al portapapeles', '📋');
+                }).catch(() => {
+                    const blob = new Blob([texto], { type: 'text/plain;charset=utf-8' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `grupos_vytmusic_${new Date().toISOString().split('T')[0]}.txt`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                    showToast('📥 Archivo descargado', '💾');
                 });
-            }
-
-            texto += `\n═══════════════════════════════════\n`;
-            texto += `📅 Generado: ${new Date().toLocaleString('es-ES')}\n`;
-            texto += `🎵 VYTMUSIC - Sistema de Gestión\n`;
-
-            // Copiar al portapapeles
-            navigator.clipboard.writeText(texto).then(() => {
-                showToast('✅ Grupos copiados al portapapeles', '📋');
-            }).catch(err => {
-                // Fallback: descargar como archivo
-                const blob = new Blob([texto], { type: 'text/plain;charset=utf-8' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `grupos_vytmusic_${new Date().toISOString().split('T')[0]}.txt`;
-                a.click();
-                URL.revokeObjectURL(url);
-                showToast('📥 Archivo descargado', '💾');
-            });
+            };
         };
 
         window.selectColor = function(color) {
@@ -3137,7 +3358,7 @@
 
         window.bienvenidaNuevo = function() {
             document.getElementById('modalBienvenida').classList.add('hidden');
-            showGen13Modal();
+            showToast('Elegí una generación arriba (Generación 12, 13, 14...) y tocá "Agregar"', 'ℹ️');
         };
 
         window.cargarDesdeGuardadoBienvenida = async function(id) {
@@ -3259,9 +3480,86 @@
         };
 
         // ── HISTORIAL DE ARTISTAS ──────────────────────────────────────
-        // DIAGNÓSTICO DE PROMEDIOS — vuelca en consola qué hay en Firestore
+        // DIAGNÓSTICO ON-SCREEN — muestra estado en modal visible en celu
         window.diagnosticoPromedios = async function() {
-            showToast('Ejecutando diagnóstico... abrí la consola (F12)', '🔍');
+            showToast('Ejecutando diagnóstico...', '🔍');
+
+            // Leer estado de Firebase
+            let fbInfo = '(sin cargar)';
+            try {
+                if (loadedGenerations.length > 0) {
+                    const genKey = loadedGenerations[0].replace(/[^a-zA-Z0-9]/g, '_');
+                    const snap = await getDoc(doc(db, 'organizador_estado', genKey));
+                    if (snap.exists()) {
+                        const s = snap.data();
+                        fbInfo = `cols=${Object.keys(s.columns||[]).length} asig=${Object.keys(s.columnAssignments||{}).length} multi=${Object.keys(s.columnMulti||{}).length} nameMap=${Object.keys(s.artistNameMap||{}).length}\nupdatedAt: ${s.updatedAt||'?'}`;
+                        // Mostrar las primeras 3 keys de columnAssignments para comparar
+                        const fbKeys = Object.keys(s.columnAssignments||{}).slice(0,4);
+                        fbInfo += `\nPrimeras keys: ${fbKeys.join(', ')||'(ninguna)'}`;
+                    } else { fbInfo = 'DOCUMENTO NO EXISTE en Firebase'; }
+                }
+            } catch(e) { fbInfo = 'Error: ' + e.message; }
+
+            // Estado actual en memoria
+            const memKeys = Object.keys(columnAssignments).slice(0,4);
+            const artKeys = allArtists.slice(0,4).map(a => a.id);
+            const colInfo = columns.map(c => {
+                const n = allArtists.filter(a => columnAssignments[a.id] === c.id || (columnMulti[a.id]||[]).includes(c.id)).length;
+                return `${c.name}: ${n} artistas | eventId: ${c.eventId||'(ninguno)'}`;
+            }).join('\n  ');
+
+            // Leer cuántos artistas hay en Firebase events para las galas vacías
+            let fbEventsInfo = '';
+            for (const col of columns) {
+                if (!col.eventId) continue;
+                const nAsig = allArtists.filter(a => columnAssignments[a.id] === col.id || (columnMulti[a.id]||[]).includes(col.id)).length;
+                if (nAsig === 0) {
+                    try {
+                        const snap = await getDocs(collection(db, `events/${col.eventId}/artists`));
+                        fbEventsInfo += `\n  ${col.name}: ${snap.size} en Firebase events`;
+                        if (snap.size > 0) {
+                            snap.docs.slice(0,3).forEach(d => { fbEventsInfo += `\n    → ${d.data().name}`; });
+                        }
+                    } catch(e) { fbEventsInfo += `\n  ${col.name}: error`; }
+                }
+            }
+
+            const msg = [
+                `📱 DIAGNÓSTICO ESTADO`,
+                `─────────────────────`,
+                `allArtists: ${allArtists.length}`,
+                `columnAssignments: ${Object.keys(columnAssignments).length}`,
+                `columnMulti: ${Object.keys(columnMulti).length}`,
+                `columns: ${columns.length}`,
+                `loadedGenerations: ${loadedGenerations.join(', ')||'(ninguna)'}`,
+                ``,
+                `Por columna (memoria + eventId):`,
+                `  ${colInfo||'(sin columnas)'}`,
+                ``,
+                `Galas vacías → en Firebase events:`,
+                `  ${fbEventsInfo||'(todas tienen artistas o sin eventId)'}`,
+                ``,
+                `☁️ FIREBASE estado guardado:`,
+                `  ${fbInfo}`,
+            ].join('\n');
+
+            // Mostrar en modal on-screen (visible sin F12)
+            const existing = document.getElementById('diagModal');
+            if (existing) existing.remove();
+            const modal = document.createElement('div');
+            modal.id = 'diagModal';
+            modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:99999;overflow:auto;padding:16px;';
+            modal.innerHTML = `
+                <div style="background:#1e1e2e;border-radius:12px;padding:16px;max-width:600px;margin:0 auto;font-family:monospace;font-size:12px;color:#e2e8f0;white-space:pre-wrap;word-break:break-all;">
+                    <button onclick="document.getElementById('diagModal').remove()" style="float:right;background:#ef4444;color:white;border:none;border-radius:6px;padding:4px 10px;font-size:13px;cursor:pointer;">✕ Cerrar</button>
+                    <div style="margin-bottom:8px;font-size:14px;font-weight:bold;color:#a78bfa;">🔬 Diagnóstico Estado</div>
+                    ${msg.replace(/\n/g,'<br>')}
+                    <hr style="border-color:#444;margin:12px 0">
+                    <button onclick="navigator.clipboard && navigator.clipboard.writeText(${JSON.stringify(msg)}).then(()=>showToast('Copiado','✅'))" style="background:#7c3aed;color:white;border:none;border-radius:6px;padding:6px 12px;font-size:12px;cursor:pointer;">📋 Copiar texto</button>
+                </div>`;
+            document.body.appendChild(modal);
+
+            // También loguear en consola
             console.group('🔬 DIAGNÓSTICO PROMEDIOS');
 
             // 1. Estado actual en memoria
@@ -3308,12 +3606,13 @@
 
         // SINCRONIZAR TABLERO DESDE FIREBASE EVENTS
         // Lee directo de events/{id}/artists y reconstruye quién está en cada gala
-        window.sincronizarDesdeGalas = async function() {
-            if (!confirm('¿Reconstruir el tablero leyendo las asignaciones desde Firebase?\nEsto reemplaza los grupos actuales.')) return;
+        // silent=true → no pide confirmación, no muestra toast al terminar (para auto-fix)
+        async function sincronizarSilente(silent = false) {
             const btn = document.querySelector('[onclick="window.sincronizarDesdeGalas()"]');
             if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; }
             try {
                 const newAssignments = {};
+                const newMulti = {};
                 const newOrder = {};
                 for (const col of columns) {
                     if (!col.eventId) continue;
@@ -3324,8 +3623,17 @@
                             const fbName = (artDoc.data().name || '').trim();
                             const match = allArtists.find(a => fuzzyNameMatch(a.name, fbName));
                             if (match) {
-                                newAssignments[match.id] = col.id;
-                                newOrder[col.id].push(match.id);
+                                if (!newAssignments[match.id]) {
+                                    // Primera gala de este artista → asignación primaria
+                                    newAssignments[match.id] = col.id;
+                                    newOrder[col.id].push(match.id);
+                                } else {
+                                    // Ya tiene gala primaria → gala adicional (columnMulti)
+                                    if (!newMulti[match.id]) newMulti[match.id] = [];
+                                    if (!newMulti[match.id].includes(col.id)) {
+                                        newMulti[match.id].push(col.id);
+                                    }
+                                }
                             } else {
                                 console.warn(`⚠️ Sin match en memoria: "${fbName}"`);
                             }
@@ -3333,15 +3641,55 @@
                     } catch(e) { console.warn(`Error leyendo ${col.name}:`, e); }
                 }
                 columnAssignments = newAssignments;
+                columnMulti = newMulti;
                 columnOrder = newOrder;
-                saveState(true, false);
+                const total = Object.keys(newAssignments).length;
+                const multi = Object.keys(newMulti).length;
+                console.log(`✅ Sincronizado: ${total} artistas primarios, ${multi} con multi-gala`);
+                // silent=true (auto-fix) → NO sobreescribir Firebase, solo actualizar memoria y render
+                // silent=false (manual) → guardar en Firebase
+                if (!silent) {
+                    saveState(true, false); // showConfirm=true para ver toast
+                } else {
+                    saveState(false, true); // localOnly=true, no tocar Firebase
+                }
                 renderBoard();
-                showToast(`✅ Sincronizado: ${Object.keys(newAssignments).length} artistas`, '🔄');
+                if (!silent) showToast(`✅ Sincronizado: ${total} artistas en ${columns.filter(c=>c.eventId).length} galas`, '🔄');
             } catch(e) {
                 showToast('Error: ' + e.message, '❌');
             } finally {
                 if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-sync-alt"></i> <span class="hidden sm:inline">Sincronizar</span>'; }
             }
+        }
+
+        window.sincronizarDesdeGalas = async function() {
+            // Usar modal custom en vez de confirm() (confirm() se bloquea en PWA mobile)
+            const realGalas = columns.filter(c => c.eventId);
+            if (realGalas.length === 0) {
+                showToast('No hay galas reales vinculadas', '⚠️');
+                return;
+            }
+            const modal = document.createElement('div');
+            modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:99999;display:flex;align-items:center;justify-content:center;padding:16px;';
+            modal.innerHTML = `
+                <div style="background:#1e1e2e;border-radius:16px;padding:24px;max-width:340px;width:100%;color:white;text-align:center;">
+                    <div style="font-size:32px;margin-bottom:12px">🔄</div>
+                    <p style="font-size:16px;font-weight:bold;margin-bottom:8px">Sincronizar tablero</p>
+                    <p style="font-size:13px;color:#9ca3af;margin-bottom:20px">
+                        Va a reconstruir las asignaciones leyendo directamente desde Firebase.<br>
+                        Las galas vinculadas (${realGalas.length}) serán procesadas.
+                    </p>
+                    <div style="display:flex;gap:10px;justify-content:center;">
+                        <button id="sincCancelar" style="flex:1;background:#374151;border:none;color:white;border-radius:8px;padding:10px;font-size:14px;cursor:pointer;">Cancelar</button>
+                        <button id="sincConfirmar" style="flex:1;background:#0891b2;border:none;color:white;border-radius:8px;padding:10px;font-size:14px;font-weight:bold;cursor:pointer;">Sincronizar</button>
+                    </div>
+                </div>`;
+            document.body.appendChild(modal);
+            modal.querySelector('#sincCancelar').onclick = () => modal.remove();
+            modal.querySelector('#sincConfirmar').onclick = async () => {
+                modal.remove();
+                await sincronizarSilente(false);
+            };
         };
 
         window.abrirHistorialArtistas = function() {
