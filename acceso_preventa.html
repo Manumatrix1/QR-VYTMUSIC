@@ -46,7 +46,7 @@
         .error-text { color: #94a3b8; font-size: 0.9rem; line-height: 1.6; }
         .retry-btn {
             margin-top: 1.5rem;
-            background: #3b82f6;
+            background: #d97706;
             color: white;
             border: none;
             padding: 0.75rem 2rem;
@@ -57,6 +57,29 @@
             width: 100%;
         }
         .retry-btn:active { opacity: 0.8; }
+
+        /* Selector de galas */
+        .selector-box { max-width: 420px; width: 100%; display: none; }
+        .selector-title { font-size: 1.4rem; font-weight: 900; color: #f59e0b; margin-bottom: 0.3rem; }
+        .selector-sub { color: #64748b; font-size: 0.85rem; margin-bottom: 1.5rem; }
+        .gala-btn {
+            display: block;
+            width: 100%;
+            background: #1e293b;
+            border: 2px solid #d97706;
+            border-radius: 1rem;
+            padding: 1rem 1.5rem;
+            color: #fff;
+            font-size: 1.05rem;
+            font-weight: 700;
+            cursor: pointer;
+            margin-bottom: 0.75rem;
+            transition: all 0.2s;
+            text-align: left;
+        }
+        .gala-btn:hover { background: #292210; border-color: #f59e0b; transform: translateY(-2px); }
+        .gala-btn .gala-emoji { margin-right: 0.5rem; font-size: 1.3rem; }
+        .gala-btn .gala-fecha { display: block; font-size: 0.78rem; color: #94a3b8; font-weight: 400; margin-top: 0.2rem; }
     </style>
 </head>
 <body>
@@ -67,6 +90,13 @@
         <div class="spinner"></div>
         <div class="msg">Conectando con la gala activa...</div>
         <div class="gala-name" id="gala-name"></div>
+    </div>
+
+    <div class="selector-box" id="selector-box">
+        <div class="logo">🎟️</div>
+        <div class="selector-title">¿Para qué concurso querés comprar?</div>
+        <div class="selector-sub">Hay más de una gala activa — seleccioná la que corresponde</div>
+        <div id="galas-list"></div>
     </div>
 
     <div class="error-box" id="error-box">
@@ -83,21 +113,50 @@
         import { db } from './firebase_config.js';
         import { collection, query, where, getDocs } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
 
+        function redirigir(eventId, data) {
+            const eventName = data.name || 'VYT MUSIC';
+            window.location.replace(
+                `preventa_artistas.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`
+            );
+        }
+
+        function mostrarSelector(docs) {
+            document.getElementById('loading-state').style.display = 'none';
+            document.getElementById('selector-box').style.display = 'block';
+            const list = document.getElementById('galas-list');
+            docs.forEach(doc => {
+                const data = doc.data();
+                const btn = document.createElement('button');
+                btn.className = 'gala-btn';
+                const fecha = data.fecha || data.date || '';
+                btn.innerHTML = `<span><span class="gala-emoji">🎟️</span>${data.name || doc.id}${fecha ? `<span class="gala-fecha">📅 ${fecha}</span>` : ''}</span>`;
+                btn.onclick = () => redirigir(doc.id, data);
+                list.appendChild(btn);
+            });
+        }
+
         async function entrar() {
             try {
                 const snap = await getDocs(query(collection(db, 'events'), where('isActive', '==', true)));
-                if (snap.empty) {
+                // Una gala cuya fecha ya pasó no debería seguir ofreciéndose para
+                // comprar entrada, aunque todavía figure como activa en el organizador.
+                const hoy = new Date().toISOString().slice(0, 10);
+                const vigentes = snap.docs.filter(d => {
+                    const fecha = d.data().date || d.data().fecha || '';
+                    return !fecha || fecha >= hoy;
+                });
+                if (vigentes.length === 0) {
                     document.getElementById('loading-state').style.display = 'none';
                     document.getElementById('error-box').style.display = 'block';
                     return;
                 }
-                const gala = snap.docs[0];
-                const eventId   = gala.id;
-                const eventName = gala.data().name || 'VYT MUSIC';
-                document.getElementById('gala-name').textContent = eventName;
-                window.location.replace(
-                    `preventa_artistas.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`
-                );
+                if (vigentes.length === 1) {
+                    const gala = vigentes[0];
+                    document.getElementById('gala-name').textContent = gala.data().name || '';
+                    redirigir(gala.id, gala.data());
+                } else {
+                    mostrarSelector(vigentes);
+                }
             } catch (e) {
                 console.error(e);
                 document.querySelector('.msg').textContent = '❌ Error de conexión. Revisá tu internet y reintentá.';

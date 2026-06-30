@@ -666,6 +666,20 @@
             return null; // No se pudo detectar: queda como evento suelto
         }
 
+        // Desactiva en Firebase las galas marcadas como activas cuya fecha ya pasó.
+        async function autoDesactivarGalasVencidas() {
+            const hoy = new Date().toISOString().slice(0, 10);
+            const vencidas = allEvents.filter(e => e.isActive && e.date && e.date < hoy);
+            if (vencidas.length === 0) return;
+            try {
+                await Promise.all(vencidas.map(e => updateDoc(doc(db, 'events', e.id), { isActive: false })));
+                vencidas.forEach(e => { e.isActive = false; });
+                console.log(`🔄 ${vencidas.length} gala(s) vencida(s) desactivada(s) automáticamente:`, vencidas.map(e => e.name || e.id));
+            } catch (err) {
+                console.warn('No se pudieron auto-desactivar galas vencidas:', err);
+            }
+        }
+
         // ═══════════════════════════════════════════
         // CARGA DE GENERACIONES
         // ═══════════════════════════════════════════
@@ -679,6 +693,11 @@
                 const eventsSnap = await getDocs(query(collection(db, 'events'), orderBy('createdAt', 'desc')));
                 allEvents = eventsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
                 console.log(`✅ ${allEvents.length} eventos encontrados:`, allEvents.map(e => e.name || e.id));
+
+                // 🔄 Auto-desactivar galas activas cuya fecha ya pasó, para que dejen
+                // de ofrecerse para venta de entradas/votación/escaneo sin tener que
+                // apagarlas a mano cada vez.
+                await autoDesactivarGalasVencidas();
 
                 // Extraer generaciones del NOMBRE de las galas (no hay campo generacion en artistas)
                 const generationsSet = new Set();
