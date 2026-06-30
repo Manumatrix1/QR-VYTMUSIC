@@ -1076,15 +1076,24 @@
                             console.log(`✅ Cargando gala seleccionada manualmente: ${eventName}`);
                         }
                     }
-                    // CASO 1.5: Generación definida como grupo en event_groups (ej: Generación 14)
-                    else if (allEventGroups.some(g => g.name === generacion)) {
-                        const group = allEventGroups.find(g => g.name === generacion);
-                        shouldLoadThisEvent = (event.groupId === group.id);
-                    }
-                    // CASO 2: campo "generacion" explícito (galas creadas con "Nuevo grupo") o detección automática
+                    // CASO 2: pertenece al grupo real (event_groups) O tiene el campo "generacion"
+                    // explícito (galas creadas con "Nuevo grupo") O se detecta por nombre/fecha.
+                    // Se combinan con OR para que una gala matchee aunque le falte alguno de los dos.
                     else {
+                        const group = allEventGroups.find(g => g.name === generacion);
+                        const matchesGroup = !!group && event.groupId === group.id;
                         const eventGeneracion = event.generacion || detectGeneration(eventName, event.date) || eventName;
-                        shouldLoadThisEvent = (eventGeneracion === generacion);
+                        const matchesGeneracionField = (eventGeneracion === generacion);
+                        shouldLoadThisEvent = matchesGroup || matchesGeneracionField;
+
+                        // Self-heal: si matcheó solo por el campo suelto y existe el grupo real,
+                        // vincularla de una vez para que también aparezca en eventos.html.
+                        if (shouldLoadThisEvent && !matchesGroup && group && !event.groupId) {
+                            updateDoc(doc(db, 'events', event.id), { groupId: group.id })
+                                .then(() => console.log(`🔧 "${eventName}" vinculada al grupo "${generacion}"`))
+                                .catch(e => console.warn('No se pudo vincular grupo:', e));
+                            event.groupId = group.id; // reflejar en memoria también
+                        }
                     }
 
                     // Si este evento debe cargarse, procesar sus artistas
@@ -1834,8 +1843,9 @@
             const grupo = allEventGroups.find(g => g.name === generacion);
             const allGenEvents = (allEvents || []).filter(e => {
                 const eventName = e.name || e.id;
-                if (grupo) return e.groupId === grupo.id;
-                return (e.generacion || detectGeneration(eventName, e.date) || eventName) === generacion;
+                const matchesGroup = !!grupo && e.groupId === grupo.id;
+                const matchesGeneracionField = (e.generacion || detectGeneration(eventName, e.date) || eventName) === generacion;
+                return matchesGroup || matchesGeneracionField;
             });
             if (allGenEvents.length === 0) return;
 
@@ -3216,17 +3226,28 @@
 
             if (createEvent) {
                 try {
-                    const docRef = await addDoc(collection(db, 'events'), {
+                    // Vincular al grupo real de la generación (event_groups) para que la gala
+                    // aparezca también en eventos.html y se pueda activar para votación/escaneo.
+                    const generacionActual = loadedGenerations[0] || '';
+                    const grupo = allEventGroups.find(g => g.name === generacionActual);
+
+                    const eventData = {
                         name,
                         date: date || '',
+                        isActive: false,
+                        ticketPriceAnticipada: 10000,
+                        ticketPricePuerta: 15000,
                         createdAt: serverTimestamp(),
                         fromOrganizador: true,
-                        generacion: loadedGenerations[0] || ''
-                    });
+                        generacion: generacionActual
+                    };
+                    if (grupo) eventData.groupId = grupo.id;
+
+                    const docRef = await addDoc(collection(db, 'events'), eventData);
                     eventId = docRef.id;
                     // También agregar a allEvents para que esté disponible en el tablero
-                    allEvents.push({ id: eventId, name, date: date || '', fromOrganizador: true });
-                    showToast(`🎉 Gala "${name}" creada en Firebase`, '✅');
+                    allEvents.push({ id: eventId, ...eventData, date: date || '' });
+                    showToast(`🎉 Gala "${name}" creada en Firebase${grupo ? '' : ' (sin grupo: activala manualmente en Generaciones)'}`, '✅');
                 } catch (e) {
                     console.error('Error creando evento en Firebase:', e);
                     showToast('Error al crear la gala, se guardó solo localmente', '⚠️');
