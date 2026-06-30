@@ -1380,7 +1380,7 @@
                     document.getElementById('loadingState').classList.add('hidden');
                     document.getElementById('board').classList.remove('hidden');
                     // Buscar participaciones en galas pasadas (en background) y actualizar caché
-                    enrichWithHistoricalEvaluations().then(() => saveAvgCache()).catch(e => console.warn('Historial:', e));
+                    enrichWithHistoricalEvaluations(generacion).then(() => saveAvgCache()).catch(e => console.warn('Historial:', e));
                 }
 
                 renderBoard();
@@ -1822,22 +1822,20 @@
             }
         }
 
-        async function enrichWithHistoricalEvaluations() {
+        async function enrichWithHistoricalEvaluations(generacion) {
             const loadedEventIds = new Set(allArtists.flatMap(a => a.eventIds || []));
 
-            // Excluir eventos de otras generaciones (Gen 12, etc.) — solo buscar en eventos
-            // de la misma generación (VYT-MUSIC, fase 1, fase 2, Si lo crees, Final, etc.)
-            const isOtherGeneration = (name) => {
-                const n = (name || '').toLowerCase();
-                return /generaci[oó]n\s*\d+/i.test(n)  // "generacion 12"
-                    || /\d+g\s/i.test(n)                // "12g gala 1"
-                    || /g12/i.test(n)                   // "GALA 1 G12"
-                    || /gen\s*\d+/i.test(n);            // "gen12"
-            };
-
-            // Escanear TODOS los eventos de la generación (cargados Y no cargados)
-            // para detectar participaciones cruzadas (artista en gala A evaluado en gala B)
-            const allGenEvents = (allEvents || []).filter(e => !isOtherGeneration(e.name || e.id));
+            // Escanear SOLO los eventos de ESTA generación (cargados Y no cargados)
+            // para detectar participaciones cruzadas (artista en gala A evaluado en gala B
+            // de la MISMA generación). Usa la misma lógica de scoping que loadArtistsByGeneration
+            // para evitar que artistas de otras generaciones/certámenes con nombre parecido
+            // "contaminen" el historial de galas de esta generación.
+            const grupo = allEventGroups.find(g => g.name === generacion);
+            const allGenEvents = (allEvents || []).filter(e => {
+                const eventName = e.name || e.id;
+                if (grupo) return e.groupId === grupo.id;
+                return (detectGeneration(eventName, e.date) || eventName) === generacion;
+            });
             if (allGenEvents.length === 0) return;
 
             let enriched = 0;
