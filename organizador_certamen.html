@@ -599,7 +599,7 @@
     <!-- Firebase SDK -->
     <script type="module">
         import { app, db, storage } from './firebase_config.js';
-        import { collection, getDocs, doc, updateDoc, query, orderBy, onSnapshot, getDoc, deleteDoc, setDoc, addDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+        import { collection, getDocs, doc, updateDoc, query, orderBy, onSnapshot, getDoc, deleteDoc, setDoc, addDoc, serverTimestamp, writeBatch } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
         import { ref as storRef, deleteObject, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js';
 
         // ═══════════════════════════════════════════
@@ -3064,6 +3064,14 @@
                 : `<span class="text-xs px-1.5 py-0.5 bg-gray-800 text-gray-500 border border-gray-700 rounded-full">Solo visual</span>`)
                 + (esPasada ? `<span class="text-xs px-1.5 py-0.5 bg-black/40 text-gray-300 border border-gray-600 rounded-full ml-1">🕗 Pasada</span>` : '');
 
+            // Toggle para activar/desactivar la gala para votación y escaneo (solo una activa a la vez)
+            const eventIsActive = col.eventId ? !!(allEvents.find(e => e.id === col.eventId)?.isActive) : false;
+            const activeToggle = col.eventId
+                ? (eventIsActive
+                    ? `<button onclick="toggleGalaActiva('${col.eventId}')" class="text-xs px-1.5 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-full font-bold ml-1 transition-all" title="Click para desactivar">🎯 Activa</button>`
+                    : `<button onclick="toggleGalaActiva('${col.eventId}')" class="text-xs px-1.5 py-0.5 bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white border border-gray-600 rounded-full ml-1 transition-all" title="Click para activar para votación y escaneo">Activar</button>`)
+                : '';
+
             // Botón para abrir panel si es gala real
             const panelLink = col.eventId
                 ? `<a href="panel_evento_SIMPLE.html?eventId=${col.eventId}&eventName=${encodeURIComponent(col.name)}" target="_blank"
@@ -3090,7 +3098,7 @@
                         </div>
                         <div class="flex items-center justify-between">
                             <p class="text-white/70 text-xs" id="col-count-${col.id}">${colArtistCount} artistas</p>
-                            ${eventBadge}
+                            <div class="flex items-center">${eventBadge}${activeToggle}</div>
                         </div>
                     </div>
                     <div class="drop-zone p-2 space-y-2 overflow-y-auto flex-1" id="col-drop-${col.id}" style="min-height:60px">
@@ -3262,6 +3270,33 @@
 
             if (!eventId && !createEvent) {
                 showToast(`Grupo "${name}" creado (solo visual)`, '✅');
+            }
+        };
+
+        // Activa/desactiva una gala para votación y escaneo. Solo puede haber una
+        // gala activa a la vez en todo el certamen (mismo criterio que eventos.html).
+        window.toggleGalaActiva = async function(eventId) {
+            const event = allEvents.find(e => e.id === eventId);
+            if (!event) return;
+            const activar = !event.isActive;
+            try {
+                if (activar) {
+                    const allEventsSnap = await getDocs(collection(db, 'events'));
+                    const batch = writeBatch(db);
+                    allEventsSnap.forEach(d => batch.update(d.ref, { isActive: false }));
+                    await batch.commit();
+                    await updateDoc(doc(db, 'events', eventId), { isActive: true });
+                    allEvents.forEach(e => { e.isActive = (e.id === eventId); });
+                    showToast(`🎯 "${event.name}" activada para votación y escaneo`, '✅');
+                } else {
+                    await updateDoc(doc(db, 'events', eventId), { isActive: false });
+                    event.isActive = false;
+                    showToast(`"${event.name}" desactivada`, 'ℹ️');
+                }
+                renderColumns();
+            } catch (e) {
+                console.error('Error activando gala:', e);
+                showToast('Error al cambiar el estado de la gala', '❌');
             }
         };
 
