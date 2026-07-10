@@ -152,14 +152,31 @@
         <!-- Contenido de compra (se oculta si está cerrado) -->
         <div id="purchase-content">
         <div class="bg-gradient-to-r from-purple-600 to-pink-600 rounded-2xl p-6 mb-8 shadow-lg">
-            <div class="grid md:grid-cols-2 gap-6">
+            <!-- Panel con tramos configurados (se muestra cuando hay tiers) -->
+            <div id="price-tiers-display" class="hidden">
+                <div class="text-center mb-4">
+                    <div class="text-4xl mb-1">⚡</div>
+                    <h3 class="text-xl font-bold">Precio Anticipado por Cantidad</h3>
+                    <p class="text-sm opacity-80 mt-1" id="deadline-text-tiers">Hasta la fecha límite</p>
+                </div>
+                <div id="tiers-table" class="space-y-2 mb-4"></div>
+                <div class="bg-white/10 rounded-xl p-3 flex items-center justify-between">
+                    <span class="text-sm font-semibold">🚪 Precio Puerta (fecha vencida / menos entradas)</span>
+                    <span class="font-black text-xl" id="display-price-puerta-tiers">$15,000</span>
+                </div>
+                <div class="bg-white/10 rounded-xl p-3 mt-2">
+                    <p class="text-sm font-semibold text-center" id="display-price-kids-anticipada">👶 Niños (menores de 8): $5,000</p>
+                </div>
+            </div>
+            <!-- Panel clásico sin tramos (se muestra cuando NO hay tiers) -->
+            <div id="price-classic-display" class="grid md:grid-cols-2 gap-6">
                 <div class="text-center">
                     <div class="text-6xl mb-2">⚡</div>
                     <h3 class="text-2xl font-bold mb-2">Precio Anticipado</h3>
                     <p class="text-5xl font-black mb-2" id="display-price-anticipada">$10,000</p>
                     <p class="text-sm opacity-90" id="deadline-text">Hasta el jueves antes del evento</p>
                     <div class="mt-3 bg-white/20 rounded-lg p-2">
-                        <p class="text-sm font-semibold" id="display-price-kids-anticipada">👶 Niños (menores de 8): $5,000</p>
+                        <p class="text-sm font-semibold" id="display-price-kids-anticipada-classic">👶 Niños (menores de 8): $5,000</p>
                     </div>
                 </div>
                 <div class="text-center">
@@ -811,12 +828,42 @@
         function updatePriceDisplay() {
             const fmt = n => '$' + n.toLocaleString();
             const el = id => document.getElementById(id);
-            if (el('display-price-anticipada')) el('display-price-anticipada').textContent = fmt(PRICE_ANTICIPADA);
-            if (el('display-price-kids-anticipada')) el('display-price-kids-anticipada').textContent = `👶 Niños (menores de 8): ${fmt(PRICE_KIDS_ANTICIPADA)}`;
-            if (el('display-price-puerta')) el('display-price-puerta').textContent = fmt(PRICE_PUERTA);
-            if (el('display-price-kids-puerta')) el('display-price-kids-puerta').textContent = `👶 Niños (menores de 8): ${fmt(PRICE_KIDS_PUERTA)}`;
-            if (el('display-kids-info')) el('display-kids-info').innerHTML = `💡 Menores de 8 años: <span class="font-bold">${fmt(PRICE_KIDS_ANTICIPADA)}</span> (anticipado, 5+ entradas) o <span class="font-bold">${fmt(PRICE_KIDS_PUERTA)}</span> (puerta)`;
-            if (el('countdown-footer')) el('countdown-footer').textContent = `Después cambia a precio puerta: ${fmt(PRICE_PUERTA)}`;
+
+            if (priceTiers.length > 0) {
+                // Mostrar panel de tramos, ocultar panel clásico
+                el('price-tiers-display')?.classList.remove('hidden');
+                el('price-classic-display')?.classList.add('hidden');
+
+                // Tabla de tramos ordenada (mejor precio arriba)
+                const tiersTable = el('tiers-table');
+                if (tiersTable) {
+                    tiersTable.innerHTML = priceTiers.map((t, i) => {
+                        const nextTier = priceTiers[i + 1];
+                        const rangeLabel = nextTier
+                            ? `${t.minQty} a ${nextTier.minQty - 1} entradas`
+                            : `${t.minQty}+ entradas`;
+                        return `
+                        <div class="bg-white/20 rounded-xl px-4 py-3 flex items-center justify-between">
+                            <span class="font-semibold text-sm">⚡ ${rangeLabel}</span>
+                            <span class="font-black text-2xl">${fmt(t.price)}</span>
+                        </div>`;
+                    }).join('');
+                }
+                if (el('display-price-puerta-tiers')) el('display-price-puerta-tiers').textContent = fmt(PRICE_PUERTA);
+                if (el('display-price-kids-anticipada')) el('display-price-kids-anticipada').textContent = `👶 Niños (menores de 8): ${fmt(PRICE_KIDS_ANTICIPADA)}`;
+                if (el('countdown-footer')) el('countdown-footer').textContent = `Precio puerta si vence la fecha: ${fmt(PRICE_PUERTA)}`;
+            } else {
+                // Panel clásico sin tramos
+                el('price-tiers-display')?.classList.add('hidden');
+                el('price-classic-display')?.classList.remove('hidden');
+                if (el('display-price-anticipada')) el('display-price-anticipada').textContent = fmt(PRICE_ANTICIPADA);
+                if (el('display-price-kids-anticipada-classic')) el('display-price-kids-anticipada-classic').textContent = `👶 Niños (menores de 8): ${fmt(PRICE_KIDS_ANTICIPADA)}`;
+                if (el('display-price-puerta')) el('display-price-puerta').textContent = fmt(PRICE_PUERTA);
+                if (el('display-price-kids-puerta')) el('display-price-kids-puerta').textContent = `👶 Niños (menores de 8): ${fmt(PRICE_KIDS_PUERTA)}`;
+                if (el('countdown-footer')) el('countdown-footer').textContent = `Después cambia a precio puerta: ${fmt(PRICE_PUERTA)}`;
+            }
+            if (el('display-kids-info')) el('display-kids-info').innerHTML =
+                `💡 Menores de 8 años: <span class="font-bold">${fmt(PRICE_KIDS_ANTICIPADA)}</span> (anticipado) o <span class="font-bold">${fmt(PRICE_KIDS_PUERTA)}</span> (puerta)`;
         }
 
         // Aplica la configuración de deadline a la UI
