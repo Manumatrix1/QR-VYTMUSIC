@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Entradas por Artista - VYTMUSIC</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: system-ui, sans-serif; background: #0f172a; color: #f1f5f9; min-height: 100vh; }
+  .card-zero { border-left: 4px solid #ef4444; background: #1e0a0a; }
+  .card-few  { border-left: 4px solid #f59e0b; background: #1a140a; }
+  .card-ok   { border-left: 4px solid #22c55e; background: #0a1a0e; }
+  .card-inv  { border-left: 4px solid #a855f7; background: #120a1a; }
+</style>
+</head>
+<body class="p-4 max-w-3xl mx-auto">
+
+<div class="flex items-center gap-3 mb-6 mt-2">
+  <a id="back-btn" href="panel_evento_SIMPLE.html" class="text-sky-400 hover:text-sky-300 text-sm">← Volver</a>
+  <div>
+    <h1 class="text-2xl font-black text-white">🎫 Entradas por Artista</h1>
+    <p id="event-title" class="text-gray-400 text-sm"></p>
+  </div>
+</div>
+
+<!-- Filtros rápidos -->
+<div class="flex gap-2 flex-wrap mb-5">
+  <button onclick="setFilter('all')" id="f-all" class="px-3 py-1.5 rounded-full text-sm font-semibold bg-gray-700 text-white">Todos</button>
+  <button onclick="setFilter('zero')" id="f-zero" class="px-3 py-1.5 rounded-full text-sm font-semibold bg-red-900/60 text-red-300">🚨 Sin entradas</button>
+  <button onclick="setFilter('inv')" id="f-inv" class="px-3 py-1.5 rounded-full text-sm font-semibold bg-purple-900/60 text-purple-300">⭐ Invitados</button>
+</div>
+
+<!-- Resumen -->
+<div id="summary" class="grid grid-cols-3 gap-3 mb-6 hidden">
+  <div class="bg-gray-800 rounded-xl p-3 text-center">
+    <p class="text-3xl font-black text-white" id="s-total">0</p>
+    <p class="text-xs text-gray-400 mt-1">Artistas</p>
+  </div>
+  <div class="bg-red-900/40 border border-red-800 rounded-xl p-3 text-center">
+    <p class="text-3xl font-black text-red-400" id="s-zero">0</p>
+    <p class="text-xs text-gray-400 mt-1">Sin entradas</p>
+  </div>
+  <div class="bg-purple-900/40 border border-purple-800 rounded-xl p-3 text-center">
+    <p class="text-3xl font-black text-purple-400" id="s-inv">0</p>
+    <p class="text-xs text-gray-400 mt-1">Invitados</p>
+  </div>
+</div>
+
+<div id="loading" class="text-center py-10 text-gray-400">Cargando...</div>
+<div id="list" class="space-y-2 hidden"></div>
+
+<script type="module">
+import { db } from './firebase_config.js';
+import { collection, getDocs, doc, updateDoc } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+
+const params = new URLSearchParams(location.search);
+const eventId = params.get('eventId');
+const eventName = params.get('eventName') || '';
+
+if (!eventId) {
+  document.getElementById('loading').textContent = 'Error: falta eventId en la URL';
+} else {
+  document.getElementById('event-title').textContent = eventName;
+  document.getElementById('back-btn').href = `panel_evento_SIMPLE.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`;
+  load();
+}
+
+let allRows = [];
+let activeFilter = 'all';
+
+// Threshold para "pocas entradas" (amarillo): menos de 3
+const FEW_THRESHOLD = 3;
+
+async function load() {
+  try {
+    const [artistsSnap, ticketsSnap] = await Promise.all([
+      getDocs(collection(db, `events/${eventId}/artists`)),
+      getDocs(collection(db, `events/${eventId}/tickets`))
+    ]);
+
+    const artists = artistsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+    // Contar tickets por artistId y por nombre normalizado (fallback)
+    const countById = {};
+    const countByName = {};
+    ticketsSnap.forEach(d => {
+      const t = d.data();
+      const aid = t.artistId || t.supportingArtist?.id;
+      const aname = (t.artistName || t.supportingArtist?.name || '').toLowerCase().trim();
+      if (aid) countById[aid] = (countById[aid] || 0) + 1;
+      if (aname) countByName[aname] = (countByName[aname] || 0) + 1;
+    });
+
+    allRows = artists.map(a => {
+      const byId = countById[a.id] || 0;
+      const byName = countByName[(a.name || '').toLowerCase().trim()] || 0;
+      const tickets = Math.max(byId, byName);
+      return { ...a, tickets };
+    });
+
+    // Ordenar: sin entradas primero (excluyendo invitados), después por cantidad asc
+    allRows.sort((a, b) => {
+      if (a.isInvitado && !b.isInvitado) return 1;
+      if (!a.isInvitado && b.isInvitado) return -1;
+      return a.tickets - b.tickets;
+    });
+
+    renderSummary();
+    render();
+    document.getElementById('loading').classList.add('hidden');
+    document.getElementById('list').classList.remove('hidden');
+    document.getElementById('summary').classList.remove('hidden');
+  } catch(e) {
+    document.getElementById('loading').textContent = 'Error: ' + e.message;
+    console.error(e);
+  }
+}
+
+function renderSummary() {
+  const nonInv = allRows.filter(r => !r.isInvitado);
+  document.getElementById('s-total').textContent = allRows.length;
+  document.getElementById('s-zero').textContent = nonInv.filter(r => r.tickets === 0).length;
+  document.getElementById('s-inv').textContent = allRows.filter(r => r.isInvitado).length;
+}
+
+function render() {
+  const rows = activeFilter === 'zero' ? allRows.filter(r => !r.isInvitado && r.tickets === 0)
+             : activeFilter === 'inv'  ? allRows.filter(r => r.isInvitado)
+             : allRows;
+
+  const list = document.getElementById('list');
+  if (!rows.length) {
+    list.innerHTML = '<p class="text-center text-gray-500 py-8">No hay artistas para este filtro.</p>';
+    return;
+  }
+
+  list.innerHTML = rows.map(r => {
+    const cardClass = r.isInvitado ? 'card-inv'
+                    : r.tickets === 0 ? 'card-zero'
+                    : r.tickets < FEW_THRESHOLD ? 'card-few'
+                    : 'card-ok';
+
+    const statusBadge = r.isInvitado
+      ? '<span class="text-xs bg-purple-800 text-purple-200 px-2 py-0.5 rounded-full font-bold">⭐ Invitado</span>'
+      : r.tickets === 0
+        ? '<span class="text-xs bg-red-900 text-red-300 px-2 py-0.5 rounded-full font-bold">🚨 Sin entradas</span>'
+        : r.tickets < FEW_THRESHOLD
+          ? '<span class="text-xs bg-yellow-900 text-yellow-300 px-2 py-0.5 rounded-full font-bold">⚠️ Pocas</span>'
+          : '<span class="text-xs bg-green-900 text-green-300 px-2 py-0.5 rounded-full font-bold">✅ OK</span>';
+
+    const ticketLabel = r.isInvitado
+      ? '<span class="text-purple-400 font-bold text-lg">—</span>'
+      : `<span class="font-black text-2xl ${r.tickets === 0 ? 'text-red-400' : r.tickets < FEW_THRESHOLD ? 'text-yellow-400' : 'text-green-400'}">${r.tickets}</span>`;
+
+    const waBtn = !r.isInvitado && r.tickets === 0 && (r.phone || r.whatsapp)
+      ? `<a href="https://wa.me/${(r.phone||r.whatsapp).replace(/\D/g,'')}" target="_blank"
+           class="text-xs bg-green-700 hover:bg-green-600 text-white px-2 py-1 rounded transition">
+           📲 WhatsApp</a>`
+      : '';
+
+    const invBtn = `<button onclick="toggleInv('${r.id}', ${!!r.isInvitado})"
+      class="text-xs ${r.isInvitado ? 'bg-yellow-600 hover:bg-yellow-500 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'} px-2 py-1 rounded transition">
+      ${r.isInvitado ? '⭐ Quitar invitado' : '☆ Marcar invitado'}</button>`;
+
+    return `
+    <div class="rounded-xl p-4 flex items-center gap-4 ${cardClass}">
+      <img src="${r.photoURL || `https://placehold.co/48x48/1f2937/f9fafb?text=${encodeURIComponent((r.name||'A').charAt(0))}`}"
+           class="w-12 h-12 rounded-full object-cover flex-shrink-0">
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="font-bold text-white truncate">${r.name || 'Sin nombre'}</span>
+          ${statusBadge}
+        </div>
+        <div class="flex gap-2 mt-1 flex-wrap">
+          ${waBtn}
+          ${invBtn}
+        </div>
+      </div>
+      <div class="text-right flex-shrink-0">
+        ${ticketLabel}
+        <p class="text-xs text-gray-500 mt-0.5">${r.isInvitado ? 'exento' : 'entradas'}</p>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+window.setFilter = function(f) {
+  activeFilter = f;
+  ['all','zero','inv'].forEach(k => {
+    const btn = document.getElementById(`f-${k}`);
+    btn.classList.toggle('ring-2', k === f);
+    btn.classList.toggle('ring-white', k === f);
+  });
+  render();
+};
+
+window.toggleInv = async function(artistId, current) {
+  const row = allRows.find(r => r.id === artistId);
+  if (!row) return;
+  const newVal = !current;
+  try {
+    await updateDoc(doc(db, `events/${eventId}/artists`, artistId), { isInvitado: newVal });
+    row.isInvitado = newVal;
+    renderSummary();
+    render();
+  } catch(e) {
+    alert('Error al actualizar: ' + e.message);
+  }
+};
+</script>
+</body>
+</html>
