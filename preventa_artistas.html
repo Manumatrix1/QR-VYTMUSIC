@@ -1068,6 +1068,7 @@
                         opt.dataset.name  = a.name || '';
                         opt.dataset.deadline = a.deadline_override || '';
                         opt.dataset.isGuest = '';
+                        opt.dataset.priceOverride = a.ticketPriceOverride || '';
                         grpCertamen.appendChild(opt);
                     });
                     sel.appendChild(grpCertamen);
@@ -1081,6 +1082,7 @@
                         opt.dataset.name  = a.name || '';
                         opt.dataset.deadline = a.deadline_override || '';
                         opt.dataset.isGuest = 'true';
+                        opt.dataset.priceOverride = a.ticketPriceOverride || '';
                         grpInvitados.appendChild(opt);
                     });
                     sel.appendChild(grpInvitados);
@@ -1093,6 +1095,7 @@
                         opt.dataset.name  = a.name || '';
                         opt.dataset.deadline = a.deadline_override || '';
                         opt.dataset.isGuest = a.isGuest ? 'true' : '';
+                        opt.dataset.priceOverride = a.ticketPriceOverride || '';
                         sel.appendChild(opt);
                     });
                 }
@@ -1109,7 +1112,7 @@
                 if (eventData) applyDeadlineConfig(eventData);
                 return;
             }
-            selectedTopArtist = { id: opt.value, name: opt.dataset.name, photoURL: opt.dataset.photo, deadline_override: opt.dataset.deadline || null, isGuest: opt.dataset.isGuest === 'true' };
+            selectedTopArtist = { id: opt.value, name: opt.dataset.name, photoURL: opt.dataset.photo, deadline_override: opt.dataset.deadline || null, isGuest: opt.dataset.isGuest === 'true', priceOverride: opt.dataset.priceOverride ? parseInt(opt.dataset.priceOverride) : null };
             saveDraft();
             // Mostrar preview
             document.getElementById('top-artist-photo').src = opt.dataset.photo || 'https://placehold.co/56x56/1f2937/f9fafb?text=' + encodeURIComponent((opt.dataset.name||'A').charAt(0));
@@ -1220,6 +1223,22 @@
             // Sumar compras previas para calcular el precio correcto (acumulado)
             const accumulatedTotal = previousPurchasesCount + totalTickets;
             console.log(`💰 Cálculo de precio: ${previousPurchasesCount} previas + ${totalTickets} actuales = ${accumulatedTotal} total acumulado`);
+
+            // Precio fijo del artista invitado: ignora tramos y aplica siempre.
+            const artistPriceOverride = selectedTopArtist?.priceOverride || null;
+            if (artistPriceOverride) {
+                const totalAdults = quantityAdults * artistPriceOverride;
+                const totalKids = quantityKids * PRICE_KIDS_ANTICIPADA;
+                document.getElementById('total-amount').textContent = `$${(totalAdults + totalKids).toLocaleString()}`;
+                document.getElementById('price-per-ticket').textContent = `$${artistPriceOverride.toLocaleString()}`;
+                const minQtyNotice = document.getElementById('min-qty-notice');
+                if (minQtyNotice) {
+                    minQtyNotice.innerHTML = `<p class="text-purple-200 font-semibold text-sm">⭐ Artista invitado — precio especial fijo: <strong>$${artistPriceOverride.toLocaleString()} c/u</strong>, sin mínimo de entradas.</p>`;
+                    minQtyNotice.className = 'bg-purple-900/40 border border-purple-400 rounded-lg p-4';
+                    minQtyNotice.classList.remove('hidden');
+                }
+                return;
+            }
 
             // Buscar precio en tramos configurados (mayor cantidad = precio más bajo).
             // Si ningún tramo matchea → precio puerta (no alcanzó el mínimo).

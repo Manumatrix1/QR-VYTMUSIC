@@ -416,18 +416,46 @@
         <div class="section-card mb-8">
             <h2 class="section-title">🎸 Artistas Invitados</h2>
             <p class="text-gray-400 text-sm text-center mb-5">
-                Artistas que actúan pero no son participantes del certamen. Aparecen en la preventa de entradas y están exentos de la obligación de traer entradas.
+                Artistas que actúan pero no compiten. Aparecen en la preventa y en el portal de pistas. Podés configurarles un <strong>precio fijo</strong> independiente de los tramos globales.
             </p>
-            <!-- Lista de invitados -->
+
+            <!-- Lista de invitados actuales -->
             <div id="invited-artists-list" class="space-y-2 mb-5">
                 <p class="text-gray-500 text-sm text-center">Cargando...</p>
             </div>
-            <!-- Agregar invitado -->
+
+            <!-- Marcar artista existente como invitado -->
+            <div class="bg-gray-800 rounded-xl p-4 border border-yellow-700 mb-3">
+                <p class="text-sm font-bold text-yellow-300 mb-3">⭐ Marcar artista existente como invitado</p>
+                <div class="flex gap-3 items-end flex-wrap">
+                    <select id="existing-artist-select"
+                        class="flex-1 p-3 rounded-lg bg-gray-900 border border-gray-600 text-white text-sm focus:border-yellow-400 focus:outline-none">
+                        <option value="">— Seleccioná un artista —</option>
+                    </select>
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">Precio fijo por entrada ($)</label>
+                        <input type="text" inputmode="numeric" id="existing-artist-price" placeholder="ej: 10000"
+                            class="w-36 p-3 rounded-lg bg-gray-900 border border-gray-600 text-white text-sm focus:border-yellow-400 focus:outline-none">
+                    </div>
+                    <button onclick="markExistingAsInvited()"
+                        class="px-5 py-3 bg-yellow-600 hover:bg-yellow-500 text-white font-bold rounded-lg text-sm transition whitespace-nowrap">
+                        Marcar invitado
+                    </button>
+                </div>
+                <p id="existing-invited-msg" class="text-sm mt-2 hidden"></p>
+            </div>
+
+            <!-- Agregar invitado nuevo -->
             <div class="bg-gray-800 rounded-xl p-4 border border-gray-600">
-                <p class="text-sm font-bold text-gray-300 mb-3">➕ Agregar artista invitado</p>
-                <div class="flex gap-3 items-end">
+                <p class="text-sm font-bold text-gray-300 mb-3">➕ Agregar artista invitado nuevo</p>
+                <div class="flex gap-3 items-end flex-wrap">
                     <input type="text" id="new-invited-name" placeholder="Nombre del artista (ej: Luna Pérez)"
                         class="flex-1 p-3 rounded-lg bg-gray-900 border border-gray-600 text-white text-sm focus:border-purple-400 focus:outline-none">
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">Precio fijo por entrada ($)</label>
+                        <input type="text" inputmode="numeric" id="new-invited-price" placeholder="ej: 10000"
+                            class="w-36 p-3 rounded-lg bg-gray-900 border border-gray-600 text-white text-sm focus:border-purple-400 focus:outline-none">
+                    </div>
                     <button onclick="addInvitedArtist()"
                         class="px-5 py-3 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-lg text-sm transition whitespace-nowrap">
                         Agregar
@@ -795,14 +823,28 @@
 
         // ── Artistas Invitados ──────────────────────────────────────────────
         let invitedArtists = [];
+        let allEventArtists = [];
 
         async function loadInvitedArtists() {
             const snap = await getDocs(collection(db, `events/${eventId}/artists`));
-            invitedArtists = snap.docs
-                .map(d => ({ id: d.id, ...d.data() }))
-                .filter(a => a.isInvitado);
+            allEventArtists = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+            invitedArtists = allEventArtists.filter(a => a.isInvitado);
             renderInvitedArtists();
+            // Poblar select de artistas existentes (no-invitados)
+            const sel = document.getElementById('existing-artist-select');
+            sel.innerHTML = '<option value="">— Seleccioná un artista —</option>';
+            allEventArtists
+                .filter(a => !a.isInvitado)
+                .sort((a, b) => (a.name||'').localeCompare(b.name||''))
+                .forEach(a => {
+                    const opt = document.createElement('option');
+                    opt.value = a.id;
+                    opt.textContent = a.name || 'Sin nombre';
+                    sel.appendChild(opt);
+                });
         }
+
+        function fmtPrice(n) { return n ? '$' + Number(n).toLocaleString('es-AR') : '—'; }
 
         function renderInvitedArtists() {
             const el = document.getElementById('invited-artists-list');
@@ -811,38 +853,88 @@
                 return;
             }
             el.innerHTML = invitedArtists.map(a => `
-                <div class="flex items-center justify-between bg-gray-800 rounded-xl px-4 py-3">
-                    <div class="flex items-center gap-3">
+                <div class="flex items-center justify-between bg-gray-800 rounded-xl px-4 py-3 gap-3 flex-wrap">
+                    <div class="flex items-center gap-3 flex-1">
                         <img src="${a.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(a.name||'A')}&background=7c3aed&color=fff&size=80`}"
-                             class="w-10 h-10 rounded-full object-cover">
-                        <span class="font-semibold text-white">${a.name || 'Sin nombre'}</span>
-                        <span class="text-xs bg-purple-800 text-purple-200 px-2 py-0.5 rounded-full">⭐ Invitado</span>
+                             class="w-10 h-10 rounded-full object-cover flex-shrink-0">
+                        <div>
+                            <span class="font-semibold text-white block">${a.name || 'Sin nombre'}</span>
+                            <span class="text-xs text-purple-300">${a.ticketPriceOverride ? '💰 Precio fijo: ' + fmtPrice(a.ticketPriceOverride) + ' c/u' : '⚠️ Sin precio fijo (usa tramos globales)'}</span>
+                        </div>
                     </div>
-                    <button onclick="removeInvitedArtist('${a.id}')"
-                        class="text-xs bg-red-800 hover:bg-red-700 text-red-200 px-3 py-1.5 rounded-lg transition">
-                        Quitar
-                    </button>
+                    <div class="flex items-center gap-2">
+                        <input type="text" inputmode="numeric" value="${a.ticketPriceOverride || ''}"
+                            placeholder="Precio fijo"
+                            onchange="saveInvitedPrice('${a.id}', this.value)"
+                            class="w-28 p-2 rounded-lg bg-gray-900 border border-gray-600 text-white text-sm text-center">
+                        <button onclick="removeInvitedArtist('${a.id}')"
+                            class="text-xs bg-red-800 hover:bg-red-700 text-red-200 px-3 py-1.5 rounded-lg transition whitespace-nowrap">
+                            Quitar
+                        </button>
+                    </div>
                 </div>`).join('');
         }
 
+        window.saveInvitedPrice = async function(artistId, rawValue) {
+            const price = parseInt(rawValue.replace(/\./g, '')) || null;
+            try {
+                await updateDoc(doc(db, `events/${eventId}/artists`, artistId), { ticketPriceOverride: price });
+                const a = invitedArtists.find(x => x.id === artistId);
+                if (a) a.ticketPriceOverride = price;
+                renderInvitedArtists();
+            } catch(e) { alert('Error al guardar precio: ' + e.message); }
+        };
+
+        window.markExistingAsInvited = async function() {
+            const sel = document.getElementById('existing-artist-select');
+            const priceRaw = document.getElementById('existing-artist-price').value;
+            const msg = document.getElementById('existing-invited-msg');
+            const artistId = sel.value;
+            if (!artistId) { sel.focus(); return; }
+            const price = parseInt(priceRaw.replace(/\./g, '')) || null;
+            const artist = allEventArtists.find(a => a.id === artistId);
+            try {
+                const update = { isInvitado: true };
+                if (price) update.ticketPriceOverride = price;
+                await updateDoc(doc(db, `events/${eventId}/artists`, artistId), update);
+                if (artist) { artist.isInvitado = true; if (price) artist.ticketPriceOverride = price; }
+                invitedArtists = allEventArtists.filter(a => a.isInvitado);
+                renderInvitedArtists();
+                sel.value = '';
+                document.getElementById('existing-artist-price').value = '';
+                // Quitar del select
+                const opt = sel.querySelector(`option[value="${artistId}"]`);
+                if (opt) opt.remove();
+                msg.textContent = `✅ "${artist?.name || artistId}" marcado como invitado${price ? ' con precio fijo ' + fmtPrice(price) : ''}`;
+                msg.className = 'text-sm mt-2 text-green-400';
+                msg.classList.remove('hidden');
+                setTimeout(() => msg.classList.add('hidden'), 4000);
+            } catch(e) {
+                msg.textContent = '❌ Error: ' + e.message;
+                msg.className = 'text-sm mt-2 text-red-400';
+                msg.classList.remove('hidden');
+            }
+        };
+
         window.addInvitedArtist = async function() {
             const nameInput = document.getElementById('new-invited-name');
+            const priceRaw = document.getElementById('new-invited-price').value;
             const msg = document.getElementById('invited-msg');
             const name = nameInput.value.trim();
             if (!name) { nameInput.focus(); return; }
+            const price = parseInt(priceRaw.replace(/\./g, '')) || null;
             try {
                 const id = crypto.randomUUID();
-                await setDoc(doc(db, `events/${eventId}/artists`, id), {
-                    name,
-                    isInvitado: true,
-                    totalScore: 0,
-                    createdAt: new Date().toISOString(),
-                    createdFrom: 'invitado-rapido'
-                });
-                invitedArtists.push({ id, name, isInvitado: true });
+                const data = { name, isInvitado: true, totalScore: 0, createdAt: new Date().toISOString(), createdFrom: 'invitado-rapido' };
+                if (price) data.ticketPriceOverride = price;
+                await setDoc(doc(db, `events/${eventId}/artists`, id), data);
+                const newArtist = { id, ...data };
+                allEventArtists.push(newArtist);
+                invitedArtists.push(newArtist);
                 renderInvitedArtists();
                 nameInput.value = '';
-                msg.textContent = `✅ "${name}" agregado como artista invitado`;
+                document.getElementById('new-invited-price').value = '';
+                msg.textContent = `✅ "${name}" agregado${price ? ' con precio fijo ' + fmtPrice(price) : ''}`;
                 msg.className = 'text-sm mt-2 text-green-400';
                 msg.classList.remove('hidden');
                 setTimeout(() => msg.classList.add('hidden'), 3000);
@@ -855,12 +947,20 @@
 
         window.removeInvitedArtist = async function(artistId) {
             try {
-                await updateDoc(doc(db, `events/${eventId}/artists`, artistId), { isInvitado: false });
+                await updateDoc(doc(db, `events/${eventId}/artists`, artistId), { isInvitado: false, ticketPriceOverride: null });
+                const a = allEventArtists.find(x => x.id === artistId);
+                if (a) { a.isInvitado = false; delete a.ticketPriceOverride; }
                 invitedArtists = invitedArtists.filter(a => a.id !== artistId);
                 renderInvitedArtists();
-            } catch(e) {
-                alert('Error al quitar el artista: ' + e.message);
-            }
+                // Reincorporar al select de existentes
+                const sel = document.getElementById('existing-artist-select');
+                if (a) {
+                    const opt = document.createElement('option');
+                    opt.value = a.id;
+                    opt.textContent = a.name || 'Sin nombre';
+                    sel.appendChild(opt);
+                }
+            } catch(e) { alert('Error al quitar el artista: ' + e.message); }
         };
         // ────────────────────────────────────────────────────────────────────
 
