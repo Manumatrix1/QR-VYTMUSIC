@@ -606,7 +606,25 @@
         let countdownInterval = null;
         let allArtistsTop = [];     // artistas cargados al inicio
         let selectedTopArtist = null; // artista elegido en el selector del tope
-        let previousPurchasesCount = 0; // ✨ Nuevo: contador de compras previas acumuladas
+        let previousPurchasesCount = 0; // contador de compras previas acumuladas
+        // Tramos de precio configurables: [{minQty, price}] ordenado desc por minQty.
+        // Si está vacío, usa PRICE_ANTICIPADA (compat. hacia atrás).
+        let priceTiers = [];
+
+        // Devuelve el precio adulto que corresponde según el total acumulado de entradas.
+        // Recorre los tramos de mayor a menor — el primero que matchea gana.
+        // Si ninguno matchea (total < mínimo del primer tramo) o no hay tramos,
+        // devuelve null (= usar precio puerta o lógica legacy).
+        function getTierPrice(accumulatedTotal) {
+            if (!priceTiers.length) return null; // sin tramos configurados
+            for (const tier of priceTiers) {
+                if (accumulatedTotal >= tier.minQty) return tier.price;
+            }
+            return null; // no alcanzó ningún tramo → precio puerta
+        }
+
+        // Devuelve el tramo más barato (el de mayor minQty) para mostrar el "objetivo".
+        function getBestTier() { return priceTiers.length ? priceTiers[0] : null; }
 
         // ===================================
         // 💾 BORRADOR AUTOMÁTICO — localStorage
@@ -810,6 +828,10 @@
             PRICE_PUERTA = data.ticketPricePuerta || 15000;
             PRICE_KIDS_ANTICIPADA = data.ticketPriceKidsAnticipada || 5000;
             PRICE_KIDS_PUERTA = data.ticketPriceKidsPuerta || 8000;
+            // Tramos configurables: ordenar desc por minQty (más entradas primero = mejor precio)
+            priceTiers = Array.isArray(data.ticketTiers)
+                ? [...data.ticketTiers].sort((a, b) => b.minQty - a.minQty)
+                : [];
             updatePriceDisplay();
 
             const overrideStr = selectedTopArtist ? (allArtistsTop.find(a => a.id === selectedTopArtist.id) || {}).deadline_override : null;
@@ -958,17 +980,56 @@
             try {
                 const snap = await getDocs(query(collection(db, `events/${eventId}/artists`)));
                 allArtistsTop = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+                // Artistas del certamen primero, invitados al final
+                allArtistsTop.sort((a, b) => {
+                    if (a.isGuest && !b.isGuest) return 1;
+                    if (!a.isGuest && b.isGuest) return -1;
+                    return (a.name||'').localeCompare(b.name||'');
+                });
                 const sel = document.getElementById('top-artist-selector');
                 sel.innerHTML = '<option value="">-- Seleccioná tu artista --</option>';
-                allArtistsTop.forEach(a => {
-                    const opt = document.createElement('option');
-                    opt.value = a.id;
-                    opt.textContent = a.name || 'Sin nombre';
-                    opt.dataset.photo = a.photoURL || '';
-                    opt.dataset.name  = a.name || '';
-                    opt.dataset.deadline = a.deadline_override || '';
-                    sel.appendChild(opt);
-                });
+                // Separador visual si hay invitados
+                const tieneInvitados = allArtistsTop.some(a => a.isGuest);
+                const tieneParticipantes = allArtistsTop.some(a => !a.isGuest);
+                if (tieneParticipantes && tieneInvitados) {
+                    const grpCertamen = document.createElement('optgroup');
+                    grpCertamen.label = '🎤 Participantes del Certamen';
+                    allArtistsTop.filter(a => !a.isGuest).forEach(a => {
+                        const opt = document.createElement('option');
+                        opt.value = a.id;
+                        opt.textContent = a.name || 'Sin nombre';
+                        opt.dataset.photo = a.photoURL || '';
+                        opt.dataset.name  = a.name || '';
+                        opt.dataset.deadline = a.deadline_override || '';
+                        opt.dataset.isGuest = '';
+                        grpCertamen.appendChild(opt);
+                    });
+                    sel.appendChild(grpCertamen);
+                    const grpInvitados = document.createElement('optgroup');
+                    grpInvitados.label = '🎸 Artistas Invitados';
+                    allArtistsTop.filter(a => a.isGuest).forEach(a => {
+                        const opt = document.createElement('option');
+                        opt.value = a.id;
+                        opt.textContent = a.name || 'Sin nombre';
+                        opt.dataset.photo = a.photoURL || '';
+                        opt.dataset.name  = a.name || '';
+                        opt.dataset.deadline = a.deadline_override || '';
+                        opt.dataset.isGuest = 'true';
+                        grpInvitados.appendChild(opt);
+                    });
+                    sel.appendChild(grpInvitados);
+                } else {
+                    allArtistsTop.forEach(a => {
+                        const opt = document.createElement('option');
+                        opt.value = a.id;
+                        opt.textContent = (a.isGuest ? '🎸 ' : '') + (a.name || 'Sin nombre');
+                        opt.dataset.photo = a.photoURL || '';
+                        opt.dataset.name  = a.name || '';
+                        opt.dataset.deadline = a.deadline_override || '';
+                        opt.dataset.isGuest = a.isGuest ? 'true' : '';
+                        sel.appendChild(opt);
+                    });
+                }
             } catch(e) { console.warn('Error cargando artistas tope:', e); }
         }
 
@@ -982,11 +1043,11 @@
                 if (eventData) applyDeadlineConfig(eventData);
                 return;
             }
-            selectedTopArtist = { id: opt.value, name: opt.dataset.name, photoURL: opt.dataset.photo, deadline_override: opt.dataset.deadline || null };
+            selectedTopArtist = { id: opt.value, name: opt.dataset.name, photoURL: opt.dataset.photo, deadline_override: opt.dataset.deadline || null, isGuest: opt.dataset.isGuest === 'true' };
             saveDraft();
             // Mostrar preview
             document.getElementById('top-artist-photo').src = opt.dataset.photo || 'https://placehold.co/56x56/1f2937/f9fafb?text=' + encodeURIComponent((opt.dataset.name||'A').charAt(0));
-            document.getElementById('top-artist-name').textContent = opt.dataset.name;
+            document.getElementById('top-artist-name').textContent = (opt.dataset.isGuest === 'true' ? '🎸 ' : '') + opt.dataset.name;
             // Construir label de deadline
             const dl = opt.dataset.deadline ? new Date(opt.dataset.deadline) : null;
             const now = new Date();
@@ -1090,16 +1151,20 @@
             const quantityKids = parseInt(document.getElementById('ticket-quantity-kids').value) || 0;
             const totalTickets = quantityAdults + quantityKids;
 
-            // ✨ NUEVO: Sumar compras previas para calcular el precio correcto
+            // Sumar compras previas para calcular el precio correcto (acumulado)
             const accumulatedTotal = previousPurchasesCount + totalTickets;
             console.log(`💰 Cálculo de precio: ${previousPurchasesCount} previas + ${totalTickets} actuales = ${accumulatedTotal} total acumulado`);
 
-            // LÓGICA CORREGIDA: Si tiene 5+ entradas acumuladas, SIEMPRE precio anticipado (ignora deadline)
-            // Precio puerta SOLO si: tiene menos de 5 entradas acumuladas Y además pasó el deadline
-            const hasMinimunTickets = accumulatedTotal >= 5;
-            const isDoorPrice = !hasMinimunTickets && currentPrice >= PRICE_PUERTA;
-            const effectivePriceAdult = hasMinimunTickets ? PRICE_ANTICIPADA : (isDoorPrice ? PRICE_PUERTA : currentPrice);
-            const effectivePriceKids  = hasMinimunTickets ? PRICE_KIDS_ANTICIPADA : (isDoorPrice ? PRICE_KIDS_PUERTA : PRICE_KIDS_ANTICIPADA);
+            // Buscar precio en tramos configurados (mayor cantidad = precio más bajo).
+            // Si ningún tramo matchea → precio puerta (no alcanzó el mínimo).
+            // Sin tramos configurados → lógica legacy (>= 5 entradas = anticipada).
+            const tierPrice = getTierPrice(accumulatedTotal);
+            const legacyHasMin = accumulatedTotal >= 5;
+            const hasMinimunTickets = tierPrice !== null || (!priceTiers.length && legacyHasMin);
+            const effectivePriceAdult = tierPrice !== null
+                ? tierPrice
+                : (hasMinimunTickets ? PRICE_ANTICIPADA : (currentPrice >= PRICE_PUERTA ? PRICE_PUERTA : currentPrice));
+            const effectivePriceKids = hasMinimunTickets ? PRICE_KIDS_ANTICIPADA : (currentPrice >= PRICE_PUERTA ? PRICE_KIDS_PUERTA : PRICE_KIDS_ANTICIPADA);
 
             const totalAdults = quantityAdults * effectivePriceAdult;
             const totalKids = quantityKids * effectivePriceKids;
@@ -1108,38 +1173,45 @@
             document.getElementById('total-amount').textContent = `$${total.toLocaleString()}`;
             document.getElementById('price-per-ticket').textContent = `$${effectivePriceAdult.toLocaleString()}`;
 
-            // Mostrar/ocultar aviso de mínimo 5 entradas
+            // Mostrar aviso con la lógica de tramos configurados
             const minQtyNotice = document.getElementById('min-qty-notice');
             if (minQtyNotice) {
-                if (accumulatedTotal < 5) {
-                    // Mostrar cuántas faltan si hay compras previas
-                    if (previousPurchasesCount > 0) {
+                const bestTier = getBestTier(); // tramo más barato (mayor minQty)
+                if (!hasMinimunTickets) {
+                    // No alcanzó ningún tramo → mostrar cuántas faltan
+                    if (bestTier) {
+                        const needed = bestTier.minQty - accumulatedTotal;
+                        const prevMsg = previousPurchasesCount > 0
+                            ? `Ya tenés <strong>${previousPurchasesCount}</strong> entrada${previousPurchasesCount > 1 ? 's' : ''}. Te ${needed > 1 ? 'faltan' : 'falta'} <strong>${needed} más</strong>`
+                            : `Te ${needed > 1 ? 'faltan' : 'falta'} <strong>${needed} más</strong>`;
+                        // Armar tabla de tramos para orientar al comprador
+                        const tiersTable = priceTiers.map(t =>
+                            `<span class="${accumulatedTotal >= t.minQty ? 'text-green-300 line-through' : 'text-yellow-200'}">
+                             ${t.minQty}+ entradas → $${t.price.toLocaleString()}</span>`
+                        ).join(' &nbsp;|&nbsp; ');
+                        minQtyNotice.innerHTML = `
+                            <p class="text-orange-200 font-semibold text-sm mb-1">
+                                💡 ${prevMsg} para el mejor precio anticipado ($${bestTier.price.toLocaleString()} c/u).
+                                Ahora el precio es <strong>$${PRICE_PUERTA.toLocaleString()} c/u</strong>.
+                            </p>
+                            <p class="text-xs text-gray-300 mt-1">${tiersTable}</p>`;
+                    } else {
                         const needed = 5 - accumulatedTotal;
                         minQtyNotice.innerHTML = `
                             <p class="text-orange-200 font-semibold text-sm">
-                                💡 Ya tenés ${previousPurchasesCount} entrada${previousPurchasesCount > 1 ? 's' : ''}.
-                                Te ${needed > 1 ? 'faltan' : 'falta'} <strong>${needed} más</strong> para alcanzar el precio anticipado ($${PRICE_ANTICIPADA.toLocaleString()} c/u).
-                                Con ${accumulatedTotal} el precio es de puerta (<strong>$${PRICE_PUERTA.toLocaleString()} c/u</strong>).
-                            </p>
-                        `;
-                    } else {
-                        minQtyNotice.innerHTML = `
-                            <p class="text-orange-200 font-semibold text-sm">
                                 💡 El precio anticipado aplica desde <strong>5 entradas</strong>.
-                                Con menos de 5 el precio es el de puerta (<strong>$${PRICE_PUERTA.toLocaleString()} c/u</strong>) — pero igual podés comprarlas sin problema.
-                            </p>
-                        `;
+                                Con menos de 5 el precio es el de puerta (<strong>$${PRICE_PUERTA.toLocaleString()} c/u</strong>) — pero igual podés comprarlas.
+                            </p>`;
                     }
                     minQtyNotice.className = 'bg-orange-900/40 border border-orange-400 rounded-lg p-4';
                     minQtyNotice.classList.remove('hidden');
-                } else if (accumulatedTotal >= 5 && previousPurchasesCount > 0) {
-                    // ✅ Mostrar mensaje de éxito si alcanzaron el mínimo (ignora deadline)
+                } else if (previousPurchasesCount > 0) {
+                    // ✅ Ya tiene entradas previas y alcanzó un tramo
                     minQtyNotice.innerHTML = `
                         <p class="text-green-200 font-semibold text-sm">
-                            ✅ ¡Perfecto! Con ${accumulatedTotal} entradas en total (${previousPurchasesCount} previas + ${totalTickets} ${totalTickets > 1 ? 'nuevas' : 'nueva'})
-                            obtenés el <strong>precio anticipado de $${PRICE_ANTICIPADA.toLocaleString()} c/u</strong> — incluso si expiró la fecha límite.
-                        </p>
-                    `;
+                            ✅ Con ${accumulatedTotal} entradas en total (${previousPurchasesCount} previas + ${totalTickets} ${totalTickets > 1 ? 'nuevas' : 'nueva'})
+                            obtenés <strong>$${effectivePriceAdult.toLocaleString()} c/u</strong> — incluso si expiró la fecha límite.
+                        </p>`;
                     minQtyNotice.className = 'bg-green-900/40 border border-green-400 rounded-lg p-4';
                     minQtyNotice.classList.remove('hidden');
                 } else {
@@ -1445,13 +1517,15 @@
             const quantityKids = parseInt(document.getElementById('ticket-quantity-kids').value) || 0;
             const quantity = quantityAdults + quantityKids;
             
-            // ✨ NUEVO: Calcular precio con total acumulado (previas + actuales)
+            // Calcular precio con total acumulado (previas + actuales)
             const accumulatedTotal = previousPurchasesCount + quantity;
-            const isDoorPrice = currentPrice >= PRICE_PUERTA || accumulatedTotal < 5;
-            const effectivePriceAdult = isDoorPrice ? PRICE_PUERTA : PRICE_ANTICIPADA;
-            const effectivePriceKids  = isDoorPrice ? PRICE_KIDS_PUERTA : PRICE_KIDS_ANTICIPADA;
+            const tierPrice = getTierPrice(accumulatedTotal);
+            const legacyHasMin = accumulatedTotal >= 5;
+            const hasMinQty = tierPrice !== null || (!priceTiers.length && legacyHasMin);
+            const effectivePriceAdult = tierPrice !== null ? tierPrice : (hasMinQty ? PRICE_ANTICIPADA : PRICE_PUERTA);
+            const effectivePriceKids  = hasMinQty ? PRICE_KIDS_ANTICIPADA : PRICE_KIDS_PUERTA;
             const totalAmount = (quantityAdults * effectivePriceAdult) + (quantityKids * effectivePriceKids);
-            
+
             console.log(`💰 Orden final: ${previousPurchasesCount} previas + ${quantity} nuevas = ${accumulatedTotal} total → Precio: $${effectivePriceAdult}`);
 
             // Recolectar nombres del Paso 1 (diferenciando adultos y niños)

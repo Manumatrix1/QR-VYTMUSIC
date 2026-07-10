@@ -364,6 +364,43 @@
             </div>
         </div>
 
+        <!-- TRAMOS DE PRECIO ANTICIPADO -->
+        <div class="section-card mb-8">
+            <h2 class="section-title">💰 Tramos de Precio Anticipado</h2>
+            <p class="text-gray-400 text-sm text-center mb-5">
+                Cuantas más entradas compra una persona, menor es el precio. Las compras previas del mismo nombre se <strong>acumulan</strong>.
+            </p>
+            <div id="tiers-list" class="space-y-2 mb-5">
+                <p class="text-gray-500 text-sm text-center">Cargando tramos...</p>
+            </div>
+            <div class="bg-gray-800 rounded-xl p-4 border border-gray-600">
+                <p class="text-sm font-bold text-gray-300 mb-3">➕ Agregar tramo</p>
+                <div class="flex gap-3 flex-wrap items-end">
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">Desde (cant. mín.)</label>
+                        <input type="number" id="new-tier-qty" min="1" step="1" value="7" class="w-24 p-2 rounded-lg bg-gray-900 border border-gray-600 text-white text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">Precio adulto ($)</label>
+                        <input type="number" id="new-tier-price" min="0" step="500" value="10000" class="w-32 p-2 rounded-lg bg-gray-900 border border-gray-600 text-white text-sm">
+                    </div>
+                    <button onclick="addTier()" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-lg text-sm transition">
+                        Agregar
+                    </button>
+                </div>
+            </div>
+            <div class="bg-gray-800 rounded-xl p-4 border border-gray-600 mt-3 flex gap-3 flex-wrap items-end">
+                <div class="flex-1">
+                    <label class="block text-xs text-gray-400 mb-1">Precio puerta (sin mínimo / vencida)</label>
+                    <input type="number" id="tier-price-puerta" min="0" step="500" value="15000" class="w-full p-2 rounded-lg bg-gray-900 border border-gray-600 text-white text-sm">
+                </div>
+                <button onclick="saveTiers()" class="px-6 py-2 bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg text-sm transition">
+                    💾 Guardar cambios
+                </button>
+            </div>
+            <p id="tiers-save-msg" class="text-center text-sm mt-3 hidden"></p>
+        </div>
+
         <!-- GESTIÓN DE ENTRADAS -->
         <div class="section-card mb-8">
             <h2 class="section-title">🎫 Control de Entradas</h2>
@@ -624,9 +661,12 @@
             
             // Cargar estadísticas
             loadStats();
-            
+
             // Cargar ranking en vivo
             loadArtistRanking();
+
+            // Cargar tramos de precio
+            loadTiers();
         }
 
         function loadStats() {
@@ -653,6 +693,73 @@
         // ======================================
         // RESETEAR ENTRADAS - MARCAR TODAS COMO NO USADAS
         // ======================================
+        // ======================================
+        // TRAMOS DE PRECIO ANTICIPADO
+        // ======================================
+        let currentTiers = [];
+
+        function renderTiersList() {
+            const el = document.getElementById('tiers-list');
+            if (!currentTiers.length) {
+                el.innerHTML = '<p class="text-gray-500 text-sm text-center italic">Sin tramos configurados — se usa el precio anticipado fijo.</p>';
+                return;
+            }
+            // Ordenar desc para mostrarlo de mayor a menor beneficio
+            const sorted = [...currentTiers].sort((a, b) => b.minQty - a.minQty);
+            el.innerHTML = sorted.map((t, i) => `
+                <div class="flex items-center justify-between bg-gray-900/60 rounded-lg px-4 py-2 border border-gray-700">
+                    <span class="text-white font-semibold">${t.minQty}+ entradas</span>
+                    <span class="text-green-400 font-bold">$${t.price.toLocaleString()}</span>
+                    <button onclick="removeTier(${t.minQty})" class="text-red-400 hover:text-red-300 text-sm px-2 py-1 rounded transition">✕ Quitar</button>
+                </div>`).join('');
+        }
+
+        async function loadTiers() {
+            try {
+                const snap = await getDoc(doc(db, 'events', eventId));
+                const data = snap.exists() ? snap.data() : {};
+                currentTiers = Array.isArray(data.ticketTiers) ? [...data.ticketTiers] : [];
+                if (data.ticketPricePuerta) document.getElementById('tier-price-puerta').value = data.ticketPricePuerta;
+                renderTiersList();
+            } catch(e) {
+                console.error('Error cargando tramos:', e);
+            }
+        }
+
+        window.addTier = function() {
+            const qty = parseInt(document.getElementById('new-tier-qty').value);
+            const price = parseInt(document.getElementById('new-tier-price').value);
+            if (!qty || qty < 1 || !price || price < 0) return alert('Ingresá cantidad y precio válidos.');
+            currentTiers = currentTiers.filter(t => t.minQty !== qty); // reemplaza si ya existe esa cant.
+            currentTiers.push({ minQty: qty, price });
+            renderTiersList();
+        };
+
+        window.removeTier = function(minQty) {
+            currentTiers = currentTiers.filter(t => t.minQty !== minQty);
+            renderTiersList();
+        };
+
+        window.saveTiers = async function() {
+            const pricePuerta = parseInt(document.getElementById('tier-price-puerta').value) || 15000;
+            const msg = document.getElementById('tiers-save-msg');
+            try {
+                await updateDoc(doc(db, 'events', eventId), {
+                    ticketTiers: currentTiers,
+                    ticketPricePuerta: pricePuerta
+                });
+                msg.textContent = '✅ Tramos guardados correctamente.';
+                msg.className = 'text-center text-sm mt-3 text-green-400';
+                msg.classList.remove('hidden');
+                setTimeout(() => msg.classList.add('hidden'), 3000);
+            } catch(e) {
+                console.error('Error guardando tramos:', e);
+                msg.textContent = '❌ Error al guardar. Intentá de nuevo.';
+                msg.className = 'text-center text-sm mt-3 text-red-400';
+                msg.classList.remove('hidden');
+            }
+        };
+
         window.resetAllTickets = async function() {
             const confirmed = confirm(
                 '⚠️ ¿ESTÁS SEGURA?\n\n' +
