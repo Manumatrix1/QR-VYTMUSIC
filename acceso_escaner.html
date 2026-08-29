@@ -57,6 +57,35 @@
             width: 100%;
         }
         .retry-btn:active { opacity: 0.8; transform: scale(0.98); }
+
+        /* Formulario de acceso (nombre + código) */
+        .access-box { max-width: 360px; width: 100%; display: none; }
+        .access-box input {
+            width: 100%;
+            background: #1e293b;
+            border: 2px solid #334155;
+            border-radius: 0.75rem;
+            padding: 0.9rem 1rem;
+            color: #fff;
+            font-size: 1.05rem;
+            margin-bottom: 0.9rem;
+            text-align: center;
+        }
+        .access-box input:focus { outline: none; border-color: #10b981; }
+        .access-box input#code-input { text-transform: uppercase; letter-spacing: 0.1em; font-weight: 700; }
+        .access-btn {
+            width: 100%;
+            background: #10b981;
+            color: #052e1f;
+            border: none;
+            padding: 0.9rem 1rem;
+            border-radius: 0.75rem;
+            font-size: 1.05rem;
+            font-weight: 800;
+            cursor: pointer;
+        }
+        .access-btn:disabled { opacity: 0.6; }
+        .access-error { color: #f87171; font-size: 0.85rem; margin-top: 0.75rem; min-height: 1.2em; }
     </style>
 </head>
 <body>
@@ -70,6 +99,18 @@
         <div class="gala-name" id="gala-name"></div>
     </div>
 
+    <div class="access-box" id="access-box">
+        <div class="logo">🔑</div>
+        <div class="title">Acceso Staff</div>
+        <div class="subtitle" id="access-gala-name">VYT MUSIC</div>
+        <form id="access-form">
+            <input id="name-input" type="text" placeholder="Tu nombre" required autocomplete="off">
+            <input id="code-input" type="text" placeholder="Código de acceso" required autocomplete="off">
+            <button type="submit" class="access-btn" id="access-submit-btn">Ingresar</button>
+            <div class="access-error" id="access-error"></div>
+        </form>
+    </div>
+
     <div class="error-box" id="error-box">
         <div class="error-icon">⏳</div>
         <div class="error-title">Sin gala activa</div>
@@ -81,8 +122,12 @@
     </div>
 
     <script type="module">
-        import { db } from './firebase_config.js';
+        import { auth, db } from './firebase_config.js';
         import { collection, query, where, getDocs } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+        import { signInAnonymously } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
+
+        let activeEventId = null;
+        let activeEventName = 'VYT MUSIC';
 
         async function entrar() {
             try {
@@ -93,17 +138,68 @@
                     return;
                 }
                 const gala = snap.docs[0];
-                const eventId = gala.id;
-                const eventName = gala.data().name || 'VYT MUSIC';
-                document.getElementById('gala-name').textContent = eventName;
-                window.location.replace(
-                    `gestion_asistentes.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`
-                );
+                activeEventId = gala.id;
+                activeEventName = gala.data().name || 'VYT MUSIC';
+
+                document.getElementById('loading-state').style.display = 'none';
+                document.getElementById('access-gala-name').textContent = activeEventName;
+                document.getElementById('access-box').style.display = 'block';
+                document.getElementById('name-input').focus();
             } catch (e) {
                 console.error(e);
                 document.querySelector('.msg').textContent = '❌ Error de conexión. Revisá tu internet y reintentá.';
             }
         }
+
+        // Valida el código contra los accesos que el organizador creó en
+        // "Gestión de Asistentes" -- antes este link entraba DIRECTO al panel
+        // de administración (gestion_asistentes.html) sin pedir nada, así que
+        // cualquiera con el link podía generar/borrar códigos y entrar al
+        // escáner sin validar nada. Ahora valida acá y recién después deja
+        // pasar, con sesión anónima para que el asistente pueda además
+        // generar entradas en la puerta (las reglas de Firestore exigen estar
+        // autenticado para crear entradas, no solo para escanear).
+        document.getElementById('access-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const errorEl = document.getElementById('access-error');
+            const btn = document.getElementById('access-submit-btn');
+            const name = document.getElementById('name-input').value.trim();
+            const code = document.getElementById('code-input').value.trim().toUpperCase();
+
+            errorEl.textContent = '';
+            if (!name || !code) return;
+
+            btn.disabled = true;
+            btn.textContent = 'Verificando...';
+            try {
+                const codesCol = collection(db, `events/${activeEventId}/assistant_codes`);
+                const q = query(codesCol, where('code', '==', code), where('active', '==', true));
+                const snap = await getDocs(q);
+
+                if (snap.empty) {
+                    errorEl.textContent = '❌ Código incorrecto o desactivado. Pedile el código al organizador.';
+                    btn.disabled = false;
+                    btn.textContent = 'Ingresar';
+                    return;
+                }
+
+                await signInAnonymously(auth);
+
+                try {
+                    localStorage.setItem('vyt_door_seller', JSON.stringify({ name, role: 'Staff' }));
+                    localStorage.setItem('vyt_assistant_session', JSON.stringify({ name, code, eventId: activeEventId }));
+                } catch (e2) {}
+
+                window.location.replace(
+                    `ingreso_evento.html?eventId=${activeEventId}&eventName=${encodeURIComponent(activeEventName)}&asistente=1`
+                );
+            } catch (error) {
+                console.error(error);
+                errorEl.textContent = '❌ Error de conexión. Revisá tu internet y reintentá.';
+                btn.disabled = false;
+                btn.textContent = 'Ingresar';
+            }
+        });
 
         entrar();
     </script>

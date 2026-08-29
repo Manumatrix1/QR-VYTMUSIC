@@ -27,9 +27,15 @@
             </section>
 
             <section class="bg-gray-800 p-6 rounded-lg shadow-xl">
-                <h2 class="text-2xl font-bold mb-4">Generar Código para Asistente</h2>
-                <p class="text-gray-400 mb-6">Genera códigos para que tus asistentes puedan acceder a las funciones de escaneo y lista de entradas de este evento.</p>
-                <button id="generate-code-btn" class="w-full max-w-xs mx-auto block px-4 py-3 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700 mb-6">Generar Nuevo Código de Evento</button>
+                <h2 class="text-2xl font-bold mb-4">Crear Acceso para Asistente</h2>
+                <p class="text-gray-400 mb-6">Elegís vos el código (fácil de dictar, ej: JUAN2026) y se lo pasás a tu asistente junto con el link de acceso. Al entrar, queda habilitado para escanear y cargar entradas en la puerta.</p>
+                <form id="create-code-form" class="max-w-xs mx-auto space-y-3 mb-6">
+                    <input id="new-code-name" type="text" placeholder="Nombre del asistente" required
+                        class="w-full px-4 py-3 rounded-lg bg-gray-900 border-2 border-gray-700 text-white focus:border-indigo-500 focus:outline-none">
+                    <input id="new-code-value" type="text" placeholder="Código (vos lo elegís)" required
+                        class="w-full px-4 py-3 rounded-lg bg-gray-900 border-2 border-gray-700 text-white focus:border-indigo-500 focus:outline-none uppercase">
+                    <button type="submit" id="generate-code-btn" class="w-full px-4 py-3 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700">Crear Acceso</button>
+                </form>
                 <div>
                     <h3 class="text-xl font-semibold mb-4 text-center">Códigos Activos para este Evento</h3>
                     <ul id="event-codes-list" class="space-y-3">
@@ -41,7 +47,7 @@
 
     <script type="module">
         import { db, auth } from './firebase_config.js';
-        import { collection, onSnapshot, query, addDoc, serverTimestamp, deleteDoc, doc, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { collection, onSnapshot, query, addDoc, serverTimestamp, deleteDoc, doc, where, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 
         const urlParams = new URLSearchParams(window.location.search);
@@ -74,6 +80,7 @@
                 li.innerHTML = `
                     <div>
                         <p class="font-bold text-2xl text-sky-300">${code.code}</p>
+                        <p class="text-sm text-gray-300">${code.name || 'Sin nombre'}</p>
                         <p class="text-xs text-gray-500">Generado: ${new Date(code.createdAt?.toDate()).toLocaleString()}</p>
                     </div>
                     <button data-id="${code.id}" class="deactivate-code-btn px-3 py-1 text-sm bg-red-600 text-white font-bold rounded-lg hover:bg-red-700">Desactivar</button>
@@ -82,16 +89,46 @@
             });
         }
 
-        // Generar un nuevo código
-        document.getElementById('generate-code-btn').addEventListener('click', async () => {
-            const newCode = Math.random().toString(36).substring(2, 8).toUpperCase();
-            await addDoc(codesCol, {
-                code: newCode,
-                createdAt: serverTimestamp(),
-                active: true,
-                eventId: eventId // Guardamos el ID del evento para referencia
-            });
-            alert(`Código generado: ${newCode}`);
+        // Crear un nuevo acceso con nombre + código elegido por el organizador
+        document.getElementById('create-code-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const nameInput = document.getElementById('new-code-name');
+            const codeInput = document.getElementById('new-code-value');
+            const name = nameInput.value.trim();
+            const newCode = codeInput.value.trim().toUpperCase();
+
+            if (!name || newCode.length < 4) {
+                alert('⚠️ Completá el nombre y un código de al menos 4 caracteres.');
+                return;
+            }
+
+            // Evitar códigos duplicados activos en este evento
+            const dupQuery = query(codesCol, where('code', '==', newCode), where('active', '==', true));
+            const dupSnap = await getDocs(dupQuery);
+            if (!dupSnap.empty) {
+                alert('⚠️ Ese código ya está en uso para este evento. Elegí otro.');
+                return;
+            }
+
+            const btn = document.getElementById('generate-code-btn');
+            btn.disabled = true;
+            try {
+                await addDoc(codesCol, {
+                    code: newCode,
+                    name: name,
+                    createdAt: serverTimestamp(),
+                    active: true,
+                    eventId: eventId
+                });
+                nameInput.value = '';
+                codeInput.value = '';
+                alert(`✅ Acceso creado para ${name}. Código: ${newCode}`);
+            } catch (error) {
+                console.error('Error creando código:', error);
+                alert('❌ No se pudo crear el acceso: ' + error.message);
+            } finally {
+                btn.disabled = false;
+            }
         });
 
         // Desactivar un código

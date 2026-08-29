@@ -262,9 +262,26 @@
 
         // Array para almacenar entradas generadas en esta sesión
         let sessionTickets = [];
-        
+
         // 🎭 ARTISTAS DISPONIBLES EN ESTA GALA
         let availableArtists = [];
+
+        // 💰 Precio de puerta configurado por el organizador (admin_preventa.html).
+        // Antes el precio por defecto era "10000" fijo en el HTML -- si el
+        // organizador cambiaba el precio ahí, acá seguía mostrando el viejo.
+        let doorPrice = 10000;
+        async function loadDoorPrice() {
+            try {
+                const evSnap = await getDoc(doc(db, 'events', eventId));
+                if (evSnap.exists() && evSnap.data().ticketPricePuerta) {
+                    doorPrice = evSnap.data().ticketPricePuerta;
+                }
+                if (!ui.ticketPrice.value) ui.ticketPrice.value = doorPrice;
+                ui.ticketPrice.placeholder = String(doorPrice);
+            } catch (error) {
+                console.warn('⚠️ No se pudo cargar el precio de puerta, uso el default:', error);
+            }
+        }
         
         // Cargar artistas al iniciar
         async function loadArtists() {
@@ -623,6 +640,7 @@
         
         // 🏁 INICIALIZAR
         loadArtists();
+        loadDoorPrice();
 
         // Enter para generar entrada rápida
         [ui.clientName, ui.ticketPrice].forEach(input => {
@@ -686,7 +704,7 @@
             // Pre-llenar precio por defecto en modo express
             if (isExpress) {
                 if (!ui.ticketPrice.value || ui.ticketPrice.value === '0') {
-                    ui.ticketPrice.value = '10000'; // Precio por defecto
+                    ui.ticketPrice.value = doorPrice; // Precio configurado por el organizador
                 }
                 // Focus en nombre del cliente para entrada rápida
                 ui.clientName.focus();

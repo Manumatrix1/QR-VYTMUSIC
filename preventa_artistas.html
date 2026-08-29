@@ -2689,20 +2689,12 @@
         }
         
         // Cargar configuración al inicio (escucha en tiempo real)
-        // Primero carga directo del servidor via REST (sin SDK, sin caché), luego escucha cambios en tiempo real
-        fetch(`https://firestore.googleapis.com/v1/projects/vyt-music/databases/(default)/documents/events/${eventId}`)
-            .then(r => r.json())
-            .then(json => {
-                const f = json?.fields || {};
-                applyDeadlineConfig({
-                    ticketDeadline: f.ticketDeadline?.stringValue || null,
-                    ticketPriceAnticipada: parseInt(f.ticketPriceAnticipada?.integerValue || 0) || undefined,
-                    ticketPricePuerta: parseInt(f.ticketPricePuerta?.integerValue || 0) || undefined,
-                    ticketPriceKidsAnticipada: parseInt(f.ticketPriceKidsAnticipada?.integerValue || 0) || undefined,
-                    ticketPriceKidsPuerta: parseInt(f.ticketPriceKidsPuerta?.integerValue || 0) || undefined,
-                });
-            })
-            .catch(e => console.warn('Error carga REST:', e));
+        // Antes había ACÁ un fetch REST paralelo "para que abra rápido" que
+        // corría en paralelo con este mismo onSnapshot -- si ese fetch tardaba
+        // más (o venía con algún campo incompleto), pisaba el precio correcto
+        // con el default hardcodeado (10000) DESPUÉS de que el listener ya
+        // había mostrado el precio real. Se saca: el listener de abajo ya
+        // entrega el precio real en la primera respuesta del servidor.
         loadEventConfig();
 
         // Retomar orden aprobada si viene desde el WA del admin (link con ?orderId=XXX)
