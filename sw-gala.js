@@ -45,32 +45,32 @@ self.addEventListener('activate', (event) => {
 // Interceptar requests
 self.addEventListener('fetch', (event) => {
     const url = event.request.url;
-    
+
     // Solo interceptar audio files de Firebase Storage
-    if (url.includes('firebasestorage.googleapis.com') && 
+    if (url.includes('firebasestorage.googleapis.com') &&
         (url.includes('.mp3') || url.includes('.wav') || url.includes('/pistas/'))) {
-        
+
         event.respondWith(
             caches.match(event.request).then((cachedResponse) => {
                 if (cachedResponse) {
                     console.log('🎵 Sirviendo desde cache:', url.substring(0, 100));
                     return cachedResponse;
                 }
-                
+
                 console.log('📡 Descargando y cacheando:', url.substring(0, 100));
                 return fetch(event.request).then((response) => {
                     // No cachear si la respuesta no es exitosa
                     if (!response || response.status !== 200) {
                         return response;
                     }
-                    
+
                     // Clonar la respuesta porque solo se puede usar una vez
                     const responseToCache = response.clone();
-                    
+
                     caches.open(CACHE_NAME).then((cache) => {
                         cache.put(event.request, responseToCache);
                     });
-                    
+
                     return response;
                 }).catch((error) => {
                     console.error('❌ Error descargando audio:', error);
@@ -78,15 +78,35 @@ self.addEventListener('fetch', (event) => {
                 });
             })
         );
-    } 
-    // Para otros recursos, estrategia network-first
-    else {
-        event.respondWith(
-            fetch(event.request).catch(() => {
-                return caches.match(event.request);
-            })
-        );
+        return;
     }
+
+    // No tocar el tráfico de Firestore/Auth -- son requests tipo streaming
+    // (WebChannel/gRPC-web), no GETs cacheables, e interceptarlos puede romper
+    // la conexión en tiempo real. Se dejan pasar directo, sin event.respondWith.
+    if (url.includes('firestore.googleapis.com') || url.includes('identitytoolkit.googleapis.com') || url.includes('securetoken.googleapis.com')) {
+        return;
+    }
+
+    // Para el resto (HTML/CSS/JS, Tailwind/FontAwesome por CDN): cache-first.
+    // Antes era network-first, que en el lugar del evento (wifi débil o sin
+    // internet) se quedaba esperando la red antes de mostrar nada -- por eso
+    // la apertura de la gala tardaba tanto. Ahora abre al toque desde el
+    // cache (instalado en el install/al cachear "Todo") y si hay red,
+    // actualiza el cache en segundo plano para la próxima vez.
+    event.respondWith(
+        caches.match(event.request).then((cachedResponse) => {
+            const networkFetch = fetch(event.request).then((response) => {
+                if (response && response.status === 200) {
+                    const responseToCache = response.clone();
+                    caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseToCache));
+                }
+                return response;
+            }).catch(() => cachedResponse);
+
+            return cachedResponse || networkFetch;
+        })
+    );
 });
 
 // Mensaje desde la app

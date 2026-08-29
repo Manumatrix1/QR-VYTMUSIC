@@ -289,55 +289,99 @@
                 .catch(err => console.error('❌ Error registrando SW:', err));
         }
 
+        // Caché local de la playlist (localStorage) -- lo que tarda la apertura
+        // NO es el audio (eso ya lo cachea el Service Worker), es esperar a
+        // Firestore para armar la lista de artistas/pistas. Guardando esa
+        // lista ya armada, la próxima apertura se muestra al instante desde
+        // acá y sigue andando sin internet.
+        const PLAYLIST_CACHE_KEY = `vyt_gala_playlist_${eventId}`;
+
+        function leerPlaylistCacheada() {
+            try { return JSON.parse(localStorage.getItem(PLAYLIST_CACHE_KEY) || 'null'); } catch (e) { return null; }
+        }
+        function guardarPlaylistCacheada(eventName, playlistData) {
+            try {
+                localStorage.setItem(PLAYLIST_CACHE_KEY, JSON.stringify({ eventName: eventName || '', playlist: playlistData, savedAt: Date.now() }));
+            } catch (e) {}
+        }
+        function mostrarPlaylist(eventName, playlistData) {
+            document.getElementById('eventName').textContent = eventName || '';
+            playlist = playlistData;
+            renderPlaylist();
+            document.getElementById('loading').classList.add('hidden');
+            document.getElementById('mainContent').classList.remove('hidden');
+        }
+        // Corta la espera a Firestore si la red está muy lenta/caída, para no
+        // dejar la pantalla de carga colgada -- a los 6s se rinde y usa lo
+        // que haya en caché (o avisa que no hay nada guardado todavía).
+        function conTimeout(promesa, ms) {
+            return Promise.race([
+                promesa,
+                new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ms))
+            ]);
+        }
+
         // Función para cargar datos
         async function loadPlaylist() {
+            const cacheada = leerPlaylistCacheada();
+            const habiaCache = !!(cacheada && cacheada.playlist && cacheada.playlist.length);
+
+            if (habiaCache) {
+                console.log('📦 Mostrando playlist guardada localmente:', cacheada.playlist.length, 'pistas');
+                mostrarPlaylist(cacheada.eventName, cacheada.playlist);
+                showStatus(navigator.onLine ? '📦 Lista guardada -- actualizando en segundo plano...' : '📦 Lista guardada (sin internet)', 'info');
+            } else if (!navigator.onLine) {
+                document.getElementById('loading').classList.add('hidden');
+                document.getElementById('mainContent').classList.remove('hidden');
+                showStatus('📡 Sin internet y todavía no hay ninguna gala guardada en este dispositivo. Abrí esta página una vez con internet para guardarla.', 'error');
+                return;
+            }
+
             try {
                 console.log('🎵 Iniciando carga de playlist para eventId:', eventId);
                 const { collection, doc, getDoc, getDocs } = window.firestoreModules;
-                
+
                 // Cargar evento
                 const eventRef = doc(window.db, 'eventos', eventId);
-                const eventSnap = await getDoc(eventRef);
-                if (eventSnap.exists()) {
-                    document.getElementById('eventName').textContent = eventSnap.data().nombre || '';
-                    console.log('✅ Evento cargado:', eventSnap.data().nombre);
-                }
-                
+                const eventSnap = await conTimeout(getDoc(eventRef), 6000);
+                const eventName = eventSnap.exists() ? (eventSnap.data().nombre || '') : '';
+                if (eventSnap.exists()) console.log('✅ Evento cargado:', eventName);
+
                 // Cargar artistas (intentar ambas estructuras)
                 console.log('📂 Buscando artistas en: events/' + eventId + '/artists');
                 let artistsRef = collection(window.db, `events/${eventId}/artists`);
-                let artistsSnap = await getDocs(artistsRef);
-                
+                let artistsSnap = await conTimeout(getDocs(artistsRef), 6000);
+
                 if (artistsSnap.empty) {
                     console.log('⚠️ No encontrado en subcollection, probando: artistas_' + eventId);
                     artistsRef = collection(window.db, `artistas_${eventId}`);
-                    artistsSnap = await getDocs(artistsRef);
+                    artistsSnap = await conTimeout(getDocs(artistsRef), 6000);
                 }
-                
+
                 const artists = [];
                 artistsSnap.forEach(doc => {
                     artists.push({ id: doc.id, ...doc.data() });
                 });
                 console.log('✅ Artistas encontrados:', artists.length, artists);
-                
+
                 // Cargar pistas
                 console.log('🎵 Buscando pistas en: pistas_' + eventId);
                 const pistasRef = collection(window.db, `pistas_${eventId}`);
-                const pistasSnap = await getDocs(pistasRef);
-                
+                const pistasSnap = await conTimeout(getDocs(pistasRef), 6000);
+
                 const tracks = [];
                 pistasSnap.forEach(doc => {
                     tracks.push({ id: doc.id, ...doc.data() });
                 });
                 console.log('✅ Pistas encontradas:', tracks.length, tracks);
-                
+
                 // Combinar artistas con sus pistas
                 const playlistData = [];
-                
+
                 for (const artist of artists) {
                     const artistTracks = tracks.filter(t => t.artistId === artist.id);
                     console.log(`🎤 ${artist.nombre || artist.name}: ${artistTracks.length} pistas`);
-                    
+
                     if (artistTracks.length > 0) {
                         for (const track of artistTracks) {
                             playlistData.push({
@@ -355,33 +399,43 @@
                         }
                     }
                 }
-                
+
                 console.log('✅ Playlist combinada:', playlistData.length, 'pistas totales');
-                
+
                 // Ordenar por playOrder
                 playlistData.sort((a, b) => a.playOrder - b.playOrder);
-                
-                playlist = playlistData;
-                
-                if (playlist.length === 0) {
+
+                if (playlistData.length === 0) {
                     console.log('⚠️ Playlist vacía, mostrando mensaje');
-                    showStatus('No hay pistas en la playlist todavía', 'warning');
-                    document.getElementById('loading').classList.add('hidden');
-                    document.getElementById('mainContent').classList.remove('hidden');
+                    if (!habiaCache) {
+                        showStatus('No hay pistas en la playlist todavía', 'warning');
+                        document.getElementById('loading').classList.add('hidden');
+                        document.getElementById('mainContent').classList.remove('hidden');
+                    }
                     return;
                 }
-                
-                renderPlaylist();
+
+                // Recordar quién estaba sonando para no perder el lugar al refrescar
+                const trackIdActual = playlist[currentTrackIndex]?.trackId;
+                if (trackIdActual) {
+                    const nuevoIndex = playlistData.findIndex(t => t.trackId === trackIdActual);
+                    if (nuevoIndex >= 0) currentTrackIndex = nuevoIndex;
+                }
+
+                guardarPlaylistCacheada(eventName, playlistData);
+                mostrarPlaylist(eventName, playlistData);
                 console.log('✅ Playlist renderizada exitosamente');
-                
-                document.getElementById('loading').classList.add('hidden');
-                document.getElementById('mainContent').classList.remove('hidden');
-                
+                if (habiaCache) showStatus('✅ Lista actualizada', 'success');
+
             } catch (error) {
                 console.error('❌ Error cargando playlist:', error);
                 document.getElementById('loading').classList.add('hidden');
                 document.getElementById('mainContent').classList.remove('hidden');
-                showStatus(`Error al cargar la playlist: ${error.message}`, 'error');
+                if (habiaCache) {
+                    showStatus('⚠️ No se pudo actualizar (sin internet) -- usando la última lista guardada', 'warning');
+                } else {
+                    showStatus(`Error al cargar la playlist: ${error.message}`, 'error');
+                }
             }
         }
 
