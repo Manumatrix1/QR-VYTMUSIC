@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>🍳 Despacho — VYT-BURGUER</title>
+<meta name="theme-color" content="#16a34a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<script>if('serviceWorker' in navigator) navigator.serviceWorker.register('/sw-burguer.js').catch(()=>{});</script>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+    body { background:#0a1628; overscroll-behavior:none; }
+    .comanda { transition: all .2s; }
+    .status-pendiente  { border-color:#f59e0b; background:rgba(245,158,11,.1); }
+    .status-preparando { border-color:#3b82f6; background:rgba(59,130,246,.1); }
+    .status-listo      { border-color:#22c55e; background:rgba(34,197,94,.1); }
+    .status-entregado  { border-color:#475569; background:rgba(71,85,105,.1); opacity:.55; }
+    .status-cancelado  { border-color:#ef4444; background:rgba(239,68,68,.08); opacity:.45; }
+    @keyframes ring { 0%,100%{transform:scale(1);}50%{transform:scale(1.06);} }
+    .pulse { animation: ring 1s infinite; }
+</style>
+</head>
+<body class="text-white min-h-screen flex flex-col">
+
+<!-- Header -->
+<header class="bg-gray-900 border-b border-gray-700 px-4 py-3 flex items-center justify-between flex-shrink-0">
+    <div class="flex items-center gap-2">
+        <a href="burguer.html" class="text-gray-400 text-xl">←</a>
+        <img src="imagenes/logo-96x96.png" style="width:28px;height:28px;border-radius:7px;" alt="">
+        <span class="text-green-400 font-black text-lg">🛎️ DESPACHO</span>
+    </div>
+    <div class="flex items-center gap-3">
+        <span id="pendientes-badge" class="hidden bg-yellow-600 text-white font-black text-xs px-2 py-1 rounded-full pulse">0 pendientes</span>
+        <!-- Filtros -->
+        <select id="filter-status" class="bg-gray-800 border border-gray-600 text-xs rounded-lg px-2 py-1.5 text-gray-300" onchange="applyFilter()">
+            <option value="active">Activos</option>
+            <option value="todos">Todos</option>
+            <option value="pendiente">Solo pendientes</option>
+            <option value="preparando">Preparando</option>
+            <option value="listo">Listos</option>
+        </select>
+    </div>
+</header>
+
+<!-- Comandas -->
+<div class="flex-1 overflow-y-auto p-3" id="comandas-list">
+    <p class="text-gray-500 text-center py-12 text-sm">Cargando comandas...</p>
+</div>
+
+<!-- Modal editar pedido -->
+<div id="edit-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:200;align-items:flex-end;justify-content:center"
+     onclick="if(event.target===this)closeEditModal()">
+    <div style="background:#13132a;border-radius:22px 22px 0 0;padding:20px;width:100%;max-width:480px;
+                max-height:88vh;overflow-y:auto;border-top:2px solid #2a2a4a">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+            <span style="font-size:16px;font-weight:900;color:#f59e0b">✏️ Editando pedido <span id="em-ticket"></span></span>
+            <button onclick="closeEditModal()"
+                style="background:#1e1e3a;border:1px solid #3a3a6a;border-radius:8px;color:#94a3b8;
+                       padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer">✕</button>
+        </div>
+
+        <div style="margin-bottom:10px">
+            <div style="font-size:9px;font-weight:800;color:#6b6b9a;text-transform:uppercase;letter-spacing:.8px;margin-bottom:4px">Cliente</div>
+            <input id="em-cliente"
+                style="width:100%;padding:9px 12px;background:#0d0d1a;border:1.5px solid #2a2a4a;
+                       border-radius:10px;color:#e2e8f0;font-size:13px;outline:none">
+        </div>
+
+        <div style="font-size:9px;font-weight:800;color:#6b6b9a;text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px">Ítems del pedido</div>
+        <div id="em-items" style="margin-bottom:12px"></div>
+
+        <div style="margin-bottom:14px">
+            <div style="font-size:9px;font-weight:800;color:#6b6b9a;text-transform:uppercase;letter-spacing:.8px;margin-bottom:4px">Observaciones</div>
+            <input id="em-obs" placeholder="Sin observaciones"
+                style="width:100%;padding:9px 12px;background:#0d0d1a;border:1.5px solid #2a2a4a;
+                       border-radius:10px;color:#94a3b8;font-size:12px;outline:none">
+        </div>
+
+        <div style="display:flex;justify-content:space-between;align-items:center;
+                    padding:10px 0;margin-bottom:14px;border-top:1px solid #1e1e3a">
+            <span style="color:#6b6b9a;font-size:11px;text-transform:uppercase;letter-spacing:.8px">Nuevo total</span>
+            <span id="em-total" style="font-size:24px;font-weight:900;color:#f59e0b">$0</span>
+        </div>
+
+        <button onclick="guardarEdicion()"
+            style="width:100%;padding:14px;background:linear-gradient(135deg,#f59e0b,#d97706);
+                   border:none;border-radius:12px;color:#1a0800;font-size:14px;font-weight:900;
+                   cursor:pointer;margin-bottom:8px">💾 Guardar cambios</button>
+        <button onclick="closeEditModal()"
+            style="width:100%;padding:12px;background:#1e1e3a;border:1px solid #3a3a6a;
+                   border-radius:12px;color:#94a3b8;font-size:13px;font-weight:700;cursor:pointer">Cancelar</button>
+    </div>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 hidden">
+    <div id="toast-msg" class="px-5 py-3 rounded-xl font-bold text-sm shadow-2xl bg-green-700 text-white"></div>
+</div>
+
+<script type="module">
+import { db } from './firebase_config.js';
+import { collection, onSnapshot, doc, updateDoc, query,
+         orderBy, where, serverTimestamp, Timestamp }
+    from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+
+const params  = new URLSearchParams(location.search);
+const eventId = params.get('eventId') || localStorage.getItem('burguer_eventId') || '';
+const colName = `burguer_orders_${eventId}`;
+
+let allOrders = {};
+let unsubscribe = null;
+
+const STATUS_LABEL = {
+    pendiente:  '🟡 Pendiente',
+    preparando: '🔵 Preparando',
+    listo:      '🟢 Listo para entregar',
+    entregado:  '✅ Entregado',
+    cancelado:  '❌ Cancelado'
+};
+
+const STATUS_NEXT = {
+    pendiente:  'preparando',
+    preparando: 'listo',
+    listo:      'entregado'
+};
+
+const STATUS_BTN = {
+    pendiente:  { label:'▶ Iniciar preparación', cls:'bg-blue-600 hover:bg-blue-500' },
+    preparando: { label:'✔ Marcar Listo',        cls:'bg-green-600 hover:bg-green-500' },
+    listo:      { label:'📦 Entregar',            cls:'bg-purple-600 hover:bg-purple-500' }
+};
+
+// Escuchar en tiempo real
+function subscribe() {
+    if (unsubscribe) unsubscribe();
+    const q = query(collection(db, colName), orderBy('createdAt','desc'));
+    unsubscribe = onSnapshot(q, snap => {
+        snap.docChanges().forEach(change => {
+            if (change.type === 'removed') delete allOrders[change.doc.id];
+            else allOrders[change.doc.id] = { id:change.doc.id, ...change.doc.data() };
+        });
+        renderComandasDebounced();
+    }, err => {
+        document.getElementById('comandas-list').innerHTML =
+            `<p class="text-red-400 text-center py-8 text-sm">${err.message}</p>`;
+    });
+}
+
+let renderTimer = null;
+function renderComandasDebounced() {
+    clearTimeout(renderTimer);
+    renderTimer = setTimeout(renderComandas, 120);
+}
+
+function applyFilterFn(orders) {
+    const f = document.getElementById('filter-status').value;
+    if (f === 'todos')     return orders;
+    if (f === 'active')    return orders.filter(o=>!['entregado','cancelado'].includes(o.status));
+    return orders.filter(o=>o.status===f);
+}
+
+window.applyFilter = function() { renderComandas(); };
+
+function renderComandas() {
+    let orders = Object.values(allOrders).sort((a,b)=>{
+        const ta = a.createdAt?.seconds||0, tb = b.createdAt?.seconds||0;
+        return ta - tb; // más viejas arriba
+    });
+    const filtered = applyFilterFn(orders);
+    const pendientes = orders.filter(o=>o.status==='pendiente').length;
+    const badge = document.getElementById('pendientes-badge');
+    if (pendientes > 0) { badge.textContent=`${pendientes} pendiente${pendientes>1?'s':''}`; badge.classList.remove('hidden'); }
+    else badge.classList.add('hidden');
+
+    const container = document.getElementById('comandas-list');
+    if (!filtered.length) {
+        container.innerHTML = '<p class="text-gray-600 text-center py-10 text-sm">Sin comandas activas</p>';
+        return;
+    }
+    container.innerHTML = filtered.map(o => comandaCard(o)).join('');
+}
+
+function comandaCard(o) {
+    const st = o.status || 'pendiente';
+    const timeStr = o.createdAt ? new Date(o.createdAt.seconds*1000).toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'}) : '—';
+    const items = (o.items||[]).map(i=>`<li>${i.qty}× <b>${i.name}</b></li>`).join('');
+    const nextBtn = STATUS_BTN[st];
+    const cancelBtn = !['entregado','cancelado'].includes(st)
+        ? `<button onclick="changeStatus('${o.id}','cancelado')" class="px-3 py-1.5 bg-red-900/60 hover:bg-red-800 border border-red-700 rounded-lg text-xs text-red-300 font-bold">✕ Cancelar</button>`
+        : '';
+
+    return `
+    <div class="comanda status-${st} border-2 rounded-2xl p-4 mb-3" id="comanda-${o.id}">
+        <div class="flex items-start justify-between gap-2 mb-2">
+            <div>
+                <span class="text-orange-300 font-black text-xl">#${o.ticketNum||'—'}</span>
+                <span class="ml-2 text-white font-bold">${o.clienteName||'Sin nombre'}</span>
+            </div>
+            <div class="text-right flex-shrink-0">
+                <div class="text-xs text-gray-400">${timeStr}</div>
+                <div class="text-xs font-bold ${st==='pendiente'?'text-yellow-400':st==='preparando'?'text-blue-400':st==='listo'?'text-green-400':'text-gray-500'}">${STATUS_LABEL[st]||st}</div>
+            </div>
+        </div>
+        <ul class="text-sm text-gray-200 space-y-0.5 mb-2 list-none pl-0">${items}</ul>
+        ${o.observaciones ? `<div class="text-xs text-orange-200 bg-orange-900/30 px-2 py-1 rounded-lg mb-2">⚠️ ${o.observaciones}</div>` : ''}
+        ${o.codigoVerif ? (st === 'listo'
+            ? `<div class="text-center my-2 bg-green-900/40 border-2 border-green-500 rounded-xl px-3 py-2">
+                 <div class="text-xs text-green-400 font-black uppercase tracking-widest mb-1">🔑 Pedile el código al cliente</div>
+                 <div class="text-4xl font-black text-green-300" style="letter-spacing:10px">${o.codigoVerif}</div>
+               </div>`
+            : `<div class="text-xs text-gray-500 mb-1">🔑 Código: <span class="font-bold text-gray-400">${o.codigoVerif}</span></div>`)
+          : ''}
+        <div class="flex items-center gap-2 mt-2">
+            <span class="text-xs text-gray-400">👤 ${o.cajero||'Caja'}</span>
+            ${o.whatsapp
+                ? `<span class="text-xs text-green-400 font-bold">📲 Avisa por WhatsApp</span>`
+                : `<span class="text-xs text-gray-600">📲 No dejó WhatsApp</span>`}
+        </div>
+        <div class="flex gap-2 mt-3">
+            ${nextBtn ? `<button onclick="changeStatus('${o.id}','${STATUS_NEXT[st]}')"
+                class="flex-1 py-2.5 ${nextBtn.cls} rounded-xl font-black text-sm transition">
+                ${nextBtn.label}</button>` : ''}
+            ${o.whatsapp ? `<button onclick="reenviarWhatsapp('${o.id}')"
+                class="px-3 py-2.5 bg-emerald-900/60 hover:bg-emerald-800 border border-emerald-600 rounded-xl text-xs text-emerald-300 font-bold"
+                title="Reenviar el aviso de WhatsApp">📲</button>` : ''}
+            ${cancelBtn}
+        </div>
+    </div>`;
+}
+
+// ── Editar pedido ─────────────────────────────────────────────────────────────
+let editingOrder = null;
+let editItems    = [];
+
+window.openEditModal = function(orderId) {
+    const order = allOrders[orderId];
+    if (!order) return;
+    editingOrder = order;
+    editItems = (order.items || []).map(i => ({ ...i }));
+    document.getElementById('em-ticket').textContent  = `#${order.ticketNum}`;
+    document.getElementById('em-cliente').value       = order.clienteName || '';
+    document.getElementById('em-obs').value           = order.observaciones || '';
+    renderEditItems();
+    document.getElementById('edit-modal').style.display = 'flex';
+};
+
+function renderEditItems() {
+    const el = document.getElementById('em-items');
+    if (!editItems.length) {
+        el.innerHTML = '<div style="color:#f87171;font-size:12px;text-align:center;padding:12px;background:#1a0808;border-radius:8px">Sin ítems. Guardá así para cancelar el pedido.</div>';
+        document.getElementById('em-total').textContent = '$0';
+        return;
+    }
+    el.innerHTML = editItems.map((item, i) => `
+        <div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #1e1e3a">
+            <span style="flex:1;font-size:12px;color:#e2e8f0;line-height:1.3">${item.name}</span>
+            <div style="display:flex;align-items:center;gap:4px;flex-shrink:0">
+                <button onclick="editItemQty(${i},-1)"
+                    style="width:26px;height:26px;background:#7f1d1d;color:#fca5a5;border:none;border-radius:7px;font-size:16px;font-weight:900;cursor:pointer;display:flex;align-items:center;justify-content:center">−</button>
+                <span style="font-size:13px;font-weight:900;color:#a78bfa;min-width:20px;text-align:center">${item.qty}</span>
+                <button onclick="editItemQty(${i},1)"
+                    style="width:26px;height:26px;background:#14532d;color:#86efac;border:none;border-radius:7px;font-size:16px;font-weight:900;cursor:pointer;display:flex;align-items:center;justify-content:center">+</button>
+            </div>
+            <span style="font-size:11px;font-weight:700;color:#f59e0b;min-width:58px;text-align:right">
+                $${(item.price*item.qty).toLocaleString('es-AR')}
+            </span>
+        </div>`).join('');
+    const total = editItems.reduce((s,i) => s + i.price*i.qty, 0);
+    document.getElementById('em-total').textContent = '$' + total.toLocaleString('es-AR');
+}
+
+window.editItemQty = function(idx, delta) {
+    editItems[idx].qty = Math.max(0, editItems[idx].qty + delta);
+    if (!editItems[idx].qty) editItems.splice(idx, 1);
+    renderEditItems();
+};
+
+window.guardarEdicion = async function() {
+    if (!editingOrder) return;
+    const newItems  = editItems.map(i => ({ ...i, subtotal: i.price * i.qty }));
+    const newTotal  = newItems.reduce((s,i) => s + i.subtotal, 0);
+    const newCliente = document.getElementById('em-cliente').value.trim() || 'Sin nombre';
+    const newObs    = document.getElementById('em-obs').value.trim();
+    try {
+        await updateDoc(doc(db, colName, editingOrder.id), {
+            items: newItems, total: newTotal,
+            clienteName: newCliente, observaciones: newObs,
+            editadoEn: serverTimestamp()
+        });
+        toast('✅ Pedido actualizado');
+        closeEditModal();
+    } catch(e) { toast('Error: '+e.message, 'red'); }
+};
+
+window.closeEditModal = function() {
+    document.getElementById('edit-modal').style.display = 'none';
+    editingOrder = null; editItems = [];
+};
+
+// Avisa al cliente por WhatsApp (wa.me) apenas su pedido pasa a "listo".
+// wa.me no manda solo -- abre WhatsApp con el mensaje ya escrito y hace falta
+// un toque en "Enviar". Por eso se abre la ventana ACÁ, sincrónico con el
+// click del mozo/despachante (antes del await), porque si se abre después de
+// esperar el updateDoc el navegador puede bloquearla como pop-up no pedido.
+function avisarWhatsappListo(order) {
+    if (!order || !order.whatsapp) return null;
+    const msg = `¡Hola${order.clienteName && order.clienteName !== 'Sin nombre' ? ' ' + order.clienteName : ''}! 🍔 Tu pedido *#${order.ticketNum}* de VYT BURGUER ya está listo. Pasá a buscarlo por el mostrador. ¡Buen provecho! 🎉`;
+    const url = `https://wa.me/${order.whatsapp}?text=${encodeURIComponent(msg)}`;
+    return window.open(url, '_blank');
+}
+
+// Botón manual "📲" en la comanda -- por si el pop-up de WhatsApp se bloqueó
+// al marcar Listo, o hay que volver a avisarle al cliente.
+window.reenviarWhatsapp = function(orderId) {
+    const order = allOrders[orderId];
+    if (!avisarWhatsappListo(order)) toast('No se pudo abrir WhatsApp (¿bloqueado por el navegador?)', 'red');
+};
+
+window.changeStatus = async function(orderId, newStatus) {
+    const order = allOrders[orderId];
+    const abriendoWa = (newStatus === 'listo' && order && order.whatsapp)
+        ? avisarWhatsappListo(order) : null;
+    try {
+        await updateDoc(doc(db, colName, orderId), {
+            status: newStatus,
+            [`${newStatus}At`]: serverTimestamp()
+        });
+        if (abriendoWa) toast('✅ Listo -- se abrió WhatsApp para avisarle, solo falta tocar Enviar');
+        else toast(newStatus==='entregado'?'✅ Entregado':'Estado actualizado');
+    } catch(e) {
+        toast('Error: '+e.message, 'red');
+    }
+};
+
+function toast(msg, color='green') {
+    const el = document.getElementById('toast');
+    const msg_el = document.getElementById('toast-msg');
+    msg_el.className = `px-5 py-3 rounded-xl font-bold text-sm shadow-2xl ${color==='red'?'bg-red-700 text-white':'bg-green-700 text-white'}`;
+    msg_el.textContent = msg;
+    el.classList.remove('hidden');
+    setTimeout(()=>el.classList.add('hidden'), 2500);
+}
+
+subscribe();
+</script>
+</body>
+</html>

@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>👨‍🍳 Cocina — VYT-BURGUER</title>
+<meta name="theme-color" content="#ca8a04">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<script>if('serviceWorker' in navigator) navigator.serviceWorker.register('/sw-burguer.js').catch(()=>{});</script>
+<style>
+* { box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent; }
+body { background:#0d0d1a; color:#fff; font-family:-apple-system,'Segoe UI',sans-serif;
+       min-height:100dvh; display:flex; flex-direction:column; overflow-x:hidden; }
+
+.header { background:#13132a; border-bottom:2px solid #ca8a04; padding:11px 14px;
+          display:flex; align-items:center; justify-content:space-between; flex-shrink:0; }
+.header-left { display:flex; align-items:center; gap:10px; }
+.back-btn { color:#fbbf24; font-size:20px; text-decoration:none; }
+.header-title { font-size:15px; font-weight:900; color:#fbbf24; }
+.event-sub { font-size:10px; color:#6b6b9a; }
+.badge-pendientes { background:#7f1d1d; border:1px solid #ef4444; color:#fca5a5;
+                    border-radius:20px; padding:4px 12px; font-size:11px; font-weight:900;
+                    display:none; animation: pulse 1s infinite; }
+
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.6} }
+@keyframes slideIn { from{transform:translateX(-20px);opacity:0} to{transform:translateX(0);opacity:1} }
+@keyframes cooking { 0%,100%{transform:rotate(-5deg)} 50%{transform:rotate(5deg)} }
+
+.orders-area { flex:1; overflow-y:auto; padding:10px; }
+
+/* Grupos */
+.group-title { font-size:10px; font-weight:900; text-transform:uppercase; letter-spacing:1px;
+               padding:6px 4px 4px; }
+.group-pendiente  { color:#f87171; }
+.group-preparando { color:#60a5fa; }
+
+/* Tarjeta de pedido */
+.order-card { border-radius:16px; border:2px solid; padding:14px; margin-bottom:10px;
+              animation: slideIn .2s ease; }
+.card-pendiente  { border-color:#f59e0b; background:rgba(245,158,11,.08); }
+.card-preparando { border-color:#3b82f6; background:rgba(59,130,246,.08); }
+.card-listo      { border-color:#22c55e; background:rgba(34,197,94,.06); opacity:.8; }
+.card-entregado  { border-color:#475569; background:rgba(71,85,105,.06); opacity:.55; }
+.card-cancelado  { border-color:#ef4444; background:rgba(239,68,68,.05); opacity:.45; }
+
+.card-top { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; margin-bottom:8px; }
+.ticket-num { font-size:22px; font-weight:900; color:#f59e0b; }
+.cliente-name { font-size:14px; font-weight:700; color:#e2e8f0; }
+.time-badge { font-size:10px; color:#6b6b9a; text-align:right; flex-shrink:0; }
+.elapsed { font-size:11px; font-weight:700; }
+.elapsed.warn { color:#fbbf24; }
+.elapsed.late  { color:#f87171; }
+
+.items-list { margin-bottom:8px; }
+.item-row { font-size:13px; color:#e2e8f0; padding:2px 0; display:flex; align-items:center; gap:6px; }
+.item-qty { font-weight:900; color:#fbbf24; min-width:22px; }
+
+.obs-box { background:#1a1200; border:1px solid #78350f; border-radius:8px;
+           padding:6px 10px; font-size:11px; color:#fcd34d; margin-bottom:8px; }
+
+.status-label { display:inline-flex; align-items:center; gap:5px; font-size:11px;
+                font-weight:700; padding:3px 10px; border-radius:20px; }
+.sl-pendiente  { background:#7f1d1d; color:#fca5a5; }
+.sl-preparando { background:#1e3a5f; color:#93c5fd; }
+.sl-listo      { background:#14532d; color:#86efac; }
+.sl-entregado  { background:#1e293b; color:#94a3b8; }
+.sl-cancelado  { background:#450a0a; color:#fca5a5; }
+
+.action-btn { width:100%; padding:12px; border:none; border-radius:12px;
+              font-size:14px; font-weight:900; cursor:pointer; margin-top:10px;
+              transition:filter .1s; letter-spacing:.3px; }
+.action-btn:active { filter:brightness(.85); }
+.btn-comenzar { background:linear-gradient(135deg,#f59e0b,#d97706); color:#1a0800; }
+.btn-listo    { background:linear-gradient(135deg,#22c55e,#16a34a); color:#fff; }
+
+.cooking-anim { display:inline-block; animation: cooking 1s ease-in-out infinite; }
+
+.empty-state { text-align:center; padding:60px 20px; color:#3a3a6a; }
+.empty-icon { font-size:52px; margin-bottom:10px; }
+.empty-text { font-size:13px; }
+
+#toast { position:fixed; bottom:16px; left:50%; transform:translateX(-50%);
+         z-index:99; display:none; pointer-events:none; }
+.toast-inner { padding:10px 22px; border-radius:12px; font-weight:900;
+               font-size:13px; box-shadow:0 8px 30px rgba(0,0,0,.5); }
+.toast-green { background:#15803d; color:#fff; }
+
+/* Notificación de nuevo pedido */
+.new-order-alert { position:fixed; top:60px; left:50%; transform:translateX(-50%);
+                   background:#f59e0b; color:#1a0800; border-radius:14px; padding:10px 20px;
+                   font-weight:900; font-size:14px; z-index:98; display:none;
+                   animation: slideIn .3s ease; box-shadow:0 8px 30px rgba(245,158,11,.4); }
+</style>
+</head>
+<body>
+
+<header class="header">
+  <div class="header-left">
+    <a href="burguer.html" class="back-btn">←</a>
+    <img src="imagenes/logo-96x96.png" style="width:32px;height:32px;border-radius:8px;flex-shrink:0;" alt="">
+    <div>
+      <div class="header-title">👨‍🍳 COCINA</div>
+      <div id="event-name" class="event-sub">Cargando...</div>
+    </div>
+  </div>
+  <div id="badge-pendientes" class="badge-pendientes">0 nuevos</div>
+</header>
+
+<div class="orders-area" id="orders-area">
+  <div class="empty-state">
+    <div class="empty-icon">⏳</div>
+    <div class="empty-text">Conectando...</div>
+  </div>
+</div>
+
+<div id="toast"><div id="toast-msg" class="toast-inner toast-green"></div></div>
+<div id="new-alert" class="new-order-alert">🔔 ¡Nuevo pedido!</div>
+
+<script type="module">
+import { db } from './firebase_config.js';
+import { collection, onSnapshot, doc, updateDoc, getDoc, serverTimestamp, query, orderBy }
+  from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+
+const params  = new URLSearchParams(location.search);
+const eventId = params.get('eventId') || localStorage.getItem('burguer_eventId') || '';
+const colName = `burguer_orders_${eventId}`;
+
+let allOrders   = {};
+let isFirstLoad = true;
+
+// ── Event name ────────────────────────────────────────────────────────────────
+if (eventId) {
+  getDoc(doc(db,'events',eventId))
+    .then(d => { document.getElementById('event-name').textContent = d.exists()?(d.data().name||eventId):eventId; })
+    .catch(()=>{});
+} else {
+  document.getElementById('event-name').textContent = 'Sin evento';
+}
+
+// ── Escuchar pedidos en tiempo real ──────────────────────────────────────────
+onSnapshot(collection(db, colName), snap => {
+  const prevPendientes = Object.values(allOrders).filter(o=>o.status==='pendiente').length;
+
+  snap.docChanges().forEach(change => {
+    if (change.type === 'removed') delete allOrders[change.doc.id];
+    else allOrders[change.doc.id] = { id:change.doc.id, ...change.doc.data() };
+  });
+
+  const newPendientes = Object.values(allOrders).filter(o=>o.status==='pendiente').length;
+
+  // Alerta sonora + visual si llegó un pedido nuevo (no en la carga inicial)
+  if (!isFirstLoad && newPendientes > prevPendientes) {
+    showNewOrderAlert();
+    playBeep();
+  }
+  isFirstLoad = false;
+
+  renderOrders();
+}, err => {
+  document.getElementById('orders-area').innerHTML =
+    `<div class="empty-state"><div class="empty-icon">⚠️</div><div class="empty-text">${err.message}</div></div>`;
+});
+
+// ── Render ────────────────────────────────────────────────────────────────────
+let renderTimer = null;
+function renderOrders() {
+  clearTimeout(renderTimer);
+  renderTimer = setTimeout(_render, 100);
+}
+
+function _render() {
+  const pendientes = Object.values(allOrders)
+    .filter(o => o.status === 'pendiente')
+    .sort((a,b) => (a.createdAt?.seconds||0) - (b.createdAt?.seconds||0));
+  const preparando = Object.values(allOrders)
+    .filter(o => o.status === 'preparando')
+    .sort((a,b) => (a.createdAt?.seconds||0) - (b.createdAt?.seconds||0));
+
+  const badge = document.getElementById('badge-pendientes');
+  if (pendientes.length > 0) {
+    badge.style.display = 'block';
+    badge.textContent = `${pendientes.length} nuevo${pendientes.length>1?'s':''}`;
+  } else {
+    badge.style.display = 'none';
+  }
+
+  const area = document.getElementById('orders-area');
+
+  if (!pendientes.length && !preparando.length) {
+    area.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">✅</div>
+        <div class="empty-text">No hay pedidos pendientes.<br>Esperando nuevos pedidos...</div>
+      </div>`;
+    return;
+  }
+
+  let html = '';
+  if (pendientes.length) {
+    html += `<div class="group-title group-pendiente">🔴 NUEVOS PEDIDOS (${pendientes.length})</div>`;
+    html += pendientes.map(o=>cardHTML(o)).join('');
+  }
+  if (preparando.length) {
+    html += `<div class="group-title group-preparando" style="margin-top:8px">🔵 EN PREPARACIÓN (${preparando.length})</div>`;
+    html += preparando.map(o=>cardHTML(o)).join('');
+  }
+
+  area.innerHTML = html;
+}
+
+function cardHTML(o) {
+  const isPend = o.status === 'pendiente';
+  const timeStr = o.createdAt ? new Date(o.createdAt.seconds*1000)
+    .toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'}) : '—';
+
+  // Tiempo transcurrido
+  let elapsedHtml = '';
+  if (o.createdAt) {
+    const mins = Math.floor((Date.now() - o.createdAt.seconds*1000) / 60000);
+    const cls  = mins >= 10 ? 'late' : mins >= 5 ? 'warn' : '';
+    elapsedHtml = `<div class="elapsed ${cls}">${mins} min atrás</div>`;
+  }
+
+  // Bebidas al final — la cocina prepara la comida primero
+  const sorted = [...(o.items||[])].sort((a,b) => {
+    const isDrinkA = /beb|drink|gase|jugo|agua|cerve|vino|limon/i.test(a.category||'');
+    const isDrinkB = /beb|drink|gase|jugo|agua|cerve|vino|limon/i.test(b.category||'');
+    return isDrinkA - isDrinkB;
+  });
+  const items = sorted.map(i=>
+    `<div class="item-row"><span class="item-qty">${i.qty}×</span>${i.name}</div>`
+  ).join('');
+
+  const statusLabel = isPend
+    ? `<span class="status-label sl-pendiente">🔴 Pendiente</span>`
+    : `<span class="status-label sl-preparando"><span class="cooking-anim">👨‍🍳</span> En preparación</span>`;
+
+  const actionBtn = isPend
+    ? `<button class="action-btn btn-comenzar" onclick="comenzar('${o.id}')">🔥 COMENZAR PREPARACIÓN</button>`
+    : `<button class="action-btn btn-listo" onclick="marcarListo('${o.id}')">✅ LISTO — PASAR A DESPACHO</button>`;
+
+  return `
+  <div class="order-card ${isPend?'card-pendiente':'card-preparando'}">
+    <div class="card-top">
+      <div>
+        <div class="ticket-num">#${o.ticketNum||'—'}</div>
+        <div class="cliente-name">${o.clienteName||'Sin nombre'}</div>
+        ${statusLabel}
+      </div>
+      <div class="time-badge">
+        <div>${timeStr}</div>
+        ${elapsedHtml}
+      </div>
+    </div>
+    <div class="items-list">${items}</div>
+    ${o.observaciones ? `<div class="obs-box">⚠️ ${o.observaciones}</div>` : ''}
+    ${actionBtn}
+  </div>`;
+}
+
+window.comenzar = async function(orderId) {
+  try {
+    await updateDoc(doc(db, colName, orderId), {
+      status: 'preparando',
+      preparandoAt: serverTimestamp()
+    });
+    toast('🔥 ¡A cocinar!');
+  } catch(e) {
+    toast('Error al actualizar');
+  }
+};
+
+// Avisa al cliente por WhatsApp (wa.me) apenas su pedido sale de cocina.
+// Misma función que en burguer_despacho.html: wa.me no manda solo -- abre
+// WhatsApp con el mensaje ya escrito, hace falta un toque en "Enviar". Se abre
+// ANTES del await para que el navegador no lo trate como pop-up no pedido.
+function avisarWhatsappListo(order) {
+  if (!order || !order.whatsapp) return null;
+  const msg = `¡Hola${order.clienteName && order.clienteName !== 'Sin nombre' ? ' ' + order.clienteName : ''}! 🍔 Tu pedido *#${order.ticketNum}* de VYT BURGUER ya está listo. Pasá a buscarlo por el mostrador. ¡Buen provecho! 🎉`;
+  const url = `https://wa.me/${order.whatsapp}?text=${encodeURIComponent(msg)}`;
+  return window.open(url, '_blank');
+}
+
+window.marcarListo = async function(orderId) {
+  const order = allOrders[orderId];
+  const abriendoWa = (order && order.whatsapp) ? avisarWhatsappListo(order) : null;
+  try {
+    await updateDoc(doc(db, colName, orderId), {
+      status: 'listo',
+      listoAt: serverTimestamp()
+    });
+    toast(abriendoWa ? '✅ Listo -- se abrió WhatsApp para avisarle' : '✅ ¡Pedido listo! Avisá a despacho.');
+  } catch(e) {
+    toast('Error al actualizar');
+  }
+};
+
+// ── Alerta visual ─────────────────────────────────────────────────────────────
+function showNewOrderAlert() {
+  const el = document.getElementById('new-alert');
+  el.style.display = 'block';
+  setTimeout(()=>el.style.display='none', 3000);
+}
+
+// ── Beep con Web Audio API ────────────────────────────────────────────────────
+function playBeep() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    [0, 0.15, 0.3].forEach(delay => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.frequency.value = 880;
+      gain.gain.setValueAtTime(0.4, ctx.currentTime + delay);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay + 0.12);
+      osc.start(ctx.currentTime + delay);
+      osc.stop(ctx.currentTime + delay + 0.12);
+    });
+  } catch(e){}
+}
+
+// ── Toast ─────────────────────────────────────────────────────────────────────
+function toast(msg) {
+  const el = document.getElementById('toast');
+  document.getElementById('toast-msg').textContent = msg;
+  el.style.display = 'block';
+  setTimeout(()=>el.style.display='none', 2500);
+}
+
+// Actualizar tiempos cada 30s
+setInterval(renderOrders, 30000);
+</script>
+</body>
+</html>
