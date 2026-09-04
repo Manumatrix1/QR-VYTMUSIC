@@ -2132,30 +2132,78 @@
                     </div>
                     ${enTablero
                         ? `<span class="text-green-400 text-xs font-semibold px-2">✓ Ya está en el tablero</span>`
-                        : `<button onclick="reincorporarArtistaHistorial('${a.docId}','${a.eventId}')" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-3 py-2 rounded-lg flex-shrink-0">➕ Reincorporar</button>`}
+                        : `<button onclick="reincorporarArtistaHistorial('${key.replace(/'/g,"\\'")}')" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-3 py-2 rounded-lg flex-shrink-0">➕ Reincorporar</button>`}
                 </div>`;
             }).join('');
         }
 
-        window.reincorporarArtistaHistorial = function(docId, eventId) {
-            const found = (_historialCache || []).find(a => a.docId === docId && a.eventId === eventId);
-            if (!found) return;
+        window.reincorporarArtistaHistorial = async function(nameKey) {
+            // Un mismo artista puede tener una entrada por cada gala en la que
+            // participó -- juntamos TODAS (no solo la primera que matcheó la
+            // búsqueda) para poder recuperar el puntaje real de todas sus galas.
+            const refs = (_historialCache || []).filter(a => a.name.toLowerCase().trim() === nameKey);
+            if (refs.length === 0) return;
+
+            const displayName = refs[0].name;
+            const photoURL = (refs.find(r => r.photoURL) || {}).photoURL || null;
+            const eventIds = [...new Set(refs.map(r => r.eventId).filter(Boolean))];
 
             const localId = 'new_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
             const newArtist = {
                 id: localId, originalId: localId,
                 eventId: 'pool', eventLabel: 'Pool',
-                name: found.name, photoURL: found.photoURL || null,
+                name: displayName, photoURL,
                 generacion: loadedGenerations[0] || '',
                 galas: 0, hasVotes: false, avg: null,
-                eventIds: [], votedEventIds: []
+                eventIds, votedEventIds: []
             };
             allArtists.push(newArtist); // sin columnAssignments -> cae directo en el pool
             saveState();
             renderBoard();
             closeHistorialModal();
-            showToast(`✅ ${found.name} reincorporado al pool`, '🎤');
+            showToast(`✅ ${displayName} reincorporado — buscando su puntaje...`, '🎤');
+
+            await enrichReincorporatedArtist(newArtist, refs);
         };
+
+        // Trae el puntaje real del artista reincorporado, escaneando
+        // jury_evaluations en TODAS las galas donde apareció (a diferencia de
+        // enrichWithHistoricalEvaluations, que solo mira la generación
+        // actualmente cargada -- acá puede venir de cualquier generación
+        // vieja, matcheando por el mismo artistId que tenía en cada gala).
+        async function enrichReincorporatedArtist(artist, refs) {
+            let allScores = [];
+            let galasConVotos = 0;
+            for (const ref of refs) {
+                if (!ref.eventId) continue;
+                try {
+                    const evalSnap = await getDocs(collection(db, `events/${ref.eventId}/jury_evaluations`));
+                    if (evalSnap.empty) continue;
+                    const scoresThisEvent = evalSnap.docs
+                        .filter(d => (d.data().artistId || d.data().artista_id) === ref.docId)
+                        .map(d => extractScore(d.data()))
+                        .filter(s => s !== null);
+                    if (scoresThisEvent.length > 0) {
+                        allScores.push(...scoresThisEvent);
+                        galasConVotos++;
+                        if (!artist.votedEventIds.includes(ref.eventId)) artist.votedEventIds.push(ref.eventId);
+                    }
+                } catch (e) {
+                    console.warn(`Error leyendo jury_evaluations de ${ref.eventId}:`, e);
+                }
+            }
+            if (allScores.length > 0) {
+                artist.avg = Math.round((allScores.reduce((a, b) => a + b, 0) / allScores.length) * 10) / 10;
+                artist.galas = galasConVotos;
+                artist.hasVotes = true;
+                saveState();
+                renderBoard();
+                saveAvgCache();
+                showToast(`⭐ ${artist.name}: puntaje recuperado (${artist.avg})`, '🏅');
+            } else {
+                showToast(`ℹ️ ${artist.name} no tenía votos de jurado guardados`, 'ℹ️');
+            }
+        }
 
         // ═══════════════════════════════════════════
         // CONSOLIDAR COLUMNA → CREAR GALA EN FIREBASE
