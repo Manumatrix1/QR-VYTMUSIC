@@ -27,7 +27,7 @@ Cuando el usuario completa **email** y **teléfono**:
 ```javascript
 // Ejemplo de búsqueda
 Email: vero@example.com
-Teléfono: 543413632329
+Teléfono: 543417444459
 
 Órdenes encontradas:
 - Orden 1: 10 entradas (aprobada el 10/03)
@@ -136,11 +136,11 @@ Email:
 - " lucia@gmail.com " === "lucia@gmail.com"
 
 Teléfono:
-- 3413632329
-- 543413632329
+- 3417444459
+- 543417444459
 - +54 341 363-2329
 - +54 (341) 363 2329
-Todos se comparan como: 3413632329
+Todos se comparan como: 3417444459
 ```
 
 ---
@@ -170,7 +170,7 @@ Todos se comparan como: 3413632329
 ### Prueba rápida:
 1. Ir a: https://vyt-music.web.app/preventa_artistas.html?eventId=XXX
 2. Completar email: vero@example.com
-3. Completar teléfono: 3413632329
+3. Completar teléfono: 3417444459
 4. **Observar:**
    - Si Vero ya compró antes, aparece: "✅ Ya tenés X entradas"
    - Al ingresar cantidad, el precio se calcula con el total acumulado
@@ -202,7 +202,7 @@ Teléfono: 3411234567
 El sistema genera logs en consola:
 
 ```javascript
-🔍 Verificando compras previas para: { email: 'vero@example.com', cleanPhone: '543413632329' }
+🔍 Verificando compras previas para: { email: 'vero@example.com', cleanPhone: '543417444459' }
 ✅ Compras previas encontradas: 10 entradas
 💰 Cálculo de precio: 10 previas + 2 actuales = 12 total acumulado
 💰 Orden final: 10 previas + 2 nuevas = 12 total → Precio: $10000

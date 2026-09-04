@@ -107,7 +107,7 @@ Value: [el código que recibiste de CallMeBot]
 
 Variable 2:
 Key: ADMIN_PHONE
-Value: 543413632329
+Value: 543417444459
 ```
 
 4. Guarda y **redeploy** el sitio:

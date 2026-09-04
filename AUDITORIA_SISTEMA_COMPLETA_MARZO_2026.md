@@ -32,7 +32,7 @@ Se identificaron **27 problemas** en total, de los cuales:
 - `admin_preventa.html` (línea ~945)
 
 **Problema:**
-Los números de teléfono se muestran con +54 en pantalla pero NO se guardan con el código de país. Cuando se intenta enviar WhatsApp desde admin, el link `wa.me/3413632329` falla porque debe ser `wa.me/543413632329`.
+Los números de teléfono se muestran con +54 en pantalla pero NO se guardan con el código de país. Cuando se intenta enviar WhatsApp desde admin, el link `wa.me/3417444459` falla porque debe ser `wa.me/543417444459`.
 
 **Impacto:** ❌ No se pueden contactar artistas por WhatsApp después de aprobación de pagos.
 

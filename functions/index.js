@@ -101,7 +101,7 @@ exports.notificarNuevaAudicion = functions.firestore
         telefono: telefono,
         location: locationStr,
         message: `🎤 Nueva audición: ${nombre}${locationStr ? ' de ' + locationStr : ''}`,
-        whatsappLink: `https://wa.me/5493413632329?text=${encodeURIComponent(waMsg)}`,
+        whatsappLink: `https://wa.me/5493417444459?text=${encodeURIComponent(waMsg)}`,
         adminLink: docLink,
         read: false,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -438,7 +438,7 @@ exports.avisarPagoAdmin = functions.https.onRequest(async (req, res) => {
       quantity: guestCount || 0,
       amount: parseInt(amount || 0),
       message: `🎟️ ${targetArtistName ? 'Para ' + targetArtistName + ' — ' : ''}${artistName || 'Sin nombre'}: ${guestCount || 0} entradas — $${amountFmt}`,
-      whatsappLink: `https://wa.me/5493413632329?text=${encodeURIComponent(waMsg)}`,
+      whatsappLink: `https://wa.me/5493417444459?text=${encodeURIComponent(waMsg)}`,
       adminLink: adminLink,
       whatsappMessage: waMsg,
       read: false,
@@ -624,7 +624,7 @@ exports.mercadopagoWebhookV2 = functions.https.onRequest(async (req, res) => {
           // Mensaje para WhatsApp
           const whatsappMessage = `💳 *PAGO APROBADO - MERCADO PAGO*\n\n✅ Pago confirmado automáticamente\n\nDatos:\n👤 ${clientName}\n📱 ${clientPhone}\n🎫 ${quantity} entradas\n💰 $${totalAmount.toLocaleString()}\n📦 Orden: ${orderId.substring(0, 8).toUpperCase()}\n\n📋 Ver detalles:\n${adminLink}`;
           
-          const whatsappLink = `https://wa.me/543413632329?text=${encodeURIComponent(whatsappMessage)}`;
+          const whatsappLink = `https://wa.me/543417444459?text=${encodeURIComponent(whatsappMessage)}`;
           
           // Crear documento de notificación en Firestore
           await db.collection('admin_notifications').add({

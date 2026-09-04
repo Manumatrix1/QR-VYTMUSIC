@@ -30,7 +30,7 @@ Tu sistema está en **FIREBASE** (no Netlify):
 - **Functions** → **⚙️ Configuración** → **Variables de entorno**
 - Agregar:
   ```
-  CALLMEBOT_PHONE = 543413632329
+  CALLMEBOT_PHONE = 543417444459
   CALLMEBOT_APIKEY = [tu API key]
   ```
 

@@ -43,7 +43,7 @@ El webhook (`mercadopago-webhook.js`) ahora:
    - Agregar otra variable:
      ```
      ADMIN_PHONE
-     Valor: 543413632329
+     Valor: 543417444459
      ```
 
 3. **Actualizar el webhook** (código abajo)
@@ -139,7 +139,7 @@ const client = twilio(
 // Enviar mensaje
 await client.messages.create({
   from: process.env.TWILIO_WHATSAPP_FROM, // ej: 'whatsapp:+14155238886'
-  to: `whatsapp:+${process.env.ADMIN_WHATSAPP}`, // ej: 'whatsapp:+543413632329'
+  to: `whatsapp:+${process.env.ADMIN_WHATSAPP}`, // ej: 'whatsapp:+543417444459'
   body: whatsappMessage
 });
 ```

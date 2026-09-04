@@ -50,7 +50,7 @@
 4. **Variable 2 - Tu teléfono:**
    ```
    Key: ADMIN_PHONE
-   Value: 543413632329
+   Value: 543417444459
    ```
    - Click **Create variable**
 

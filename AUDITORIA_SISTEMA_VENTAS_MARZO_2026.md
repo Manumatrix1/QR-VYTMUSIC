@@ -282,10 +282,10 @@ Activar Mercado Pago para:
 ## 📱 NÚMEROS DE WHATSAPP EN EL SISTEMA
 
 **Para cliente:**
-- Contacto soporte: 543413632329
+- Contacto soporte: 543417444459
 
 **Para admin (notificaciones manuales):**  
-- Número configurado: 543413632329
+- Número configurado: 543417444459
 
 **En tickets QR:**
 - Número de contacto: 5493417422062

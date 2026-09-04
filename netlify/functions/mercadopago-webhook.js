@@ -156,7 +156,7 @@ exports.handler = async (event, context) => {
           }
           
           // Guardar mensaje en Firebase como backup (siempre)
-          const whatsappURL = `https://wa.me/${adminPhone || '543413632329'}?text=${encodeURIComponent(whatsappMessage)}`;
+          const whatsappURL = `https://wa.me/${adminPhone || '543417444459'}?text=${encodeURIComponent(whatsappMessage)}`;
           
           await orderRef.update({
             whatsappNotificationURL: whatsappURL,
