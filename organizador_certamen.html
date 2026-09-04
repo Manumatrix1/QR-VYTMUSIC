@@ -3587,10 +3587,33 @@
             }).join('');
 
             modal.innerHTML = `
-                <div style="background:#111827;border-radius:16px;padding:20px;max-width:400px;width:100%;">
+                <div style="background:#111827;border-radius:16px;padding:20px;max-width:440px;width:100%;max-height:90vh;overflow-y:auto;">
                     <p style="color:white;font-size:16px;font-weight:bold;margin-bottom:4px;">📋 Descargar grupos</p>
                     <p style="color:#9ca3af;font-size:12px;margin-bottom:14px;">Elegí qué galas incluir:</p>
-                    <div style="display:flex;flex-direction:column;gap:8px;max-height:320px;overflow-y:auto;">${colsHtml}</div>
+                    <div style="display:flex;flex-direction:column;gap:8px;max-height:220px;overflow-y:auto;">${colsHtml}</div>
+
+                    <div style="margin-top:16px;padding:12px;background:#1f2937;border-radius:10px;border:1px solid #374151;">
+                        <p style="color:#c4b5fd;font-size:13px;font-weight:bold;margin-bottom:10px;">🎛 Qué datos incluir por artista:</p>
+                        <div style="display:flex;flex-direction:column;gap:8px;">
+                            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;">
+                                <input type="checkbox" id="exp-galas" checked style="width:16px;height:16px;accent-color:#7c3aed;">
+                                <span style="color:#e5e7eb;font-size:13px;">Cantidad de galas</span>
+                            </label>
+                            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;">
+                                <input type="checkbox" id="exp-promedio" style="width:16px;height:16px;accent-color:#7c3aed;">
+                                <span style="color:#e5e7eb;font-size:13px;">Promedio / puntaje</span>
+                            </label>
+                            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;">
+                                <input type="checkbox" id="exp-estado" style="width:16px;height:16px;accent-color:#7c3aed;">
+                                <span style="color:#e5e7eb;font-size:13px;">Estado (✅ canto / ❌ ausente / ⏸ no prog.)</span>
+                            </label>
+                            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;">
+                                <input type="checkbox" id="exp-sin-asignar" checked style="width:16px;height:16px;accent-color:#7c3aed;">
+                                <span style="color:#e5e7eb;font-size:13px;">Incluir artistas sin asignar</span>
+                            </label>
+                        </div>
+                    </div>
+
                     <div style="display:flex;gap:8px;margin-top:16px;">
                         <button onclick="document.getElementById('exportModal').remove()" style="flex:1;background:#374151;border:none;color:white;border-radius:8px;padding:10px;font-size:14px;cursor:pointer;">Cancelar</button>
                         <button id="exportConfirmBtn" style="flex:2;background:#2563eb;border:none;color:white;border-radius:8px;padding:10px;font-size:14px;font-weight:bold;cursor:pointer;">📋 Copiar / Descargar</button>
@@ -3599,11 +3622,18 @@
             document.body.appendChild(modal);
 
             modal.querySelector('#exportConfirmBtn').onclick = function() {
-                const checked = [...modal.querySelectorAll('input[type=checkbox]:checked')].map(cb => cb.value);
-                if (checked.length === 0) { showToast('Seleccioná al menos una gala', '⚠️'); return; }
+                const checkedCols = [...modal.querySelectorAll('input[type=checkbox][value]')].filter(cb => cb.checked).map(cb => cb.value);
+                if (checkedCols.length === 0) { showToast('Seleccioná al menos una gala', '⚠️'); return; }
+
+                // Leer opciones de datos
+                const mostrarGalas      = modal.querySelector('#exp-galas')?.checked;
+                const mostrarPromedio   = modal.querySelector('#exp-promedio')?.checked;
+                const mostrarEstado     = modal.querySelector('#exp-estado')?.checked;
+                const incluirSinAsignar = modal.querySelector('#exp-sin-asignar')?.checked;
+
                 modal.remove();
 
-                const selectedCols = columns.filter(c => checked.includes(c.id));
+                const selectedCols = columns.filter(c => checkedCols.includes(c.id));
                 let texto = `📋 GRUPOS - VYTMUSIC\n`;
                 texto += `Generaciones: ${loadedGenerations.join(', ')}\n`;
                 texto += `Galas incluidas: ${selectedCols.map(c=>c.name).join(', ')}\n`;
@@ -3622,26 +3652,31 @@
                         artistasGrupo.forEach(artist => {
                             const estado = artistStatus[artist.id];
                             let emoji = '🎤';
-                            if (estado === 'ausente') emoji = '❌';
-                            else if (estado === 'noprog') emoji = '⏸️';
+                            if (mostrarEstado) {
+                                if (estado === 'ausente') emoji = '❌';
+                                else if (estado === 'noprog') emoji = '⏸️';
+                            }
                             texto += `   ${emoji} ${artist.name}`;
-                            if (artist.galas > 0) texto += ` (${artist.galas} ${artist.galas === 1 ? 'gala' : 'galas'})`;
-                            if (artist.avg) texto += ` - Prom: ${artist.avg}`;
+                            if (mostrarGalas && artist.galas > 0) texto += ` (${artist.galas} ${artist.galas === 1 ? 'gala' : 'galas'})`;
+                            if (mostrarPromedio && artist.avg) texto += ` - Prom: ${artist.avg}`;
                             texto += `\n`;
                         });
                     }
                     texto += `\n`;
                 });
 
-                const sinAsignar = allArtists.filter(a => !columnAssignments[a.id] && !(columnMulti[a.id]?.length > 0));
-                if (sinAsignar.length > 0) {
-                    texto += `📦 SIN ASIGNAR (${sinAsignar.length})\n`;
-                    texto += `${'─'.repeat(40)}\n`;
-                    sinAsignar.forEach(a => {
-                        texto += `   🎤 ${a.name}`;
-                        if (a.galas > 0) texto += ` (${a.galas} ${a.galas === 1 ? 'gala' : 'galas'})`;
-                        texto += `\n`;
-                    });
+                if (incluirSinAsignar) {
+                    const sinAsignar = allArtists.filter(a => !columnAssignments[a.id] && !(columnMulti[a.id]?.length > 0));
+                    if (sinAsignar.length > 0) {
+                        texto += `📦 SIN ASIGNAR (${sinAsignar.length})\n`;
+                        texto += `${'─'.repeat(40)}\n`;
+                        sinAsignar.forEach(a => {
+                            texto += `   🎤 ${a.name}`;
+                            if (mostrarGalas && a.galas > 0) texto += ` (${a.galas} ${a.galas === 1 ? 'gala' : 'galas'})`;
+                            if (mostrarPromedio && a.avg) texto += ` - Prom: ${a.avg}`;
+                            texto += `\n`;
+                        });
+                    }
                 }
                 texto += `\n═══════════════════════════════════\n`;
                 texto += `📅 Generado: ${new Date().toLocaleString('es-ES')}\n`;
