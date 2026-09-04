@@ -220,6 +220,10 @@
                         <p class="text-indigo-300 text-xs mt-0.5" id="poolCount">0 artistas</p>
                     </div>
                     <div class="flex items-center gap-1">
+                        <button onclick="openHistorialModal()" title="Buscar un artista de otra generación / gala pasada para reincorporarlo"
+                                class="text-indigo-400 hover:text-white bg-indigo-800 hover:bg-indigo-600 p-1.5 rounded-lg transition-all">
+                            <i class="fas fa-clock-rotate-left text-xs"></i>
+                        </button>
                         <button onclick="openAddArtistModal('')" title="Agregar nuevo artista al pool"
                                 class="text-indigo-400 hover:text-white bg-indigo-800 hover:bg-indigo-600 p-1.5 rounded-lg transition-all">
                             <i class="fas fa-plus text-xs"></i>
@@ -229,8 +233,16 @@
                 </div>
                 <!-- Buscador pool -->
                 <div class="p-2 border-b border-indigo-700">
-                    <input type="text" id="poolSearch" placeholder="Buscar..." 
+                    <input type="text" id="poolSearch" placeholder="Buscar..."
                            class="w-full bg-white border border-gray-300 text-gray-900 text-xs rounded-lg px-2 py-1.5 placeholder-gray-400">
+                </div>
+                <!-- Aviso: buscar en TODO el historial, no solo esta generación -->
+                <div class="px-2 pb-2">
+                    <button onclick="openHistorialModal()"
+                            class="w-full text-left flex items-center gap-2 bg-indigo-950/60 hover:bg-indigo-900 border border-indigo-700/60 rounded-lg px-2.5 py-1.5 transition-all">
+                        <i class="fas fa-clock-rotate-left text-indigo-400 text-xs"></i>
+                        <span class="text-indigo-300 text-xs">¿No encontrás a alguien? Buscar en <b>todo el historial</b></span>
+                    </button>
                 </div>
                 <!-- Drop zone pool -->
                 <div id="pool-drop" class="drop-zone p-2 space-y-2 overflow-y-auto" style="max-height: calc(100vh - 180px);">
@@ -346,6 +358,24 @@
             <button onclick="window.bienvenidaNuevo()" class="w-full bg-purple-700 hover:bg-purple-600 text-white font-bold py-3 rounded-xl transition-all">
                 ✨ Empezar desde cero — seleccionar galas
             </button>
+        </div>
+    </div>
+
+    <!-- MODAL: Buscar artista en TODO el historial (todas las generaciones/galas) -->
+    <div id="modalHistorial" class="hidden fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+        <div class="bg-gray-900 border border-indigo-700 rounded-2xl p-6 w-full max-w-lg shadow-2xl" style="max-height:85vh;display:flex;flex-direction:column">
+            <div class="flex items-center justify-between mb-1">
+                <h3 class="text-white font-bold text-lg flex items-center gap-2">
+                    <i class="fas fa-clock-rotate-left text-indigo-400"></i> Buscar en el historial
+                </h3>
+                <button onclick="closeHistorialModal()" class="text-gray-400 hover:text-white text-xl leading-none">&times;</button>
+            </div>
+            <p class="text-gray-400 text-xs mb-3">Busca entre TODOS los artistas de TODAS las galas y generaciones cargadas alguna vez en el sistema — no solo la que tenés abierta ahora.</p>
+            <input type="text" id="historialSearchInput" placeholder="Nombre del artista..." autocomplete="off"
+                   class="w-full bg-gray-800 border border-gray-600 text-white rounded-xl px-4 py-3 mb-3 focus:border-indigo-500 focus:outline-none">
+            <div id="historialResults" class="space-y-2 overflow-y-auto" style="flex:1;min-height:120px">
+                <p class="text-gray-500 text-sm text-center py-8">Escribí al menos 2 letras para buscar</p>
+            </div>
         </div>
     </div>
 
@@ -599,7 +629,7 @@
     <!-- Firebase SDK -->
     <script type="module">
         import { app, db, storage } from './firebase_config.js';
-        import { collection, getDocs, doc, updateDoc, query, orderBy, onSnapshot, getDoc, deleteDoc, setDoc, addDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+        import { collection, collectionGroup, getDocs, doc, updateDoc, query, orderBy, onSnapshot, getDoc, deleteDoc, setDoc, addDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
         import { ref as storRef, deleteObject, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js';
 
         // ═══════════════════════════════════════════
@@ -2009,6 +2039,123 @@
                 showToast(`Error al eliminar ${artist.name} de la gala anterior`, '❌');
             }
         }
+
+        // ═══════════════════════════════════════════
+        // BUSCAR ARTISTA EN TODO EL HISTORIAL (todas las generaciones/galas)
+        // ═══════════════════════════════════════════
+        // "Artistas del certamen" (el pool) solo tiene a los artistas de las
+        // generaciones que cargaste HOY en el tablero -- si alguien participó
+        // en una gala vieja que no cargaste, no aparece ahí aunque siga
+        // existiendo en Firebase. Esto busca con collectionGroup en TODAS las
+        // subcolecciones events/*/artists de una sola vez, sin importar qué
+        // generación tengas abierta.
+        let _historialCache = null; // se carga una sola vez por sesión (se puede tardar un poco la primera vez)
+        let _historialSearchTimer = null;
+
+        window.openHistorialModal = function() {
+            document.getElementById('modalHistorial').classList.remove('hidden');
+            document.getElementById('historialSearchInput').value = '';
+            document.getElementById('historialResults').innerHTML =
+                '<p class="text-gray-500 text-sm text-center py-8">Escribí al menos 2 letras para buscar</p>';
+            document.getElementById('historialSearchInput').focus();
+            cargarHistorialArtistas(); // precarga en segundo plano
+        };
+
+        window.closeHistorialModal = function() {
+            document.getElementById('modalHistorial').classList.add('hidden');
+        };
+
+        async function cargarHistorialArtistas() {
+            if (_historialCache) return _historialCache;
+            try {
+                const snap = await getDocs(collectionGroup(db, 'artists'));
+                _historialCache = snap.docs.map(d => {
+                    const data = d.data();
+                    const eventId = d.ref.parent.parent ? d.ref.parent.parent.id : null;
+                    return { docId: d.id, eventId, name: data.name || '', photoURL: data.photoURL || null };
+                }).filter(a => a.name.trim());
+                return _historialCache;
+            } catch (e) {
+                console.error('Error cargando historial de artistas:', e);
+                document.getElementById('historialResults').innerHTML =
+                    `<p class="text-red-400 text-sm text-center py-8">Error cargando el historial: ${e.message}</p>`;
+                return [];
+            }
+        }
+
+        document.getElementById('historialSearchInput').addEventListener('input', function() {
+            clearTimeout(_historialSearchTimer);
+            const term = this.value.trim().toLowerCase();
+            const results = document.getElementById('historialResults');
+            if (term.length < 2) {
+                results.innerHTML = '<p class="text-gray-500 text-sm text-center py-8">Escribí al menos 2 letras para buscar</p>';
+                return;
+            }
+            results.innerHTML = '<p class="text-gray-500 text-sm text-center py-8">Buscando...</p>';
+            _historialSearchTimer = setTimeout(async () => {
+                const all = await cargarHistorialArtistas();
+                renderHistorialResults(all.filter(a => a.name.toLowerCase().includes(term)), term);
+            }, 250);
+        });
+
+        function renderHistorialResults(matches, term) {
+            const results = document.getElementById('historialResults');
+
+            // El mismo artista puede aparecer en varias galas -- agrupar por
+            // nombre y quedarse con una sola tarjeta (preferir la que tenga foto).
+            const byName = new Map();
+            for (const m of matches) {
+                const key = m.name.toLowerCase().trim();
+                const prev = byName.get(key);
+                if (!prev || (!prev.photoURL && m.photoURL)) byName.set(key, m);
+            }
+            const uniques = Array.from(byName.values()).sort((a, b) => a.name.localeCompare(b.name));
+
+            if (uniques.length === 0) {
+                results.innerHTML = `<p class="text-gray-500 text-sm text-center py-8">Nadie con "${term}" en todo el historial</p>`;
+                return;
+            }
+
+            const yaEnTablero = new Set(allArtists.map(a => (a.name || '').toLowerCase().trim()));
+
+            results.innerHTML = uniques.map(a => {
+                const key = a.name.toLowerCase().trim();
+                const enTablero = yaEnTablero.has(key);
+                const foto = a.photoURL
+                    ? `<img src="${a.photoURL}" class="w-10 h-10 rounded-full object-cover border-2 border-indigo-500 flex-shrink-0">`
+                    : `<div class="w-10 h-10 rounded-full bg-indigo-800 flex items-center justify-center text-indigo-300 font-bold flex-shrink-0">${(a.name[0]||'?').toUpperCase()}</div>`;
+                return `
+                <div class="flex items-center gap-3 bg-gray-800 border border-gray-700 rounded-xl p-2.5">
+                    ${foto}
+                    <div class="flex-1 min-w-0">
+                        <p class="text-white text-sm font-bold truncate">${a.name}</p>
+                    </div>
+                    ${enTablero
+                        ? `<span class="text-green-400 text-xs font-semibold px-2">✓ Ya está en el tablero</span>`
+                        : `<button onclick="reincorporarArtistaHistorial('${a.docId}','${a.eventId}')" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-3 py-2 rounded-lg flex-shrink-0">➕ Reincorporar</button>`}
+                </div>`;
+            }).join('');
+        }
+
+        window.reincorporarArtistaHistorial = function(docId, eventId) {
+            const found = (_historialCache || []).find(a => a.docId === docId && a.eventId === eventId);
+            if (!found) return;
+
+            const localId = 'new_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+            const newArtist = {
+                id: localId, originalId: localId,
+                eventId: 'pool', eventLabel: 'Pool',
+                name: found.name, photoURL: found.photoURL || null,
+                generacion: loadedGenerations[0] || '',
+                galas: 0, hasVotes: false, avg: null,
+                eventIds: [], votedEventIds: []
+            };
+            allArtists.push(newArtist); // sin columnAssignments -> cae directo en el pool
+            saveState();
+            renderBoard();
+            closeHistorialModal();
+            showToast(`✅ ${found.name} reincorporado al pool`, '🎤');
+        };
 
         // ═══════════════════════════════════════════
         // CONSOLIDAR COLUMNA → CREAR GALA EN FIREBASE
