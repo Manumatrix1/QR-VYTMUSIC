@@ -249,5 +249,42 @@ service cloud.firestore {
       allow read, write: if request.auth != null;
     }
 
+    // ── VYT-BURGUER: acceso sin login (sistema POS interno) ──
+    // Productos: lectura pública (cualquier caja puede ver el menú), escritura solo admin
+    match /burguer_products/{docId} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+
+    // Pedidos por evento: lectura y escritura libre (caja y despacho sin login)
+    match /{colId}/{docId} {
+      allow read, write: if colId.matches('burguer_orders_.*');
+    }
+
+    // Sesiones de caja: lectura y escritura libre
+    match /burguer_sessions/{docId} {
+      allow read, write: if true;
+    }
+
+    // Staff: lectura y escritura libre (el cajero se registra desde la caja sin login)
+    match /burguer_staff/{docId} {
+      allow read, write: if true;
+    }
+
+    // Contadores de tickets: transacción atómica desde caja (sin login)
+    match /burguer_counters/{docId} {
+      allow read, write: if true;
+    }
+
+    // ── Collection group "artists": permite buscar artistas de TODAS las
+    // galas/generaciones a la vez (organizador_certamen.html), no solo la
+    // generación cargada en el tablero. Sin esto, las collectionGroup queries
+    // de "artists" quedan bloqueadas aunque exista la regla de más arriba
+    // para events/{eventId}/artists -- Firestore no la aplica a collection
+    // group queries, necesita esta con el wildcard {path=**} explícito.
+    match /{path=**}/artists/{artistId} {
+      allow read: if true;
+    }
+
   }
 }
