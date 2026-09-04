@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>📊 Reportes por Generación — VYTMUSIC</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { background: #0f172a; font-family: sans-serif; }
+        .tab-btn { transition: all .15s; }
+        .tab-on  { background: #1e40af; color: #fff; }
+        .tab-off { background: #1e293b; color: #94a3b8; }
+        .tab-on:hover  { background: #1d4ed8; }
+        .tab-off:hover { background: #334155; color: #e2e8f0; }
+        @media print {
+            .no-print { display: none !important; }
+            body { background: white; color: black; }
+        }
+    </style>
+</head>
+<body class="min-h-screen text-white">
+<div class="max-w-4xl mx-auto px-4 py-6">
+
+    <!-- Header -->
+    <div class="mb-6">
+        <a href="reportes.html" class="text-sky-400 text-sm hover:underline no-print">← Volver a Reportes</a>
+        <h1 class="text-3xl font-black mt-2 text-white">📊 Reportes por Generación</h1>
+        <p class="text-gray-400 text-sm mt-1">Seleccioná la generación y la gala final para calcular el ranking oficial</p>
+    </div>
+
+    <!-- Config -->
+    <div id="config-section" class="bg-gray-800 rounded-2xl p-6 mb-6 no-print">
+        <div class="mb-5">
+            <label class="block text-sm font-bold text-gray-300 mb-2">1. Seleccioná la generación</label>
+            <select id="generation-select" class="w-full p-3 bg-gray-900 border border-gray-600 rounded-xl text-white text-sm">
+                <option value="">— Cargando generaciones... —</option>
+            </select>
+        </div>
+
+        <div id="galas-section" class="hidden">
+            <label class="block text-sm font-bold text-gray-300 mb-2">2. Galas incluidas <span class="text-gray-500 font-normal">(desmarcá las que no corresponden)</span></label>
+            <div id="galas-list" class="space-y-2 mb-5"></div>
+
+            <div class="bg-yellow-900/30 border border-yellow-700 rounded-xl p-4 mb-5">
+                <label class="block text-sm font-bold text-yellow-300 mb-2">🏆 Gala Final <span class="text-gray-400 font-normal">(la que define el ganador)</span></label>
+                <select id="final-select" class="w-full p-2 bg-gray-900 border border-yellow-700 rounded-lg text-white text-sm">
+                    <option value="">— Seleccioná la Gala Final —</option>
+                </select>
+            </div>
+
+            <button id="calcular-btn" disabled
+                class="w-full py-3 bg-purple-600 hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl font-bold text-base transition">
+                📊 Calcular Reportes
+            </button>
+        </div>
+    </div>
+
+    <!-- Loading -->
+    <div id="loading" class="hidden text-center py-12">
+        <div class="w-12 h-12 border-4 border-purple-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+        <p class="text-gray-400">Calculando datos de todas las galas...</p>
+    </div>
+
+    <!-- Results -->
+    <div id="results" class="hidden">
+        <div class="bg-gray-800 rounded-xl p-4 mb-4 flex flex-wrap gap-4 text-sm">
+            <span>📁 <b id="info-gen" class="text-sky-300">—</b></span>
+            <span>🎭 <b id="info-galas" class="text-blue-300">—</b> galas</span>
+            <span>🎤 <b id="info-artists" class="text-green-300">—</b> artistas</span>
+            <span>📅 <b id="info-period" class="text-yellow-300">—</b></span>
+        </div>
+
+        <div class="flex gap-2 mb-5 flex-wrap no-print">
+            <button onclick="showTab('jurados')"      id="tab-jurados"      class="tab-btn tab-on  px-4 py-2 rounded-lg font-bold text-sm">🏆 Ranking Jurados</button>
+            <button onclick="showTab('publico')"      id="tab-publico"      class="tab-btn tab-off px-4 py-2 rounded-lg font-bold text-sm">👥 Votos Público</button>
+            <button onclick="showTab('convocatoria')" id="tab-convocatoria" class="tab-btn tab-off px-4 py-2 rounded-lg font-bold text-sm">🎟️ Convocatoria</button>
+            <button onclick="showTab('ventas')"       id="tab-ventas"       class="tab-btn tab-off px-4 py-2 rounded-lg font-bold text-sm">💰 Ventas</button>
+            <button onclick="showTab('stats')"        id="tab-stats"        class="tab-btn tab-off px-4 py-2 rounded-lg font-bold text-sm">📈 Progresión</button>
+        </div>
+
+        <div id="content-jurados"></div>
+        <div id="content-publico"      class="hidden"></div>
+        <div id="content-convocatoria" class="hidden"></div>
+        <div id="content-ventas"       class="hidden"></div>
+        <div id="content-stats"        class="hidden"></div>
+
+        <div class="mt-6 flex gap-3 flex-wrap no-print">
+            <button onclick="exportCSV()" class="bg-green-700 hover:bg-green-600 px-5 py-2 rounded-lg text-sm font-bold">📥 Exportar CSV</button>
+            <button onclick="window.print()" class="bg-blue-700 hover:bg-blue-600 px-5 py-2 rounded-lg text-sm font-bold">🖨️ Imprimir / PDF</button>
+            <button onclick="resetUI()" class="bg-gray-700 hover:bg-gray-600 px-5 py-2 rounded-lg text-sm font-bold">🔄 Nueva consulta</button>
+        </div>
+    </div>
+
+</div>
+
+<script type="module">
+import { db } from './firebase_config.js';
+import { collection, getDocs, query, orderBy } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+
+// ── helpers ───────────────────────────────────────────────────────────────────
+const $    = id => document.getElementById(id);
+const norm = s  => (s||'').toLowerCase().trim()
+    .normalize('NFD').replace(/[̀-ͯ]/g,'')
+    .replace(/[^\w\s]/g,'').replace(/\s+/g,' ').trim();
+const fmt  = n  => (+(n||0)).toFixed(1);
+const avg  = arr => arr.length ? arr.reduce((a,b)=>a+b,0)/arr.length : 0;
+
+// ── state ─────────────────────────────────────────────────────────────────────
+let allGroups = [], allEvents = [];
+let rankingResult = [];   // jury ranking, sorted by total
+let convResult    = [];   // convocatoria, sorted by tickets
+
+// ── init ──────────────────────────────────────────────────────────────────────
+async function init() {
+    try {
+        const [evSnap, grSnap] = await Promise.all([
+            getDocs(query(collection(db,'events'), orderBy('date','desc'))),
+            getDocs(query(collection(db,'event_groups'), orderBy('createdAt','desc')))
+        ]);
+        allEvents = evSnap.docs.map(d=>({id:d.id,...d.data()}));
+        allGroups = grSnap.docs.map(d=>({id:d.id,...d.data()}));
+
+        const sel = $('generation-select');
+        sel.innerHTML = '<option value="">— Seleccioná una generación —</option>';
+        allGroups.forEach(g=>{
+            const cnt = allEvents.filter(e=>e.groupId===g.id).length;
+            sel.innerHTML += `<option value="${g.id}">${g.name} (${cnt} galas)</option>`;
+        });
+        const gid = new URLSearchParams(location.search).get('groupId');
+        if (gid) { sel.value=gid; onGenChange(); }
+        sel.addEventListener('change', onGenChange);
+    } catch(e) {
+        $('generation-select').innerHTML = `<option value="">Error: ${e.message}</option>`;
+    }
+}
+
+function onGenChange() {
+    const groupId = $('generation-select').value;
+    if (!groupId) { $('galas-section').classList.add('hidden'); return; }
+
+    const galas = allEvents
+        .filter(e=>e.groupId===groupId)
+        .sort((a,b)=>new Date(b.date||0)-new Date(a.date||0));
+
+    $('galas-list').innerHTML = galas.map(g=>`
+        <label class="flex items-center gap-3 p-3 bg-gray-900 rounded-xl cursor-pointer hover:bg-gray-700 transition">
+            <input type="checkbox" class="gala-check w-5 h-5 accent-blue-500 flex-shrink-0"
+                value="${g.id}" data-name="${(g.name||g.id).replace(/"/g,'&quot;')}" data-date="${g.date||''}" checked>
+            <span class="flex-1 text-sm">
+                <span class="font-semibold text-white">${g.name||g.id}</span>
+                ${g.date?`<span class="text-gray-400 ml-2">${g.date}</span>`:''}
+            </span>
+        </label>`).join('');
+
+    const finalSel = $('final-select');
+    finalSel.innerHTML = '<option value="">— Seleccioná la Gala Final —</option>' +
+        galas.map(g=>`<option value="${g.id}">${g.name||g.id}${g.date?' ('+g.date+')':''}</option>`).join('');
+    if (galas.length) finalSel.value = galas[0].id;
+
+    $('galas-list').querySelectorAll('.gala-check').forEach(cb=>cb.addEventListener('change',updateBtn));
+    finalSel.addEventListener('change', updateBtn);
+    $('galas-section').classList.remove('hidden');
+    updateBtn();
+}
+
+function updateBtn() {
+    const checked = $('galas-list').querySelectorAll('.gala-check:checked').length;
+    $('calcular-btn').disabled = checked===0 || !$('final-select').value;
+}
+
+// ── load one event's data ─────────────────────────────────────────────────────
+async function loadEventData(eventId) {
+    const [artSnap, jurySnap, ticketSnap] = await Promise.all([
+        getDocs(collection(db,`events/${eventId}/artists`)),
+        getDocs(collection(db,`events/${eventId}/jury_evaluations`)),
+        getDocs(collection(db,`events/${eventId}/tickets`))
+    ]);
+
+    // Artists map: docId → {id, name, photo, publicVotes}
+    const artists = {};
+    artSnap.docs.forEach(d=>{
+        const data = d.data();
+        const name = data.name || data.nombre;
+        if (name) artists[d.id] = {
+            id: d.id, name,
+            photo: data.photoURL || data.photoUrl || '',
+            publicVotes: data.totalRatingsCount || 0
+        };
+    });
+
+    // Jury scores per artistId → array of scores
+    const juryByArtist = {};
+    jurySnap.docs.forEach(d=>{
+        if (d.id.endsWith('_partial')) return;
+        const data = d.data();
+        if (data.isPartial || !data.artistId) return;
+        const score = data.average || data.score || 0;
+        if (!score) return;
+        if (!juryByArtist[data.artistId]) juryByArtist[data.artistId] = [];
+        juryByArtist[data.artistId].push(score);
+    });
+
+    // nameMap: norm(name) → {name, photo, juryScore, hasScore, publicVotes}
+    // Only artists in THIS event's artists subcollection = registered for this gala
+    const nameMap = {};
+    for (const [id, art] of Object.entries(artists)) {
+        const scores   = juryByArtist[id] || [];
+        const juryScore = scores.length ? avg(scores) : 0;
+        const n = norm(art.name);
+        if (n) nameMap[n] = {
+            name: art.name, photo: art.photo,
+            juryScore, hasScore: juryScore > 0,
+            publicVotes: art.publicVotes
+        };
+    }
+
+    // Tickets: keyed by artistId (primary) or 'n_'+norm(name) (fallback)
+    // Matches logic of reporte_ventas_entradas.html
+    const ticketsByKey = {};
+    ticketSnap.docs.forEach(d=>{
+        const t = d.data();
+        const artistId   = t.artistId || t.supportingArtist?.id || null;
+        let   artistName = t.artistName || t.supportingArtist?.name || null;
+        // If only ID available, look up name from artists map
+        if (artistId && !artistName && artists[artistId]) artistName = artists[artistId].name;
+        if (!artistName) return;
+
+        const key = artistId || `n_${norm(artistName)}`;
+        if (!ticketsByKey[key]) ticketsByKey[key] = { name: artistName, total: 0, used: 0 };
+        ticketsByKey[key].total++;
+        const attended = !!t.used || t.paymentStatus==='Paga' || t.paymentStatus==='cobrada';
+        if (attended) ticketsByKey[key].used++;
+    });
+
+    return { nameMap, ticketsByKey };
+}
+
+// ── calcular ──────────────────────────────────────────────────────────────────
+$('calcular-btn').addEventListener('click', calcular);
+
+async function calcular() {
+    $('loading').classList.remove('hidden');
+    $('results').classList.add('hidden');
+    $('config-section').classList.add('hidden');
+
+    const checks       = [...$('galas-list').querySelectorAll('.gala-check:checked')];
+    const selectedGalas = checks.map(cb=>({id:cb.value, name:cb.dataset.name, date:cb.dataset.date}));
+    const finalId      = $('final-select').value;
+    const finalGala    = selectedGalas.find(g=>g.id===finalId);
+    const prevGalas    = selectedGalas.filter(g=>g.id!==finalId);
+    const genName      = $('generation-select').options[$('generation-select').selectedIndex]?.text || '';
+
+    try {
+        const evData = {};
+        for (const g of selectedGalas) evData[g.id] = await loadEventData(g.id);
+
+        // ── Artist map (jury + publicVotes): norm(name) → {...} ───────────────
+        // registeredGalas = Set of galaIds where artist appeared in artists subcollection
+        const artistMap = new Map();
+
+        // ── Ticket accumulator: key (artistId or n_norm) → {name, total, used} ─
+        const ticketAccum = {};
+
+        for (const gala of selectedGalas) {
+            const { nameMap, ticketsByKey } = evData[gala.id];
+
+            for (const [n, data] of Object.entries(nameMap)) {
+                if (!artistMap.has(n)) {
+                    artistMap.set(n, {
+                        name: data.name, photo: data.photo||'',
+                        galaScores: {}, registeredGalas: new Set(), publicVotes: 0
+                    });
+                }
+                const a = artistMap.get(n);
+                a.registeredGalas.add(gala.id);           // ← registered for this gala
+                if (data.hasScore) a.galaScores[gala.id] = data.juryScore;
+                a.publicVotes += data.publicVotes;
+                if (data.photo && !a.photo) a.photo = data.photo;
+            }
+
+            for (const [key, tdata] of Object.entries(ticketsByKey)) {
+                if (!ticketAccum[key]) ticketAccum[key] = { name: tdata.name, total: 0, used: 0 };
+                ticketAccum[key].total += tdata.total;
+                ticketAccum[key].used  += tdata.used;
+            }
+        }
+
+        // Convocatoria sorted by tickets (independent of jury data)
+        convResult = Object.values(ticketAccum)
+            .filter(a=>a.total>0)
+            .sort((a,b)=>b.total-a.total);
+
+        // ── Jury ranking ──────────────────────────────────────────────────────
+        rankingResult = [...artistMap.entries()].map(([, data])=>{
+            // Only include prevGalas where artist was REGISTERED
+            // (avoids inflating scores from galas artist wasn't assigned to)
+            const myPrevGalas    = prevGalas.filter(g=>data.registeredGalas.has(g.id));
+            const finalRegistered = data.registeredGalas.has(finalId);
+            const finalScore      = finalRegistered ? (data.galaScores[finalId]||0) : 0;
+            const finalPendiente  = finalRegistered && !(finalId in data.galaScores);
+
+            const prevScores = myPrevGalas.map(g=>({
+                gala: g,
+                score: data.galaScores[g.id] ?? null,
+                isPromediado: !(g.id in data.galaScores)
+            }));
+
+            // Fill absent galas with artist's own average
+            const realScores  = prevScores.filter(p=>!p.isPromediado).map(p=>p.score);
+            const avgPrevReal = avg(realScores);
+            prevScores.forEach(p=>{ if (p.isPromediado) p.score = avgPrevReal; });
+
+            const sumPrevias = prevScores.reduce((s,p)=>s+(p.score||0), 0);
+            const total      = sumPrevias + finalScore;
+
+            const allReal = [...realScores];
+            if (finalScore>0 && finalRegistered) allReal.push(finalScore);
+            const progression = allReal.length>=2 ? allReal[allReal.length-1]-allReal[0] : 0;
+            const mean4std    = avg(allReal);
+            const stdDev      = allReal.length>1
+                ? Math.sqrt(allReal.reduce((s,x)=>s+Math.pow(x-mean4std,2),0)/allReal.length)
+                : 999;
+
+            return {
+                name: data.name, photo: data.photo,
+                prevScores,              // only registered prevGalas
+                allPrevGalas: prevGalas, // all prevGalas (for column layout)
+                registeredGalas: data.registeredGalas,
+                finalScore, finalPendiente, finalRegistered,
+                sumPrevias, total, publicVotes: data.publicVotes,
+                galasReales: realScores.length,
+                tienePromediado: prevScores.some(p=>p.isPromediado),
+                progression, stdDev, allReal
+            };
+        }).sort((a,b)=>b.total-a.total);
+
+        const dates = selectedGalas.filter(g=>g.date).map(g=>g.date).sort();
+        $('info-gen').textContent     = genName;
+        $('info-galas').textContent   = selectedGalas.length;
+        $('info-artists').textContent = rankingResult.filter(r=>r.total>0||r.finalRegistered).length;
+        $('info-period').textContent  = dates.length>=2?`${dates[0]} — ${dates[dates.length-1]}`:(dates[0]||'');
+
+        renderAll(finalGala, prevGalas);
+        $('results').classList.remove('hidden');
+        showTab('jurados');
+        $('results').scrollIntoView({behavior:'smooth'});
+
+    } catch(e) {
+        console.error(e);
+        alert('Error calculando: '+e.message);
+        $('config-section').classList.remove('hidden');
+    } finally {
+        $('loading').classList.add('hidden');
+    }
+}
+
+// ── render helpers ─────────────────────────────────────────────────────────────
+const medal = pos => pos===1?'🥇':pos===2?'🥈':pos===3?'🥉':
+    `<span class="text-gray-500 font-bold text-sm">#${pos}</span>`;
+
+const photo = (url,size='w-10 h-10') => url
+    ? `<img src="${url}" class="${size} rounded-full object-cover border-2 border-gray-600 flex-shrink-0" onerror="this.style.display='none'">`
+    : `<div class="${size} rounded-full bg-gray-700 flex items-center justify-center flex-shrink-0 text-lg">🎤</div>`;
+
+// ── TAB: jurados ───────────────────────────────────────────────────────────────
+function renderJurados(finalGala, prevGalas) {
+    const galaCodes = prevGalas.map((g,i)=>({id:g.id, code:`G${i+1}`, name:g.name, date:g.date}));
+
+    const legend = [
+        ...galaCodes.map(gc=>`<span><b class="text-blue-300">${gc.code}</b> = ${gc.name}${gc.date?` (${gc.date})`:''}</span>`),
+        `<span><b class="text-yellow-300">Final</b> = ${finalGala?.name||''}${finalGala?.date?` (${finalGala.date})`:''}</span>`,
+        `<span class="text-amber-400">P = promediado (ausente)</span>`,
+        `<span class="text-gray-500">— = no inscripto</span>`
+    ].join('<span class="text-gray-700 mx-2">·</span>');
+
+    let html = `<div class="bg-gray-800 rounded-xl p-4 mb-4 text-xs text-gray-400 flex flex-wrap gap-x-3 gap-y-1">${legend}</div><div class="space-y-3">`;
+
+    let pos = 0;
+    rankingResult.forEach(item=>{
+        if (!item.total && !item.finalRegistered) return;
+        pos++;
+        const border = pos===1?'border-yellow-500 bg-gradient-to-r from-yellow-900/20 to-gray-800':
+                       pos===2?'border-gray-400 bg-gradient-to-r from-gray-700/30 to-gray-800':
+                       pos===3?'border-orange-600 bg-gradient-to-r from-orange-900/20 to-gray-800':'border-gray-700 bg-gray-800';
+
+        // One slot per prevGala column
+        const slots = galaCodes.map(gc=>{
+            const ps = item.prevScores.find(s=>s.gala.id===gc.id);
+            if (!ps) {
+                // Not registered for this gala
+                return `<div class="text-center bg-gray-900/20 rounded-lg px-3 py-2 min-w-[52px]">
+                    <div class="text-gray-700 text-xs">${gc.code}</div>
+                    <div class="text-gray-600 text-sm">—</div>
+                </div>`;
+            }
+            return `<div class="text-center bg-gray-900/50 rounded-lg px-3 py-2 min-w-[52px]">
+                <div class="text-gray-500 text-xs">${gc.code}</div>
+                <div class="font-bold text-sm ${ps.isPromediado?'text-amber-400':'text-blue-300'}">${fmt(ps.score||0)}</div>
+                ${ps.isPromediado?'<div class="text-xs text-amber-500 leading-none">P</div>':''}
+            </div>`;
+        }).join('');
+
+        html += `
+        <div class="border-l-4 ${border} border rounded-2xl p-4">
+            <div class="flex items-center gap-3 flex-wrap">
+                <div class="text-2xl w-8 text-center flex-shrink-0">${medal(pos)}</div>
+                <div class="flex items-center gap-2 flex-1 min-w-32">
+                    ${photo(item.photo)}
+                    <div>
+                        <div class="font-bold text-white">${item.name}</div>
+                        <div class="text-xs ${item.tienePromediado?'text-amber-400':'text-green-400'}">
+                            ${item.galasReales} gala${item.galasReales!==1?'s':''} reales${item.tienePromediado?' · con promediado':''}
+                        </div>
+                    </div>
+                </div>
+                <div class="text-right flex-shrink-0">
+                    <div class="text-2xl font-black text-green-400">${fmt(item.total)}</div>
+                    <div class="text-xs text-gray-500">total pts</div>
+                </div>
+            </div>
+            <div class="mt-3 flex gap-2 flex-wrap">
+                ${slots}
+                <div class="text-center ${item.finalRegistered?'bg-yellow-900/30 border border-yellow-800':'bg-gray-900/20'} rounded-lg px-3 py-2 min-w-[52px]">
+                    <div class="${item.finalRegistered?'text-yellow-600':'text-gray-700'} text-xs">Final</div>
+                    ${!item.finalRegistered
+                        ?'<div class="text-gray-600 text-sm">—</div>'
+                        :item.finalPendiente
+                            ?'<div class="text-xs text-gray-500 italic">pend.</div>'
+                            :`<div class="font-bold text-sm text-yellow-300">${fmt(item.finalScore)}</div>`}
+                </div>
+            </div>
+            <div class="mt-2 flex gap-4 text-xs text-gray-500 flex-wrap">
+                <span>Previas: <b class="text-blue-300">${fmt(item.sumPrevias)}</b></span>
+                ${item.finalRegistered&&!item.finalPendiente?`<span>Final: <b class="text-yellow-300">${fmt(item.finalScore)}</b></span>`:''}
+                ${item.publicVotes>0?`<span>👥 Votos: <b class="text-pink-400">${item.publicVotes}</b></span>`:''}
+            </div>
+            ${pos===1?'<div class="mt-2 text-center text-yellow-400 text-xs font-bold tracking-widest">★ GANADOR DEL CERTAMEN ★</div>':''}
+        </div>`;
+    });
+
+    $('content-jurados').innerHTML = html + '</div>';
+}
+
+// ── TAB: público ───────────────────────────────────────────────────────────────
+function renderPublico() {
+    const sorted = [...rankingResult].sort((a,b)=>b.publicVotes-a.publicVotes);
+    const hasVotes = sorted.some(a=>a.publicVotes>0);
+    if (!hasVotes) {
+        $('content-publico').innerHTML = `
+            <div class="bg-yellow-900/30 border border-yellow-700 rounded-2xl p-8 text-center">
+                <div class="text-4xl mb-3">⚠️</div>
+                <p class="text-yellow-300 font-bold mb-2">No se encontraron votos del público</p>
+                <p class="text-gray-400 text-sm">Los votos se guardan en <code class="bg-gray-900 px-1 rounded">totalRatingsCount</code> de cada artista.</p>
+            </div>`;
+        return;
+    }
+    const max = sorted[0].publicVotes;
+    let html = '<div class="space-y-3">';
+    sorted.filter(a=>a.publicVotes>0).forEach((item,i)=>{
+        const pct = max>0?(item.publicVotes/max*100):0;
+        html += `
+        <div class="bg-gray-800 rounded-2xl p-4">
+            <div class="flex items-center gap-3">
+                <div class="text-2xl w-8 text-center flex-shrink-0">${medal(i+1)}</div>
+                ${photo(item.photo)}
+                <div class="flex-1 min-w-0">
+                    <div class="font-bold text-white truncate">${item.name}</div>
+                    <div class="mt-1.5 bg-gray-700 rounded-full h-2">
+                        <div class="bg-pink-500 h-2 rounded-full" style="width:${pct.toFixed(1)}%"></div>
+                    </div>
+                </div>
+                <div class="text-right flex-shrink-0">
+                    <div class="text-xl font-black text-pink-400">${item.publicVotes}</div>
+                    <div class="text-xs text-gray-500">votos</div>
+                </div>
+            </div>
+        </div>`;
+    });
+    $('content-publico').innerHTML = html + '</div>';
+}
+
+// ── TAB: convocatoria ──────────────────────────────────────────────────────────
+function renderConvocatoria() {
+    if (!convResult.length) {
+        $('content-convocatoria').innerHTML = `<div class="bg-gray-800 rounded-2xl p-8 text-center text-gray-400">No se encontraron entradas para estas galas.</div>`;
+        return;
+    }
+    const totalTickets = convResult.reduce((s,a)=>s+a.total,0);
+    const totalUsed    = convResult.reduce((s,a)=>s+a.used,0);
+    const max = convResult[0].total;
+
+    let html = `
+    <div class="grid grid-cols-3 gap-4 mb-5">
+        <div class="bg-purple-900/40 border border-purple-700 rounded-xl p-3 text-center">
+            <div class="text-2xl font-black text-purple-400">${totalTickets}</div>
+            <div class="text-xs text-gray-400 mt-1">Total Entradas</div>
+        </div>
+        <div class="bg-green-900/40 border border-green-700 rounded-xl p-3 text-center">
+            <div class="text-2xl font-black text-green-400">${totalUsed}</div>
+            <div class="text-xs text-gray-400 mt-1">Ingresaron</div>
+        </div>
+        <div class="bg-blue-900/40 border border-blue-700 rounded-xl p-3 text-center">
+            <div class="text-2xl font-black text-blue-400">${totalTickets>0?(totalUsed/totalTickets*100).toFixed(0)+'%':'—'}</div>
+            <div class="text-xs text-gray-400 mt-1">% Asistencia</div>
+        </div>
+    </div>
+    <div class="space-y-3">`;
+
+    convResult.forEach((item,i)=>{
+        const pct     = max>0?(item.total/max*100):0;
+        const asistPct = item.total>0?(item.used/item.total*100).toFixed(0)+'%':'—';
+        html += `
+        <div class="bg-gray-800 rounded-2xl p-4">
+            <div class="flex items-center gap-3">
+                <div class="text-2xl w-8 text-center flex-shrink-0">${medal(i+1)}</div>
+                <div class="w-9 h-9 rounded-full bg-gray-700 flex items-center justify-center flex-shrink-0 text-base">🎤</div>
+                <div class="flex-1 min-w-0">
+                    <div class="font-bold text-white truncate">${item.name}</div>
+                    <div class="text-xs text-gray-400">${item.used} ingresaron · ${asistPct} asistencia</div>
+                    <div class="mt-1.5 bg-gray-700 rounded-full h-2">
+                        <div class="bg-purple-500 h-2 rounded-full" style="width:${pct.toFixed(1)}%"></div>
+                    </div>
+                </div>
+                <div class="text-right flex-shrink-0">
+                    <div class="text-xl font-black text-purple-400">${item.total}</div>
+                    <div class="text-xs text-gray-500">entradas</div>
+                </div>
+            </div>
+        </div>`;
+    });
+    $('content-convocatoria').innerHTML = html + '</div>';
+}
+
+// ── TAB: ventas ────────────────────────────────────────────────────────────────
+function renderVentas() {
+    const totalTickets = convResult.reduce((s,a)=>s+a.total,0);
+    let html = `
+    <div class="bg-gray-800 rounded-xl p-4 mb-5 text-sm text-gray-400">
+        💡 Entradas generadas por artista en todas las galas seleccionadas.
+    </div>
+    <div class="grid grid-cols-2 gap-4 mb-5">
+        <div class="bg-purple-900/40 border border-purple-700 rounded-xl p-4 text-center">
+            <div class="text-3xl font-black text-purple-400">${totalTickets}</div>
+            <div class="text-xs text-gray-400 mt-1">Entradas Totales</div>
+        </div>
+        <div class="bg-blue-900/40 border border-blue-700 rounded-xl p-4 text-center">
+            <div class="text-3xl font-black text-blue-400">${convResult.length}</div>
+            <div class="text-xs text-gray-400 mt-1">Artistas con entradas</div>
+        </div>
+    </div>
+    <div class="space-y-2">`;
+
+    if (!convResult.length) {
+        html += '<p class="text-gray-500 text-center py-6">No hay datos de entradas.</p>';
+    } else {
+        convResult.forEach((item,i)=>{
+            html += `
+            <div class="bg-gray-800 rounded-xl p-3 flex items-center gap-3">
+                <span class="text-gray-500 font-bold w-6 text-center text-sm">${i+1}</span>
+                <span class="flex-1 font-semibold text-sm">${item.name}</span>
+                <span class="text-purple-300 font-bold">${item.total}</span>
+                <span class="text-gray-500 text-xs">entradas</span>
+                <span class="text-green-400 text-xs">${item.used} ingresaron</span>
+            </div>`;
+        });
+    }
+    $('content-ventas').innerHTML = html + '</div>';
+}
+
+// ── TAB: progresión ────────────────────────────────────────────────────────────
+function renderStats() {
+    const withScores = rankingResult.filter(a=>a.allReal.length>=2);
+    if (!withScores.length) {
+        $('content-stats').innerHTML = `<div class="bg-gray-800 rounded-2xl p-8 text-center text-gray-400">No hay suficientes datos (se necesitan al menos 2 galas con puntaje real por artista).</div>`;
+        return;
+    }
+    const byProg  = [...withScores].sort((a,b)=>b.progression-a.progression);
+    const byConst = [...withScores].sort((a,b)=>a.stdDev-b.stdDev);
+
+    const rowProg = item => `
+    <div class="bg-gray-800 rounded-xl p-3 flex items-center gap-3">
+        ${photo(item.photo,'w-9 h-9')}
+        <span class="flex-1 font-semibold text-sm">${item.name}</span>
+        <span class="font-black text-lg ${item.progression>=0?'text-green-400':'text-red-400'}">${item.progression>=0?'+':''}${fmt(item.progression)}</span>
+    </div>`;
+
+    const rowConst = item => `
+    <div class="bg-gray-800 rounded-xl p-3 flex items-center gap-3">
+        ${photo(item.photo,'w-9 h-9')}
+        <div class="flex-1 min-w-0">
+            <div class="font-semibold text-sm">${item.name}</div>
+            <div class="text-xs text-gray-500">${item.allReal.map(s=>fmt(s)).join(' → ')}</div>
+        </div>
+        <div class="text-right">
+            <div class="font-black text-base text-blue-300">±${fmt(item.stdDev)}</div>
+            <div class="text-xs text-gray-500">variación</div>
+        </div>
+    </div>`;
+
+    $('content-stats').innerHTML = `
+    <div class="grid md:grid-cols-2 gap-6">
+        <div>
+            <h3 class="font-bold text-green-400 mb-3">🚀 Mayor Progresión</h3>
+            <p class="text-xs text-gray-500 mb-3">Diferencia entre última y primera puntuación real</p>
+            <div class="space-y-2">${byProg.slice(0,10).map(rowProg).join('')}</div>
+        </div>
+        <div>
+            <h3 class="font-bold text-blue-400 mb-3">🎯 Más Consistente</h3>
+            <p class="text-xs text-gray-500 mb-3">Menor variación entre galas</p>
+            <div class="space-y-2">${byConst.slice(0,10).map(rowConst).join('')}</div>
+        </div>
+    </div>`;
+}
+
+function renderAll(finalGala, prevGalas) {
+    renderJurados(finalGala, prevGalas);
+    renderPublico();
+    renderConvocatoria();
+    renderVentas();
+    renderStats();
+}
+
+// ── tabs ───────────────────────────────────────────────────────────────────────
+window.showTab = function(tab) {
+    ['jurados','publico','convocatoria','ventas','stats'].forEach(t=>{
+        $('content-'+t).classList.toggle('hidden', t!==tab);
+        $('tab-'+t).className = `tab-btn ${t===tab?'tab-on':'tab-off'} px-4 py-2 rounded-lg font-bold text-sm`;
+    });
+};
+
+window.resetUI = function() {
+    $('config-section').classList.remove('hidden');
+    $('results').classList.add('hidden');
+};
+
+// ── CSV export ─────────────────────────────────────────────────────────────────
+window.exportCSV = function() {
+    if (!rankingResult.length) return;
+    const rows = [
+        ['Pos','Artista','G1','G1_P','G2','G2_P','G3','G3_P','Final','Total','VotosPublico','Entradas','Ingresaron'].join(','),
+        ...rankingResult.map((r,i)=>{
+            const ps = n => r.prevScores[n];
+            const conv = convResult.find(c=>norm(c.name)===norm(r.name))||{};
+            return [
+                i+1, `"${r.name}"`,
+                fmt(ps(0)?.score||0), ps(0)?.isPromediado?'P':'',
+                fmt(ps(1)?.score||0), ps(1)?.isPromediado?'P':'',
+                fmt(ps(2)?.score||0), ps(2)?.isPromediado?'P':'',
+                fmt(r.finalScore), fmt(r.total),
+                r.publicVotes, conv.total||0, conv.used||0
+            ].join(',');
+        })
+    ];
+    const blob = new Blob([rows.join('\n')],{type:'text/csv;charset=utf-8;'});
+    const a = document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='reporte_generacion.csv'; a.click();
+};
+
+init();
+</script>
+</body>
+</html>

@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <title>Subir Pistas - Artistas VYT MUSIC</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background: #0f172a;
+            color: #fff;
+            min-height: 100dvh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem;
+            text-align: center;
+        }
+        .logo { font-size: 3.5rem; margin-bottom: 1rem; }
+        .title { font-size: 1.6rem; font-weight: 900; color: #a78bfa; margin-bottom: 0.4rem; }
+        .subtitle { color: #475569; font-size: 0.9rem; margin-bottom: 2.5rem; }
+        .spinner {
+            width: 52px; height: 52px;
+            border: 4px solid rgba(167,139,250,0.2);
+            border-top: 4px solid #a78bfa;
+            border-radius: 50%;
+            animation: spin 0.9s linear infinite;
+            margin: 0 auto 1.5rem;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .msg { font-size: 1rem; color: #64748b; }
+        .gala-name { color: #a78bfa; font-weight: 700; margin-top: 0.5rem; font-size: 1.1rem; }
+        .error-box {
+            background: #1e293b;
+            border: 2px solid #ef4444;
+            border-radius: 1rem;
+            padding: 2rem;
+            max-width: 380px;
+            display: none;
+        }
+        .error-icon { font-size: 3rem; margin-bottom: 1rem; }
+        .error-title { font-size: 1.2rem; font-weight: 700; color: #ef4444; margin-bottom: 0.75rem; }
+        .error-text { color: #94a3b8; font-size: 0.9rem; line-height: 1.6; }
+        .retry-btn {
+            margin-top: 1.5rem;
+            background: #7c3aed;
+            color: white;
+            border: none;
+            padding: 0.75rem 2rem;
+            border-radius: 0.6rem;
+            font-size: 1rem;
+            font-weight: 700;
+            cursor: pointer;
+            width: 100%;
+        }
+        .retry-btn:active { opacity: 0.8; transform: scale(0.98); }
+
+        /* Selector de galas */
+        .selector-box { max-width: 420px; width: 100%; display: none; }
+        .selector-title { font-size: 1.4rem; font-weight: 900; color: #a78bfa; margin-bottom: 0.3rem; }
+        .selector-sub { color: #64748b; font-size: 0.85rem; margin-bottom: 1.5rem; }
+        .gala-btn {
+            display: block;
+            width: 100%;
+            background: #1e293b;
+            border: 2px solid #7c3aed;
+            border-radius: 1rem;
+            padding: 1rem 1.5rem;
+            color: #fff;
+            font-size: 1.05rem;
+            font-weight: 700;
+            cursor: pointer;
+            margin-bottom: 0.75rem;
+            transition: all 0.2s;
+            text-align: left;
+        }
+        .gala-btn:hover { background: #2d1b69; border-color: #a78bfa; transform: translateY(-2px); }
+        .gala-btn .gala-emoji { margin-right: 0.5rem; font-size: 1.3rem; }
+        .gala-btn .gala-fecha { display: block; font-size: 0.78rem; color: #94a3b8; font-weight: 400; margin-top: 0.2rem; }
+    </style>
+</head>
+<body>
+
+    <div id="loading-state">
+        <div class="logo">🎤</div>
+        <div class="title">Portal de Pistas - Artistas</div>
+        <div class="subtitle">VYT MUSIC · Subida de Pistas</div>
+        <div class="spinner"></div>
+        <div class="msg">Conectando con la gala activa...</div>
+        <div class="gala-name" id="gala-name"></div>
+    </div>
+
+    <div class="selector-box" id="selector-box">
+        <div class="logo">🎤</div>
+        <div class="selector-title">¿A qué concurso pertenecés?</div>
+        <div class="selector-sub">Hay más de una gala activa — seleccioná la tuya para subir tus pistas</div>
+        <div id="galas-list"></div>
+    </div>
+
+    <div class="error-box" id="error-box">
+        <div class="error-icon">⏳</div>
+        <div class="error-title">Sin gala activa</div>
+        <div class="error-text">
+            El organizador aún no habilitó la gala activa.<br><br>
+            Cuando se habilite, volvé a entrar a este mismo link.
+        </div>
+        <button class="retry-btn" onclick="location.reload()">🔄 Reintentar</button>
+    </div>
+
+    <script type="module">
+        import { db } from './firebase_config.js';
+        import { collection, query, where, getDocs } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+
+        function redirigir(eventId, data) {
+            const eventName = data.name || 'VYT MUSIC';
+            window.location.replace(
+                `portal_pistas.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`
+            );
+        }
+
+        function mostrarSelector(docs) {
+            document.getElementById('loading-state').style.display = 'none';
+            document.getElementById('selector-box').style.display = 'block';
+            const list = document.getElementById('galas-list');
+            docs.forEach(doc => {
+                const data = doc.data();
+                const btn = document.createElement('button');
+                btn.className = 'gala-btn';
+                const fecha = data.fecha || data.date || '';
+                btn.innerHTML = `<span><span class="gala-emoji">🎵</span>${data.name || doc.id}${fecha ? `<span class="gala-fecha">📅 ${fecha}</span>` : ''}</span>`;
+                btn.onclick = () => redirigir(doc.id, data);
+                list.appendChild(btn);
+            });
+        }
+
+        async function entrar() {
+            try {
+                const snap = await getDocs(query(collection(db, 'events'), where('isActive', '==', true)));
+                if (snap.empty) {
+                    document.getElementById('loading-state').style.display = 'none';
+                    document.getElementById('error-box').style.display = 'block';
+                    return;
+                }
+                if (snap.docs.length === 1) {
+                    const gala = snap.docs[0];
+                    document.getElementById('gala-name').textContent = gala.data().name || '';
+                    redirigir(gala.id, gala.data());
+                } else {
+                    mostrarSelector(snap.docs);
+                }
+            } catch (e) {
+                console.error(e);
+                document.querySelector('.msg').textContent = '❌ Error de conexión. Revisá tu internet y reintentá.';
+            }
+        }
+
+        entrar();
+    </script>
+</body>
+</html>

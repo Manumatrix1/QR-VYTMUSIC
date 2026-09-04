@@ -526,15 +526,14 @@
         let currentArtist = null;
         let eventData = null;
         let allTracks = [];
-        let wavesurfer1 = null;
-        let wavesurfer2 = null;
-        let region1 = null;
-        let region2 = null;
-        let trimPoints1 = { start: 0, end: 0 };
-        let trimPoints2 = { start: 0, end: 0 };
-        // Pitch por slot (-4 a +4 semitonos)
-        let pitchValue1 = 0;
-        let pitchValue2 = 0;
+        // Datos por slot (indexados por número de slot)
+        const wavesurfers     = {};   // wavesurfers[slot]
+        const regions         = {};   // regions[slot]
+        const trimPointsBySlot = {};  // trimPointsBySlot[slot] = { start, end }
+        const pitchValues     = {};   // pitchValues[slot]
+        // Compatibilidad con alias directos (para el código existente del editor)
+        // Se asignan dinámicamente dentro de setupAudioEditor
+        let maxPistas = 2;            // se actualiza desde eventData.max_pistas
         // Reproductor Tone.js activo (uno a la vez)
         let activeTonePlayer = null;
         let activeTonePitchShift = null;
@@ -646,6 +645,7 @@
                 
                 if (eventSnap.exists()) {
                     eventData = eventSnap.data();
+                    maxPistas = parseInt(eventData.max_pistas) || 2;
                     document.getElementById('eventName').textContent = `Evento: ${eventData.name || eventData.nombre || 'Sin nombre'}`;
                     
                     // Verificar fecha límite
@@ -718,9 +718,11 @@
                         const data = trackSnap.data();
                         const tracks = data.pistas || [];
                         
-                        // Limpiar estados anteriores
-                        document.getElementById('slot1Status').innerHTML = '';
-                        document.getElementById('slot2Status').innerHTML = '';
+                        // Limpiar estados anteriores (todos los slots activos)
+                        for (let s = 1; s <= maxPistas; s++) {
+                            const el = document.getElementById(`slot${s}Status`);
+                            if (el) el.innerHTML = '';
+                        }
                         
                         // Mostrar estado de cada slot
                         tracks.forEach(track => {
@@ -730,8 +732,10 @@
                         console.log('✅ Pistas actualizadas:', tracks.length);
                     } else {
                         // No hay pistas todavía
-                        document.getElementById('slot1Status').innerHTML = '';
-                        document.getElementById('slot2Status').innerHTML = '';
+                        for (let s = 1; s <= maxPistas; s++) {
+                            const el = document.getElementById(`slot${s}Status`);
+                            if (el) el.innerHTML = '';
+                        }
                     }
                 }, (error) => {
                     console.error('❌ Error en listener de pistas:', error);
@@ -1142,8 +1146,7 @@
                 }
             }
             // Detener wavesurfers si están activos
-            if (wavesurfer1 && wavesurfer1.isPlaying()) wavesurfer1.stop();
-            if (wavesurfer2 && wavesurfer2.isPlaying()) wavesurfer2.stop();
+            Object.values(wavesurfers).forEach(ws => { if (ws && ws.isPlaying()) ws.stop(); });
 
             globalAudio = new Audio(url);
             globalAudio.play();
@@ -1226,20 +1229,20 @@
             const pitchDisplay = document.getElementById(`pitchDisplay${slot}`);
             const resetPitchBtn = document.getElementById(`resetPitch${slot}`);
 
+            pitchValues[slot] = pitchValues[slot] ?? 0;
+            trimPointsBySlot[slot] = trimPointsBySlot[slot] ?? { start: 0, end: 0 };
             function updatePitchDisplay(val) {
                 const v = parseFloat(val);
-                if (slot === 1) pitchValue1 = v; else pitchValue2 = v;
+                pitchValues[slot] = v;
                 if (v === 0) pitchDisplay.textContent = '0 semitonos (original)';
                 else if (v > 0) pitchDisplay.textContent = `+${v} semitono${Math.abs(v) > 1 ? 's' : ''} (más agudo)`;
                 else pitchDisplay.textContent = `${v} semitono${Math.abs(v) > 1 ? 's' : ''} (más grave)`;
             }
             document.getElementById(`pitchDown${slot}`).addEventListener('click', () => {
-                const cur = slot === 1 ? pitchValue1 : pitchValue2;
-                updatePitchDisplay(Math.max(-4, Math.round((cur - 0.5) * 10) / 10));
+                updatePitchDisplay(Math.max(-4, Math.round(((pitchValues[slot] ?? 0) - 0.5) * 10) / 10));
             });
             document.getElementById(`pitchUp${slot}`).addEventListener('click', () => {
-                const cur = slot === 1 ? pitchValue1 : pitchValue2;
-                updatePitchDisplay(Math.min(4, Math.round((cur + 0.5) * 10) / 10));
+                updatePitchDisplay(Math.min(4, Math.round(((pitchValues[slot] ?? 0) + 0.5) * 10) / 10));
             });
             resetPitchBtn.addEventListener('click', () => { updatePitchDisplay(0); });
             
@@ -1257,110 +1260,53 @@
                 // Mostrar editor
                 editorContainer.classList.remove('hidden');
                 
-                // Crear Wavesurfer con plugin de Regions
-                if (slot === 1) {
-                    if (wavesurfer1) wavesurfer1.destroy();
-                    
-                    // Importar plugin de Regions
-                    const RegionsPlugin = WaveSurfer.Regions.create();
-                    
-                    wavesurfer1 = WaveSurfer.create({
-                        container: waveformDiv,
-                        waveColor: '#60a5fa',
-                        progressColor: '#3b82f6',
-                        cursorColor: '#ffffff',
-                        barWidth: 2,
-                        barRadius: 3,
-                        height: 100,
-                        plugins: [RegionsPlugin]
+                // Crear Wavesurfer con plugin de Regions (genérico para cualquier slot)
+                if (wavesurfers[slot]) wavesurfers[slot].destroy();
+
+                const waveColors    = { 1: '#60a5fa', 2: '#a78bfa', 3: '#34d399', 4: '#fb923c', 5: '#f472b6' };
+                const progressColors = { 1: '#3b82f6', 2: '#8b5cf6', 3: '#10b981', 4: '#ea580c', 5: '#ec4899' };
+                const regionColors   = { 1: 'rgba(34, 197, 94, 0.2)', 2: 'rgba(168, 85, 247, 0.2)', 3: 'rgba(52, 211, 153, 0.2)', 4: 'rgba(251, 146, 60, 0.2)', 5: 'rgba(244, 114, 182, 0.2)' };
+                const RegionsPlugin = WaveSurfer.Regions.create();
+
+                wavesurfers[slot] = WaveSurfer.create({
+                    container: waveformDiv,
+                    waveColor: waveColors[slot]    || '#60a5fa',
+                    progressColor: progressColors[slot] || '#3b82f6',
+                    cursorColor: '#ffffff',
+                    barWidth: 2,
+                    barRadius: 3,
+                    height: 100,
+                    plugins: [RegionsPlugin]
+                });
+
+                wavesurfers[slot].loadBlob(file);
+
+                wavesurfers[slot].on('ready', () => {
+                    const duration = wavesurfers[slot].getDuration();
+                    RegionsPlugin.clearRegions();
+                    regions[slot] = RegionsPlugin.addRegion({
+                        start: 0,
+                        end: duration,
+                        color: regionColors[slot] || 'rgba(34, 197, 94, 0.2)',
+                        drag: true,
+                        resize: true
                     });
-                    
-                    // Cargar archivo
-                    wavesurfer1.loadBlob(file);
-                    
-                    // Cuando esté listo, crear región
-                    wavesurfer1.on('ready', () => {
-                        const duration = wavesurfer1.getDuration();
-                        
-                        // Limpiar regiones anteriores
-                        RegionsPlugin.clearRegions();
-                        
-                        // Crear región que cubre todo el audio
-                        region1 = RegionsPlugin.addRegion({
-                            start: 0,
-                            end: duration,
-                            color: 'rgba(34, 197, 94, 0.2)', // Verde semi-transparente
-                            drag: true,
-                            resize: true
-                        });
-                        
-                        // Guardar puntos iniciales
-                        trimPoints1 = { start: 0, end: duration };
-                        updateTrimDisplay(0, duration, duration);
-                        
-                        // Actualizar cuando se modifica la región
-                        region1.on('update-end', () => {
-                            trimPoints1 = { start: region1.start, end: region1.end };
-                            updateTrimDisplay(region1.start, region1.end, region1.end - region1.start);
-                        });
+                    trimPointsBySlot[slot] = { start: 0, end: duration };
+                    updateTrimDisplay(0, duration, duration);
+                    regions[slot].on('update-end', () => {
+                        trimPointsBySlot[slot] = { start: regions[slot].start, end: regions[slot].end };
+                        updateTrimDisplay(regions[slot].start, regions[slot].end, regions[slot].end - regions[slot].start);
                     });
-                    
-                } else {
-                    if (wavesurfer2) wavesurfer2.destroy();
-                    
-                    // Importar plugin de Regions
-                    const RegionsPlugin = WaveSurfer.Regions.create();
-                    
-                    wavesurfer2 = WaveSurfer.create({
-                        container: waveformDiv,
-                        waveColor: '#a78bfa',
-                        progressColor: '#8b5cf6',
-                        cursorColor: '#ffffff',
-                        barWidth: 2,
-                        barRadius: 3,
-                        height: 100,
-                        plugins: [RegionsPlugin]
-                    });
-                    
-                    // Cargar archivo
-                    wavesurfer2.loadBlob(file);
-                    
-                    // Cuando esté listo, crear región
-                    wavesurfer2.on('ready', () => {
-                        const duration = wavesurfer2.getDuration();
-                        
-                        // Limpiar regiones anteriores
-                        RegionsPlugin.clearRegions();
-                        
-                        // Crear región que cubre todo el audio
-                        region2 = RegionsPlugin.addRegion({
-                            start: 0,
-                            end: duration,
-                            color: 'rgba(168, 85, 247, 0.2)', // Púrpura semi-transparente
-                            drag: true,
-                            resize: true
-                        });
-                        
-                        // Guardar puntos iniciales
-                        trimPoints2 = { start: 0, end: duration };
-                        updateTrimDisplay(0, duration, duration);
-                        
-                        // Actualizar cuando se modifica la región
-                        region2.on('update-end', () => {
-                            trimPoints2 = { start: region2.start, end: region2.end };
-                            updateTrimDisplay(region2.start, region2.end, region2.end - region2.start);
-                        });
-                    });
-                }
+                });
             });
             
             // Reproducir región seleccionada (con pitch si corresponde)
             playBtn.addEventListener('click', async () => {
-                const ws      = slot === 1 ? wavesurfer1 : wavesurfer2;
-                const region  = slot === 1 ? region1    : region2;
-                const tp      = slot === 1 ? trimPoints1 : trimPoints2;
-                const pitchVal = slot === 1 ? pitchValue1 : pitchValue2;
-                const otherWs = slot === 1 ? wavesurfer2 : wavesurfer1;
+                const ws      = wavesurfers[slot];
+                const region  = regions[slot];
+                const tp      = trimPointsBySlot[slot] || { start: 0, end: 0 };
+                const pitchVal = pitchValues[slot] ?? 0;
+                const otherWs  = Object.entries(wavesurfers).find(([k]) => parseInt(k) !== slot)?.[1];
                 if (globalAudio) { globalAudio.pause(); globalAudio.currentTime = 0; }
                 const banner = document.getElementById('nowPlayingBanner');
                 if (banner) banner.classList.add('hidden');
@@ -1388,22 +1334,17 @@
             
             stopBtn.addEventListener('click', () => {
                 stopActiveTonePlayer();
-                const ws = slot === 1 ? wavesurfer1 : wavesurfer2;
-                if (ws) ws.stop();
+                if (wavesurfers[slot]) wavesurfers[slot].stop();
             });
-            
+
             // Resetear trim a audio completo
             resetTrimBtn.addEventListener('click', () => {
-                const ws = slot === 1 ? wavesurfer1 : wavesurfer2;
-                const region = slot === 1 ? region1 : region2;
+                const ws = wavesurfers[slot];
+                const region = regions[slot];
                 if (ws && region) {
                     const duration = ws.getDuration();
                     region.setOptions({ start: 0, end: duration });
-                    if (slot === 1) {
-                        trimPoints1 = { start: 0, end: duration };
-                    } else {
-                        trimPoints2 = { start: 0, end: duration };
-                    }
+                    trimPointsBySlot[slot] = { start: 0, end: duration };
                     updateTrimDisplay(0, duration, duration);
                     displayMessage('Recorte restaurado al audio completo', 'info');
                 }
@@ -1412,17 +1353,17 @@
             volumeSlider.addEventListener('input', (e) => {
                 const volume = e.target.value / 100;
                 volumeValue.textContent = e.target.value;
-                const ws = slot === 1 ? wavesurfer1 : wavesurfer2;
+                const ws = wavesurfers[slot];
                 if (ws) ws.setVolume(volume);
             });
 
             // Botones flecha para ajustar recorte desde el móvil
             function adjustTrim(field, delta) {
-                const region = slot === 1 ? region1 : region2;
-                const ws = slot === 1 ? wavesurfer1 : wavesurfer2;
+                const region = regions[slot];
+                const ws     = wavesurfers[slot];
                 if (!region || !ws) return;
                 const dur = ws.getDuration();
-                const tp = slot === 1 ? trimPoints1 : trimPoints2;
+                const tp  = trimPointsBySlot[slot] || { start: 0, end: dur };
                 if (field === 'start') {
                     tp.start = Math.max(0, Math.min(tp.start + delta, tp.end - 0.5));
                 } else {
@@ -1511,8 +1452,8 @@
                 submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Subiendo...';
                 
                 // Determinar si hay recorte aplicado
-                const tp      = slot === 1 ? trimPoints1 : trimPoints2;
-                const wsSlot  = slot === 1 ? wavesurfer1 : wavesurfer2;
+                const tp      = trimPointsBySlot[slot] || { start: 0, end: 0 };
+                const wsSlot  = wavesurfers[slot];
                 const fullDuration = wsSlot ? wsSlot.getDuration() : 0;
                 const hasTrim = (tp.start > 0.1) ||
                                 (tp.end > 0 && fullDuration > 0 && Math.abs(tp.end - fullDuration) > 0.1);
@@ -1545,7 +1486,7 @@
                 }
 
                 // Aplicar pitch shift si el artista modificó la tonalidad
-                const pitchVal = slot === 1 ? pitchValue1 : pitchValue2;
+                const pitchVal = pitchValues[slot] ?? 0;
                 if (pitchVal !== 0) {
                     submitBtn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Aplicando tonalidad (${pitchVal > 0 ? '+' : ''}${pitchVal} st)...`;
                     displayMessage('🎵 Procesando cambio de tonalidad... puede tardar unos segundos.', 'info');
@@ -1594,7 +1535,7 @@
                     trim_start:    actualTrimStart,
                     trim_end:      actualTrimEnd,
                     trim_duration: actualTrimDuration,
-                    pitch_offset:  slot === 1 ? pitchValue1 : pitchValue2,
+                    pitch_offset:  pitchValues[slot] ?? 0,
                     pin_hash:      pinHash
                 };
                 
@@ -1623,28 +1564,23 @@
                 
                 // Resetear botón submit a estado ok
                 submitBtn.disabled = false;
-                submitBtn.innerHTML = `<i class="fas fa-check-circle"></i> ¡Pista ${slot === 1 ? 'Principal' : 'Secundaria'} subida!`;
+                const slotLabel = { 1: 'Principal', 2: 'Secundaria', 3: 'Pista 3', 4: 'Pista 4', 5: 'Pista 5' };
+                submitBtn.innerHTML = `<i class="fas fa-check-circle"></i> ¡${slotLabel[slot] || 'Pista'} subida!`;
                 submitBtn.className = submitBtn.className
-                    .replace('from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700', 'from-green-600 to-green-700 hover:from-green-700 hover:to-green-800')
-                    .replace('from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700', 'from-green-600 to-green-700 hover:from-green-700 hover:to-green-800');
+                    .replace(/from-\w+-600 to-\w+-600 hover:from-\w+-700 hover:to-\w+-700/g, 'from-green-600 to-green-700 hover:from-green-700 hover:to-green-800');
                 setTimeout(() => {
-                    submitBtn.innerHTML = `<i class="fas fa-upload"></i> Subir Pista ${slot === 1 ? 'Principal' : 'Secundaria'}`;
+                    submitBtn.innerHTML = `<i class="fas fa-upload"></i> Subir ${slotLabel[slot] || 'Pista'}`;
                     submitBtn.className = submitBtn.className.replace('from-green-600 to-green-700 hover:from-green-700 hover:to-green-800',
-                        slot === 1 ? 'from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700'
-                                   : 'from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700');
+                        'from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700');
                 }, 4000);
-                
+
                 // Resetear formulario
                 document.getElementById(`form${slot}`).reset();
-                
+
                 // Limpiar editor de audio
-                if (slot === 1 && wavesurfer1) {
-                    wavesurfer1.empty();
-                    document.getElementById('waveform1').innerHTML = '';
-                }
-                if (slot === 2 && wavesurfer2) {
-                    wavesurfer2.empty();
-                    document.getElementById('waveform2').innerHTML = '';
+                if (wavesurfers[slot]) {
+                    wavesurfers[slot].empty();
+                    document.getElementById(`waveform${slot}`).innerHTML = '';
                 }
                 
             } catch (error) {
@@ -1653,25 +1589,128 @@
                 
                 const submitBtn = document.getElementById(`submit${slot}`);
                 submitBtn.disabled = false;
-                submitBtn.innerHTML = `<i class="fas fa-upload"></i> Subir Pista ${slot === 1 ? 'Principal' : 'Secundaria'}`;
+                const slotLbl = { 1: 'Principal', 2: 'Secundaria', 3: 'Pista 3', 4: 'Pista 4', 5: 'Pista 5' };
+                submitBtn.innerHTML = `<i class="fas fa-upload"></i> Subir ${slotLbl[slot] || 'Pista'}`;
             }
         }
 
-        // Event listeners para formularios
-        document.getElementById('form1').addEventListener('submit', (e) => {
-            e.preventDefault();
-            uploadTrack(1);
-        });
-
-        document.getElementById('form2').addEventListener('submit', (e) => {
-            e.preventDefault();
-            uploadTrack(2);
-        });
+        // Event listeners para formularios (se agregan más en initSlots según maxPistas)
+        document.getElementById('form1').addEventListener('submit', (e) => { e.preventDefault(); uploadTrack(1); });
+        document.getElementById('form2').addEventListener('submit', (e) => { e.preventDefault(); uploadTrack(2); });
 
         // Enter confirma el modal de PIN
         document.getElementById('pinVerifyInput').addEventListener('keydown', (e) => {
             if (e.key === 'Enter') window.confirmPinAndProceed();
         });
+
+        // Generar HTML para un slot extra (3, 4, …) y agregarlo a la grilla
+        function createExtraSlot(n) {
+            const slotColors  = { 3: '#34d399', 4: '#fb923c', 5: '#f472b6' };
+            const color = slotColors[n] || '#60a5fa';
+            const html = `
+            <div class="slot-container rounded-xl shadow-2xl p-6" id="slot${n}Container">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-2xl font-bold text-white flex items-center gap-2">
+                        <i class="fas fa-music" style="color:${color}"></i> Pista ${n}
+                    </h3>
+                    <span class="text-white px-3 py-1 rounded-full text-sm font-semibold" style="background:${color}">OPCIONAL</span>
+                </div>
+                <div id="slot${n}Status" class="mb-4"></div>
+                <form id="form${n}" class="space-y-4">
+                    <div>
+                        <label class="block text-white font-semibold mb-2"><i class="fas fa-music"></i> Nombre de la Canción</label>
+                        <input type="text" id="nombre${n}" class="w-full px-4 py-3 rounded-lg bg-gray-800 text-white border-2 border-gray-600 focus:border-blue-500 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-white font-semibold mb-2"><i class="fas fa-guitar"></i> Estilo Musical</label>
+                        <input type="text" id="estilo${n}" class="w-full px-4 py-3 rounded-lg bg-gray-800 text-white border-2 border-gray-600 focus:border-blue-500 focus:outline-none" placeholder="Ej: Balada, Rock, Pop, Ópera...">
+                    </div>
+                    <div>
+                        <label class="block text-white font-semibold mb-2"><i class="fas fa-file-audio"></i> Archivo de Audio (MP3/WAV/MPEG)</label>
+                        <input type="file" id="archivo${n}" accept=".mp3,.wav,.mpeg,.mpga,.m4a,.aac,.ogg,.opus,.flac,audio/*"
+                            class="w-full px-4 py-3 rounded-lg bg-gray-800 text-white border-2 border-gray-600 focus:border-blue-500 focus:outline-none file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700">
+                        <p class="text-gray-400 text-sm mt-1">Sin límite de tamaño. Formatos: MP3, WAV, MPEG (WhatsApp)</p>
+                    </div>
+                    <div id="editor${n}Container" class="hidden">
+                        <div class="waveform-container">
+                            <h4 class="text-white font-semibold mb-3">🎛️ Editor de Audio</h4>
+                            <div class="bg-blue-900/30 border border-blue-500/30 rounded-lg p-3 mb-3">
+                                <p class="text-blue-300 text-sm mb-1"><i class="fas fa-info-circle"></i> Arrastrá los marcadores ⬅️ ➡️ para recortar la pista</p>
+                                <div class="flex justify-between items-center text-xs text-gray-300">
+                                    <span>Inicio: <strong id="trimStart${n}" class="text-green-400">0:00</strong></span>
+                                    <span>Fin: <strong id="trimEnd${n}" class="text-red-400">0:00</strong></span>
+                                    <span>Duración: <strong id="trimDuration${n}" class="text-yellow-400">0:00</strong></span>
+                                </div>
+                            </div>
+                            <div id="waveform${n}"></div>
+                            <div class="flex gap-4 mt-4">
+                                <button type="button" id="play${n}" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg"><i class="fas fa-play"></i> Reproducir</button>
+                                <button type="button" id="stop${n}" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg"><i class="fas fa-stop"></i> Detener</button>
+                                <button type="button" id="resetTrim${n}" class="bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded-lg"><i class="fas fa-undo"></i> Restaurar</button>
+                            </div>
+                            <div class="mt-3 bg-gray-800/50 rounded-lg p-3">
+                                <p class="text-gray-400 text-xs mb-2 text-center"><i class="fas fa-cut"></i> Ajustar inicio / fin (±0.5 s por toque)</p>
+                                <div class="grid grid-cols-2 gap-2">
+                                    <div class="flex items-center gap-1">
+                                        <span class="text-green-400 text-xs font-semibold flex-shrink-0">Inicio</span>
+                                        <button type="button" id="startLeft${n}" class="bg-green-900/60 hover:bg-green-700 text-green-300 font-bold py-3 rounded-lg flex-1 text-base">◄</button>
+                                        <button type="button" id="startRight${n}" class="bg-green-900/60 hover:bg-green-700 text-green-300 font-bold py-3 rounded-lg flex-1 text-base">►</button>
+                                    </div>
+                                    <div class="flex items-center gap-1">
+                                        <button type="button" id="endLeft${n}" class="bg-red-900/60 hover:bg-red-700 text-red-300 font-bold py-3 rounded-lg flex-1 text-base">◄</button>
+                                        <button type="button" id="endRight${n}" class="bg-red-900/60 hover:bg-red-700 text-red-300 font-bold py-3 rounded-lg flex-1 text-base">►</button>
+                                        <span class="text-red-400 text-xs font-semibold flex-shrink-0">Fin</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="mt-4">
+                                <label class="block text-white font-semibold mb-2"><i class="fas fa-volume-up"></i> Ajustar Volumen</label>
+                                <input type="range" id="volume${n}" min="0" max="200" value="100" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer">
+                                <p class="text-gray-400 text-sm mt-1">Volumen: <span id="volumeValue${n}">100</span>%</p>
+                            </div>
+                            <div class="mt-4 bg-purple-900/20 border border-purple-500/30 rounded-lg p-3">
+                                <label class="block text-white font-semibold mb-2 text-sm"><i class="fas fa-arrows-alt-v"></i> Tonalidad</label>
+                                <div class="flex items-center justify-between gap-3">
+                                    <button type="button" id="pitchDown${n}" class="bg-gray-700 hover:bg-gray-600 text-white font-bold text-2xl w-14 h-14 rounded-xl flex items-center justify-center select-none">−</button>
+                                    <div class="flex-1 text-center"><span id="pitchDisplay${n}" class="text-purple-400 font-bold text-sm">0 semitonos (original)</span></div>
+                                    <button type="button" id="pitchUp${n}" class="bg-gray-700 hover:bg-gray-600 text-white font-bold text-2xl w-14 h-14 rounded-xl flex items-center justify-center select-none">+</button>
+                                </div>
+                                <div class="text-center mt-2">
+                                    <button type="button" id="resetPitch${n}" class="text-xs text-gray-500 hover:text-gray-300 underline">Restaurar a 0</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="bg-yellow-900/20 border border-yellow-600/40 rounded-lg p-3">
+                        <label class="block text-yellow-300 font-semibold mb-2 text-sm"><i class="fas fa-lock"></i> Clave de protección (opcional)</label>
+                        <input type="password" id="pin${n}" maxlength="6" placeholder="Ej: 1234"
+                            class="w-full px-4 py-2 rounded-lg bg-gray-800 text-white border-2 border-yellow-600/40 focus:border-yellow-400 focus:outline-none text-center text-2xl tracking-widest"
+                            pattern="[0-9a-zA-Z]*" autocomplete="new-password">
+                        <p class="text-yellow-400/70 text-xs mt-1"><i class="fas fa-info-circle"></i> Si ponés una clave, la necesitarás para reemplazar o eliminar esta pista</p>
+                    </div>
+                    <button type="submit" id="submit${n}"
+                        class="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-bold py-3 px-6 rounded-lg transition-all transform hover:scale-105">
+                        <i class="fas fa-upload"></i> Subir Pista ${n}
+                    </button>
+                </form>
+            </div>`;
+            const grid = document.querySelector('.grid.md\\:grid-cols-2');
+            if (grid) grid.insertAdjacentHTML('beforeend', html);
+        }
+
+        // Inicializar slots según max_pistas del evento
+        function initSlots() {
+            // Ocultar slot2 si max_pistas === 1
+            if (maxPistas < 2) {
+                document.getElementById('slot2Container').style.display = 'none';
+            }
+            // Generar slots extras (3, 4, 5…) si max_pistas > 2
+            for (let n = 3; n <= maxPistas; n++) {
+                createExtraSlot(n);
+                document.getElementById(`form${n}`).addEventListener('submit', (e) => { e.preventDefault(); uploadTrack(n); });
+                setupAudioEditor(n);
+            }
+        }
 
         // Configurar editores
         setupAudioEditor(1);
@@ -1680,8 +1719,9 @@
         // Deshabilitar si está después de la fecha límite
         function checkDeadlineAndDisable() {
             if (isAfterDeadline) {
-                document.getElementById('slot1Container').classList.add('slot-disabled');
-                document.getElementById('slot2Container').classList.add('slot-disabled');
+                for (let s = 1; s <= maxPistas; s++) {
+                    document.getElementById(`slot${s}Container`)?.classList.add('slot-disabled');
+                }
             }
         }
 
@@ -1706,6 +1746,9 @@
                     return;
                 }
                 
+                // Configurar slots según max_pistas del evento
+                initSlots();
+
                 // Cargar datos del artista
                 await loadArtistData();
                 if (!currentArtist) {

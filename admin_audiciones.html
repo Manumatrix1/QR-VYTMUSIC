@@ -310,14 +310,17 @@
         } catch(e) {}
     }
 
-    function notificarNuevoInscripto(nombre) {
-        sonar();
-        // Banner en la página
+    function mostrarToast(html) {
         const toast = document.createElement('div');
         toast.className = 'fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-green-600 text-white font-bold px-6 py-4 rounded-2xl shadow-2xl text-center text-sm max-w-sm';
-        toast.innerHTML = `🎶 Nuevo inscripto: <strong>${nombre}</strong><br><span class="font-normal text-xs">Revisá la lista de pendientes</span>`;
+        toast.innerHTML = html;
         document.body.appendChild(toast);
         setTimeout(() => toast.remove(), 8000);
+    }
+
+    function notificarNuevoInscripto(nombre) {
+        sonar();
+        mostrarToast(`🎶 Nuevo inscripto: <strong>${nombre}</strong><br><span class="font-normal text-xs">Revisá la lista de pendientes</span>`);
         // Notificación del browser
         if ('Notification' in window && Notification.permission === 'granted') {
             new Notification('🎤 Nuevo inscripto en VYT', {
@@ -995,7 +998,24 @@
         );
         let notifFirstLoad = true;
         onSnapshot(notifQ, snap => {
-            if (notifFirstLoad) { notifFirstLoad = false; return; }
+            if (notifFirstLoad) {
+                notifFirstLoad = false;
+                // Notificaciones que quedaron sin leer mientras el panel estaba cerrado
+                const pendientes = snap.docs.filter(d => !d.data().read);
+                if (pendientes.length > 0) {
+                    sonar();
+                    const n = pendientes.length;
+                    mostrarToast(`🎶 Tenés <strong>${n}</strong> inscripción${n>1?'es':''} pendiente${n>1?'s':''} sin revisar<br><span class="font-normal text-xs">Revisá la lista de pendientes</span>`);
+                    if ('Notification' in window && Notification.permission === 'granted') {
+                        new Notification('🎤 Inscripciones pendientes en VYT', {
+                            body: `Tenés ${n} inscripción${n>1?'es':''} sin revisar`,
+                            icon: '/favicon.ico'
+                        });
+                    }
+                    pendientes.forEach(d => updateDoc(doc(db, 'admin_notifications', d.id), { read: true }).catch(() => {}));
+                }
+                return;
+            }
             snap.docChanges().forEach(ch => {
                 if (ch.type === 'added') {
                     const d = ch.doc.data();

@@ -377,6 +377,14 @@
                                     </div>
                                 </div>
                             </div>
+                            <div class="bg-purple-900 bg-opacity-30 p-3 rounded-lg border border-purple-500">
+                                <label class="block mb-2 text-purple-300 text-sm font-semibold">🎵 Canciones por artista (pistas)</label>
+                                <div class="flex items-center gap-3">
+                                    <input type="number" id="event-max-pistas" value="2" min="1" max="5" step="1"
+                                        class="w-24 p-2 rounded-md border border-gray-600 bg-gray-900 text-white text-sm text-center font-bold text-lg">
+                                    <p class="text-xs text-gray-400">Cantidad de canciones que puede subir cada artista en esta gala (1–5)</p>
+                                </div>
+                            </div>
                             <div class="bg-blue-900 bg-opacity-30 p-3 rounded-lg border border-blue-500">
                                 <label class="flex items-center cursor-pointer">
                                     <input type="checkbox" id="event-active" class="w-5 h-5 mr-3 rounded">
@@ -645,11 +653,11 @@
                                         ${isActive ? '⭐ ' : ''}${event.name}
                                         ${isActive ? '<span class="ml-2 text-xs bg-green-600 px-2 py-0.5 rounded-full">ACTIVO</span>' : ''}
                                     </h3>
-                                    <p class="text-gray-400 text-sm">Fecha: ${event.date || '---'}</p>
+                                    <p class="text-gray-400 text-sm">Fecha: ${event.date || '---'} · <span class="text-purple-400">🎵 ${event.max_pistas || 2} canción${(event.max_pistas || 2) !== 1 ? 'es' : ''}/artista</span></p>
                                 </a>
                             </div>
                             <div class="flex gap-1 flex-shrink-0">
-                                <button data-id="${event.id}" data-name="${event.name}" data-date="${event.date}" class="edit-event-btn p-2 bg-gray-700 hover:bg-yellow-600 rounded-md text-sm" title="Editar">✏️</button>
+                                <button data-id="${event.id}" data-name="${event.name}" data-date="${event.date}" data-max-pistas="${event.max_pistas || 2}" class="edit-event-btn p-2 bg-gray-700 hover:bg-yellow-600 rounded-md text-sm" title="Editar">✏️</button>
                                 <button data-id="${event.id}" class="delete-event-btn p-2 bg-gray-700 hover:bg-red-600 rounded-md text-sm" title="Eliminar">🗑️</button>
                             </div>
                         </div>
@@ -767,18 +775,11 @@
                 const makeActive = document.getElementById('event-active').checked;
 
                 if (eventName && eventDate) {
-                    // Si se marca como activo, desactivar todos los demás eventos primero
-                    if (makeActive) {
-                        const allEventsSnapshot = await getDocs(eventsCol);
-                        const batch = writeBatch(db);
-                        allEventsSnapshot.forEach(doc => {
-                            batch.update(doc.ref, { isActive: false });
-                        });
-                        await batch.commit();
-                    }
+                    // Permitir múltiples galas activas simultáneamente — no desactivar las demás
 
                     const priceAnticipada = parseInt(document.getElementById('event-price-anticipada').value) || 10000;
                     const pricePuerta = parseInt(document.getElementById('event-price-puerta').value) || 15000;
+                    const maxPistas = parseInt(document.getElementById('event-max-pistas').value) || 2;
 
                     const eventData = {
                         name: eventName,
@@ -786,6 +787,7 @@
                         isActive: makeActive,
                         ticketPriceAnticipada: priceAnticipada,
                         ticketPricePuerta: pricePuerta,
+                        max_pistas: maxPistas,
                         createdAt: serverTimestamp(),
                         ownerId: user.uid
                     };
@@ -808,23 +810,9 @@
                     const eventId = checkbox.dataset.id;
                     const isChecked = checkbox.checked;
                     
-                    if (isChecked) {
-                        // Desactivar todos los demás eventos primero
-                        const allEventsSnapshot = await getDocs(eventsCol);
-                        const batch = writeBatch(db);
-                        allEventsSnapshot.forEach(doc => {
-                            batch.update(doc.ref, { isActive: false });
-                        });
-                        await batch.commit();
-                        
-                        // Activar este evento
-                        const eventRef = doc(db, 'events', eventId);
-                        await updateDoc(eventRef, { isActive: true });
-                    } else {
-                        // Desactivar este evento
-                        const eventRef = doc(db, 'events', eventId);
-                        await updateDoc(eventRef, { isActive: false });
-                    }
+                    // Toggle individual — no afecta las demás galas (se permiten varias activas)
+                    const eventRef = doc(db, 'events', eventId);
+                    await updateDoc(eventRef, { isActive: isChecked });
                     return;
                 }
                 
@@ -836,7 +824,8 @@
                 if (target.classList.contains('edit-event-btn')) {
                     const currentName = target.dataset.name;
                     const currentDate = target.dataset.date;
-                    
+                    const currentMaxPistas = parseInt(target.dataset.maxPistas) || 2;
+
                     // Crear modal de edición
                     const editModal = document.createElement('div');
                     editModal.className = 'fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50 p-4';
@@ -851,6 +840,14 @@
                                 <div>
                                     <label class="block text-sm font-semibold text-gray-300 mb-2">Fecha (AAAA-MM-DD):</label>
                                     <input type="date" id="edit-event-date-input" value="${currentDate}" class="w-full p-3 rounded-md bg-gray-900 text-white border border-gray-600">
+                                </div>
+                                <div class="bg-purple-900 bg-opacity-30 p-3 rounded-lg border border-purple-500">
+                                    <label class="block text-sm font-semibold text-purple-300 mb-2">🎵 Canciones por artista (1–5):</label>
+                                    <div class="flex items-center gap-3">
+                                        <input type="number" id="edit-max-pistas-input" value="${currentMaxPistas}" min="1" max="5" step="1"
+                                            class="w-20 p-2 rounded-md bg-gray-900 text-white border border-gray-600 text-center font-bold text-lg">
+                                        <p class="text-xs text-gray-400">Cantidad de canciones que puede subir cada artista en esta gala</p>
+                                    </div>
                                 </div>
                             </div>
                             <div class="flex gap-3 mt-6">
@@ -877,13 +874,15 @@
                     document.getElementById('save-edit-btn').addEventListener('click', async () => {
                         const newName = document.getElementById('edit-event-name-input').value.trim();
                         const newDate = document.getElementById('edit-event-date-input').value;
-                        
+                        const newMaxPistas = parseInt(document.getElementById('edit-max-pistas-input').value) || 2;
+
                         if (newName && newDate) {
                             try {
-                                await updateDoc(eventRef, { 
+                                await updateDoc(eventRef, {
                                     name: newName,
                                     date: newDate,
-                                    fecha: newDate // También actualizar campo alternativo
+                                    fecha: newDate,
+                                    max_pistas: newMaxPistas
                                 });
                                 editModal.remove();
                             } catch (error) {

@@ -102,7 +102,7 @@
 
     <script type="module">
         import { db } from './firebase_config.js';
-        import { collection, getDocs, doc, updateDoc, query, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { collection, getDocs, doc, updateDoc, deleteDoc, query, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // Obtener parámetros de URL
         const urlParams = new URLSearchParams(window.location.search);
@@ -256,9 +256,13 @@
                                         ↩️ Deshacer
                                     </button>
                                 `}
-                                <button onclick="verDetalles('${invitado.id}')" 
+                                <button onclick="verDetalles('${invitado.id}')"
                                         class="btn btn-blue text-sm">
                                     👁️ Detalles
+                                </button>
+                                <button onclick="eliminarEntrada('${invitado.id}', '${invitado.name.replace(/'/g, "\\'")}')"
+                                        class="btn btn-red text-sm">
+                                    🗑️ Eliminar Entrada
                                 </button>
                             </div>
                         </div>
@@ -342,6 +346,30 @@
             } catch (error) {
                 console.error('Error deshaciendo ingreso:', error);
                 alert('❌ Error al deshacer ingreso: ' + error.message);
+            }
+        };
+
+        // Eliminar una entrada individual (ej: compra duplicada)
+        window.eliminarEntrada = async function(ticketId, nombre) {
+            if (!confirm(`¿Eliminar la entrada de "${nombre}"?\n\nEsta acción NO se puede deshacer.`)) return;
+
+            try {
+                const ticketRef = doc(db, `events/${eventId}/tickets`, ticketId);
+                await deleteDoc(ticketRef);
+
+                // Actualizar localmente
+                invitados = invitados.filter(inv => inv.id !== ticketId);
+                invitadosFiltrados = invitadosFiltrados.filter(inv => inv.id !== ticketId);
+
+                actualizarEstadisticas();
+                mostrarInvitados();
+                llenarSelectIngresoManual();
+
+                alert(`🗑️ Entrada de ${nombre} eliminada exitosamente`);
+
+            } catch (error) {
+                console.error('Error eliminando entrada:', error);
+                alert('❌ Error al eliminar entrada: ' + error.message);
             }
         };
 

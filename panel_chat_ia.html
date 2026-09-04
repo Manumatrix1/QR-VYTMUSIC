@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Panel Chat IA — VYT MUSIC</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { background: #0f172a; font-family: system-ui, sans-serif; }
+        .tab-btn { padding: 8px 20px; border-radius: 8px; font-weight: 700; font-size: 13px; cursor: pointer; border: none; transition: all .15s; }
+        .tab-btn.active { background: #6366f1; color: #fff; }
+        .tab-btn:not(.active) { background: #1e293b; color: #94a3b8; }
+        .tab-btn:not(.active):hover { background: #334155; color: #e2e8f0; }
+        .conv-card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; cursor: pointer; transition: all .15s; }
+        .conv-card:hover { border-color: #6366f1; background: #1e2a3b; }
+        .conv-card.active { border-color: #6366f1; background: #1e2a3b; }
+        .bubble-user { background: linear-gradient(135deg,#0072ff,#00c6ff); color: #fff; align-self: flex-end; border-radius: 14px 4px 14px 14px; }
+        .bubble-bot  { background: #0f2033; color: #dde6f5; align-self: flex-start; border-radius: 4px 14px 14px 14px; border: 1px solid #1e3a5f; }
+        .qa-card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 16px; margin-bottom: 10px; }
+        .qa-card:focus-within { border-color: #6366f1; }
+        textarea { resize: vertical; }
+        ::-webkit-scrollbar { width: 5px; } ::-webkit-scrollbar-track { background: transparent; } ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+    </style>
+</head>
+<body class="min-h-screen text-white">
+
+<!-- Header -->
+<div class="bg-gradient-to-r from-indigo-900 to-slate-900 border-b border-slate-700 px-6 py-4">
+    <div class="max-w-7xl mx-auto flex items-center justify-between">
+        <div>
+            <h1 class="text-xl font-bold text-indigo-300">🤖 Panel Chat IA — VYT MUSIC</h1>
+            <p class="text-slate-400 text-xs mt-0.5">Conversaciones del público · Editor de preguntas · Control total</p>
+        </div>
+        <a href="eventos.html" class="text-slate-400 hover:text-white text-sm">← Panel principal</a>
+    </div>
+</div>
+
+<!-- Tabs -->
+<div class="max-w-7xl mx-auto px-6 pt-4">
+    <div class="flex gap-2 mb-6">
+        <button class="tab-btn active" onclick="switchTab('conversaciones', this)">💬 Conversaciones</button>
+        <button class="tab-btn" onclick="switchTab('editor', this)">❓ Editar Preguntas IA</button>
+    </div>
+</div>
+
+<!-- ══ TAB: CONVERSACIONES ══════════════════════════════════ -->
+<div id="tab-conversaciones" class="max-w-7xl mx-auto px-6 pb-10">
+
+    <!-- Stats -->
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+        <div class="bg-indigo-900/40 border border-indigo-700/40 rounded-xl p-4 text-center">
+            <div id="stat-total" class="text-3xl font-bold text-indigo-300">—</div>
+            <div class="text-xs text-slate-400 mt-1">Conversaciones</div>
+        </div>
+        <div class="bg-green-900/40 border border-green-700/40 rounded-xl p-4 text-center">
+            <div id="stat-hoy" class="text-3xl font-bold text-green-300">—</div>
+            <div class="text-xs text-slate-400 mt-1">Hoy</div>
+        </div>
+        <div class="bg-blue-900/40 border border-blue-700/40 rounded-xl p-4 text-center">
+            <div id="stat-mensajes" class="text-3xl font-bold text-blue-300">—</div>
+            <div class="text-xs text-slate-400 mt-1">Total mensajes</div>
+        </div>
+        <div class="bg-purple-900/40 border border-purple-700/40 rounded-xl p-4 text-center">
+            <div id="stat-promedio" class="text-3xl font-bold text-purple-300">—</div>
+            <div class="text-xs text-slate-400 mt-1">Mensajes promedio</div>
+        </div>
+    </div>
+
+    <!-- Buscador -->
+    <div class="flex gap-3 mb-4">
+        <input id="buscador" type="text" placeholder="🔍 Buscar por nombre..."
+            class="flex-1 bg-slate-800 border border-slate-700 text-white rounded-lg px-4 py-2 text-sm outline-none focus:border-indigo-500"
+            oninput="filtrar()">
+        <button onclick="cargarConversaciones()" class="bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-lg text-sm font-bold transition">↺ Actualizar</button>
+    </div>
+
+    <!-- Layout: lista + detalle -->
+    <div class="flex gap-4" style="min-height: 60vh;">
+
+        <!-- Lista de conversaciones -->
+        <div class="w-80 flex-shrink-0 space-y-2 overflow-y-auto" style="max-height: 70vh;" id="lista-convs">
+            <p class="text-slate-500 text-sm text-center py-8">Cargando...</p>
+        </div>
+
+        <!-- Detalle de conversación -->
+        <div class="flex-1 bg-slate-900 rounded-xl border border-slate-700 flex flex-col" style="max-height: 70vh;">
+            <div id="detalle-vacio" class="flex-1 flex items-center justify-center text-slate-600 text-sm">
+                ← Seleccioná una conversación para verla
+            </div>
+            <div id="detalle-conv" class="hidden flex-col h-full">
+                <!-- Header del detalle -->
+                <div class="px-5 py-4 border-b border-slate-700 flex-shrink-0">
+                    <div class="flex items-start justify-between gap-3">
+                        <div>
+                            <div id="det-nombre" class="font-bold text-white text-base"></div>
+                            <div id="det-fecha" class="text-xs text-slate-400 mt-0.5"></div>
+                            <div id="det-contacto" class="flex items-center gap-2 mt-2 flex-wrap"></div>
+                        </div>
+                        <div id="det-badge" class="text-xs bg-indigo-900 text-indigo-300 px-2 py-1 rounded-full font-bold flex-shrink-0"></div>
+                    </div>
+                </div>
+                <!-- Mensajes -->
+                <div id="det-mensajes" class="flex-1 overflow-y-auto p-5 flex flex-col gap-3">
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ══ TAB: EDITOR IA ══════════════════════════════════════ -->
+<div id="tab-editor" class="hidden max-w-3xl mx-auto px-6 pb-10">
+
+    <div class="flex flex-wrap gap-3 mb-5">
+        <button onclick="agregarPar()" class="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-4 py-2 rounded-lg transition text-sm">
+            ➕ Agregar pregunta
+        </button>
+        <button onclick="guardarIA()" id="btn-guardar-ia" class="flex items-center gap-2 bg-green-600 hover:bg-green-500 text-white font-bold px-4 py-2 rounded-lg transition text-sm">
+            💾 Guardar todo
+        </button>
+        <span id="estado-ia" class="text-sm text-slate-400 self-center"></span>
+    </div>
+
+    <div class="bg-indigo-950/50 border border-indigo-700/40 rounded-xl p-4 mb-5 text-sm text-indigo-300 leading-relaxed">
+        💡 Cada par Pregunta → Respuesta le enseña a la IA cómo contestar. Podés poner varias formas de la misma pregunta separadas por comas.
+    </div>
+
+    <div id="lista-qa"></div>
+</div>
+
+<script type="module">
+import { db } from './firebase_config.js';
+import { collection, getDocs, doc, getDoc, setDoc, orderBy, query, limit } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+
+// ── WhatsApp URL helper ─────────────────────────────────────
+function waUrl(tel) {
+    var n = (tel || '').replace(/\D/g, '');
+    if (!n) return null;
+    // Argentina: agregar 54 si no empieza con código
+    if (!n.startsWith('54')) n = '54' + (n.startsWith('0') ? n.slice(1) : n);
+    return 'https://wa.me/' + n;
+}
+
+// ══ TABS ══════════════════════════════════════
+window.switchTab = function(tab, btn) {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-conversaciones').classList.toggle('hidden', tab !== 'conversaciones');
+    document.getElementById('tab-editor').classList.toggle('hidden', tab !== 'editor');
+    if (tab === 'editor' && pares.length === 0) cargarIA();
+};
+
+// ══ CONVERSACIONES ════════════════════════════
+let todasConvs = [];
+
+async function cargarConversaciones() {
+    document.getElementById('lista-convs').innerHTML = '<p class="text-slate-500 text-sm text-center py-8">Cargando...</p>';
+    try {
+        const q = query(collection(db, 'chat_conversaciones'), orderBy('ultima_actividad', 'desc'), limit(200));
+        const snap = await getDocs(q);
+        todasConvs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        actualizarStats();
+        filtrar();
+    } catch(e) {
+        document.getElementById('lista-convs').innerHTML = '<p class="text-red-400 text-sm text-center py-8">Error al cargar</p>';
+        console.error(e);
+    }
+}
+
+function actualizarStats() {
+    const hoy = new Date().toDateString();
+    let totalMensajes = 0;
+    let convHoy = 0;
+    todasConvs.forEach(c => {
+        const msgs = c.mensajes || [];
+        totalMensajes += msgs.length;
+        if (c.fecha_inicio?.toDate && c.fecha_inicio.toDate().toDateString() === hoy) convHoy++;
+    });
+    document.getElementById('stat-total').textContent = todasConvs.length;
+    document.getElementById('stat-hoy').textContent = convHoy;
+    document.getElementById('stat-mensajes').textContent = totalMensajes;
+    document.getElementById('stat-promedio').textContent = todasConvs.length ? (totalMensajes / todasConvs.length).toFixed(1) : '0';
+}
+
+window.filtrar = function() {
+    const q = document.getElementById('buscador').value.toLowerCase();
+    const filtradas = q ? todasConvs.filter(c =>
+        (c.nombre||'').toLowerCase().includes(q) ||
+        (c.telefono||'').includes(q) ||
+        (c.email||'').toLowerCase().includes(q)
+    ) : todasConvs;
+    renderLista(filtradas);
+};
+
+function renderLista(convs) {
+    const lista = document.getElementById('lista-convs');
+    if (convs.length === 0) {
+        lista.innerHTML = '<p class="text-slate-500 text-sm text-center py-8">Sin conversaciones</p>';
+        return;
+    }
+    lista.innerHTML = '';
+    convs.forEach(conv => {
+        const msgs = conv.mensajes || [];
+        const fecha = conv.ultima_actividad?.toDate ? conv.ultima_actividad.toDate() : new Date();
+        const fechaStr = fecha.toLocaleDateString('es-AR', { day:'2-digit', month:'2-digit' }) + ' ' + fecha.toLocaleTimeString('es-AR', { hour:'2-digit', minute:'2-digit' });
+        const ultimoMsj = msgs.filter(m => m.role === 'user').pop()?.content || 'Sin mensajes';
+        const card = document.createElement('div');
+        card.className = 'conv-card p-3';
+        card.id = 'conv-' + conv.id;
+        const waLink = conv.telefono ? waUrl(conv.telefono) : null;
+        card.innerHTML = `
+            <div class="flex items-center justify-between gap-2 mb-1">
+                <span class="font-bold text-white text-sm truncate">${conv.nombre || 'Anónimo'}</span>
+                <span class="text-xs text-slate-500 flex-shrink-0">${fechaStr}</span>
+            </div>
+            ${conv.telefono ? `<div class="text-xs text-emerald-400 truncate">📱 ${conv.telefono}</div>` : ''}
+            <div class="text-xs text-slate-400 truncate mt-0.5">${ultimoMsj}</div>
+            <div class="flex items-center gap-2 mt-1">
+                <span class="text-xs text-indigo-400">${msgs.length} mensaje${msgs.length !== 1 ? 's' : ''}</span>
+                ${waLink ? `<a href="${waLink}" target="_blank" onclick="event.stopPropagation()" class="text-xs bg-emerald-800 text-emerald-300 px-2 py-0.5 rounded-full font-bold hover:bg-emerald-700">💬 WhatsApp</a>` : ''}
+            </div>
+        `;
+        card.onclick = () => abrirConv(conv);
+        lista.appendChild(card);
+    });
+}
+
+function abrirConv(conv) {
+    // Destacar card activa
+    document.querySelectorAll('.conv-card').forEach(c => c.classList.remove('active'));
+    const card = document.getElementById('conv-' + conv.id);
+    if (card) card.classList.add('active');
+
+    const msgs = conv.mensajes || [];
+    const fecha = conv.fecha_inicio?.toDate ? conv.fecha_inicio.toDate() : new Date();
+    const fechaStr = fecha.toLocaleDateString('es-AR', { weekday:'long', day:'2-digit', month:'long', year:'numeric' }) + ' — ' + fecha.toLocaleTimeString('es-AR', { hour:'2-digit', minute:'2-digit' });
+
+    document.getElementById('det-nombre').textContent = conv.nombre || 'Anónimo';
+    document.getElementById('det-fecha').textContent = fechaStr;
+    document.getElementById('det-badge').textContent = msgs.length + ' mensajes';
+
+    // Datos de contacto + botón WhatsApp
+    const contacto = document.getElementById('det-contacto');
+    contacto.innerHTML = '';
+    if (conv.telefono) {
+        const tel = document.createElement('span');
+        tel.className = 'text-xs text-emerald-400';
+        tel.textContent = '📱 ' + conv.telefono;
+        contacto.appendChild(tel);
+        const wa = document.createElement('a');
+        wa.href = waUrl(conv.telefono);
+        wa.target = '_blank';
+        wa.className = 'text-xs bg-emerald-700 hover:bg-emerald-600 text-white px-3 py-1 rounded-full font-bold transition-colors';
+        wa.textContent = '💬 Escribir por WhatsApp';
+        contacto.appendChild(wa);
+    }
+    if (conv.email) {
+        const em = document.createElement('span');
+        em.className = 'text-xs text-blue-400';
+        em.textContent = '✉️ ' + conv.email;
+        contacto.appendChild(em);
+    }
+    if (conv.source) {
+        const src = document.createElement('span');
+        src.className = 'text-xs bg-slate-700 text-slate-300 px-2 py-0.5 rounded-full';
+        src.textContent = conv.source === 'online' ? '🌐 Online' : '🎤 Presencial';
+        contacto.appendChild(src);
+    }
+
+    const container = document.getElementById('det-mensajes');
+    container.innerHTML = '';
+    msgs.forEach(m => {
+        const d = document.createElement('div');
+        d.className = 'max-w-xs px-4 py-2.5 text-sm leading-relaxed ' + (m.role === 'user' ? 'bubble-user self-end' : 'bubble-bot self-start');
+        d.textContent = m.content;
+        container.appendChild(d);
+    });
+    if (msgs.length === 0) {
+        container.innerHTML = '<p class="text-slate-600 text-sm text-center">Esta conversación no tiene mensajes guardados</p>';
+    }
+    setTimeout(() => { container.scrollTop = container.scrollHeight; }, 50);
+
+    document.getElementById('detalle-vacio').classList.add('hidden');
+    document.getElementById('detalle-conv').classList.remove('hidden');
+    document.getElementById('detalle-conv').classList.add('flex');
+}
+
+// ══ EDITOR IA ════════════════════════════════
+const IA_REF = doc(db, 'config_sitio', 'inscripcion');
+let pares = [];
+
+async function cargarIA() {
+    document.getElementById('estado-ia').textContent = 'Cargando...';
+    try {
+        const snap = await getDoc(IA_REF);
+        const texto = snap.exists() ? (snap.data().ia_contexto || '') : '';
+        pares = parsearTexto(texto);
+        if (pares.length === 0) pares = [{ pregunta: '', respuesta: '' }];
+        renderIA();
+        document.getElementById('estado-ia').textContent = pares.length + ' preguntas cargadas';
+    } catch(e) {
+        document.getElementById('estado-ia').textContent = '❌ Error';
+    }
+}
+
+function parsearTexto(texto) {
+    if (!texto.trim()) return [];
+    const result = [];
+    const bloques = texto.split(/\n\s*\n/).filter(b => b.trim());
+    for (const bloque of bloques) {
+        const lineas = bloque.split('\n').map(l => l.trim()).filter(Boolean);
+        let pregunta = '', respuesta = '';
+        for (const linea of lineas) {
+            if (/^(P:|Pregunta:|Q:)/i.test(linea)) pregunta = linea.replace(/^(P:|Pregunta:|Q:)\s*/i, '');
+            else if (/^(R:|Respuesta:|A:)/i.test(linea)) respuesta = linea.replace(/^(R:|Respuesta:|A:)\s*/i, '');
+        }
+        if (pregunta || respuesta) result.push({ pregunta, respuesta });
+        else if (lineas.length >= 2) result.push({ pregunta: lineas[0], respuesta: lineas.slice(1).join(' ') });
+    }
+    return result.length > 0 ? result : [];
+}
+
+function generarTexto() {
+    return pares.filter(p => p.pregunta.trim() || p.respuesta.trim())
+        .map(p => `P: ${p.pregunta.trim()}\nR: ${p.respuesta.trim()}`).join('\n\n');
+}
+
+function escHtml(str) {
+    return (str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function renderIA() {
+    const lista = document.getElementById('lista-qa');
+    lista.innerHTML = '';
+    pares.forEach((par, i) => {
+        const card = document.createElement('div');
+        card.className = 'qa-card';
+        card.innerHTML = `
+            <div class="flex items-center gap-2 mb-3">
+                <span class="text-slate-500 text-xs font-mono">#${i+1}</span>
+                <span class="flex-1 text-xs text-slate-500 uppercase tracking-wide font-bold">Pregunta y respuesta</span>
+                <button onclick="moverArriba(${i})" class="text-slate-500 hover:text-white px-1 text-sm" ${i===0?'disabled':''}>▲</button>
+                <button onclick="moverAbajo(${i})" class="text-slate-500 hover:text-white px-1 text-sm" ${i===pares.length-1?'disabled':''}>▼</button>
+                <button onclick="eliminar(${i})" class="text-red-500 hover:text-red-300 px-2 text-sm font-bold">✕</button>
+            </div>
+            <div class="mb-3">
+                <label class="block text-xs font-bold text-indigo-400 mb-1">❓ PREGUNTA(S)</label>
+                <textarea class="w-full bg-slate-900 border border-slate-600 text-white rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-500"
+                    rows="2" placeholder="¿Cuánto cuesta?, ¿Cuál es el precio?, ¿Qué valor tiene?"
+                    oninput="pares[${i}].pregunta=this.value">${escHtml(par.pregunta)}</textarea>
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-green-400 mb-1">💬 RESPUESTA</label>
+                <textarea class="w-full bg-slate-900 border border-slate-600 text-white rounded-lg px-3 py-2 text-sm outline-none focus:border-green-500"
+                    rows="3" placeholder="La inscripción tiene un costo de $15.000 pesos..."
+                    oninput="pares[${i}].respuesta=this.value">${escHtml(par.respuesta)}</textarea>
+            </div>`;
+        lista.appendChild(card);
+    });
+}
+
+window.agregarPar = function() {
+    pares.push({ pregunta:'', respuesta:'' });
+    renderIA();
+    setTimeout(() => document.getElementById('lista-qa').lastElementChild?.scrollIntoView({ behavior:'smooth', block:'start' }), 50);
+};
+window.eliminar = function(i) {
+    if (pares.length === 1) { pares[0]={ pregunta:'', respuesta:'' }; renderIA(); return; }
+    pares.splice(i,1); renderIA();
+};
+window.moverArriba = function(i) { if(i===0)return; [pares[i-1],pares[i]]=[pares[i],pares[i-1]]; renderIA(); };
+window.moverAbajo  = function(i) { if(i===pares.length-1)return; [pares[i],pares[i+1]]=[pares[i+1],pares[i]]; renderIA(); };
+
+window.guardarIA = async function() {
+    const btn = document.getElementById('btn-guardar-ia');
+    const est = document.getElementById('estado-ia');
+    btn.textContent = '⏳ Guardando...'; btn.disabled = true;
+    try {
+        await setDoc(IA_REF, { ia_contexto: generarTexto() }, { merge: true });
+        est.textContent = '✅ Guardado';
+        est.className = 'text-sm text-green-400 self-center';
+        setTimeout(() => { est.className = 'text-sm text-slate-400 self-center'; }, 3000);
+    } catch(e) { est.textContent = '❌ Error'; }
+    btn.textContent = '💾 Guardar todo'; btn.disabled = false;
+};
+
+// Iniciar
+cargarConversaciones();
+</script>
+</body>
+</html>

@@ -46,7 +46,7 @@
         .error-text { color: #94a3b8; font-size: 0.9rem; line-height: 1.6; }
         .retry-btn {
             margin-top: 1.5rem;
-            background: #3b82f6;
+            background: #b45309;
             color: white;
             border: none;
             padding: 0.75rem 2rem;
@@ -57,6 +57,29 @@
             width: 100%;
         }
         .retry-btn:active { opacity: 0.8; transform: scale(0.98); }
+
+        /* Selector de galas */
+        .selector-box { max-width: 420px; width: 100%; display: none; }
+        .selector-title { font-size: 1.4rem; font-weight: 900; color: #f59e0b; margin-bottom: 0.3rem; }
+        .selector-sub { color: #64748b; font-size: 0.85rem; margin-bottom: 1.5rem; }
+        .gala-btn {
+            display: block;
+            width: 100%;
+            background: #1e293b;
+            border: 2px solid #b45309;
+            border-radius: 1rem;
+            padding: 1rem 1.5rem;
+            color: #fff;
+            font-size: 1.05rem;
+            font-weight: 700;
+            cursor: pointer;
+            margin-bottom: 0.75rem;
+            transition: all 0.2s;
+            text-align: left;
+        }
+        .gala-btn:hover { background: #271a00; border-color: #f59e0b; transform: translateY(-2px); }
+        .gala-btn .gala-emoji { margin-right: 0.5rem; font-size: 1.3rem; }
+        .gala-btn .gala-fecha { display: block; font-size: 0.78rem; color: #94a3b8; font-weight: 400; margin-top: 0.2rem; }
     </style>
 </head>
 <body>
@@ -68,6 +91,13 @@
         <div class="spinner"></div>
         <div class="msg">Conectando con la gala activa...</div>
         <div class="gala-name" id="gala-name"></div>
+    </div>
+
+    <div class="selector-box" id="selector-box">
+        <div class="logo">⚖️</div>
+        <div class="selector-title">¿En qué concurso vas a evaluar?</div>
+        <div class="selector-sub">Hay más de una gala activa — seleccioná la que te corresponde</div>
+        <div id="galas-list"></div>
     </div>
 
     <div class="error-box" id="error-box">
@@ -84,6 +114,28 @@
         import { db } from './firebase_config.js';
         import { collection, query, where, getDocs } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
 
+        function redirigir(eventId, data) {
+            const eventName = data.name || 'VYT MUSIC';
+            window.location.replace(
+                `votacion_jurados_FINAL.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}&fromPanel=panel_evento_SIMPLE`
+            );
+        }
+
+        function mostrarSelector(docs) {
+            document.getElementById('loading-state').style.display = 'none';
+            document.getElementById('selector-box').style.display = 'block';
+            const list = document.getElementById('galas-list');
+            docs.forEach(doc => {
+                const data = doc.data();
+                const btn = document.createElement('button');
+                btn.className = 'gala-btn';
+                const fecha = data.fecha || data.date || '';
+                btn.innerHTML = `<span><span class="gala-emoji">⚖️</span>${data.name || doc.id}${fecha ? `<span class="gala-fecha">📅 ${fecha}</span>` : ''}</span>`;
+                btn.onclick = () => redirigir(doc.id, data);
+                list.appendChild(btn);
+            });
+        }
+
         async function entrar() {
             try {
                 const snap = await getDocs(query(collection(db, 'events'), where('isActive', '==', true)));
@@ -92,21 +144,14 @@
                     document.getElementById('error-box').style.display = 'block';
                     return;
                 }
-                const gala = snap.docs[0];
-                const eventId = gala.id;
-                const data = gala.data();
-                const eventName = data.name || 'VYT MUSIC';
-                const fecha = data.fecha || data.date || '';
-                document.getElementById('gala-name').textContent = eventName;
-                if (fecha) {
-                    const fechaEl = document.createElement('div');
-                    fechaEl.style.cssText = 'color:#94a3b8;font-size:0.9rem;margin-top:0.3rem;';
-                    fechaEl.textContent = '📅 ' + fecha;
-                    document.getElementById('gala-name').after(fechaEl);
+                if (snap.docs.length === 1) {
+                    const gala = snap.docs[0];
+                    const data = gala.data();
+                    document.getElementById('gala-name').textContent = data.name || '';
+                    redirigir(gala.id, data);
+                } else {
+                    mostrarSelector(snap.docs);
                 }
-                window.location.replace(
-                    `votacion_jurados_FINAL.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}&fromPanel=panel_evento_SIMPLE`
-                );
             } catch (e) {
                 console.error(e);
                 document.querySelector('.msg').textContent = '❌ Error de conexión. Revisá tu internet y reintentá.';

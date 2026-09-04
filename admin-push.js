@@ -11,12 +11,12 @@
  *   → Configuración web → "Generar par de claves" → copiar la clave
  */
 
-import { initializeApp, getApps } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-import { getMessaging, getToken, onMessage } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging.js';
-import { getFirestore, doc, setDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { initializeApp, getApps } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
+import { getMessaging, getToken, onMessage } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-messaging.js';
+import { getFirestore, doc, setDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
 
 // ⚠️ REEMPLAZAR con la VAPID Key de Firebase Console > Cloud Messaging > Configuración web
-const VAPID_KEY = 'REEMPLAZAR_CON_VAPID_KEY_DE_FIREBASE_CONSOLE';
+const VAPID_KEY = 'BBKbIhJ_QZT961HvpRbYY4aPit24e3P-D9NZ9CHFFFobsFx5mmjBhKX-IZUyxJNKhQmOlGpUZ-cDibzJN4qD7_A';
 
 const FIREBASE_CONFIG = {
     apiKey: "AIzaSyC_2Ukoxf_ry7QfKtou1Cz6nY-qTVw4qTU",
@@ -29,8 +29,11 @@ const FIREBASE_CONFIG = {
 
 // Reutilizar app si ya está inicializada (evita duplicados)
 const app = getApps().find(a => a.name === '[DEFAULT]') || initializeApp(FIREBASE_CONFIG);
-const messaging = getMessaging(app);
-const db = getFirestore(app);
+// Lazy init: messaging puede fallar si el navegador no soporta SW
+let _messaging = null;
+let _db = null;
+function getMsg() { if (!_messaging) _messaging = getMessaging(app); return _messaging; }
+function getDB()  { if (!_db) _db = getFirestore(app); return _db; }
 
 // ─────────────────────────────────────────────
 // Registrar token FCM del dispositivo en Firestore
@@ -44,8 +47,14 @@ async function registrarTokenAdmin() {
 
         // Registrar el service worker de FCM
         const swReg = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+        // Esperar a que el SW esté activo o en espera
+        await new Promise(resolve => {
+            if (swReg.active || swReg.waiting || swReg.installing) { resolve(); return; }
+            swReg.addEventListener('updatefound', () => resolve());
+            setTimeout(resolve, 3000); // fallback
+        });
 
-        const token = await getToken(messaging, {
+        const token = await getToken(getMsg(), {
             vapidKey: VAPID_KEY,
             serviceWorkerRegistration: swReg
         });
@@ -56,7 +65,7 @@ async function registrarTokenAdmin() {
         }
 
         // Guardar token en Firestore (clave = token, así no hay duplicados)
-        await setDoc(doc(db, 'admin_fcm_tokens', token), {
+        await setDoc(doc(getDB(), 'admin_fcm_tokens', token), {
             token,
             dispositivo: navigator.userAgent.substring(0, 120),
             activadoEn: serverTimestamp(),
@@ -74,7 +83,7 @@ async function registrarTokenAdmin() {
 // ─────────────────────────────────────────────
 // Manejar notificaciones cuando la app está ABIERTA (foreground)
 // ─────────────────────────────────────────────
-onMessage(messaging, (payload) => {
+onMessage(getMsg(), (payload) => {
     const title = payload.notification?.title || '🎟️ VYT MUSIC';
     const body  = payload.notification?.body  || '';
     const link  = payload.data?.link;
@@ -125,12 +134,19 @@ async function initPushUI() {
     const area = document.getElementById('push-activation-area');
 
     if (Notification.permission === 'granted') {
-        // Ya tiene permiso — registrar token silenciosamente
-        await registrarTokenAdmin();
+        if (area) area.innerHTML = `<div style="padding:8px 14px;background:#1e3a2f;border:1px solid #059669;border-radius:8px;font-size:13px;color:#6ee7b7;">⏳ Registrando token...</div>`;
+        const token = await registrarTokenAdmin();
         if (area) {
-            area.innerHTML = `<div style="display:flex;align-items:center;gap:8px;padding:8px 14px;background:#064e3b;border:1px solid #059669;border-radius:8px;font-size:13px;color:#6ee7b7;">
-                🔔 Notificaciones push activas en este dispositivo
-            </div>`;
+            if (token) {
+                area.innerHTML = `<div style="display:flex;align-items:center;gap:8px;padding:8px 14px;background:#064e3b;border:1px solid #059669;border-radius:8px;font-size:13px;color:#6ee7b7;">
+                    🔔 Notificaciones push activas — <span style="opacity:0.6">${token.substring(0,10)}...</span>
+                </div>`;
+            } else {
+                area.innerHTML = `<div style="padding:8px 14px;background:#451a03;border:1px solid #d97706;border-radius:8px;font-size:13px;color:#fcd34d;">
+                    ⚠️ Permiso OK pero no se pudo registrar el token
+                    <button onclick="window._reintentarPush()" style="margin-left:10px;padding:4px 10px;background:#d97706;border:none;border-radius:6px;color:white;font-size:12px;cursor:pointer;">Reintentar</button>
+                </div>`;
+            }
         }
     } else if (Notification.permission === 'denied') {
         if (area) {
@@ -148,6 +164,23 @@ async function initPushUI() {
         }
     }
 }
+
+window._reintentarPush = async function() {
+    const area = document.getElementById('push-activation-area');
+    if (area) area.innerHTML = `<div style="padding:8px 14px;background:#1e3a2f;border:1px solid #059669;border-radius:8px;font-size:13px;color:#6ee7b7;">⏳ Reintentando...</div>`;
+    const token = await registrarTokenAdmin();
+    if (area) {
+        if (token) {
+            area.innerHTML = `<div style="display:flex;align-items:center;gap:8px;padding:8px 14px;background:#064e3b;border:1px solid #059669;border-radius:8px;font-size:13px;color:#6ee7b7;">
+                ✅ Token registrado — <span style="opacity:0.6">${token.substring(0,10)}...</span>
+            </div>`;
+        } else {
+            area.innerHTML = `<div style="padding:8px 14px;background:#450a0a;border:1px solid #dc2626;border-radius:8px;font-size:13px;color:#fca5a5;">
+                ❌ Falló — abrí la consola del navegador para ver el error detallado
+            </div>`;
+        }
+    }
+};
 
 async function activarNotificaciones() {
     const btn = document.getElementById('btn-activar-push');

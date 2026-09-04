@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Debug Galas/Grupos</title>
+<style>
+  body { font-family: monospace; background:#0f172a; color:#e2e8f0; padding:20px; font-size:13px; }
+  h2 { color:#f59e0b; margin-top:30px; }
+  table { border-collapse: collapse; width:100%; margin-top:10px; }
+  td, th { border:1px solid #334155; padding:6px 10px; text-align:left; }
+  th { background:#1e293b; color:#f59e0b; }
+  tr:nth-child(even) { background:#1e293b55; }
+  .warn { color:#f87171; font-weight:bold; }
+  .ok { color:#34d399; }
+</style>
+</head>
+<body>
+<h1>🔍 Debug — events y event_groups (vyt-music)</h1>
+<div id="out">Cargando...</div>
+
+<script type="module">
+import { db } from './firebase_config.js';
+import { collection, getDocs } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+
+async function run() {
+  const eventsSnap = await getDocs(collection(db, 'events'));
+  const groupsSnap = await getDocs(collection(db, 'event_groups'));
+
+  const groups = groupsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const groupById = {};
+  groups.forEach(g => groupById[g.id] = g.name);
+
+  let html = '<h2>event_groups (' + groups.length + ')</h2><table><tr><th>id</th><th>name</th></tr>';
+  groups.forEach(g => {
+    html += `<tr><td>${g.id}</td><td>${g.name || ''}</td></tr>`;
+  });
+  html += '</table>';
+
+  const dup = {};
+  groups.forEach(g => { dup[g.name] = (dup[g.name]||0)+1; });
+  const duplicados = Object.entries(dup).filter(([k,v]) => v > 1);
+  if (duplicados.length) {
+    html += '<p class="warn">⚠️ GRUPOS DUPLICADOS: ' + duplicados.map(d=>d[0]+' x'+d[1]).join(', ') + '</p>';
+  }
+
+  const events = eventsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  html += '<h2>events (' + events.length + ')</h2><table><tr><th>id</th><th>name</th><th>date</th><th>groupId</th><th>grupo (resuelto)</th><th>generacion (campo suelto)</th><th>isActive</th></tr>';
+  events.forEach(e => {
+    const grupoResuelto = e.groupId ? (groupById[e.groupId] || '<span class="warn">ID NO EXISTE</span>') : '<span class="warn">SIN GROUP</span>';
+    html += `<tr><td>${e.id}</td><td>${e.name||''}</td><td>${e.date||''}</td><td>${e.groupId||''}</td><td>${grupoResuelto}</td><td>${e.generacion||''}</td><td>${e.isActive?'✅':''}</td></tr>`;
+  });
+  html += '</table>';
+
+  document.getElementById('out').innerHTML = html;
+}
+run().catch(e => { document.getElementById('out').innerHTML = '<p class="warn">Error: ' + e.message + '</p>'; console.error(e); });
+</script>
+</body>
+</html>

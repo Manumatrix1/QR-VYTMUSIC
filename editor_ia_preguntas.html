@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Editor de Preguntas y Respuestas — IA VYT MUSIC</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { background: #0f172a; font-family: 'Inter', system-ui, sans-serif; }
+        .qa-card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 16px; margin-bottom: 12px; }
+        .qa-card:focus-within { border-color: #6366f1; }
+        textarea { resize: vertical; }
+        .drag-handle { cursor: grab; color: #475569; }
+        .drag-handle:hover { color: #94a3b8; }
+    </style>
+</head>
+<body class="min-h-screen text-white p-4">
+
+<div class="max-w-3xl mx-auto">
+
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-6">
+        <div>
+            <h1 class="text-2xl font-bold text-indigo-400">🤖 Editor de Preguntas IA</h1>
+            <p class="text-slate-400 text-sm mt-1">Escribí las preguntas que hace el público y las respuestas que da la IA</p>
+        </div>
+        <a href="editor_inscripcion.html" class="text-slate-400 hover:text-white text-sm">← Volver al editor</a>
+    </div>
+
+    <!-- Barra de acciones -->
+    <div class="flex flex-wrap gap-3 mb-6">
+        <button onclick="agregarPar()" class="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-4 py-2 rounded-lg transition">
+            ➕ Agregar pregunta
+        </button>
+        <button onclick="guardar()" id="btn-guardar" class="flex items-center gap-2 bg-green-600 hover:bg-green-500 text-white font-bold px-4 py-2 rounded-lg transition">
+            💾 Guardar todo
+        </button>
+        <button onclick="probarIA()" class="flex items-center gap-2 bg-purple-600 hover:bg-purple-500 text-white font-bold px-4 py-2 rounded-lg transition">
+            🧪 Probar IA
+        </button>
+        <span id="estado" class="text-sm text-slate-400 self-center"></span>
+    </div>
+
+    <!-- Info -->
+    <div class="bg-indigo-950/50 border border-indigo-700/40 rounded-xl p-4 mb-6 text-sm text-indigo-300 leading-relaxed">
+        💡 <strong>Cómo funciona:</strong> Cada par Pregunta → Respuesta le enseña a la IA cómo contestar.
+        Podés poner varias formas de la misma pregunta separadas por comas en el campo de pregunta.
+        La IA las combina para dar respuestas naturales.
+    </div>
+
+    <!-- Lista de pares Q&A -->
+    <div id="lista-qa"></div>
+
+    <!-- Probar IA -->
+    <div id="panel-prueba" class="hidden mt-6 bg-slate-800 border border-slate-700 rounded-xl p-4">
+        <p class="text-sm font-bold text-slate-300 mb-3">🧪 Probar la IA con el contexto actual</p>
+        <div class="flex gap-2 mb-3">
+            <input id="prueba-input" type="text" placeholder="Escribí una pregunta de prueba..."
+                class="flex-1 bg-slate-900 border border-slate-600 text-white rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-500"
+                onkeydown="if(event.key==='Enter') enviarPrueba()">
+            <button onclick="enviarPrueba()" class="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-4 py-2 rounded-lg text-sm transition">
+                Enviar
+            </button>
+        </div>
+        <div id="prueba-resultado" class="text-sm text-slate-400 leading-relaxed min-h-8"></div>
+    </div>
+
+    <!-- Footer -->
+    <div class="mt-8 text-center text-slate-600 text-xs">
+        Los cambios se guardan en Firestore y la IA los usa inmediatamente
+    </div>
+</div>
+
+<script type="module">
+import { db } from './firebase_config.js';
+import { doc, getDoc, setDoc } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+
+const REF = doc(db, 'config_sitio', 'inscripcion');
+let pares = []; // [{pregunta: "", respuesta: ""}]
+
+// ── Cargar desde Firestore ──────────────────
+async function cargar() {
+    document.getElementById('estado').textContent = 'Cargando...';
+    try {
+        const snap = await getDoc(REF);
+        const texto = snap.exists() ? (snap.data().ia_contexto || '') : '';
+        pares = parsearTexto(texto);
+        if (pares.length === 0) pares = [{ pregunta: '', respuesta: '' }];
+        renderizar();
+        document.getElementById('estado').textContent = `${pares.length} pregunta${pares.length !== 1 ? 's' : ''} cargadas`;
+    } catch(e) {
+        document.getElementById('estado').textContent = '❌ Error al cargar';
+        console.error(e);
+    }
+}
+
+// ── Parsear texto libre → pares Q&A ──────────
+function parsearTexto(texto) {
+    if (!texto.trim()) return [];
+    const result = [];
+
+    // Formato: "P: pregunta\nR: respuesta"
+    const bloques = texto.split(/\n\s*\n/).filter(b => b.trim());
+    for (const bloque of bloques) {
+        const lineas = bloque.split('\n').map(l => l.trim()).filter(Boolean);
+        let pregunta = '', respuesta = '';
+        for (const linea of lineas) {
+            if (/^(P:|Pregunta:|Q:)/i.test(linea)) {
+                pregunta = linea.replace(/^(P:|Pregunta:|Q:)\s*/i, '');
+            } else if (/^(R:|Respuesta:|A:)/i.test(linea)) {
+                respuesta = linea.replace(/^(R:|Respuesta:|A:)\s*/i, '');
+            }
+        }
+        if (pregunta || respuesta) {
+            result.push({ pregunta, respuesta });
+        } else if (lineas.length >= 2) {
+            // Si no tiene prefijos, tomar primera línea como pregunta y el resto como respuesta
+            result.push({ pregunta: lineas[0], respuesta: lineas.slice(1).join(' ') });
+        } else if (lineas.length === 1) {
+            result.push({ pregunta: lineas[0], respuesta: '' });
+        }
+    }
+    return result.length > 0 ? result : [{ pregunta: '', respuesta: '' }];
+}
+
+// ── Convertir pares → texto para la IA ──────
+function generarTexto() {
+    return pares
+        .filter(p => p.pregunta.trim() || p.respuesta.trim())
+        .map(p => `P: ${p.pregunta.trim()}\nR: ${p.respuesta.trim()}`)
+        .join('\n\n');
+}
+
+// ── Renderizar lista de pares ────────────────
+function renderizar() {
+    const lista = document.getElementById('lista-qa');
+    lista.innerHTML = '';
+    pares.forEach((par, i) => {
+        const card = document.createElement('div');
+        card.className = 'qa-card';
+        card.innerHTML = `
+            <div class="flex items-center gap-2 mb-3">
+                <span class="text-slate-500 text-sm font-mono">#${i + 1}</span>
+                <span class="flex-1 text-xs text-slate-500 uppercase tracking-wide font-bold">Par de pregunta y respuesta</span>
+                <button onclick="moverArriba(${i})" class="text-slate-500 hover:text-white px-1 text-sm" title="Mover arriba" ${i === 0 ? 'disabled' : ''}>▲</button>
+                <button onclick="moverAbajo(${i})" class="text-slate-500 hover:text-white px-1 text-sm" title="Mover abajo" ${i === pares.length - 1 ? 'disabled' : ''}>▼</button>
+                <button onclick="eliminar(${i})" class="text-red-500 hover:text-red-300 px-2 text-sm font-bold" title="Eliminar">✕</button>
+            </div>
+            <div class="mb-3">
+                <label class="block text-xs font-bold text-indigo-400 mb-1">❓ PREGUNTA(S) del público</label>
+                <textarea class="w-full bg-slate-900 border border-slate-600 text-white rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-500"
+                    rows="2" placeholder="Ej: ¿Cuánto cuesta la inscripción?, ¿Cuál es el precio?, ¿Qué valor tiene?"
+                    oninput="updatePregunta(${i}, this.value)">${escHtml(par.pregunta)}</textarea>
+                <p class="text-xs text-slate-600 mt-1">Podés poner varias formas de la pregunta separadas por comas</p>
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-green-400 mb-1">💬 RESPUESTA de la IA</label>
+                <textarea class="w-full bg-slate-900 border border-slate-600 text-white rounded-lg px-3 py-2 text-sm outline-none focus:border-green-500"
+                    rows="3" placeholder="Ej: La inscripción al certamen tiene un costo de $15.000 pesos. El pago se realiza al momento de confirmar la audición."
+                    oninput="updateRespuesta(${i}, this.value)">${escHtml(par.respuesta)}</textarea>
+            </div>
+        `;
+        lista.appendChild(card);
+    });
+}
+
+function escHtml(str) {
+    return (str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Exponer actualizadores (módulo no es global) ──
+window.updatePregunta = function(i, value) { pares[i].pregunta = value; };
+window.updateRespuesta = function(i, value) { pares[i].respuesta = value; };
+
+// ── Acciones ─────────────────────────────────
+window.agregarPar = function() {
+    pares.push({ pregunta: '', respuesta: '' });
+    renderizar();
+    // Scroll al nuevo elemento
+    setTimeout(() => {
+        document.getElementById('lista-qa').lastElementChild?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 50);
+};
+
+window.eliminar = function(i) {
+    if (pares.length === 1) { pares[0] = { pregunta: '', respuesta: '' }; renderizar(); return; }
+    pares.splice(i, 1);
+    renderizar();
+};
+
+window.moverArriba = function(i) {
+    if (i === 0) return;
+    [pares[i-1], pares[i]] = [pares[i], pares[i-1]];
+    renderizar();
+};
+
+window.moverAbajo = function(i) {
+    if (i === pares.length - 1) return;
+    [pares[i], pares[i+1]] = [pares[i+1], pares[i]];
+    renderizar();
+};
+
+window.guardar = async function() {
+    const btn = document.getElementById('btn-guardar');
+    const estado = document.getElementById('estado');
+    btn.textContent = '⏳ Guardando...';
+    btn.disabled = true;
+    try {
+        const texto = generarTexto();
+        await setDoc(REF, { ia_contexto: texto }, { merge: true });
+        estado.textContent = `✅ Guardado — ${pares.filter(p=>p.pregunta||p.respuesta).length} pares`;
+        estado.className = 'text-sm text-green-400 self-center';
+        setTimeout(() => { estado.className = 'text-sm text-slate-400 self-center'; }, 3000);
+    } catch(e) {
+        estado.textContent = '❌ Error al guardar';
+        console.error(e);
+    }
+    btn.textContent = '💾 Guardar todo';
+    btn.disabled = false;
+};
+
+window.probarIA = function() {
+    const panel = document.getElementById('panel-prueba');
+    panel.classList.toggle('hidden');
+    if (!panel.classList.contains('hidden')) document.getElementById('prueba-input').focus();
+};
+
+window.enviarPrueba = async function() {
+    const pregunta = document.getElementById('prueba-input').value.trim();
+    if (!pregunta) return;
+    const resultado = document.getElementById('prueba-resultado');
+    resultado.textContent = '⏳ Consultando a la IA...';
+    try {
+        const r = await fetch('https://vyt-music.web.app/chatPublico', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pregunta })
+        });
+        const d = await r.json();
+        resultado.textContent = '🤖 ' + (d.respuesta || d.error || 'Sin respuesta');
+    } catch {
+        resultado.textContent = '❌ No se pudo conectar con la IA';
+    }
+};
+
+// Iniciar
+cargar();
+</script>
+</body>
+</html>

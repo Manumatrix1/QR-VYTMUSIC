@@ -350,6 +350,49 @@ Respondé siempre en español, de forma corta (máximo 3 oraciones).`;
   res.status(200).json({ respuesta });
 });
 
+// ==========================================
+// FUNCIÓN: Notificar al cliente cuando su pedido burguer está listo
+// Se dispara cuando cualquier doc en burguer_orders_{eventId} cambia de status a "listo"
+// ==========================================
+exports.notificarPedidoListo = functions.firestore
+  .document('{colId}/{orderId}')
+  .onUpdate(async (change, context) => {
+    const { colId } = context.params;
+    if (!colId.startsWith('burguer_orders_')) return null;
+
+    const before = change.before.data();
+    const after  = change.after.data();
+
+    if (before.status === after.status || after.status !== 'listo') return null;
+
+    const fcmToken = after.fcmToken;
+    if (!fcmToken) return null;
+
+    try {
+      await admin.messaging().send({
+        token: fcmToken,
+        notification: {
+          title: `🍔 ¡Pedido #${after.ticketNum} listo!`,
+          body: 'Pasá a retirar en el mostrador.'
+        },
+        webpush: {
+          notification: {
+            icon: 'https://vyt-music.web.app/imagenes/logo-96x96.png',
+            badge: 'https://vyt-music.web.app/imagenes/logo-96x96.png',
+            requireInteraction: true,
+            vibrate: [400, 150, 400, 150, 400],
+            tag: 'pedido-burguer'
+          },
+          fcmOptions: { link: 'https://vyt-music.web.app/burguer_estado.html' }
+        }
+      });
+      console.log(`✅ Push enviado al cliente — pedido #${after.ticketNum}`);
+    } catch(e) {
+      console.error('Error enviando push al cliente:', e.message);
+    }
+    return null;
+  });
+
 // onAudicionCreada fue unificado con notificarNuevaAudicion (ver arriba)
 
 // ==========================================
@@ -507,18 +550,23 @@ exports.mercadopagoWebhookV2 = functions.https.onRequest(async (req, res) => {
 
           console.log(`✅ Inscripción ${audicionId} marcada como PAGADA`);
 
-          // Enviar WhatsApp al artista (opcional - comentar si no quieres)
-          // Si tienes función de envío de WhatsApp programático, descomentar:
-          /*
-          const phone = audicionData.telefono?.replace(/\D/g, '');
-          if (phone) {
-            const msg = `🎉 ¡PAGO CONFIRMADO!\n\nTu inscripción a VYT MUSIC está completa ✅\n\nTe agregaremos al grupo de WhatsApp de participantes con todos los detalles.\n\n¡Preparate para brillar en el escenario! 🎤`;
-            // Aquí puedes usar un servicio de WhatsApp API si lo tienes configurado
+          // Push FCM al admin — pago de inscripción confirmado
+          try {
+            const nombre   = audicionData.nombre   || 'Sin nombre';
+            const telefono = audicionData.telefono || audicionData.whatsapp || '';
+            const monto    = payment.transaction_amount || 0;
+            const adminLink = `${APP_URL}/admin_audiciones.html?id=${audicionId}`;
+            await sendPushToAdmin(
+              `🎤 Pago de inscripción confirmado`,
+              `${nombre}${telefono ? ' · ' + telefono : ''} · $${parseInt(monto).toLocaleString('es-AR')}`,
+              adminLink
+            );
+          } catch (pushErr) {
+            console.error('⚠️ Error enviando push de inscripción:', pushErr.message);
           }
-          */
 
-          res.status(200).json({ 
-            success: true, 
+          res.status(200).json({
+            success: true,
             type: 'inscripcion',
             audicionId: audicionId,
             status: 'pagado'

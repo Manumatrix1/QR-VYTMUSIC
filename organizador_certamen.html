@@ -189,6 +189,10 @@
                             <i class="fas fa-first-aid text-orange-400 w-5"></i> Recuperar galas vacías
                         </button>
                         <div class="border-t border-gray-700 my-1"></div>
+                        <button onclick="window.abrirPapelera(); document.getElementById('moreDropdown').classList.add('hidden')" class="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-gray-800 text-orange-400 text-sm text-left">
+                            <i class="fas fa-trash-restore w-5"></i> Artistas eliminados
+                        </button>
+                        <div class="border-t border-gray-700 my-1"></div>
                         <button onclick="clearBoard(); document.getElementById('moreDropdown').classList.add('hidden')" class="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-red-900 text-red-400 text-sm text-left">
                             <i class="fas fa-trash-alt w-5"></i> Limpiar tablero
                         </button>
@@ -379,17 +383,17 @@
         </div>
     </div>
 
-    <!-- MODAL: Selector de galas para Generación 13 -->
+    <!-- MODAL: Selector de galas (genérico — cualquier generación) -->
     <div id="modalGen13" class="hidden fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
         <div class="bg-gray-900 border border-gray-700 rounded-2xl p-6 w-full max-w-lg shadow-2xl">
-            <h3 class="text-white font-bold text-lg mb-2">🎭 Generación 13 - Seleccionar galas</h3>
-            <p class="text-gray-400 text-sm mb-4">Marcá las galas que pertenecen a Generación 13:</p>
-            
+            <h3 class="text-white font-bold text-lg mb-2" id="genSelectorTitle">🎭 Seleccionar galas</h3>
+            <p class="text-gray-400 text-sm mb-4">Marcá las galas que pertenecen a esta generación:</p>
+
             <!-- Lista de galas con checkboxes -->
             <div id="gen13EventsList" class="space-y-2 mb-4 max-h-96 overflow-y-auto">
                 <!-- Se llena dinámicamente -->
             </div>
-            
+
             <div class="flex gap-3">
                 <button onclick="confirmGen13Selection()" class="flex-1 bg-purple-600 hover:bg-purple-500 text-white font-bold py-3 rounded-xl transition-all">
                     ✅ Cargar seleccionados
@@ -442,6 +446,7 @@
             <div class="mb-3">
                 <label class="text-gray-400 text-xs mb-1 block">Generación *</label>
                 <select id="consolidarGeneracion" class="w-full bg-gray-800 border border-gray-600 text-white rounded-xl px-4 py-3 focus:border-green-500 focus:outline-none">
+                    <option value="Generación 14">🎭 Generación 14</option>
                     <option value="Generación 13">🎭 Generación 13</option>
                     <option value="Generación 12">🎭 Generación 12</option>
                     <option value="Otros">📦 Otros / Especial</option>
@@ -853,54 +858,66 @@
             const sel = document.getElementById('eventSelector');
             const generacion = sel.value;
             if (!generacion) return showToast('Selecciona una generación', '⚠️');
-            if (loadedGenerations.includes(generacion)) return showToast('Ya cargaste esa generación', 'ℹ️');
-            
-            // Si es Generación 13, abrir modal de selección manual
-            if (generacion === 'Generación 13') {
-                showGen13Modal();
-                sel.value = '';
-                return;
-            }
-            
-            await loadArtistsByGeneration(generacion, loadedGenerations.length > 0);
+            // Nota: permitimos re-abrir aunque ya esté cargada, para cambiar la selección de galas
+            showGen13Modal(generacion);
             sel.value = '';
         };
 
         // ═══════════════════════════════════════════
-        // MODAL GEN 13: SELECCIÓN MANUAL DE GALAS
+        // MODAL SELECTOR DE GALAS (cualquier gen)
         // ═══════════════════════════════════════════
-        async function showGen13Modal() {
+        let _currentGenForModal = '';
+
+        async function showGen13Modal(generacion) {
+            _currentGenForModal = generacion || 'Generación 13';
+            const title = document.getElementById('genSelectorTitle');
+            if (title) title.textContent = `🎭 ${_currentGenForModal} — Seleccionar galas`;
             const container = document.getElementById('gen13EventsList');
             document.getElementById('modalGen13').classList.remove('hidden');
             
-            // Cargar selección previa
-            const savedSelection = JSON.parse(localStorage.getItem('gen13_selected_events') || '[]');
-            
-            // Ordenar eventos por fecha descendente
-            const eventsSorted = [...allEvents].sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-            
-            // Renderizar inmediatamente con conteo pendiente
-            container.innerHTML = '';
+            // Cargar selección previa guardada en localStorage
+            const lsKey = `gen_selected_events_${(_currentGenForModal||'').replace(/[^a-zA-Z0-9]/g,'_')}`;
+            const savedSelection = JSON.parse(localStorage.getItem(lsKey) || localStorage.getItem('gen13_selected_events') || '[]');
+
+            // Pre-marcar también los eventos que se auto-detectan como de esta generación
+            const grupo = allEventGroups.find(g => normGen(g.name) === normGen(_currentGenForModal));
+            const autoDetected = new Set(savedSelection);
+            allEvents.forEach(ev => {
+                const matchGroup = !!grupo && ev.groupId === grupo.id;
+                const evGen = ev.generacion || detectGeneration(ev.name || ev.id, ev.date) || '';
+                const matchField = normGen(evGen) === normGen(_currentGenForModal);
+                if (matchGroup || matchField) autoDetected.add(ev.id);
+            });
+
+            // Ordenar: primero los auto-detectados/marcados, luego el resto — por fecha desc
+            const eventsSorted = [...allEvents].sort((a, b) => {
+                const aInGen = autoDetected.has(a.id) ? 1 : 0;
+                const bInGen = autoDetected.has(b.id) ? 1 : 0;
+                if (bInGen !== aInGen) return bInGen - aInGen; // marcados arriba
+                return (b.date || '').localeCompare(a.date || '');
+            });
+
+            // Renderizar con conteo pendiente
+            container.innerHTML = `<p class="text-xs text-gray-400 mb-2">✅ Pre-marcados los que ya pertenecen a ${_currentGenForModal}. Agregá o quitá galas según necesites.</p>`;
             eventsSorted.forEach(event => {
                 const eventName = event.name || event.id;
-                const isSelected = savedSelection.includes(event.id);
+                const isSelected = autoDetected.has(event.id);
                 const item = document.createElement('label');
                 item.id = `gen13-item-${event.id}`;
                 item.className = `flex items-start gap-3 p-3 rounded-lg cursor-pointer transition-all border-2 ${
                     isSelected ? 'bg-purple-900/30 border-purple-500' : 'bg-gray-800 border-gray-700 hover:border-purple-500'
                 }`;
                 item.innerHTML = `
-                    <input type="checkbox" 
-                           value="${event.id}" 
+                    <input type="checkbox"
+                           value="${event.id}"
                            ${isSelected ? 'checked' : ''}
-                           class="mt-1 w-5 h-5 text-purple-600 bg-gray-700 border-gray-600 rounded focus:ring-purple-500">
+                           class="mt-1 w-5 h-5 text-purple-600 bg-gray-700 border-gray-600 rounded focus:ring-purple-500"
+                           onchange="this.closest('label').className='flex items-start gap-3 p-3 rounded-lg cursor-pointer transition-all border-2 '+(this.checked?'bg-purple-900/30 border-purple-500':'bg-gray-800 border-gray-700 hover:border-purple-500')">
                     <div class="flex-1">
                         <p class="text-white text-sm font-bold">${eventName}</p>
                         <div class="flex items-center gap-2 mt-1">
-                            <span id="count-${event.id}" class="text-xs px-2 py-0.5 rounded-full bg-gray-700 text-gray-400">
-                                🎤 ...
-                            </span>
-                            <span class="text-gray-500 text-xs">ID: ${event.id}</span>
+                            <span class="text-gray-400 text-xs">${event.date || ''}</span>
+                            <span id="count-${event.id}" class="text-xs px-2 py-0.5 rounded-full bg-gray-700 text-gray-400">🎤 ...</span>
                         </div>
                     </div>
                 `;
@@ -932,18 +949,60 @@
                 return;
             }
             
-            // Guardar selección
-            localStorage.setItem('gen13_selected_events', JSON.stringify(selectedEventIds));
-            
+            // Guardar selección (clave por generación)
+            const lsKey = `gen_selected_events_${(_currentGenForModal||'').replace(/[^a-zA-Z0-9]/g,'_')}`;
+            localStorage.setItem(lsKey, JSON.stringify(selectedEventIds));
+            if (_currentGenForModal === 'Generación 13') {
+                localStorage.setItem('gen13_selected_events', JSON.stringify(selectedEventIds)); // compatibilidad
+            }
+
             // ⭐ GUARDAR selección en variable global para que loadSavedState sepa qué columnas crear
             window._selectedEventIds = selectedEventIds;
-            
+
+            // ⭐ GUARDAR generacion y groupId en Firestore para detección automática futura
+            const grupoGen = allEventGroups.find(g => normGen(g.name) === normGen(_currentGenForModal));
+            selectedEventIds.forEach(evId => {
+                const ev = allEvents.find(e => e.id === evId);
+                if (!ev) return;
+                const needsUpdate = normGen(ev.generacion || '') !== normGen(_currentGenForModal)
+                    || (grupoGen && ev.groupId !== grupoGen.id);
+                if (needsUpdate) {
+                    const patch = { generacion: _currentGenForModal };
+                    if (grupoGen) patch.groupId = grupoGen.id;
+                    updateDoc(doc(db, 'events', evId), patch)
+                        .then(() => { if (ev) { ev.generacion = _currentGenForModal; if (grupoGen) ev.groupId = grupoGen.id; } })
+                        .catch(() => {});
+                }
+            });
+
             // Cerrar modal
             document.getElementById('modalGen13').classList.add('hidden');
-            
-            // Cargar artistas SOLO de las galas seleccionadas
-            await loadArtistsByGeneration('Generación 13', loadedGenerations.length > 0, selectedEventIds);
-            
+
+            // Siempre merge=false para reconstruir el tablero con TODAS las galas seleccionadas
+            await loadArtistsByGeneration(_currentGenForModal, false, selectedEventIds);
+
+            // Crear columnas para galas seleccionadas que aún no tienen columna en el tablero
+            // (ocurre cuando el estado guardado solo tenía galas anteriores)
+            const colorList = ['purple','blue','green','yellow','teal','pink','orange','red'];
+            const existingEventCols = new Set(columns.map(c => c.eventId).filter(Boolean));
+            let newColsAdded = 0;
+            selectedEventIds.forEach(eventId => {
+                if (existingEventCols.has(eventId)) return;
+                const evInfo = allEvents.find(e => e.id === eventId);
+                if (!evInfo) return;
+                const artistsInEv = allArtists.filter(a => a.eventId === eventId);
+                if (!artistsInEv.length) return;
+                const colId = 'col_auto_' + eventId;
+                columns.push({ id: colId, name: evInfo.name || eventId, color: colorList[columns.length % colorList.length], eventId, date: evInfo.date || '' });
+                artistsInEv.forEach(a => { columnAssignments[a.id] = colId; });
+                columnOrder[colId] = artistsInEv.sort((a,b) => a.name.localeCompare(b.name,'es')).map(a => a.id);
+                newColsAdded++;
+            });
+            if (newColsAdded > 0) {
+                showToast(`✅ ${newColsAdded} gala${newColsAdded>1?'s':''} nueva${newColsAdded>1?'s':''} agregada${newColsAdded>1?'s':''}`, '🎭');
+                renderBoard();
+            }
+
             // Detectar nombres similares después de cargar
             setTimeout(() => detectSimilarNames(), 1000);
         };
@@ -2907,6 +2966,115 @@
             removeArtist(artistId);
         };
 
+        // ═══════════════════════════════════════════
+        // PAPELERA DE ARTISTAS ELIMINADOS
+        // ═══════════════════════════════════════════
+        window.abrirPapelera = async function() {
+            const existing = document.getElementById('papeleraModal');
+            if (existing) existing.remove();
+
+            showToast('Cargando papelera...', '🗑');
+            let entries = [];
+            try {
+                const snap = await getDocs(collection(db, 'organizador_papelera'));
+                snap.forEach(d => entries.push({ docId: d.id, ...d.data() }));
+            } catch(e) {
+                showToast('Error al cargar papelera', '❌');
+                return;
+            }
+
+            // Filtrar por generación actual si hay alguna cargada
+            const genActual = loadedGenerations[0] || '';
+            const local = entries.filter(e => !genActual || normGen(e.generacion || '') === normGen(genActual) || !e.generacion);
+            // Ordenar: más recientes primero
+            local.sort((a, b) => {
+                const ta = a.deletedAt?.seconds || 0;
+                const tb = b.deletedAt?.seconds || 0;
+                return tb - ta;
+            });
+
+            const modal = document.createElement('div');
+            modal.id = 'papeleraModal';
+            modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.88);z-index:99999;display:flex;align-items:center;justify-content:center;padding:16px;overflow:auto;';
+
+            const rows = local.length === 0
+                ? `<p style="color:#9ca3af;text-align:center;padding:32px 0;">No hay artistas eliminados guardados</p>`
+                : local.map(e => {
+                    const fecha = e.deletedAt?.seconds
+                        ? new Date(e.deletedAt.seconds * 1000).toLocaleString('es-ES', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' })
+                        : '—';
+                    const foto = e.photoURL
+                        ? `<img src="${e.photoURL}" style="width:36px;height:36px;border-radius:50%;object-fit:cover;border:2px solid #7c3aed;flex-shrink:0;">`
+                        : `<div style="width:36px;height:36px;border-radius:50%;background:#4c1d95;display:flex;align-items:center;justify-content:center;color:white;font-weight:bold;flex-shrink:0;">${(e.name||'?').charAt(0)}</div>`;
+                    return `
+                    <div style="display:flex;align-items:center;gap:10px;padding:10px;background:#1f2937;border-radius:10px;">
+                        ${foto}
+                        <div style="flex:1;min-width:0;">
+                            <div style="color:white;font-weight:bold;font-size:14px;">${e.name}</div>
+                            <div style="color:#9ca3af;font-size:11px;">${e.columnName ? `📁 ${e.columnName} · ` : ''}${e.galas} gala${e.galas !== 1 ? 's' : ''}${e.avg ? ` · Prom: ${e.avg}` : ''}</div>
+                            <div style="color:#6b7280;font-size:11px;">🕐 ${fecha}</div>
+                        </div>
+                        <button onclick="window.restaurarArtista('${e.docId}')" style="background:#7c3aed;border:none;color:white;border-radius:8px;padding:6px 10px;font-size:12px;cursor:pointer;white-space:nowrap;">↩ Restaurar</button>
+                    </div>`;
+                }).join('');
+
+            modal.innerHTML = `
+                <div style="background:#111827;border-radius:16px;padding:20px;max-width:480px;width:100%;max-height:85vh;display:flex;flex-direction:column;">
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+                        <p style="color:white;font-size:16px;font-weight:bold;">🗑 Artistas eliminados ${genActual ? `· ${genActual}` : ''}</p>
+                        <button onclick="document.getElementById('papeleraModal').remove()" style="background:none;border:none;color:#9ca3af;font-size:20px;cursor:pointer;">✕</button>
+                    </div>
+                    <p style="color:#9ca3af;font-size:12px;margin-bottom:14px;">Al restaurar, el artista vuelve a la lista sin asignar. Sus datos de votación ya no se pueden recuperar.</p>
+                    <div style="display:flex;flex-direction:column;gap:8px;overflow-y:auto;flex:1;">${rows}</div>
+                </div>`;
+            document.body.appendChild(modal);
+
+            // Cerrar con click fuera
+            modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+        };
+
+        window.restaurarArtista = async function(docId) {
+            const snap = await getDocs(collection(db, 'organizador_papelera'));
+            let entry = null;
+            snap.forEach(d => { if (d.id === docId) entry = { docId: d.id, ...d.data() }; });
+            if (!entry) { showToast('No se encontró el artista', '❌'); return; }
+
+            // Re-agregar a allArtists en memoria
+            const restored = {
+                id: entry.artistId || `restored_${Date.now()}`,
+                name: entry.name,
+                galas: entry.galas || 0,
+                avg: entry.avg || null,
+                photoURL: entry.photoURL || null,
+                eventId: (entry.eventIds || [])[0] || null,
+                eventIds: entry.eventIds || []
+            };
+            if (!allArtists.find(a => a.id === restored.id || a.name.toLowerCase() === restored.name.toLowerCase())) {
+                allArtists.push(restored);
+            }
+
+            // Intentar recrear en Firebase (datos básicos)
+            for (const evId of (entry.eventIds || [])) {
+                try {
+                    await addDoc(collection(db, `events/${evId}/artists`), {
+                        name: entry.name,
+                        photoURL: entry.photoURL || null,
+                        fromOrganizador: true,
+                        createdAt: serverTimestamp(),
+                        restoredFromPapelera: true
+                    });
+                } catch(e) { console.warn('Error restaurando en Firebase:', e); }
+            }
+
+            // Eliminar de la papelera
+            try { await deleteDoc(doc(db, 'organizador_papelera', docId)); } catch(e) {}
+
+            showToast(`✅ "${entry.name}" restaurado al tablero`, '↩');
+            renderBoard();
+            document.getElementById('papeleraModal')?.remove();
+            saveState();
+        };
+
         // ══════════════════════════════════════════════════════════
         window.fixEmptyBoard = async function() {
             document.getElementById('emptyBoardBanner').classList.add('hidden');
@@ -3381,7 +3549,25 @@
             const artist = allArtists.find(a => a.id === artistId);
             const name = artist ? artist.name : artistId;
             const eventCount = artist ? (artist.eventIds || [artist.eventId]).length : 1;
-            if (!confirm(`⚠️ ¿ELIMINAR A "${name}" DEL CERTAMEN?\n\nSe borrará de ${eventCount} gala(s), incluyendo foto, datos y pistas de audio.\n\nEsta acción NO SE PUEDE DESHACER.`)) return;
+            if (!confirm(`⚠️ ¿ELIMINAR A "${name}" DEL CERTAMEN?\n\nSe borrará de ${eventCount} gala(s), incluyendo foto, datos y pistas de audio.\n\nPodés recuperarlo desde "Artistas eliminados" en el menú ⋯`)) return;
+
+            // Guardar en papelera ANTES de eliminar
+            if (artist) {
+                try {
+                    await addDoc(collection(db, 'organizador_papelera'), {
+                        artistId: artist.id,
+                        name: artist.name,
+                        galas: artist.galas || 0,
+                        avg: artist.avg || null,
+                        photoURL: artist.photoURL || null,
+                        eventIds: artist.eventIds || (artist.eventId ? [artist.eventId] : []),
+                        generacion: loadedGenerations[0] || '',
+                        columnId: columnAssignments[artist.id] || null,
+                        columnName: (columns.find(c => c.id === columnAssignments[artist.id]) || {}).name || null,
+                        deletedAt: serverTimestamp()
+                    });
+                } catch(e) { console.warn('Error guardando en papelera:', e); }
+            }
 
             // Eliminar del DOM y estado local inmediatamente
             allArtists = allArtists.filter(a => a.id !== artistId);
