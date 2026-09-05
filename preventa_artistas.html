@@ -1797,6 +1797,18 @@
                     paymentUploadedAt: serverTimestamp()
                 });
 
+                // Traer los nombres de invitados ya cargados en el paso 1 -- antes el
+                // aviso solo decía "3 entradas", ahora el organizador puede chequear
+                // los nombres sin tener que abrir admin_preventa.html.
+                let _attendeeNames = [];
+                try {
+                    const _orderSnap = await getDoc(doc(db, `ticket_orders_${eventId}`, currentOrderId));
+                    if (_orderSnap.exists()) _attendeeNames = _orderSnap.data().attendeeNames || [];
+                } catch (e) { console.warn('No se pudieron leer los nombres de invitados:', e.message); }
+                const _namesList = _attendeeNames.length > 0
+                    ? `\n👥 *Invitados:*\n${_attendeeNames.map(n => `• ${n}`).join('\n')}\n`
+                    : '';
+
                 // ── Notificar al admin automáticamente (sin depender del artista) ──
                 // 1. Backend crea admin_notifications en Firestore → se ve en admin_preventa en tiempo real
                 fetch('https://us-central1-vyt-music.cloudfunctions.net/avisarPagoAdmin', {
@@ -1807,6 +1819,7 @@
                         artistPhone: _artistPhone,
                         targetArtistName: selectedTopArtist?.name || null,
                         guestCount: _guestCount,
+                        attendeeNames: _attendeeNames,
                         amount: _totalNum,
                         orderId: currentOrderId,
                         eventId: eventId,
@@ -1816,7 +1829,7 @@
 
                 // 2. Preparar link de WhatsApp para el botón en "Esperando Aprobación"
                 const _adminLink = `https://vyt-music.web.app/admin_preventa.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName)}`;
-                const _waMsg = `🎟️ *NUEVO COMPROBANTE DE PAGO*\n\n✅ ${_artistName} subió comprobante\n\n🎫 ${_guestCount} entradas\n💰 $${_total}\n\n📸 Revisar y aprobar:\n${_adminLink}`;
+                const _waMsg = `🎟️ *NUEVO COMPROBANTE DE PAGO*\n\n✅ ${_artistName} subió comprobante\n\n🎫 ${_guestCount} entradas\n💰 $${_total}\n${_namesList}\n📸 Revisar y aprobar:\n${_adminLink}`;
                 const _waUrl = `https://wa.me/5493417444459?text=${encodeURIComponent(_waMsg)}`;
 
                 displayMessage('✅ ¡Comprobante enviado! Avisale al organizador por WhatsApp para que aprueben tu pago.', 'success');

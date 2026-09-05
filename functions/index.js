@@ -406,7 +406,7 @@ exports.avisarPagoAdmin = functions.https.onRequest(async (req, res) => {
   if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
   if (req.method !== 'POST') { res.status(405).json({ error: 'Method not allowed' }); return; }
 
-  const { artistName, artistPhone, targetArtistName, guestCount, amount, orderId, eventId, eventName } = req.body || {};
+  const { artistName, artistPhone, targetArtistName, guestCount, attendeeNames, amount, orderId, eventId, eventName } = req.body || {};
 
   if (!eventId || !orderId) {
     res.status(400).json({ error: 'Faltan eventId u orderId' });
@@ -416,6 +416,9 @@ exports.avisarPagoAdmin = functions.https.onRequest(async (req, res) => {
   const adminLink = `https://vyt-music.web.app/admin_preventa.html?eventId=${eventId}&eventName=${encodeURIComponent(eventName || '')}`;
   const amountFmt = parseInt(amount || 0).toLocaleString('es-AR');
   const artistaLine = targetArtistName ? `🎤 Para: *${targetArtistName}*\n` : '';
+  const namesList = Array.isArray(attendeeNames) && attendeeNames.length > 0
+    ? `\n👥 *Invitados:*\n${attendeeNames.map(n => `• ${n}`).join('\n')}\n`
+    : '';
   const waMsg =
     `🎟️ *NUEVA COMPRA DE ENTRADAS*\n\n` +
     artistaLine +
@@ -423,6 +426,7 @@ exports.avisarPagoAdmin = functions.https.onRequest(async (req, res) => {
     (artistPhone ? `📱 ${artistPhone}\n` : '') +
     `🎫 ${guestCount || 0} entrada(s)\n` +
     `💰 $${amountFmt}\n` +
+    namesList +
     `📦 Orden: ${String(orderId).substring(0, 8).toUpperCase()}\n\n` +
     `📋 Aprobar pago:\n${adminLink}`;
 
