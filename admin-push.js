@@ -45,8 +45,12 @@ async function registrarTokenAdmin() {
             return null;
         }
 
-        // Registrar el service worker de FCM
-        const swReg = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+        // Registrar el service worker -- antes usaba /firebase-messaging-sw.js
+        // aparte, pero al compartir el scope "/" con service-worker.js (el de
+        // la PWA general) se pisaban entre sí y el token de push quedaba
+        // huérfano cada vez que se visitaba cualquier otra página. Ahora los
+        // mensajes de background de FCM están fusionados en service-worker.js.
+        const swReg = await navigator.serviceWorker.register('/service-worker.js');
         // Esperar a que el SW esté activo o en espera
         await new Promise(resolve => {
             if (swReg.active || swReg.waiting || swReg.installing) { resolve(); return; }
