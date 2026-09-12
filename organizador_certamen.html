@@ -4049,7 +4049,19 @@
             const btn = document.getElementById('guardarComoBtn');
             btn.disabled = true; btn.textContent = '⏳ Guardando...';
             try {
-                await addDoc(collection(db, 'organizador_guardados'), {
+                // Si ya había un guardado para esta misma generación, lo actualiza en
+                // vez de crear uno nuevo -- antes cada "Guardar como" se sumaba como
+                // una entrada más en la lista (aunque fuera la misma generación),
+                // y terminaba habiendo varios guardados casi iguales con fecha
+                // distinta, sin saber cuál era el último bueno.
+                const genOrdenada = [...loadedGenerations].sort();
+                const snap = await getDocs(collection(db, 'organizador_guardados'));
+                const existente = snap.docs.find(d => {
+                    const g = (d.data().loadedGenerations || []).slice().sort();
+                    return g.length > 0 && JSON.stringify(g) === JSON.stringify(genOrdenada);
+                });
+
+                const payload = {
                     nombre,
                     columns,
                     columnAssignments,
@@ -4058,7 +4070,14 @@
                     loadedGenerations,
                     totalArtistas: allArtists.length,
                     savedAt: serverTimestamp()
-                });
+                };
+
+                if (existente) {
+                    await setDoc(doc(db, 'organizador_guardados', existente.id), payload);
+                } else {
+                    await addDoc(collection(db, 'organizador_guardados'), payload);
+                }
+
                 document.getElementById('modalGuardarComo').classList.add('hidden');
                 showToast(`✅ Guardado: “${nombre}”`, '💾');
             } catch(e) {
