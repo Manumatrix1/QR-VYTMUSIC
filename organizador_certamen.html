@@ -3200,6 +3200,17 @@
             sortableInstances = {};
 
             columns.forEach(col => {
+                // Una gala pasada y sin artistas asignados es solo ruido viejo (ej. galas de meses
+                // anteriores que quedaron vacías) — no aporta nada verla en el tablero.
+                // Si tiene artistas, se mantiene visible (es historial real de quién cantó ahí).
+                if (isColumnPast(col)) {
+                    const tieneArtistas = allArtists.some(a =>
+                        columnAssignments[a.id] === col.id ||
+                        (columnMulti[a.id] || []).includes(col.id)
+                    );
+                    if (!tieneArtistas) return;
+                }
+
                 const colEl = createColumnElement(col);
                 container.appendChild(colEl);
 
@@ -4000,8 +4011,21 @@
                 if (snap.empty) {
                     lista.innerHTML = '<p class="text-gray-500 text-sm text-center py-3">💭 No hay listas guardadas todavía.</p>';
                 } else {
+                    // Mostrar solo el último guardado por cada combinación de generaciones
+                    // (ej. "Generación 14" sola) — como en Excel: guardás y ves lo último,
+                    // no una lista con el historial de cada vez que se guardó.
+                    // Los docs vienen ordenados por fecha desc, así que el primero que
+                    // aparece para cada combinación ya es el más reciente.
+                    const vistos = new Set();
+                    const docsUnicos = snap.docs.filter(d => {
+                        const g = (d.data().loadedGenerations || []).slice().sort();
+                        const key = g.length > 0 ? JSON.stringify(g) : `__sinclave_${d.id}`;
+                        if (vistos.has(key)) return false;
+                        vistos.add(key);
+                        return true;
+                    });
                     lista.innerHTML = '';
-                    snap.docs.forEach(d => {
+                    docsUnicos.forEach(d => {
                         const data = d.data();
                         const fecha = data.savedAt?.toDate ? data.savedAt.toDate().toLocaleDateString('es-AR', {day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'}) : '---';
                         const row = document.createElement('div');
