@@ -2235,20 +2235,42 @@
             let galasConVotos = 0;
             for (const ref of refs) {
                 if (!ref.eventId) continue;
+                let scoreEncontrado = false;
                 try {
                     const evalSnap = await getDocs(collection(db, `events/${ref.eventId}/jury_evaluations`));
-                    if (evalSnap.empty) continue;
                     const scoresThisEvent = evalSnap.docs
                         .filter(d => (d.data().artistId || d.data().artista_id) === ref.docId)
                         .map(d => extractScore(d.data()))
                         .filter(s => s !== null);
                     if (scoresThisEvent.length > 0) {
                         allScores.push(...scoresThisEvent);
-                        galasConVotos++;
-                        if (!artist.votedEventIds.includes(ref.eventId)) artist.votedEventIds.push(ref.eventId);
+                        scoreEncontrado = true;
                     }
                 } catch (e) {
                     console.warn(`Error leyendo jury_evaluations de ${ref.eventId}:`, e);
+                }
+                // El sistema de votación real acumula el puntaje directamente en el doc
+                // del artista (totalScore/totalRatingsCount), no en jury_evaluations
+                // (esa colección casi nunca se usa) -- si el doc todavía existe con
+                // ese puntaje, es la fuente más confiable.
+                if (!scoreEncontrado) {
+                    try {
+                        const artDoc = await getDoc(doc(db, `events/${ref.eventId}/artists`, ref.docId));
+                        if (artDoc.exists()) {
+                            const d = artDoc.data();
+                            const count = d.totalRatingsCount || 0;
+                            if (count > 0 && d.totalScore) {
+                                allScores.push(d.totalScore / count);
+                                scoreEncontrado = true;
+                            }
+                        }
+                    } catch (e) {
+                        console.warn(`Error leyendo doc de artista en ${ref.eventId}:`, e);
+                    }
+                }
+                if (scoreEncontrado && !artist.votedEventIds.includes(ref.eventId)) {
+                    artist.votedEventIds.push(ref.eventId);
+                    galasConVotos++;
                 }
             }
             if (allScores.length > 0) {
@@ -3053,15 +3075,21 @@
                 allArtists.push(restored);
             }
 
-            // Intentar recrear en Firebase (datos básicos)
+            // Intentar recrear en Firebase, restaurando también el puntaje que tenía
+            // guardado al momento de eliminarlo (si la papelera lo capturó).
+            const perEventSnapshots = entry.perEventSnapshots || [];
+            let puntajeRestaurado = false;
             for (const evId of (entry.eventIds || [])) {
                 try {
+                    const snapshot = perEventSnapshots.find(s => s.eventId === evId);
+                    if (snapshot && Object.keys(snapshot.scoreSnapshot || {}).length > 0) puntajeRestaurado = true;
                     await addDoc(collection(db, `events/${evId}/artists`), {
                         name: entry.name,
                         photoURL: entry.photoURL || null,
                         fromOrganizador: true,
                         createdAt: serverTimestamp(),
-                        restoredFromPapelera: true
+                        restoredFromPapelera: true,
+                        ...(snapshot ? snapshot.scoreSnapshot : {})
                     });
                 } catch(e) { console.warn('Error restaurando en Firebase:', e); }
             }
@@ -3069,7 +3097,9 @@
             // Eliminar de la papelera
             try { await deleteDoc(doc(db, 'organizador_papelera', docId)); } catch(e) {}
 
-            showToast(`✅ "${entry.name}" restaurado al tablero`, '↩');
+            showToast(puntajeRestaurado
+                ? `✅ "${entry.name}" restaurado con su puntaje anterior`
+                : `✅ "${entry.name}" restaurado al tablero`, '↩');
             renderBoard();
             document.getElementById('papeleraModal')?.remove();
             saveState();
@@ -3562,6 +3592,30 @@
             const eventCount = artist ? (artist.eventIds || [artist.eventId]).length : 1;
             if (!confirm(`⚠️ ¿ELIMINAR A "${name}" DEL CERTAMEN?\n\nSe borrará de ${eventCount} gala(s), incluyendo foto, datos y pistas de audio.\n\nPodés recuperarlo desde "Artistas eliminados" en el menú ⋯`)) return;
 
+            // Antes de borrar nada: leer el puntaje real que tiene guardado en cada gala
+            // (los campos totalXScore viven directamente en el doc del artista, no en un
+            // historial aparte). Si no se guarda acá, se pierde para siempre al borrar el
+            // doc -- y quedaba sin recuperación aunque el artista volviera después.
+            const scoreFields = ['totalScore','totalSingingScore','totalTransmissionScore','totalAttitudeScore','totalOriginalityScore','totalCostumeScore','totalStagingScore','totalRatingsCount'];
+            const perEventSnapshots = [];
+            if (artist) {
+                const eventIdsToScan = artist.eventIds || [artist.eventId];
+                for (const evId of eventIdsToScan) {
+                    try {
+                        const artistsSnap = await getDocs(collection(db, `events/${evId}/artists`));
+                        for (const adoc of artistsSnap.docs) {
+                            const n = adoc.data().name || '';
+                            if (n.toLowerCase().trim() === name.toLowerCase().trim()) {
+                                const d = adoc.data();
+                                const scoreSnapshot = {};
+                                scoreFields.forEach(f => { if (d[f] !== undefined) scoreSnapshot[f] = d[f]; });
+                                perEventSnapshots.push({ eventId: evId, docId: adoc.id, scoreSnapshot });
+                            }
+                        }
+                    } catch(e) { console.warn(`Error leyendo puntaje de ${name} en ${evId}:`, e); }
+                }
+            }
+
             // Guardar en papelera ANTES de eliminar
             if (artist) {
                 try {
@@ -3572,6 +3626,7 @@
                         avg: artist.avg || null,
                         photoURL: artist.photoURL || null,
                         eventIds: artist.eventIds || (artist.eventId ? [artist.eventId] : []),
+                        perEventSnapshots,
                         generacion: loadedGenerations[0] || '',
                         columnId: columnAssignments[artist.id] || null,
                         columnName: (columns.find(c => c.id === columnAssignments[artist.id]) || {}).name || null,
