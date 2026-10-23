@@ -175,27 +175,39 @@ body { background:#0d0d1a; color:#fff; font-family:-apple-system,'Segoe UI',sans
   .cart-bar.vacio { background:#1e1e3a; color:#6b6b9a; border:1px solid #3a3a6a; }
 }
 
-/* ── Ticket impreso (58 mm) ── */
+/* ── Ticket impreso (impresora térmica 80 mm o 58 mm) ──
+   Cada ticket (CLIENTE y COPIA LOCAL) va en su propia "página": las impresoras con
+   corte automático cortan al terminar cada página, así salen separados.
+   El tamaño de papel lo pone el driver de la impresora (no se fuerza acá). */
 #print-area { display:none; }
 @media print {
-  @page { size:58mm auto; margin:0; }
+  @page { margin:0; }
   html, body { height:auto !important; overflow:visible !important; background:#fff !important; display:block !important; }
   body > *:not(#print-area) { display:none !important; }
-  #print-area { display:block !important; width:48mm; margin:0 auto; color:#000;
-                font-family:'Courier New',monospace; font-size:11px; line-height:1.35; }
-  .tk { padding:2mm 0 6mm; }
+  #print-area { display:block !important; width:72mm; margin:0 auto; color:#000;
+                font-family:'Courier New',monospace; font-size:13px; line-height:1.35; }
+  .tk { padding:3mm 0 4mm; }
   .tk + .tk { page-break-before:always; break-before:page; }
   .tk-c { text-align:center; }
-  .tk-marca { font-size:15px; font-weight:900; letter-spacing:1px; }
-  .tk-copia { font-size:10px; font-weight:700; border:1px solid #000; display:inline-block; padding:0 4px; margin-top:2px; }
-  .tk-num { font-size:34px; font-weight:900; margin:2mm 0 1mm; }
+  .tk-marca { font-size:20px; font-weight:900; letter-spacing:1px; }
+  .tk-copia { font-size:12px; font-weight:700; border:1.5px solid #000; display:inline-block; padding:0 6px; margin-top:3px; }
+  .tk-num { font-size:46px; font-weight:900; margin:2mm 0 1mm; }
   .tk-hr { border-top:1px dashed #000; margin:2mm 0; }
-  .tk-row { display:flex; justify-content:space-between; gap:2mm; }
+  .tk-row { display:flex; justify-content:space-between; gap:3mm; }
   .tk-row span:first-child { flex:1; }
-  .tk-total { font-size:15px; font-weight:900; }
-  .tk-obs { border:1px solid #000; padding:1mm 2mm; margin-top:2mm; font-weight:700; }
-  .tk-qr img, .tk-qr canvas { width:34mm !important; height:34mm !important; margin:2mm auto 1mm; display:block; }
-  .tk-small { font-size:9px; }
+  .tk-total { font-size:19px; font-weight:900; }
+  .tk-obs { border:1.5px solid #000; padding:1.5mm 2mm; margin-top:2mm; font-weight:700; font-size:14px; }
+  .tk-qr img, .tk-qr canvas { width:42mm !important; height:42mm !important; margin:3mm auto 1mm; display:block; }
+  .tk-small { font-size:11px; }
+
+  /* Papel de 58 mm (área imprimible ~48 mm) */
+  #print-area.papel-58 { width:48mm; font-size:11px; }
+  .papel-58 .tk-marca { font-size:15px; }
+  .papel-58 .tk-num { font-size:34px; }
+  .papel-58 .tk-total { font-size:15px; }
+  .papel-58 .tk-obs { font-size:11px; }
+  .papel-58 .tk-qr img, .papel-58 .tk-qr canvas { width:34mm !important; height:34mm !important; }
+  .papel-58 .tk-small { font-size:9px; }
 }
 
 /* ── Escala PC (pantallas ≥ 800px) ── */
@@ -527,6 +539,14 @@ body { background:#0d0d1a; color:#fff; font-family:-apple-system,'Segoe UI',sans
       <input type="checkbox" id="auto-print" onchange="setAutoPrint(this.checked)" style="width:16px;height:16px;accent-color:#a78bfa">
       Imprimir solo al confirmar cada pedido
     </label>
+    <div style="display:flex;align-items:center;justify-content:center;gap:8px;font-size:11px;color:#94a3b8;margin:-4px 0 12px">
+      Papel:
+      <select id="papel-select" onchange="setPapel(this.value)"
+        style="background:#0d0d1a;border:1px solid #3a3a6a;border-radius:8px;color:#e2e8f0;padding:4px 8px;font-size:11px">
+        <option value="80">80 mm</option>
+        <option value="58">58 mm</option>
+      </select>
+    </div>
     <button onclick="closeTicketQR()"
       style="width:100%;padding:14px;background:linear-gradient(135deg,#f59e0b,#d97706);
              border:none;border-radius:12px;color:#1a0800;font-size:14px;font-weight:900;cursor:pointer">
@@ -561,6 +581,7 @@ let cajero     = '';
 let ultimoPedido = null;
 let autoPrint    = localStorage.getItem('burguer_autoprint') === '1';
 let nombreEvento = '';
+let papel        = localStorage.getItem('burguer_papel') || '80';
 const pedidosDelDia = {};
 let catActual  = 'Todos';
 let staffList  = []; // { name, pin }
@@ -1314,6 +1335,10 @@ window.confirmarPedido = async function() {
 // cuando está listo) y la COPIA DEL LOCAL (comanda con observaciones y cajero).
 // Usa la impresión del navegador: la impresora térmica tiene que estar instalada
 // en el equipo (PC con USB, o Android con una app de impresión).
+window.setPapel = function(v) {
+  papel = v === '58' ? '58' : '80';
+  localStorage.setItem('burguer_papel', papel);
+};
 window.setAutoPrint = function(v) {
   autoPrint = !!v;
   localStorage.setItem('burguer_autoprint', autoPrint ? '1' : '0');
@@ -1385,7 +1410,9 @@ function imprimirTicket(p) {
       <div class="tk-row tk-small"><span>Código</span><span>${escTk(p.codigoVerif)}</span></div>
     </div>`;
 
-  document.getElementById('print-area').innerHTML = cliente + local;
+  const area = document.getElementById('print-area');
+  area.className = papel === '58' ? 'papel-58' : '';
+  area.innerHTML = cliente + local;
   // Esperar a que cargue la imagen del QR antes de imprimir
   const img = document.querySelector('#print-area img');
   const lanzar = () => setTimeout(() => window.print(), 50);
@@ -1422,6 +1449,7 @@ function mostrarTicketQR(ticketNum, codigoVerif, orderId) {
   } catch (e) { box.textContent = 'No se pudo generar el QR'; }
 
   document.getElementById('auto-print').checked = autoPrint;
+  document.getElementById('papel-select').value = papel;
   document.getElementById('ticket-qr-modal').style.display = 'flex';
 }
 window.closeTicketQR = function() {
