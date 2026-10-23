@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Editar Catálogo | VYTMUSIC</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { padding-bottom: 6rem; }
+        .campo { width: 100%; padding: .45rem .6rem; border-radius: .5rem; background: #111827; border: 1px solid #4b5563; color: #fff; font-size: .875rem; }
+        .campo:focus { outline: none; border-color: #818cf8; }
+        .fila.oculta { opacity: .45; }
+        .fila.cambiada { border-color: #f59e0b; }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-gray-900 via-indigo-950 to-gray-900 min-h-screen text-white">
+    <div class="max-w-4xl mx-auto px-4 py-6">
+        <header class="mb-4">
+            <a href="historial_pistas.html" class="text-indigo-300 hover:text-white text-sm">← Volver a Pistas</a>
+            <h1 class="text-3xl font-black mt-2">📚 Editar catálogo</h1>
+            <p class="text-gray-400 text-sm mt-1">
+                Acá corregís el <strong>autor</strong> y el <strong>estilo</strong> de cada canción y ocultás las que no quieras ofrecer.
+                Cuando termines, tocá <strong>Guardar y publicar</strong>: los artistas ven los cambios en la página pública
+                (solo los nombres, sin audio).
+            </p>
+            <p id="resumen" class="text-sm text-amber-300 mt-2"></p>
+        </header>
+
+        <div class="bg-gray-800/80 border border-gray-700 rounded-xl p-3 mb-4 space-y-2 sticky top-0 z-20 backdrop-blur">
+            <input id="buscar" type="search" placeholder="🔍 Buscar canción, autor o estilo..." class="campo" style="padding:.7rem">
+            <div class="flex gap-2 flex-wrap">
+                <select id="filtro" class="campo" style="width:auto">
+                    <option value="">Todas</option>
+                    <option value="sinautor">Sin autor</option>
+                    <option value="nuevas">Nuevas (sin revisar)</option>
+                    <option value="ocultas">Ocultas</option>
+                </select>
+                <a href="catalogo.html" target="_blank" class="px-3 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-sm">👁 Ver página pública</a>
+                <button id="btnCompartir" class="px-3 py-2 rounded-lg bg-green-700 hover:bg-green-600 text-sm">📤 Compartir link</button>
+            </div>
+        </div>
+
+        <div id="estado" class="text-center text-gray-400 py-12">⏳ Cargando canciones...</div>
+        <div id="lista" class="space-y-2"></div>
+    </div>
+
+    <datalist id="autores"></datalist>
+    <datalist id="estilos"></datalist>
+
+    <div class="fixed bottom-0 inset-x-0 z-30 bg-gray-950/95 border-t border-indigo-500/50 backdrop-blur px-4 py-3">
+        <div class="max-w-4xl mx-auto flex items-center gap-3">
+            <p id="cambios" class="flex-1 text-sm text-gray-400">Sin cambios</p>
+            <button id="btnGuardar" class="px-5 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 font-bold disabled:opacity-50">💾 Guardar y publicar</button>
+        </div>
+    </div>
+
+    <script type="module">
+        import { db, auth } from './firebase_config.js';
+        import { collection, getDocs, doc, getDoc, setDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+        import { onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
+
+        onAuthStateChanged(auth, (user) => {
+            if (!user || user.isAnonymous) {
+                sessionStorage.setItem('adminReturnUrl', window.location.href);
+                window.location.href = 'index.html';
+            }
+        });
+
+        const $ = id => document.getElementById(id);
+        const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        // Misma clave que usa catalogo_inicial.json: sin tildes, minúsculas, solo letras/números/espacios.
+        const clave = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+            .replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
+        const URL_PUBLICA = 'https://vyt-music.web.app/catalogo.html';
+
+        let entradas = {};      // clave → { cancion, autor, estilo, oculto, nueva }
+        let usos = {};          // clave → cantidad de veces que se subió
+        let cambiadas = new Set();
+
+        async function cargar() {
+            try {
+                // 1. Todas las canciones subidas en todas las galas
+                const evSnap = await getDocs(collection(db, 'events'));
+                const subidas = {}; // clave → { nombre, estilo }
+                await Promise.all(evSnap.docs.map(e =>
+                    getDocs(collection(db, `pistas_${e.id}`)).then(snap => snap.forEach(d => {
+                        (d.data().pistas || []).forEach(t => {
+                            const k = clave(t.nombre_cancion);
+                            if (!k) return;
+                            usos[k] = (usos[k] || 0) + 1;
+                            if (!subidas[k]) subidas[k] = { nombre: (t.nombre_cancion || '').trim(), estilo: (t.estilo_cancion || '').trim() };
+                        });
+                    })).catch(() => {})
+                ));
+
+                // 2. Lo ya publicado (o la planilla inicial si nunca se publicó)
+                let pub = null, errorLectura = false;
+                try { pub = await getDoc(doc(db, 'catalogo_publico', 'actual')); }
+                catch (e) { console.error('No se pudo leer el catálogo publicado:', e); errorLectura = true; }
+                let guardado = pub?.exists() ? (pub.data().entradas || {}) : null;
+                if (!guardado) {
+                    try { guardado = await (await fetch('catalogo_inicial.json', { cache: 'no-store' })).json(); }
+                    catch (_) { guardado = {}; }
+                    if (pub && !pub.exists()) cambiadas.add('__primera_vez__'); // hay que publicar al menos una vez
+                }
+                if (errorLectura) {
+                    // Sin poder leer lo publicado, publicar podría pisar correcciones anteriores
+                    $('btnGuardar').disabled = true;
+                    $('btnGuardar').title = 'No se pudo leer el catálogo publicado. Recargá la página.';
+                    setTimeout(() => { $('cambios').textContent = '⚠️ No se pudo leer lo publicado — recargá antes de editar'; $('cambios').className = 'flex-1 text-sm text-red-400'; }, 0);
+                }
+
+                // 3. Combinar: lo guardado manda; las canciones nuevas entran sin autor
+                Object.entries(guardado).forEach(([k, v]) => {
+                    entradas[k] = { cancion: v.cancion || '', autor: v.autor || '', estilo: v.estilo || '', oculto: !!v.oculto };
+                });
+                Object.entries(subidas).forEach(([k, s]) => {
+                    if (!entradas[k]) entradas[k] = { cancion: s.nombre, autor: '', estilo: s.estilo, oculto: false, nueva: true };
+                });
+
+                $('estado').classList.add('hidden');
+                actualizarListas();
+                render();
+                actualizarBarra();
+            } catch (e) {
+                console.error(e);
+                $('estado').textContent = '❌ No se pudo cargar. Revisá la conexión y recargá.';
+            }
+        }
+
+        function actualizarListas() {
+            const vals = Object.values(entradas);
+            const unicos = arr => [...new Set(arr.filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'));
+            $('autores').innerHTML = unicos(vals.map(v => v.autor.trim())).map(a => `<option value="${esc(a)}">`).join('');
+            $('estilos').innerHTML = unicos(vals.map(v => v.estilo.trim())).map(a => `<option value="${esc(a)}">`).join('');
+            const total = vals.filter(v => !v.oculto).length;
+            const sinAutor = vals.filter(v => !v.oculto && !v.autor.trim()).length;
+            const nuevas = vals.filter(v => v.nueva).length;
+            $('resumen').textContent = `${total} canciones visibles · ${sinAutor} sin autor${nuevas ? ` · ${nuevas} nuevas sin revisar` : ''}`;
+        }
+
+        function render() {
+            const q = clave($('buscar').value);
+            const f = $('filtro').value;
+            const claves = Object.keys(entradas).filter(k => {
+                const v = entradas[k];
+                if (f === 'sinautor' && (v.autor.trim() || v.oculto)) return false;
+                if (f === 'nuevas' && !v.nueva) return false;
+                if (f === 'ocultas' && !v.oculto) return false;
+                return !q || clave(`${v.cancion} ${v.autor} ${v.estilo}`).includes(q);
+            }).sort((a, b) => clave(entradas[a].cancion).localeCompare(clave(entradas[b].cancion), 'es'));
+
+            if (!claves.length) { $('lista').innerHTML = '<p class="text-center text-gray-500 py-10">No hay canciones con ese filtro.</p>'; return; }
+            $('lista').innerHTML = claves.map(k => {
+                const v = entradas[k];
+                return `
+                <div class="fila ${v.oculto ? 'oculta' : ''} ${cambiadas.has(k) ? 'cambiada' : ''} bg-gray-800/60 border border-gray-700 rounded-xl p-3" data-k="${esc(k)}">
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        <label class="text-[11px] text-gray-400">Canción
+                            <input class="campo mt-0.5" data-campo="cancion" value="${esc(v.cancion)}">
+                        </label>
+                        <label class="text-[11px] text-gray-400">Autor / intérprete original
+                            <input class="campo mt-0.5" data-campo="autor" list="autores" placeholder="Ej: Ricardo Arjona" value="${esc(v.autor)}">
+                        </label>
+                        <label class="text-[11px] text-gray-400">Estilo
+                            <input class="campo mt-0.5" data-campo="estilo" list="estilos" placeholder="Ej: Cumbia" value="${esc(v.estilo)}">
+                        </label>
+                    </div>
+                    <div class="flex items-center justify-between mt-2 text-xs text-gray-400">
+                        <span>${v.nueva ? '<span class="text-amber-300 font-semibold">🆕 Nueva</span> · ' : ''}${usos[k] ? `subida ${usos[k]} ${usos[k] === 1 ? 'vez' : 'veces'}` : 'ya no está en ninguna gala'}</span>
+                        <label class="flex items-center gap-1.5 cursor-pointer">
+                            <input type="checkbox" data-campo="oculto" ${v.oculto ? 'checked' : ''} class="accent-red-500"> Ocultar del catálogo
+                        </label>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        // Edición en línea
+        $('lista').addEventListener('input', e => {
+            const campo = e.target.dataset.campo;
+            const fila = e.target.closest('.fila');
+            if (!campo || !fila) return;
+            const k = fila.dataset.k;
+            const v = entradas[k];
+            if (campo === 'oculto') { v.oculto = e.target.checked; fila.classList.toggle('oculta', v.oculto); }
+            else v[campo] = e.target.value;
+            delete v.nueva;
+            cambiadas.add(k);
+            fila.classList.add('cambiada');
+            actualizarBarra();
+        });
+        $('lista').addEventListener('change', e => { if (e.target.dataset.campo) actualizarListas(); });
+
+        function actualizarBarra() {
+            const n = [...cambiadas].filter(k => k !== '__primera_vez__').length;
+            $('cambios').textContent = cambiadas.has('__primera_vez__') && !n
+                ? '⚠️ El catálogo todavía no está publicado'
+                : n ? `✏️ ${n} canción${n !== 1 ? 'es' : ''} con cambios sin publicar` : 'Sin cambios';
+            $('cambios').className = 'flex-1 text-sm ' + (cambiadas.size ? 'text-amber-300' : 'text-gray-400');
+        }
+
+        $('btnGuardar').addEventListener('click', async () => {
+            const btn = $('btnGuardar');
+            btn.disabled = true; btn.textContent = '⏳ Publicando...';
+            try {
+                const limpio = {};
+                Object.entries(entradas).forEach(([k, v]) => {
+                    limpio[k] = { cancion: v.cancion.trim(), autor: v.autor.trim(), estilo: v.estilo.trim(), ...(v.oculto ? { oculto: true } : {}) };
+                });
+                await setDoc(doc(db, 'catalogo_publico', 'actual'), { entradas: limpio, actualizado: serverTimestamp() });
+                Object.values(entradas).forEach(v => delete v.nueva);
+                cambiadas.clear();
+                actualizarListas(); render(); actualizarBarra();
+                btn.textContent = '✅ Publicado';
+                setTimeout(() => { btn.textContent = '💾 Guardar y publicar'; }, 2500);
+            } catch (e) {
+                alert('❌ No se pudo publicar: ' + e.message);
+                btn.textContent = '💾 Guardar y publicar';
+            } finally {
+                btn.disabled = false;
+            }
+        });
+
+        $('btnCompartir').addEventListener('click', () => {
+            const texto = `🎵 *Catálogo de pistas VYT MUSIC*\n\nMirá todas las pistas disponibles, ordenadas por autor y por estilo:\n👉 ${URL_PUBLICA}\n\nSi te interesa alguna, escribime 😉`;
+            window.open(`https://wa.me/?text=${encodeURIComponent(texto)}`, '_blank');
+        });
+
+        window.addEventListener('beforeunload', e => {
+            if ([...cambiadas].some(k => k !== '__primera_vez__')) { e.preventDefault(); e.returnValue = ''; }
+        });
+
+        $('buscar').addEventListener('input', render);
+        $('filtro').addEventListener('change', render);
+        cargar();
+    </script>
+</body>
+</html>
