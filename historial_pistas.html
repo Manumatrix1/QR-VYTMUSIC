@@ -28,10 +28,30 @@
                 </select>
                 <span id="contador" class="text-xs text-gray-400 whitespace-nowrap"></span>
             </div>
+            <button id="btnLista" class="w-full py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm font-bold">📋 Lista de canciones</button>
         </div>
 
         <div id="estado" class="text-center text-gray-400 py-12">⏳ Cargando pistas de todas las galas...</div>
         <div id="lista" class="space-y-3"></div>
+    </div>
+
+    <!-- Lista de canciones (para copiar / descargar) -->
+    <div id="modalLista" class="hidden fixed inset-0 z-40 bg-black/80 flex items-center justify-center p-4">
+        <div class="bg-gray-800 border border-indigo-500/50 rounded-2xl w-full max-w-lg max-h-[85vh] flex flex-col">
+            <div class="p-4 border-b border-gray-700">
+                <h2 class="text-xl font-bold">📋 Lista de canciones</h2>
+                <p id="listaInfo" class="text-xs text-gray-400 mt-1"></p>
+                <label class="flex items-center gap-2 text-sm text-gray-300 mt-2 cursor-pointer">
+                    <input type="checkbox" id="listaConEstilo" checked class="accent-indigo-400"> Mostrar estilo
+                </label>
+            </div>
+            <textarea id="listaTexto" readonly class="flex-1 min-h-[300px] m-4 p-3 rounded-lg bg-gray-900 border border-gray-600 text-sm text-gray-100 font-mono"></textarea>
+            <div class="p-4 pt-0 grid grid-cols-3 gap-2">
+                <button id="listaCopiar" class="py-2 rounded-lg bg-green-600 hover:bg-green-500 text-sm font-bold">📋 Copiar</button>
+                <button id="listaDescargar" class="py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm font-bold">⬇ Descargar</button>
+                <button id="listaCerrar" class="py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-sm">Cerrar</button>
+            </div>
+        </div>
     </div>
 
     <!-- Reproductor fijo abajo -->
@@ -250,6 +270,53 @@
                 setTimeout(() => { if (btn.textContent === '✅') btn.textContent = original; }, 3000);
             }
         };
+
+        // ── Lista de canciones (sin repetidas, respeta el buscador y el filtro de gala) ──
+        function pistasFiltradas() {
+            const q = norm($('buscar').value);
+            const gala = $('filtroGala').value;
+            return pistas.filter(p =>
+                (!gala || p.galaId === gala) &&
+                (!q || norm(`${p.artista} ${p.cancion} ${p.estilo}`).includes(q)));
+        }
+
+        function armarLista() {
+            const conEstilo = $('listaConEstilo').checked;
+            const unicas = new Map(); // nombre normalizado → { cancion, estilo }
+            pistasFiltradas().forEach(p => {
+                const k = norm(p.cancion).replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ');
+                if (!k) return;
+                if (!unicas.has(k)) unicas.set(k, { cancion: p.cancion.trim(), estilo: p.estilo.trim() });
+                else if (!unicas.get(k).estilo && p.estilo) unicas.get(k).estilo = p.estilo.trim();
+            });
+            const capital = t => t.charAt(0).toUpperCase() + t.slice(1);
+            const lineas = [...unicas.values()]
+                .sort((a, b) => a.cancion.localeCompare(b.cancion, 'es', { sensitivity: 'base' }))
+                .map((c, i) => `${i + 1}. ${capital(c.cancion)}${conEstilo && c.estilo ? ` (${c.estilo})` : ''}`);
+            const gala = $('filtroGala');
+            const titulo = `🎵 Pistas VYT MUSIC${gala.value ? ' — ' + gala.options[gala.selectedIndex].text : ''}`;
+            $('listaTexto').value = [titulo, `${lineas.length} canciones`, '', ...lineas].join('\n');
+            $('listaInfo').textContent = `${lineas.length} canciones distintas (sin repetir). Usa el buscador y el filtro de gala que tengas puestos.`;
+        }
+
+        $('btnLista').addEventListener('click', () => { armarLista(); $('modalLista').classList.remove('hidden'); });
+        $('listaConEstilo').addEventListener('change', armarLista);
+        $('listaCerrar').addEventListener('click', () => $('modalLista').classList.add('hidden'));
+        $('listaCopiar').addEventListener('click', async () => {
+            const btn = $('listaCopiar');
+            try { await navigator.clipboard.writeText($('listaTexto').value); }
+            catch (_) { $('listaTexto').select(); document.execCommand('copy'); }
+            btn.textContent = '✅ Copiada';
+            setTimeout(() => { btn.textContent = '📋 Copiar'; }, 2000);
+        });
+        $('listaDescargar').addEventListener('click', () => {
+            const blob = new Blob([$('listaTexto').value], { type: 'text/plain;charset=utf-8' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'Lista de pistas VYT MUSIC.txt';
+            document.body.appendChild(a); a.click(); a.remove();
+            setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+        });
 
         $('buscar').addEventListener('input', render);
         $('filtroGala').addEventListener('change', render);
