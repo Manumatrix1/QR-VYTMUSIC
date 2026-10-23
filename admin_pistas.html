@@ -27,6 +27,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <!-- Tone.js para pitch shifting -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <script src="medir-volumen.js"></script>
     
     <!-- SortableJS para drag and drop -->
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
@@ -250,11 +251,16 @@
 
             </div>
 
-            <div class="grid md:grid-cols-3 gap-4 mt-4">
+            <div class="grid md:grid-cols-4 gap-4 mt-4">
                 <button onclick="prepareOffline()" id="offlineBtn"
                     class="bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-700 hover:to-teal-800 text-white font-bold py-4 px-6 rounded-lg transition-all transform hover:scale-105 shadow-lg">
                     <i class="fas fa-cloud-download-alt text-2xl mb-2"></i><br>
                     💾 Guardar para Gala
+                </button>
+                <button onclick="medirVolumenesPistas()" id="medirVolBtn"
+                    class="bg-gradient-to-r from-amber-600 to-orange-700 hover:from-amber-700 hover:to-orange-800 text-white font-bold py-4 px-6 rounded-lg transition-all transform hover:scale-105 shadow-lg">
+                    <i class="fas fa-sliders-h text-2xl mb-2"></i><br>
+                    🔊 Normalizar pistas para la gala
                 </button>
                 <button onclick="openBibliotecaModal()"
                     class="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold py-4 px-6 rounded-lg transition-all transform hover:scale-105 shadow-lg">
@@ -276,6 +282,19 @@
                     Hacelo antes de la gala (con WiFi) y podrás reproducir todo aunque se corte internet.
                     <span id="offlineSummary" class="ml-1 text-green-400 font-semibold"></span>
                 </p>
+            </div>
+            <div class="mt-2 bg-amber-900/20 border border-amber-500/30 rounded-lg px-4 py-2 flex items-start gap-2 flex-wrap">
+                <i class="fas fa-sliders-h text-amber-400 mt-0.5 flex-shrink-0"></i>
+                <p class="text-amber-100 text-xs leading-relaxed flex-1 min-w-[200px]">
+                    <strong>🔊 Normalizar pistas:</strong> mide el volumen de cada pista (y de paso la guarda para usar sin internet).
+                    Después, al darle play, las que vienen muy fuertes se bajan solas para que todas suenen parejo.
+                    Hacelo con WiFi, después de que los artistas terminen de subir.
+                    <span id="nivelarStatus" class="ml-1 font-semibold"></span>
+                </p>
+                <label class="flex items-center gap-2 cursor-pointer text-amber-300 text-xs font-semibold whitespace-nowrap" title="Apagalo si querés escuchar las pistas tal cual las subieron">
+                    <input type="checkbox" id="nivelarToggle" onchange="toggleNivelacion(this.checked)" class="w-4 h-4 accent-amber-400">
+                    Nivelación activada
+                </label>
             </div>
 
             <!-- Modal DJ -->
@@ -967,6 +986,7 @@
                     updateStats();
                     displayArtists();
                     showOfflineSummary(); // Mostrar cuántas pistas están guardadas
+                    actualizarEstadoNivelacion();
 
                     // Mostrar notificación visual
                     const totalTracks = allTracksData.reduce((sum, artist) => sum + artist.pistas.length, 0);
@@ -1316,6 +1336,149 @@
         // ── Detectar tipo de pista ────────────────────────────────
         function isBibTrack(trackId) { return (trackId || '').startsWith('bib_') || (trackId || '').startsWith('local_'); }
 
+        // ── Nivelación de volumen entre pistas de artistas ────────
+        // Cada pista se mide una vez (LUFS, ver medir-volumen.js) y se guarda en
+        // pistas_volumen_{eventId}. Al reproducir, el volumen real del audio es
+        // (slider del canal × factor de la pista): las que vienen muy fuertes se bajan solas.
+        // Los sliders y los fades siguen mostrando/moviendo el valor del canal, sin el factor.
+        let _factorNivel = 1;
+        let nivelarActivo = localStorage.getItem('vytNivelar') !== '0'; // activado por defecto
+        const volumenPorUrl = new Map(); // archivo_url → LUFS
+        try {
+            Object.entries(JSON.parse(localStorage.getItem('vytVolumenPistas') || '{}'))
+                .forEach(([u, l]) => volumenPorUrl.set(u, l));
+        } catch (_) {}
+
+        function _guardarVolumenesLocal() {
+            try { localStorage.setItem('vytVolumenPistas', JSON.stringify(Object.fromEntries(volumenPorUrl))); } catch (_) {}
+        }
+
+        function _aplicarVolumenAudio(v) {
+            if (!globalAudio) return;
+            const f = nivelarActivo ? _factorNivel : 1;
+            globalAudio.volume = Math.max(0, Math.min(1, v * f));
+        }
+
+        function factorNivelPara(url) {
+            return window.factorNivelacion ? window.factorNivelacion(volumenPorUrl.get(url)) : 1;
+        }
+
+        function _pistasDeArtistas() {
+            const lista = [];
+            allTracksData.forEach(a => (a.pistas || []).forEach(t => {
+                if (t.archivo_url) lista.push({ url: t.archivo_url, storagePath: t.storage_path || null, nombre: `${a.artistName || ''} - ${t.nombre_cancion || ''}` });
+            }));
+            let org = [];
+            try { org = orgTracksData; } catch (_) { /* todavía no inicializado */ }
+            org.forEach(t => {
+                if (t.url) lista.push({ url: t.url, storagePath: t.storagePath || null, nombre: `${t.artist || 'Organización'} - ${t.name || ''}` });
+            });
+            return lista;
+        }
+
+        function actualizarEstadoNivelacion() {
+            const el = document.getElementById('nivelarStatus');
+            if (!el) return;
+            const pistas = _pistasDeArtistas();
+            const sinMedir = pistas.filter(p => !volumenPorUrl.has(p.url)).length;
+            el.textContent = !pistas.length ? '' :
+                sinMedir === 0 ? `(✅ ${pistas.length} pistas normalizadas)` :
+                `(⚠️ ${sinMedir} de ${pistas.length} sin normalizar)`;
+            el.className = 'ml-1 font-semibold ' + (sinMedir === 0 ? 'text-green-400' : 'text-yellow-400');
+        }
+
+        async function cargarVolumenesGuardados() {
+            const t = document.getElementById('nivelarToggle');
+            if (t) t.checked = nivelarActivo;
+            try {
+                const { collection, getDocs } = window.firestoreModules;
+                const snap = await getDocs(collection(window.db, `pistas_volumen_${eventId}`));
+                snap.forEach(d => {
+                    const x = d.data();
+                    if (x.url && typeof x.lufs === 'number') volumenPorUrl.set(x.url, x.lufs);
+                });
+                _guardarVolumenesLocal();
+            } catch (e) {
+                console.warn('No se pudieron cargar los volúmenes medidos (se usa lo guardado en este equipo):', e);
+            }
+            actualizarEstadoNivelacion();
+        }
+
+        window.toggleNivelacion = function(activo) {
+            nivelarActivo = !!activo;
+            localStorage.setItem('vytNivelar', nivelarActivo ? '1' : '0');
+            if (globalAudio && currentPlayingTrackId) _aplicarVolumenAudio(_currentVol());
+        };
+
+        window.medirVolumenesPistas = async function() {
+            if (!window.medirVolumenLUFS) return alert('No se pudo cargar el medidor de volumen. Recargá la página.');
+            const pendientes = _pistasDeArtistas().filter(p => !volumenPorUrl.has(p.url));
+            if (!pendientes.length) {
+                actualizarEstadoNivelacion();
+                displayMessage('✅ Todas las pistas ya están normalizadas', 'success');
+                return;
+            }
+            const btn = document.getElementById('medirVolBtn');
+            const progress = document.getElementById('offlineProgress');
+            const progressBar = document.getElementById('offlineProgressBar');
+            const progressText = document.getElementById('offlineProgressText');
+            const progressCount = document.getElementById('offlineProgressCount');
+            const textoBtn = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin text-2xl mb-2"></i><br>🔊 Normalizando...';
+            progress.classList.remove('hidden');
+            progressBar.classList.remove('bg-green-500');
+            progressBar.classList.add('bg-teal-500');
+            progressBar.style.width = '0%';
+            progressCount.textContent = `0/${pendientes.length}`;
+
+            const { doc, setDoc, Timestamp } = window.firestoreModules;
+            let ok = 0, fallidas = 0;
+            for (let i = 0; i < pendientes.length; i++) {
+                const p = pendientes[i];
+                progressText.textContent = `🔊 Midiendo volumen: ${p.nombre}`;
+                try {
+                    let blob = await getAudioBlob(p.url);
+                    if (!blob) {
+                        let path = p.storagePath;
+                        if (!path) { const m = p.url.match(/\/o\/(.+?)[\?&]/); path = m ? decodeURIComponent(m[1]) : null; }
+                        if (!path) throw new Error('sin ruta de Storage');
+                        blob = await window.getBlobFn(window.storageRef(window.storage, path));
+                        await putAudioBlob(p.url, blob); // de paso queda guardada para usar sin internet
+                    }
+                    const lufs = await window.medirVolumenLUFS(blob);
+                    if (typeof lufs !== 'number') throw new Error('pista en silencio o ilegible');
+                    volumenPorUrl.set(p.url, lufs);
+                    _guardarVolumenesLocal();
+                    try {
+                        await setDoc(doc(window.db, `pistas_volumen_${eventId}`, window.idVolumenPista(p.storagePath, p.url)),
+                            { url: p.url, storage_path: p.storagePath || null, lufs, medidoEn: Timestamp.now() });
+                    } catch (e) { console.warn('Medida guardada solo en este equipo:', e); }
+                    ok++;
+                } catch (e) {
+                    console.warn('No se pudo medir', p.nombre, e);
+                    fallidas++;
+                }
+                progressBar.style.width = Math.round(((i + 1) / pendientes.length) * 100) + '%';
+                progressCount.textContent = `${i + 1}/${pendientes.length}`;
+            }
+            progressBar.classList.remove('bg-teal-500');
+            progressBar.classList.add('bg-green-500');
+            progressText.textContent = fallidas === 0
+                ? `✅ ¡${ok} pistas normalizadas! Ya suenan todas parejo.`
+                : `⚠️ ${ok} normalizadas, ${fallidas} con error (suenan sin nivelar). Reintentá con internet.`;
+            btn.disabled = false;
+            btn.innerHTML = textoBtn;
+            actualizarEstadoNivelacion();
+            showOfflineSummary();
+            // Si hay una pista de artista sonando, aplicarle la nivelación recién medida
+            const urlSonando = globalAudio?.dataset.urlOriginal;
+            if (urlSonando && currentPlayingTrackId && !isBibTrack(currentPlayingTrackId) && volumenPorUrl.has(urlSonando)) {
+                _factorNivel = factorNivelPara(urlSonando);
+                _aplicarVolumenAudio(_currentVol());
+            }
+        };
+
         // ── Volumen Biblioteca VYT ────────────────────────────────
         window.setBibVolume = function(val) {
             const v = Math.max(0, Math.min(1, parseFloat(val)));
@@ -1329,7 +1492,7 @@
             if (iconG) iconG.className = v === 0 ? 'fas fa-volume-mute text-lg' : v < 0.5 ? 'fas fa-volume-down text-lg' : 'fas fa-volume-up text-lg';
             // Aplicar al audio si está sonando pista de biblioteca
             if (globalAudio && isBibTrack(currentPlayingTrackId)) {
-                globalAudio.volume = v;
+                _aplicarVolumenAudio(v);
                 _syncBannerSlider(v);
             }
         };
@@ -1347,7 +1510,7 @@
             if (iconA) iconA.className = v === 0 ? 'fas fa-volume-mute' : v < 0.5 ? 'fas fa-volume-down' : 'fas fa-volume-up';
             // Aplicar al audio si está sonando pista de artista/org
             if (globalAudio && !isBibTrack(currentPlayingTrackId)) {
-                globalAudio.volume = v;
+                _aplicarVolumenAudio(v);
                 _syncBannerSlider(v);
             }
         };
@@ -1390,7 +1553,10 @@
             const sel = document.getElementById('fadeSpeed') || document.getElementById('fadeSpeedGlobal');
             return sel ? parseFloat(sel.value) : 5;
         }
-        function _currentVol() { return globalAudio ? globalAudio.volume : 1; }
+        // Volumen del canal activo tal como lo muestra el slider (sin la nivelación aplicada).
+        function _currentVol() {
+            return parseFloat(localStorage.getItem(isBibTrack(currentPlayingTrackId) ? 'vytBibVol' : 'vytArtistVol') ?? '1');
+        }
         function _applyFadeVol(v) {
             if (isBibTrack(currentPlayingTrackId)) setBibVolume(v);
             else setArtistVolume(v);
@@ -1408,7 +1574,7 @@
             const btn = document.getElementById(btnId);
             if (btn) { btn.querySelector('i').className = 'fas fa-spinner fa-spin'; btn.disabled = true; }
             _fadeInterval = setInterval(() => {
-                const next = Math.max(0, Math.min(1, globalAudio.volume + delta));
+                const next = Math.max(0, Math.min(1, _currentVol() + delta));
                 _applyFadeVol(next);
                 const done = delta > 0 ? next >= targetVol - 0.001 : next <= targetVol + 0.001;
                 if (done) {
@@ -1471,12 +1637,15 @@
                 if (!isFromCache) cacheInBackground(url);
                 stopActiveTonePlayerAdmin();
                 globalAudio.src = playUrl;
-                // Aplicar volumen del canal correspondiente
+                globalAudio.dataset.urlOriginal = url;
+                // Aplicar volumen del canal correspondiente (+ nivelación si es pista de artista)
                 const isBib = isBibTrack(trackId);
-                globalAudio.volume = parseFloat(localStorage.getItem(isBib ? 'vytBibVol' : 'vytArtistVol') ?? '1');
+                _factorNivel = isBib ? 1 : factorNivelPara(url);
+                const volCanal = parseFloat(localStorage.getItem(isBib ? 'vytBibVol' : 'vytArtistVol') ?? '1');
+                _aplicarVolumenAudio(volCanal);
                 globalAudio.play().catch(() => {});
                 // Sincronizar slider del banner con el canal activo
-                _syncBannerSlider(globalAudio.volume);
+                _syncBannerSlider(volCanal);
                 
                 // Mostrar banner de reproducción
                 const banner = document.getElementById('nowPlayingBanner');
@@ -2329,6 +2498,7 @@
         // Inicializar
         async function init() {
             initGlobalAudioPlayer(); // Inicializar reproductor
+            cargarVolumenesGuardados();
             await loadEvent();
             await loadArtists();
             loadTracks(); // Ya no es async, es listener
@@ -3025,9 +3195,11 @@
                 }
                 currentPlayingTrackId = trackId;
                 globalAudio.src = url;
-                globalAudio.volume = parseFloat(localStorage.getItem('vytBibVol') ?? '1');
+                _factorNivel = 1;
+                const volBib = parseFloat(localStorage.getItem('vytBibVol') ?? '1');
+                _aplicarVolumenAudio(volBib);
                 globalAudio.play().catch(()=>{});
-                _syncBannerSlider(globalAudio.volume);
+                _syncBannerSlider(volBib);
                 const btn = document.getElementById('playBtn_' + trackId);
                 if (btn) btn.innerHTML = '<i class="fas fa-stop"></i> Parar';
                 const banner = document.getElementById('nowPlayingBanner');
