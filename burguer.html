@@ -99,10 +99,19 @@ body { background:#0d0d1a; color:#fff; font-family:-apple-system,'Segoe UI',sans
   <div id="no-event" class="no-event" style="display:none">
     <div class="no-event-icon">🔗</div>
     <div class="no-event-title">Sin acceso configurado</div>
-    <div class="no-event-text">
+    <div class="no-event-text" id="no-event-text">
       Pedile el link de acceso al administrador.<br>
       No se puede cambiar el evento desde acá.
     </div>
+    <div id="elegir-evento" style="margin-top:12px;display:flex;flex-direction:column;gap:8px"></div>
+    <a href="burguer_admin.html" class="role-card card-admin" style="margin-top:14px;text-align:left">
+      <span class="role-icon">⚙️</span>
+      <div class="role-info">
+        <div class="role-name">Administración</div>
+        <div class="role-desc">Elegir el evento y armar los links · 🔒</div>
+      </div>
+      <span class="role-arrow">→</span>
+    </a>
   </div>
 
   <!-- Roles (visible solo con eventId) -->
@@ -159,17 +168,59 @@ body { background:#0d0d1a; color:#fff; font-family:-apple-system,'Segoe UI',sans
 
 <script type="module">
 import { db } from './firebase_config.js';
-import { doc, getDoc }
+import { doc, getDoc, collection, query, where, getDocs }
   from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
 
 const IDS = ['link-caja','link-cocina','link-despacho','link-admin'];
 
-// Leer eventId solo desde URL (no selector — eso es del admin)
+// El evento sale del link (?eventId=...) o del último guardado en este dispositivo.
+// Si no hay ninguno (ej. un celular nuevo que entra desde el panel principal), se usa
+// la gala activa; antes la página quedaba trabada en "Sin acceso configurado".
 const urlEvent = new URLSearchParams(location.search).get('eventId');
 if (urlEvent) localStorage.setItem('burguer_eventId', urlEvent);
 const eventId = urlEvent || localStorage.getItem('burguer_eventId') || '';
 
 if (eventId) {
+  mostrarEvento(eventId);
+} else {
+  buscarGalaActiva();
+}
+
+function usarEvento(id) {
+  localStorage.setItem('burguer_eventId', id);
+  location.replace(`burguer.html?eventId=${encodeURIComponent(id)}`);
+}
+
+async function buscarGalaActiva() {
+  const box = document.getElementById('no-event');
+  const texto = document.getElementById('no-event-text');
+  box.style.display = 'block';
+  texto.textContent = 'Buscando la gala activa...';
+  try {
+    const snap = await getDocs(query(collection(db, 'events'), where('isActive', '==', true)));
+    const activas = snap.docs;
+    if (activas.length === 1) { usarEvento(activas[0].id); return; }
+    if (activas.length > 1) {
+      texto.textContent = 'Hay más de una gala activa. ¿Con cuál vas a trabajar?';
+      const cont = document.getElementById('elegir-evento');
+      activas.forEach(d => {
+        const b = document.createElement('button');
+        b.className = 'role-card card-caja';
+        b.style.cssText = 'width:100%;justify-content:center;font-weight:800;color:#fff';
+        b.textContent = '🎭 ' + (d.data().name || d.id);
+        b.onclick = () => usarEvento(d.id);
+        cont.appendChild(b);
+      });
+      return;
+    }
+    texto.innerHTML = 'No hay ninguna gala activa.<br>Entrá a Administración para elegir el evento.';
+  } catch (e) {
+    console.error(e);
+    texto.innerHTML = 'No se pudo buscar la gala activa (¿sin internet?).<br>Pedile el link al administrador o entrá a Administración.';
+  }
+}
+
+function mostrarEvento(eventId) {
   // Mostrar chip y roles
   document.getElementById('event-chip').style.display = 'flex';
   document.getElementById('accesos').style.display    = 'block';
@@ -192,9 +243,6 @@ if (eventId) {
     .catch(() => {
       document.getElementById('event-name-text').textContent = eventId;
     });
-
-} else {
-  document.getElementById('no-event').style.display = 'block';
 }
 
 // ── PWA ───────────────────────────────────────────────────────────────────────
