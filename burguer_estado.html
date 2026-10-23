@@ -196,6 +196,21 @@ body { background:#0a0a18; color:#fff; font-family:-apple-system,'Segoe UI',sans
 .num-pend  { background:#451a03; color:#fbbf24; border:2px solid #ca8a04; }
 @keyframes pop { 0%{transform:scale(.8);opacity:0} 100%{transform:scale(1);opacity:1} }
 .screen-empty { color:#3a3a6a; font-size:12px; font-style:italic; }
+/* Aviso de pedido listo */
+.aviso-btn { width:100%; margin-top:14px; padding:15px; border-radius:14px; border:2px solid #f59e0b;
+             background:linear-gradient(135deg,#f59e0b,#d97706); color:#1a0800; font-size:16px;
+             font-weight:900; cursor:pointer; }
+.aviso-btn.activo { background:#052e16; border-color:#22c55e; color:#86efac; font-size:13px; }
+#listo-overlay { display:none; position:fixed; inset:0; z-index:999; background:#14532d;
+                 flex-direction:column; align-items:center; justify-content:center; text-align:center;
+                 padding:24px; animation:flashListo 1s ease-in-out infinite alternate; }
+@keyframes flashListo { from { background:#14532d; } to { background:#16a34a; } }
+#listo-overlay .lo-emoji { font-size:90px; }
+#listo-overlay .lo-num { font-size:72px; font-weight:900; color:#fff; line-height:1; margin:10px 0; }
+#listo-overlay .lo-txt { font-size:24px; font-weight:900; color:#fff; }
+#listo-overlay .lo-sub { font-size:15px; color:#dcfce7; margin-top:8px; }
+#listo-overlay button { margin-top:28px; padding:16px 32px; border-radius:16px; border:none;
+                        background:#fff; color:#14532d; font-size:17px; font-weight:900; cursor:pointer; }
 </style>
 </head>
 <body>
@@ -252,6 +267,11 @@ body { background:#0a0a18; color:#fff; font-family:-apple-system,'Segoe UI',sans
     <!-- Seguimiento en vivo -->
     <div class="stepper" id="sc-stepper"></div>
 
+    <!-- El celular (sobre todo iPhone) solo deja sonar si el cliente tocó la pantalla antes -->
+    <button class="aviso-btn" id="aviso-btn" style="display:none" onclick="activarAviso()">
+      🔔 Activar aviso cuando esté listo
+    </button>
+
     <div class="items-mini" id="sc-items"></div>
 
     <!-- Aviso por WhatsApp -->
@@ -299,6 +319,15 @@ body { background:#0a0a18; color:#fff; font-family:-apple-system,'Segoe UI',sans
   </div>
 </div>
 
+<!-- Cartel de pedido listo (pantalla completa) -->
+<div id="listo-overlay">
+  <div class="lo-emoji">🍔</div>
+  <div class="lo-txt">¡TU PEDIDO ESTÁ LISTO!</div>
+  <div class="lo-num" id="lo-num">#—</div>
+  <div class="lo-sub">Pasá a retirarlo por el mostrador 🎉</div>
+  <button onclick="cerrarListo()">👍 Ya voy</button>
+</div>
+
 <script type="module">
 import { db, app as firebaseApp } from './firebase_config.js';
 import { collection, onSnapshot, getDocs, doc, getDoc, updateDoc, query, where }
@@ -318,6 +347,12 @@ let autoTimer    = null;
 let screenMode   = false;
 let prevStatus   = null;
 let fcmRegistrado = false;
+// Aviso de pedido listo (ver activarAviso / notificarListo)
+let audioCtx = null;
+let avisoActivo = false;
+let avisoMostrado = false;
+let repeticion = null;
+let wakeLock = null;
 let notifOrderId  = null;
 let currentOrderRefId = null; // id del pedido que se está mostrando (para guardar el WhatsApp)
 
@@ -467,9 +502,16 @@ function showStatus(order, viaOrderId) {
   document.getElementById('sc-refresh').innerHTML = done ? '' :
     `<span class="refresh-dot"></span> Actualizando automáticamente`;
 
-  // Detectar cambio a "listo" → notificación
+  // Botón para activar el aviso: solo mientras el pedido todavía no está listo
+  const avisoBtn = document.getElementById('aviso-btn');
+  if (avisoBtn) avisoBtn.style.display = ['pendiente','preparando'].includes(order.status) ? 'block' : 'none';
+
+  // Detectar cambio a "listo" → aviso con sonido, vibración y cartel
   if (order.status === 'listo' && prevStatus !== null && prevStatus !== 'listo') {
     notificarListo(order.ticketNum);
+  } else if (order.status === 'listo' && prevStatus === null && !avisoMostrado) {
+    // Abrió la página cuando ya estaba listo: mostrar el cartel (sin sonido, el navegador no lo deja)
+    mostrarCartelListo(order.ticketNum);
   }
   prevStatus = order.status;
 
@@ -624,13 +666,71 @@ async function suscribirNotificaciones(orderId) {
   }
 }
 
+// ── Aviso de pedido listo ─────────────────────────────────────────────────────
+// Los celulares (sobre todo iPhone) no dejan sonar una página que el usuario no
+// tocó: por eso el botón "Activar aviso" crea el audio con un toque real y lo deja
+// destrabado. También intenta mantener la pantalla encendida mientras espera.
+// Nota: el iPhone no permite vibrar desde una página web; ahí el aviso es sonido + cartel.
+window.activarAviso = async function() {
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') await audioCtx.resume();
+    beep(880, 0, 0.15); // pip de confirmación (y destraba el audio)
+  } catch (e) { console.warn('Audio:', e); }
+  if ('vibrate' in navigator) navigator.vibrate(120);
+  try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch (_) {}
+  try { if ('Notification' in window && Notification.permission === 'default') await Notification.requestPermission(); } catch (_) {}
+  avisoActivo = true;
+  const b = document.getElementById('aviso-btn');
+  b.classList.add('activo');
+  b.textContent = '✅ Aviso activado — dejá esta página abierta y te suena cuando esté listo';
+};
+
+// Al volver a la pestaña, el navegador suelta la pantalla encendida: pedirla de nuevo
+document.addEventListener('visibilitychange', async () => {
+  if (avisoActivo && document.visibilityState === 'visible' && 'wakeLock' in navigator) {
+    try { wakeLock = await navigator.wakeLock.request('screen'); } catch (_) {}
+  }
+});
+
+function beep(freq, delay, dur) {
+  if (!audioCtx) return;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.connect(gain); gain.connect(audioCtx.destination);
+  osc.type = 'sine';
+  osc.frequency.value = freq;
+  const t = audioCtx.currentTime + delay;
+  gain.gain.setValueAtTime(0.6, t);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  osc.start(t); osc.stop(t + dur);
+}
+
+function mostrarCartelListo(ticketNum) {
+  avisoMostrado = true;
+  document.getElementById('lo-num').textContent = `#${ticketNum}`;
+  document.getElementById('listo-overlay').style.display = 'flex';
+}
+window.cerrarListo = function() {
+  document.getElementById('listo-overlay').style.display = 'none';
+  if (repeticion) { clearInterval(repeticion); repeticion = null; }
+  if ('vibrate' in navigator) navigator.vibrate(0);
+};
+
 function notificarListo(ticketNum) {
-  // Vibrar
-  if ('vibrate' in navigator) navigator.vibrate([400, 150, 400, 150, 400]);
-  // Sonido
-  playNotifSound();
+  mostrarCartelListo(ticketNum);
+  // Vibrar (Android) y sonar; se repite cada 4 s hasta que toque "Ya voy" (máx. ~1 min)
+  let veces = 0;
+  const avisar = () => {
+    if ('vibrate' in navigator) navigator.vibrate([400, 150, 400, 150, 400]);
+    playNotifSound();
+    if (++veces >= 15 && repeticion) { clearInterval(repeticion); repeticion = null; }
+  };
+  avisar();
+  if (repeticion) clearInterval(repeticion);
+  repeticion = setInterval(avisar, 4000);
   // Notificación nativa (funciona con tab minimizada via SW)
-  if (Notification.permission === 'granted') {
+  if ('Notification' in window && Notification.permission === 'granted' && 'serviceWorker' in navigator) {
     navigator.serviceWorker.ready.then(reg => {
       reg.showNotification(`🍔 ¡Pedido #${ticketNum} listo!`, {
         body: 'Pasá a retirar en el mostrador 🎉',
@@ -646,7 +746,9 @@ function notificarListo(ticketNum) {
 
 function playNotifSound() {
   try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    // Reusar el audio destrabado con "Activar aviso"; si no lo tocó, se intenta igual
+    const ctx = audioCtx || (audioCtx = new (window.AudioContext || window.webkitAudioContext)());
+    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
     [[0, 600], [0.25, 800], [0.5, 1000], [0.75, 900]].forEach(([delay, freq]) => {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
