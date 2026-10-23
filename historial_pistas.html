@@ -74,7 +74,7 @@
 
     <script type="module">
         import { db, auth, storage } from './firebase_config.js';
-        import { collection, getDocs } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+        import { collection, getDocs, doc, getDoc, setDoc, addDoc, Timestamp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
         import { ref, getBlob } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js';
         import { onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
 
@@ -98,7 +98,7 @@
         async function cargar() {
             try {
                 const evSnap = await getDocs(collection(db, 'events'));
-                galas = evSnap.docs.map(d => ({ id: d.id, nombre: d.data().name || d.id, fecha: d.data().date || '' }))
+                galas = evSnap.docs.map(d => ({ id: d.id, nombre: d.data().name || d.id, fecha: d.data().date || '', activa: d.data().isActive === true }))
                     .sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
 
                 const resultados = await Promise.all(galas.map(g =>
@@ -123,7 +123,8 @@
                                 formato: t.formato || '',
                                 mb: t.tamano_mb || '',
                                 galaId: g.id, galaNombre: g.nombre, galaFecha: g.fecha,
-                                slot: t.slot || 1
+                                slot: t.slot || 1,
+                                raw: t
                             });
                         });
                     });
@@ -134,6 +135,7 @@
                     .filter(g => conPistas.has(g.id))
                     .map(g => `<option value="${g.id}">${esc(g.nombre)} (${fmtFecha(g.fecha)})</option>`).join('');
 
+                await cargarPistasDeGalasActivas();
                 $('estado').classList.add('hidden');
                 render();
             } catch (e) {
@@ -191,6 +193,9 @@
                                     <p class="text-sm font-semibold truncate">${esc(p.cancion)}${p.estilo ? ` <span class="text-gray-400 font-normal">· ${esc(p.estilo)}</span>` : ''}</p>
                                     <p class="text-[11px] text-gray-400 truncate">🎭 ${esc(p.galaNombre)} · ${fmtFecha(p.galaFecha)}${p.formato ? ` · ${esc(p.formato.toUpperCase())}` : ''}${p.mb ? ` · ${esc(p.mb)} MB` : ''}</p>
                                 </div>
+                                ${galasActivas.length ? (urlsEnGalaActiva.has(p.url)
+                                    ? `<span class="w-9 h-9 flex-shrink-0 rounded-full bg-emerald-900 border border-emerald-500 text-sm flex items-center justify-center" title="Ya está en la gala activa">✅</span>`
+                                    : `<button onclick="agregarAGalaActiva(${i}, this)" class="w-9 h-9 flex-shrink-0 rounded-full bg-amber-600 hover:bg-amber-500 text-sm font-bold" title="Agregar a la gala activa">➕</button>`) : ''}
                                 <button onclick="descargar(${i}, this)" class="w-9 h-9 flex-shrink-0 rounded-full bg-gray-700 hover:bg-gray-600 text-sm" title="Descargar">⬇</button>
                             </div>`;
                         }).join('')}
@@ -199,6 +204,94 @@
             }).join('');
             marcarSonando();
         }
+
+        // ── Agregar una pista a la gala activa ──
+        // Si el artista está anotado en la gala activa, la pista se suma a SUS pistas
+        // (pistas_{galaId}/{artistId}) en un lugar nuevo, sin pisar las que ya subió.
+        // Si no está anotado, va a "Pistas de organización" de esa gala.
+        // En ambos casos aparece en el panel de pistas de la gala (admin_pistas).
+        let galasActivas = [];
+        const urlsEnGalaActiva = new Set();
+
+        async function cargarPistasDeGalasActivas() {
+            galasActivas = galas.filter(g => g.activa);
+            urlsEnGalaActiva.clear();
+            pistas.filter(p => galasActivas.some(g => g.id === p.galaId)).forEach(p => urlsEnGalaActiva.add(p.url));
+            await Promise.all(galasActivas.map(g =>
+                getDocs(collection(db, `pistas_organizacion_${g.id}`))
+                    .then(snap => snap.forEach(d => { if (d.data().url) urlsEnGalaActiva.add(d.data().url); }))
+                    .catch(() => {})
+            ));
+        }
+
+        function elegirGalaActiva() {
+            if (galasActivas.length === 1) return galasActivas[0];
+            const opciones = galasActivas.map((g, i) => `${i + 1}. ${g.nombre} (${fmtFecha(g.fecha)})`).join('\n');
+            const r = prompt(`Hay ${galasActivas.length} galas activas. ¿A cuál la agregás? Escribí el número:\n\n${opciones}`);
+            const n = parseInt(r);
+            return (n >= 1 && n <= galasActivas.length) ? galasActivas[n - 1] : null;
+        }
+
+        window.agregarAGalaActiva = async function(i, btn) {
+            const p = pistas[i];
+            if (!p) return;
+            const gala = elegirGalaActiva();
+            if (!gala) return;
+
+            btn.disabled = true; btn.textContent = '⏳';
+            try {
+                // ¿El artista está anotado en la gala activa?
+                const artSnap = await getDocs(collection(db, `events/${gala.id}/artists`));
+                const artistaDoc = artSnap.docs.find(d => norm(d.data().name || d.data().nombre) === norm(p.artista));
+
+                const destino = artistaDoc
+                    ? `a las pistas de ${p.artista} en "${gala.nombre}"`
+                    : `a "Pistas de organización" de "${gala.nombre}" (${p.artista} no está anotado en esa gala)`;
+                if (!confirm(`¿Agregar "${p.cancion}" de ${p.artista} ${destino}?`)) {
+                    btn.disabled = false; btn.textContent = '➕';
+                    return;
+                }
+
+                if (artistaDoc) {
+                    const ref_ = doc(db, `pistas_${gala.id}`, artistaDoc.id);
+                    const snap = await getDoc(ref_);
+                    const data = snap.exists() ? snap.data() : {};
+                    const actuales = data.pistas || [];
+                    if (actuales.some(t => t.archivo_url === p.url)) {
+                        alert('Esa pista ya está en la gala.');
+                    } else {
+                        const slot = actuales.reduce((m, t) => Math.max(m, t.slot || 0), 0) + 1;
+                        const nueva = { ...p.raw, slot, fecha_subida: Timestamp.now(), agregada_desde_historial: p.galaNombre };
+                        await setDoc(ref_, {
+                            ...data,
+                            pistas: [...actuales, nueva],
+                            artistName: data.artistName || artistaDoc.data().name || artistaDoc.data().nombre || p.artista,
+                            artistPhoto: data.artistPhoto || artistaDoc.data().photoURL || artistaDoc.data().foto_url || p.foto || ''
+                        });
+                    }
+                } else {
+                    await addDoc(collection(db, `pistas_organizacion_${gala.id}`), {
+                        name: p.cancion,
+                        artist: p.artista,
+                        category: 'Desde historial',
+                        url: p.url,
+                        storagePath: p.storagePath,
+                        format: p.formato || null,
+                        trim_start: null,
+                        trim_end: null,
+                        pitch_shift: null,
+                        uploadedAt: Timestamp.now(),
+                        uploadedBy: 'admin (historial)'
+                    });
+                }
+                urlsEnGalaActiva.add(p.url);
+                render();
+            } catch (e) {
+                console.error(e);
+                alert('❌ No se pudo agregar: ' + e.message);
+                btn.disabled = false; btn.textContent = '➕';
+            }
+        };
 
         // ── Reproductor ──
         const audio = $('audio');
