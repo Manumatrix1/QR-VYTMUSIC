@@ -199,6 +199,8 @@ body { background:#0d0d1a; color:#fff; font-family:-apple-system,'Segoe UI',sans
   .tk-obs { border:1.5px solid #000; padding:1.5mm 2mm; margin-top:2mm; font-weight:700; font-size:14px; }
   .tk-qr img, .tk-qr canvas { width:42mm !important; height:42mm !important; margin:3mm auto 1mm; display:block; }
   .tk-small { font-size:11px; }
+  .tk-row { margin-top:1mm; }
+  .tk-det { font-size:11px; padding-left:4mm; }
 
   /* Papel de 58 mm (área imprimible ~48 mm) */
   #print-area.papel-58 { width:48mm; font-size:11px; }
@@ -207,7 +209,7 @@ body { background:#0d0d1a; color:#fff; font-family:-apple-system,'Segoe UI',sans
   .papel-58 .tk-total { font-size:15px; }
   .papel-58 .tk-obs { font-size:11px; }
   .papel-58 .tk-qr img, .papel-58 .tk-qr canvas { width:34mm !important; height:34mm !important; }
-  .papel-58 .tk-small { font-size:9px; }
+  .papel-58 .tk-small, .papel-58 .tk-det { font-size:9px; }
 }
 
 /* ── Escala PC (pantallas ≥ 800px) ── */
@@ -1371,8 +1373,15 @@ function imprimirTicket(p) {
   const fechaStr = fecha.toLocaleDateString('es-AR') + ' ' + fecha.toLocaleTimeString('es-AR', { hour:'2-digit', minute:'2-digit' });
   const pesos = n => '$' + Number(n||0).toLocaleString('es-AR');
   const pago  = p.pagoMethod === 'transferencia' ? 'Transferencia' : p.pagoMethod === 'efectivo' ? 'Efectivo' : (p.pagoMethod || '-');
-  const filas = (p.items||[]).map(i => `
-      <div class="tk-row"><span>${i.qty} x ${escTk(i.name)}</span><span>${pesos(i.subtotal ?? i.price*i.qty)}</span></div>`).join('');
+  // Los agregados sin costo (aderezos) van como detalle debajo, sin "1 x" ni "$0"
+  const filas = (p.items||[]).map(i => {
+    const sub = i.subtotal ?? i.price*i.qty;
+    if (!sub) {
+      const txt = String(i.name || '').replace(/^Aderezos\s*[—-]\s*/i, '');
+      return `<div class="tk-det">+ ${escTk(txt)}</div>`;
+    }
+    return `<div class="tk-row"><span>${i.qty} x ${escTk(i.name)}</span><span>${pesos(sub)}</span></div>`;
+  }).join('');
   const qr = p.id ? qrComoImagen(urlEstadoPedido(p.id)) : '';
 
   const cliente = `
