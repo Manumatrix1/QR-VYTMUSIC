@@ -101,7 +101,10 @@
                     <h2 class="text-lg font-bold text-green-400 flex items-center gap-2">
                         💰 Precios de Entradas
                     </h2>
-                    <p class="text-sm text-gray-400 mt-1">Estos precios se aplican en la página de compra de los artistas</p>
+                    <p class="text-sm text-gray-400 mt-1">Estos precios se aplican en la página de compra de los artistas — solo para <strong class="text-white" id="prices-event-name"></strong></p>
+                    <p id="prices-tiers-warning" class="hidden text-sm text-yellow-300 bg-yellow-900/30 border border-yellow-600/50 rounded-lg px-3 py-2 mt-2">
+                        ⚠️ Esta gala tiene <strong>tramos por cantidad</strong> configurados en el panel del evento: el comprador ve esos tramos, no el precio "Anticipada (adulto)" de acá. Para cambiar el precio anticipado, editá los tramos en el panel del evento.
+                    </p>
                     <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
                         <div>
                             <label class="block text-xs text-gray-400 mb-1">⚡ Anticipada (adulto)</label>
@@ -287,6 +290,9 @@
                 document.getElementById('price-puerta-input').value = data.ticketPricePuerta || 15000;
                 document.getElementById('price-kids-anticipada-input').value = data.ticketPriceKidsAnticipada || 5000;
                 document.getElementById('price-kids-puerta-input').value = data.ticketPriceKidsPuerta || 8000;
+                document.getElementById('prices-event-name').textContent = data.name || eventName;
+                const tieneTramos = Array.isArray(data.ticketTiers) && data.ticketTiers.length > 0;
+                document.getElementById('prices-tiers-warning').classList.toggle('hidden', !tieneTramos);
             } catch(e) { console.warn('Error cargando precios:', e); }
         }
 
@@ -662,6 +668,49 @@
             document.getElementById('approve-modal').classList.remove('hidden');
         };
 
+        // ── WhatsApp desde el admin ──
+        // iPhone (Safari) bloquea window.open si no sale directo del toque: después de esperar
+        // a Firebase (generar QRs, leer la orden) ya no lo considera un toque y WhatsApp no
+        // se abre. En iPhone (y en cualquier navegador que bloquee el popup) se muestra un
+        // botón "Enviar por WhatsApp": tocarlo es un toque real y abre la app.
+        const esIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+            (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+        function abrirWhatsApp(waUrl, titulo, linkParaCopiar) {
+            if (!esIOS) {
+                const w = window.open(waUrl, '_blank');
+                if (w) return;
+            }
+            document.getElementById('wa-send-modal')?.remove();
+            const modal = document.createElement('div');
+            modal.id = 'wa-send-modal';
+            modal.className = 'fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-[60] p-4';
+            modal.innerHTML = `
+                <div class="bg-gray-800 rounded-2xl max-w-sm w-full p-6 text-center shadow-2xl border border-green-500/50">
+                    <p class="text-4xl mb-2">✅</p>
+                    <h3 class="text-xl font-bold text-white mb-1"></h3>
+                    <p class="text-sm text-gray-400 mb-5">Tocá el botón para mandar el mensaje por WhatsApp.</p>
+                    <a id="wa-send-link" target="_blank" rel="noopener"
+                       class="block w-full py-4 bg-green-600 hover:bg-green-700 text-white font-bold rounded-xl text-lg mb-3">
+                        📲 Enviar por WhatsApp
+                    </a>
+                    ${linkParaCopiar ? '<button id="wa-copy-link" class="block w-full py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-xl text-sm mb-3">🔗 Copiar link de las entradas</button>' : ''}
+                    <button id="wa-close" class="text-gray-400 hover:text-white text-sm">Cerrar</button>
+                </div>`;
+            modal.querySelector('h3').textContent = titulo;
+            const link = modal.querySelector('#wa-send-link');
+            link.href = waUrl;
+            link.addEventListener('click', () => setTimeout(() => modal.remove(), 300));
+            modal.querySelector('#wa-close').addEventListener('click', () => modal.remove());
+            const copyBtn = modal.querySelector('#wa-copy-link');
+            if (copyBtn) copyBtn.addEventListener('click', () => {
+                navigator.clipboard.writeText(linkParaCopiar)
+                    .then(() => { copyBtn.textContent = '✅ Link copiado'; })
+                    .catch(() => { prompt('Copiá este link:', linkParaCopiar); });
+            });
+            document.body.appendChild(modal);
+        }
+
         document.getElementById('approve-confirm-btn').addEventListener('click', async () => {
             const select = document.getElementById('approve-artist-select');
             const btn = document.getElementById('approve-confirm-btn');
@@ -759,12 +808,8 @@
                     const namesForWA = order.attendeeNames || [];
                     const namesList = namesForWA.length > 0 ? `\n\n👥 *Invitados (${namesForWA.length}):*\n${namesForWA.map(n => `• ${n}`).join('\n')}` : '';
                     const _msg = `✅ *Tu pago fue aprobado*\n\n¡Tus entradas QR ya están listas!${namesList}\n\nEntrá desde este link para verlas y descargarlas:\n${_qrLink}\n\n🎤 VYT-MUSIC`;
-                    const waWindow = window.open(`https://wa.me/${_phone}?text=${encodeURIComponent(_msg)}`, '_blank');
-                    // Si el popup fue bloqueado, mostrar link en el modal
-                    if (!waWindow) {
-                        btn.textContent = '✅ QRs listos';
-                        alert(`✅ QRs generados!\n\nSi WhatsApp no abrió automáticamente, copiá este link y enviáselo a ${order.artistName}:\n\n${_qrLink}`);
-                    }
+                    abrirWhatsApp(`https://wa.me/${_phone}?text=${encodeURIComponent(_msg)}`,
+                        `QRs listos para ${order.artistName || 'el comprador'}`, _qrLink);
                 }
 
                 closeApproveModal();
@@ -889,7 +934,8 @@
             
             const msg = `✅ *Tus entradas QR - VYT MUSIC*\n\nHola ${artistName || ''}! Aquí está el link para ver y descargar tus entradas:${namesList}\n\n${qrLink}\n\n🎤 VYT-MUSIC`;
             if (phone) {
-                window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank');
+                abrirWhatsApp(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`,
+                    `Reenviar entradas a ${artistName || 'el comprador'}`, qrLink);
             } else {
                 // Sin teléfono, mostrar el link para copiar
                 prompt('📋 Copiá este link y enviáselo al artista:', qrLink);

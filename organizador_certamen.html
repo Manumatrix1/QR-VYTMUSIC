@@ -646,6 +646,8 @@
         const TOTAL_GALAS = 4; // Galas del certamen (fijo)
         let columnOrder = {};         // { colId: [artistId, ...] } — orden dentro de cada columna
         let columnMulti = {};          // { artistId: [colId, ...] } — artista asignado a múltiples galas
+        let galasQuitadas = [];
+        const eventIdsPorGeneracion = {}; // generación → eventIds de sus galas (lo llena loadArtistsByGeneration)        // eventIds de galas que el usuario sacó a mano del tablero (no se vuelven a agregar solas)
         let columns = [];             // [{ id, name, color }]
         let allEvents = [];
         let allEventGroups = [];      // Grupos definidos en event_groups (ej: Generación 14)
@@ -1163,6 +1165,7 @@
                 artistStatus = {};
                 columnAssignments = {};
                 columns = [];
+                galasQuitadas = [];
                 loadedGenerations = [];
                 
                 // Limpiar localStorage viejo para evitar conflictos
@@ -1180,6 +1183,8 @@
             try {
                 const newArtists = [];
                 let eventsInGeneration = 0;
+                const eventIdsDeLaGeneracion = [];
+                eventIdsPorGeneracion[generacion] = eventIdsDeLaGeneracion;
 
                 // Buscar eventos que pertenezcan a esta generación
                 for (const event of allEvents) {
@@ -1218,6 +1223,7 @@
                     // Si este evento debe cargarse, procesar sus artistas
                     if (shouldLoadThisEvent) {
                         eventsInGeneration++;
+                        eventIdsDeLaGeneracion.push(event.id);
                         try {
                             const artistsSnap = await getDocs(collection(db, `events/${event.id}/artists`));
                             console.log(`📥 Escaneando ${artistsSnap.docs.length} artistas de "${eventName}"`);
@@ -1506,6 +1512,7 @@
                     // Limpiar caché ANTES de restaurar estado para que no se apliquen promedios viejos
                     localStorage.removeItem(AVG_CACHE_KEY);
                     await loadSavedState();
+                    agregarGalasFaltantes(eventIdsDeLaGeneracion);
                     document.getElementById('loadingState').classList.add('hidden');
                     document.getElementById('board').classList.remove('hidden');
                     // Buscar participaciones en galas pasadas (en background) y actualizar caché
@@ -1581,7 +1588,7 @@
                 galas: a.galas || 0, avg: a.avg || null, hasVotes: a.hasVotes || false
             }));
             await setDoc(doc(db, 'organizador_estado', genKey), {
-                columns, columnAssignments, columnOrder, columnMulti,
+                columns, columnAssignments, columnOrder, columnMulti, galasQuitadas,
                 artistStatus, loadedGenerations, artistNameMap,
                 artists: artistsSnapshot,
                 updatedAt: new Date().toISOString()
@@ -1591,7 +1598,7 @@
         // localOnly=true → solo guarda en localStorage (NO sobreescribe Firebase)
         // Usar localOnly=true en cargas automáticas para proteger el estado guardado desde otro dispositivo
         function saveState(showConfirm = false, localOnly = false) {
-            const state = { columns, artistStatus, columnAssignments, columnOrder, columnMulti, allArtists, loadedGenerations };
+            const state = { columns, artistStatus, columnAssignments, columnOrder, columnMulti, galasQuitadas, allArtists, loadedGenerations };
             localStorage.setItem('organizador_session', JSON.stringify(state));
             if (loadedGenerations.length === 1) {
                 localStorage.setItem(`organizador_gen_${loadedGenerations[0]}`, JSON.stringify(state));
@@ -1644,6 +1651,73 @@
             console.log(`🔧 Asignaciones reconstruidas: ${asignados}/${allArtists.length} artistas ubicados en columnas`);
         }
 
+        // El tablero guardado solo tiene las galas que existían cuando se guardó. Si después
+        // se crearon galas nuevas de la generación (o el guardado quedó incompleto), no
+        // aparecían nunca. Esto agrega una columna por cada gala de la generación que falte,
+        // salvo las que el usuario sacó a mano del tablero (galasQuitadas).
+        // - Gala pasada: sus artistas se suman como historial (columnMulti), sin moverlos
+        //   de la gala donde están ahora.
+        // - Gala futura / sin fecha: solo toma a los artistas que todavía no están en ninguna gala.
+        function agregarGalasFaltantes(eventIds) {
+            const colorList = ['purple','blue','green','yellow','teal','pink','orange','red'];
+            const artistasDeGala = eventId => allArtists.filter(a => a.eventId === eventId || (a.eventIds || []).includes(eventId));
+            const tieneArtistas = col => allArtists.some(a => columnAssignments[a.id] === col.id || (columnMulti[a.id] || []).includes(col.id));
+            const sumarHistorial = (a, col) => {
+                if (!columnMulti[a.id]) columnMulti[a.id] = [];
+                if (!columnMulti[a.id].includes(col.id)) columnMulti[a.id].push(col.id);
+            };
+            const ordenar = col => {
+                columnOrder[col.id] = allArtists
+                    .filter(a => columnAssignments[a.id] === col.id || (columnMulti[a.id] || []).includes(col.id))
+                    .sort((a, b) => a.name.localeCompare(b.name, 'es'))
+                    .map(a => a.id);
+            };
+            let cambios = false;
+
+            // 1. Galas pasadas que ya están en el tablero pero quedaron sin nadie (los artistas
+            //    se movieron a galas siguientes antes de que existiera el historial): se ocultaban.
+            //    Se les devuelve como historial a quienes cantaron ahí.
+            columns.forEach(col => {
+                if (!col.eventId || !isColumnPast(col) || tieneArtistas(col)) return;
+                const artistas = artistasDeGala(col.eventId);
+                if (!artistas.length) return;
+                artistas.forEach(a => {
+                    if (!columnAssignments[a.id]) columnAssignments[a.id] = col.id;
+                    else sumarHistorial(a, col);
+                });
+                ordenar(col);
+                cambios = true;
+            });
+
+            // 2. Galas de la generación que no tienen columna.
+            const yaEnTablero = new Set(columns.map(c => c.eventId).filter(Boolean));
+            const nuevas = [];
+            (eventIds || []).forEach(eventId => {
+                if (yaEnTablero.has(eventId) || galasQuitadas.includes(eventId)) return;
+                const ev = allEvents.find(e => e.id === eventId);
+                if (!ev) return;
+                const col = { id: 'col_auto_' + eventId, name: ev.name || eventId, color: colorList[columns.length % colorList.length], eventId, date: ev.date || '' };
+                // Insertar en su lugar cronológico sin reordenar las columnas existentes
+                // (las sin fecha van al final).
+                const idx = col.date ? columns.findIndex(c => c.date && c.date > col.date) : -1;
+                if (idx === -1) columns.push(col); else columns.splice(idx, 0, col);
+                const pasada = isColumnPast(col);
+                artistasDeGala(eventId).forEach(a => {
+                    if (!columnAssignments[a.id]) columnAssignments[a.id] = col.id;
+                    else if (pasada) sumarHistorial(a, col);
+                });
+                ordenar(col);
+                nuevas.push(col.name);
+                cambios = true;
+            });
+
+            if (!cambios) return;
+            if (nuevas.length) {
+                console.log(`➕ Galas que faltaban en el tablero agregadas:`, nuevas);
+                showToast(`➕ ${nuevas.length} gala${nuevas.length > 1 ? 's' : ''} que faltaba${nuevas.length > 1 ? 'n' : ''} agregada${nuevas.length > 1 ? 's' : ''}: ${nuevas.join(', ')}`, '🎭');
+            }
+        }
+
         async function loadSavedState() {
             const artistIds = new Set(allArtists.map(a => a.id));
 
@@ -1693,6 +1767,7 @@
                 }
                 
                 artistStatus  = state.artistStatus || {};
+                galasQuitadas = state.galasQuitadas || [];
                 columnAssignments = remapDict(state.columnAssignments, savedMap);
                 // columnMulti: { savedId → [colId, ...] }
                 columnMulti = {};
@@ -3728,6 +3803,20 @@
                     };
                     if (grupo) eventData.groupId = grupo.id;
 
+                    // Heredar precios, tramos y cantidad de pistas de la última gala de la misma
+                    // generación. Antes la gala nueva arrancaba siempre en $10.000 / $15.000 y
+                    // 2 pistas, y parecía que los precios/pistas configurados "no se aplicaban".
+                    const galasDeLaGen = allEvents
+                        .filter(e => (grupo && e.groupId === grupo.id) || normGen(e.generacion || '') === normGen(generacionActual))
+                        .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+                    const base = galasDeLaGen[0];
+                    if (base) {
+                        ['ticketPriceAnticipada', 'ticketPricePuerta', 'ticketPriceKidsAnticipada',
+                         'ticketPriceKidsPuerta', 'ticketTiers', 'max_pistas'].forEach(k => {
+                            if (base[k] !== undefined && base[k] !== null) eventData[k] = base[k];
+                        });
+                    }
+
                     const docRef = await addDoc(collection(db, 'events'), eventData);
                     eventId = docRef.id;
                     // También agregar a allEvents para que esté disponible en el tablero
@@ -3797,6 +3886,7 @@
                 if (columnAssignments[a.id] === colId) delete columnAssignments[a.id];
             });
             columns = columns.filter(c => c.id !== colId);
+            if (col.eventId && !galasQuitadas.includes(col.eventId)) galasQuitadas.push(col.eventId);
             saveState();
             renderBoard();
             showToast(`Grupo "${col.name}" eliminado`, '🗑️');
@@ -4145,6 +4235,8 @@
                     columns,
                     columnAssignments,
                     columnOrder,
+                    columnMulti,
+                    galasQuitadas,
                     artistStatus,
                     loadedGenerations,
                     totalArtistas: allArtists.length,
@@ -4205,6 +4297,8 @@
                 const state = snap.data();
                 columns           = state.columns || [];
                 columnOrder       = state.columnOrder || {};
+                columnMulti       = state.columnMulti || {};
+                galasQuitadas     = state.galasQuitadas || [];
                 artistStatus      = state.artistStatus || {};
                 const asignaciones = state.columnAssignments || {};
                 const generaciones = state.loadedGenerations || [];
@@ -4220,6 +4314,7 @@
                     await loadArtistsByGeneration(gen, true, gen13Ids);
                 }
                 columnAssignments = asignaciones;
+                agregarGalasFaltantes(generaciones.flatMap(g => eventIdsPorGeneracion[g] || []));
                 document.getElementById('loadingState').classList.add('hidden');
                 document.getElementById('board').classList.remove('hidden');
                 renderBoard();
