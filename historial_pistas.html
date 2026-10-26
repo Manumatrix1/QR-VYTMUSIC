@@ -133,6 +133,57 @@
                     });
                 }
 
+                // Pistas de invitados y de organización (se suben por "Pistas Organización"
+                // y quedan en otra colección: pistas_organizacion_{galaId}).
+                // La categoría a veces es un estilo (Cumbia, Folklore...) y a veces
+                // "Invitada"/"Organizador": solo se usa como estilo en el primer caso.
+                const noEsEstilo = /sin categor|invitad|nvitad|organi|orgiza|organz|grabaci/i;
+                const orgRes = await Promise.all(galas.map(g =>
+                    getDocs(collection(db, `pistas_organizacion_${g.id}`))
+                        .then(snap => ({ g, snap }))
+                        .catch(() => ({ g, snap: null }))
+                ));
+                for (const { g, snap } of orgRes) {
+                    if (!snap) continue;
+                    snap.forEach(doc => {
+                        const t = doc.data();
+                        if (!t.url) return; // cargada sin archivo
+                        const cat = (t.category || '').trim();
+                        pistas.push({
+                            artista: (t.artist || '').trim() || 'Organización',
+                            foto: '',
+                            cancion: (t.name || '').trim() || 'Sin nombre',
+                            estilo: cat && !noEsEstilo.test(cat) ? cat : '',
+                            url: t.url,
+                            storagePath: t.storagePath || null,
+                            formato: t.format || '',
+                            mb: t.size ? (t.size / 1048576).toFixed(1) : '',
+                            galaId: g.id, galaNombre: g.nombre, galaFecha: g.fecha,
+                            slot: 99,
+                            origen: 'org',
+                            raw: t
+                        });
+                    });
+                }
+
+                // Biblioteca VYT (música de la gala: intro, presentación, cierre...). Necesita sesión iniciada.
+                try {
+                    if (auth.authStateReady) await auth.authStateReady();
+                    const bib = await getDocs(collection(db, 'biblioteca_global'));
+                    bib.forEach(doc => {
+                        const t = doc.data();
+                        if (!t.url) return;
+                        pistas.push({
+                            artista: '📚 Biblioteca VYT', foto: '',
+                            cancion: (t.name || '').trim() || 'Sin nombre', estilo: '',
+                            url: t.url, storagePath: t.storagePath || null, formato: t.format || '',
+                            mb: t.size ? (t.size / 1048576).toFixed(1) : '',
+                            galaId: '', galaNombre: 'Biblioteca (todas las galas)', galaFecha: '',
+                            slot: 99, origen: 'bib', raw: t
+                        });
+                    });
+                } catch (e) { console.warn('Biblioteca VYT no disponible:', e.message); }
+
                 const conPistas = new Set(pistas.map(p => p.galaId));
                 $('filtroGala').innerHTML = '<option value="">Todas las galas</option>' + galas
                     .filter(g => conPistas.has(g.id))
@@ -194,7 +245,7 @@
                                 <button onclick="reproducir(${i})" class="w-9 h-9 flex-shrink-0 rounded-full bg-green-600 hover:bg-green-500 text-sm" title="Escuchar">▶</button>
                                 <div class="flex-1 min-w-0">
                                     <p class="text-sm font-semibold truncate">${esc(p.cancion)}${p.estilo ? ` <span class="text-gray-400 font-normal">· ${esc(p.estilo)}</span>` : ''}</p>
-                                    <p class="text-[11px] text-gray-400 truncate">🎭 ${esc(p.galaNombre)} · ${fmtFecha(p.galaFecha)}${p.formato ? ` · ${esc(p.formato.toUpperCase())}` : ''}${p.mb ? ` · ${esc(p.mb)} MB` : ''}</p>
+                                    <p class="text-[11px] text-gray-400 truncate">${p.origen === 'org' ? '<span class="text-sky-300 font-semibold">🎤 Invitado/Org</span> · ' : ''}${p.origen === 'bib' ? '📚 Biblioteca VYT' : `🎭 ${esc(p.galaNombre)} · ${fmtFecha(p.galaFecha)}`}${p.formato ? ` · ${esc(p.formato.toUpperCase())}` : ''}${p.mb ? ` · ${esc(p.mb)} MB` : ''}</p>
                                 </div>
                                 ${galasActivas.length ? (urlsEnGalaActiva.has(p.url)
                                     ? `<span class="w-9 h-9 flex-shrink-0 rounded-full bg-emerald-900 border border-emerald-500 text-sm flex items-center justify-center" title="Ya está en la gala activa">✅</span>`
@@ -264,7 +315,13 @@
                         alert('Esa pista ya está en la gala.');
                     } else {
                         const slot = actuales.reduce((m, t) => Math.max(m, t.slot || 0), 0) + 1;
-                        const nueva = { ...p.raw, slot, fecha_subida: Timestamp.now(), agregada_desde_historial: p.galaNombre };
+                        // Las de invitados/organización/biblioteca vienen en otro formato: se arma la pista de artista
+                        const base = p.origen ? {
+                            nombre_cancion: p.cancion, estilo_cancion: p.estilo || '', archivo_url: p.url,
+                            storage_path: p.storagePath || null, formato: p.formato || '', tamano_mb: p.mb || '',
+                            trim_start: null, trim_end: null, trim_duration: null, pitch_offset: 0, pin_hash: null
+                        } : p.raw;
+                        const nueva = { ...base, slot, fecha_subida: Timestamp.now(), agregada_desde_historial: p.galaNombre };
                         await setDoc(ref_, {
                             ...data,
                             pistas: [...actuales, nueva],
