@@ -243,6 +243,12 @@
                 </label>
             </div>
 
+            <!-- Acceso rápido: música de la Biblioteca VYT (la que se pone siempre) -->
+            <div id="accesoRapidoBib" class="mt-4 hidden">
+                <p class="text-xs font-bold uppercase tracking-wider text-emerald-300 mb-2">🌟 Música VYT — acceso rápido</p>
+                <div id="accesoRapidoBotones" class="flex flex-wrap gap-2"></div>
+            </div>
+
             <!-- 2. BUSCAR PISTA -->
             <div class="mt-5 bg-indigo-950/60 rounded-xl p-3 border border-indigo-500/50">
                 <div class="flex items-center gap-3 flex-wrap">
@@ -889,6 +895,48 @@
             const texto = `📚 *VYT MUSIC - Catálogo de pistas*\n\nMirá todas las pistas disponibles, ordenadas por autor y por estilo:\n\n👉 ${link}\n\nSi te interesa alguna, tocá "Pedir" y me escribís 😉`;
             window.open(`https://wa.me/?text=${encodeURIComponent(texto)}`, '_blank');
         };
+
+        // ── Acceso rápido a la Biblioteca VYT (arriba, en "Para la gala") ─────
+        // Botones grandes para la música que se pone siempre, sin tener que ir a la
+        // pestaña Biblioteca. Usa el canal de volumen de la Biblioteca (igual que su Play).
+        function renderAccesoRapido() {
+            const box = document.getElementById('accesoRapidoBib');
+            const cont = document.getElementById('accesoRapidoBotones');
+            if (!box || !cont) return;
+            const pistasBib = (bibliotecaData || []).filter(t => t.url);
+            box.classList.toggle('hidden', pistasBib.length === 0);
+            const orden = ['vyt','intro','presentacion','intermedio','cierre','otro'];
+            const lista = [...pistasBib].sort((a, b) => {
+                const ai = orden.indexOf(a.category ?? ''), bi = orden.indexOf(b.category ?? '');
+                return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi) || (a.name || '').localeCompare(b.name || '');
+            });
+            cont.innerHTML = lista.map(t => {
+                const id = 'bib_' + t.id;
+                const sonando = currentPlayingTrackId === id && globalAudio && !globalAudio.paused;
+                const nombre = String(t.name || 'Pista').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+                return `<button onclick="tocarAccesoRapido('${t.id}')" data-qa="${id}"
+                    class="flex items-center gap-2 px-5 py-3 rounded-xl font-bold text-base transition shadow-lg ${sonando
+                        ? 'bg-red-600 hover:bg-red-500 text-white ring-2 ring-red-300'
+                        : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white'}">
+                    <i class="fas fa-${sonando ? 'stop' : 'play'}"></i> ${nombre}</button>`;
+            }).join('');
+        }
+        window.tocarAccesoRapido = function(bibId) {
+            const t = (bibliotecaData || []).find(x => x.id === bibId);
+            if (!t) return;
+            toggleTrack('bib_' + t.id, t.url, 'VYT', t.name || 'Pista', 0);
+            setTimeout(renderAccesoRapido, 150);
+        };
+        // Mantener el botón ▶/■ al día (si se para desde otro lado o termina la pista)
+        setInterval(() => {
+            const btns = document.querySelectorAll('#accesoRapidoBotones [data-qa]');
+            if (!btns.length) return;
+            const algunoCambio = [...btns].some(b => {
+                const sonando = currentPlayingTrackId === b.dataset.qa && globalAudio && !globalAudio.paused;
+                return sonando !== b.classList.contains('bg-red-600');
+            });
+            if (algunoCambio) renderAccesoRapido();
+        }, 1000);
 
         // ── Pestañas de secciones ─────────────────────────────────────────────
         const SECCIONES_PESTANA = {
@@ -3125,6 +3173,7 @@
                         return (a.name||'').localeCompare(b.name||'');
                     });
                     displayBiblioteca();
+                    renderAccesoRapido();
                 });
             } catch (e) {
                 console.error('Error cargando biblioteca:', e);
