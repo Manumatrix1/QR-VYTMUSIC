@@ -342,6 +342,19 @@
         <!-- Mensajes -->
         <div id="messageContainer" class="mb-6"></div>
 
+        <!-- Buscador en TODAS las pistas (todas las galas, invitados y Biblioteca VYT) -->
+        <div class="bg-gradient-to-r from-indigo-900 to-gray-900 rounded-xl shadow-xl p-4 mb-6 border border-indigo-500/50">
+            <div class="flex items-center gap-3 flex-wrap">
+                <span class="text-indigo-200 font-bold whitespace-nowrap">🔎 Buscar pista</span>
+                <input id="buscadorGlobal" type="search" autocomplete="off"
+                    placeholder="Artista, canción o estilo (de todas las galas)..."
+                    onfocus="cargarTodasLasPistas()" oninput="buscarPistaGlobal()"
+                    class="flex-1 min-w-[220px] px-4 py-2.5 rounded-lg bg-gray-950 border border-indigo-500/60 text-white focus:outline-none focus:border-indigo-300">
+                <span id="buscadorGlobalInfo" class="text-xs text-indigo-300"></span>
+            </div>
+            <div id="buscadorGlobalResultados" class="mt-3 space-y-1.5 max-h-96 overflow-y-auto"></div>
+        </div>
+
         <!-- Filtros + Volumen Artistas -->
         <div class="bg-gradient-to-r from-gray-800 to-gray-900 rounded-xl shadow-xl p-4 mb-6 border border-gray-700">
             <div class="flex flex-wrap gap-4 items-center justify-between mb-3">
@@ -856,6 +869,97 @@
             const link = 'https://vyt-music.web.app/catalogo.html';
             const texto = `📚 *VYT MUSIC - Catálogo de pistas*\n\nMirá todas las pistas disponibles, ordenadas por autor y por estilo:\n\n👉 ${link}\n\nSi te interesa alguna, tocá "Pedir" y me escribís 😉`;
             window.open(`https://wa.me/?text=${encodeURIComponent(texto)}`, '_blank');
+        };
+
+        // ── Buscador en todas las pistas ─────────────────────────────────────
+        // Busca en las pistas de artistas de todas las galas, las de invitados/organización
+        // y la Biblioteca VYT, y las reproduce con el reproductor de este panel
+        // (mismo volumen de artistas, fades y nivelación). Se carga la primera vez que
+        // se toca el buscador; si la pista ya estaba guardada en el equipo suena sin internet.
+        let todasLasPistas = null;
+        let cargandoTodas = null;
+        const escG = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+        const normG = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+
+        window.cargarTodasLasPistas = function() {
+            if (todasLasPistas || cargandoTodas) return cargandoTodas;
+            const info = document.getElementById('buscadorGlobalInfo');
+            info.textContent = '⏳ Cargando pistas de todas las galas...';
+            cargandoTodas = (async () => {
+                const { collection, getDocs } = window.firestoreModules;
+                const lista = [];
+                const evSnap = await getDocs(collection(window.db, 'events'));
+                const galas = evSnap.docs.map(d => ({ id: d.id, nombre: d.data().name || d.id, fecha: d.data().date || '' }));
+                await Promise.all(galas.map(async g => {
+                    const [art, org] = await Promise.all([
+                        getDocs(collection(window.db, `pistas_${g.id}`)).catch(() => null),
+                        getDocs(collection(window.db, `pistas_organizacion_${g.id}`)).catch(() => null)
+                    ]);
+                    art?.forEach(doc => (doc.data().pistas || []).forEach(t => {
+                        if (t.archivo_url) lista.push({ artista: doc.data().artistName || 'Artista', cancion: t.nombre_cancion || 'Sin nombre',
+                            estilo: t.estilo_cancion || '', url: t.archivo_url, gala: g.nombre, fecha: g.fecha });
+                    }));
+                    org?.forEach(doc => {
+                        const t = doc.data();
+                        // La categoría solo cuenta como estilo si no es "Invitada", "Organizador", etc.
+                        const cat = (t.category || '').trim();
+                        const estilo = cat && !/sin categor|invitad|nvitad|organi|orgiza|organz|grabaci/i.test(cat) ? cat : '';
+                        if (t.url) lista.push({ artista: t.artist || 'Organización', cancion: t.name || 'Sin nombre',
+                            estilo, url: t.url, gala: g.nombre, fecha: g.fecha, org: true });
+                    });
+                }));
+                try {
+                    const bib = await getDocs(collection(window.db, 'biblioteca_global'));
+                    bib.forEach(doc => { const t = doc.data(); if (t.url) lista.push({ artista: '📚 Biblioteca VYT', cancion: t.name || 'Sin nombre',
+                        estilo: '', url: t.url, gala: 'Biblioteca', fecha: '' }); });
+                } catch (_) {}
+                // Sin repetidos (misma pista en varias galas = mismo archivo)
+                const vistos = new Set();
+                todasLasPistas = lista.filter(p => !vistos.has(p.url) && vistos.add(p.url))
+                    .sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
+                todasLasPistas.forEach((p, i) => { p.i = i; p.texto = normG(`${p.artista} ${p.cancion} ${p.estilo} ${p.gala}`); });
+                info.textContent = `${todasLasPistas.length} pistas`;
+                buscarPistaGlobal();
+            })().catch(e => {
+                console.error(e);
+                info.textContent = '❌ No se pudieron cargar (¿sin internet?)';
+                cargandoTodas = null;
+            });
+            return cargandoTodas;
+        };
+
+        window.buscarPistaGlobal = function() {
+            const cont = document.getElementById('buscadorGlobalResultados');
+            const q = normG(document.getElementById('buscadorGlobal').value).trim();
+            if (!todasLasPistas) return;
+            if (!q) { cont.innerHTML = ''; return; }
+            const palabras = q.split(/\s+/);
+            const res = todasLasPistas.filter(p => palabras.every(w => p.texto.includes(w)));
+            const mostrar = res.slice(0, 40);
+            cont.innerHTML = !res.length
+                ? '<p class="text-gray-400 text-sm px-1">No se encontró ninguna pista.</p>'
+                : mostrar.map(p => {
+                    const id = `glob_${p.i}`;
+                    const sonando = currentPlayingTrackId === id;
+                    return `
+                    <div id="${id}" class="flex items-center gap-3 bg-gray-800/80 border border-gray-700 rounded-lg px-3 py-2 ${sonando ? 'track-playing' : ''}">
+                        <button id="playBtn_${id}" onclick="tocarPistaGlobal(${p.i})"
+                            class="flex-shrink-0 w-9 h-9 rounded-full ${sonando ? 'bg-red-500 hover:bg-red-600' : 'bg-green-600 hover:bg-green-500'} text-white text-sm">
+                            <i class="fas fa-${sonando ? 'stop' : 'play'}"></i></button>
+                        <div class="min-w-0 flex-1">
+                            <p class="text-white text-sm font-semibold truncate">${escG(p.cancion)}${p.estilo ? ` <span class="text-gray-400 font-normal">· ${escG(p.estilo)}</span>` : ''}</p>
+                            <p class="text-xs text-gray-400 truncate">${p.org ? '<span class="text-sky-300">🎤 Invitado/Org</span> · ' : ''}${escG(p.artista)} · ${escG(p.gala)}</p>
+                        </div>
+                        <span id="timeDisp_${id}" class="hidden text-xs text-green-300 font-mono"></span>
+                    </div>`;
+                }).join('') + (res.length > mostrar.length ? `<p class="text-xs text-gray-400 px-1">…y ${res.length - mostrar.length} más. Escribí algo más específico.</p>` : '');
+        };
+
+        window.tocarPistaGlobal = function(i) {
+            const p = todasLasPistas?.[i];
+            if (!p) return;
+            toggleTrack(`glob_${i}`, p.url, p.artista, p.cancion, 0);
+            setTimeout(buscarPistaGlobal, 50); // refrescar el botón ▶/■
         };
 
         // Función para copiar el link de pistas de organización
